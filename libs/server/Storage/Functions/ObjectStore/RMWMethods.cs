@@ -106,14 +106,14 @@ namespace Garnet.server
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
-
-            oldValue.CopyUpdate(ref newValue);
             return true;
         }
 
         /// <inheritdoc />
         public void PostCopyUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject oldValue, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
+            oldValue.CopyUpdate(ref value);
+
             var header = (RespInputHeader*)input.ToPointer();
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             switch (header->type)

@@ -39,9 +39,20 @@ namespace Garnet.server
 
                 if (serializationState == (int)SerializationPhase.SERIALIZED)
                 {
-                    // Serialized state is cached, use that
-                    Debug.Assert(serialized != null);
-                    writer.Write(serialized);
+                    // If serialized state is cached, use that
+                    if (serialized != null)
+                    {
+                        writer.Write(serialized);
+                        // We can safely delete the serialized image now, as there is
+                        // guaranteed to be a new v+1 image of the object in memory.
+                        // Because "serialized" was created during PostCopyUpdater
+                        serialized = null;
+                    }
+                    else
+                    {
+                        // Write null object to stream
+                        writer.Write((byte)GarnetObjectType.Null);
+                    }
                     return;
                 }
 
