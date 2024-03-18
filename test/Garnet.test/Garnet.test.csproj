@@ -1,0 +1,85 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net7.0;net6.0</TargetFrameworks>
+    <Platforms>AnyCPU</Platforms>
+    <LangVersion>latest</LangVersion>
+    <HighEntropyVA>true</HighEntropyVA>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Garnet.test</RootNamespace>
+    <AssemblyName>Garnet.test</AssemblyName>
+    <ErrorReport>prompt</ErrorReport>
+    <SignAssembly>true</SignAssembly>
+    <ApplicationIcon />
+    <OutputType>Library</OutputType>
+    <StartupObject />
+    <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+    <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>DEBUG</DefineConstants>
+    <DebugType>full</DebugType>
+    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DefineConstants></DefineConstants>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\$(Platform)\Release\</OutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <NoWarn>1701;1702;1591</NoWarn>
+  </PropertyGroup>
+
+	<ItemGroup>
+		<Compile Include="..\..\main\GarnetServer\Extensions\DeleteIfMatch.cs" Link="DeleteIfMatch.cs" />
+		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="MyDictObject.cs" />
+		<Compile Include="..\..\main\GarnetServer\Extensions\GetTwoKeysNoTxn.cs" Link="GetTwoKeysNoTxn.cs" />
+		<Compile Include="..\..\main\GarnetServer\Extensions\ReadWriteTxn.cs" Link="ReadWriteTxn.cs" />
+		<Compile Include="..\..\main\GarnetServer\Extensions\SampleUpdateTxn.cs" Link="SampleUpdateTxn.cs" />
+		<Compile Include="..\..\main\GarnetServer\Extensions\SampleDeleteTxn.cs" Link="SampleDeleteTxn.cs" />
+		<Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="SetIfPM.cs" />
+		<Compile Include="..\..\main\GarnetServer\Extensions\SetWPIfPGT.cs" Link="SetWPIFPGT.cs" />
+	</ItemGroup>
+
+  <ItemGroup>
+	  <None Include="..\testcerts\testcert.pfx" Link="testcert.pfx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" Version="2.9.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis" Version="4.8.0" />
+	<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="7.0.0" />
+	<PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="7.0.0" />
+	<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.7.2" />
+    <PackageReference Include="NUnit" Version="3.13.3" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="StackExchange.Redis" Version="2.6.80" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\libs\client\Garnet.client.csproj" />
+    <ProjectReference Include="..\..\libs\common\Garnet.common.csproj" />
+    <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
+    <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
+    <ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="redis.conf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+</Project>

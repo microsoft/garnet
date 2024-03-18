@@ -1,0 +1,17 @@
+{
+    "_comment": "Note: MAX is actually total number of cores / 2",
+    "_comment2": "To get proper expected results, the ExpectedCoresToTestOn needs to match the number of cores on test machine.",
+    "ExpectedCoresToTestOn_win": 48,
+    "ExpectedCoresToTestOn_linux": 48,
+    "op": "GET",
+    "threads": "MAX",
+    "dbsize": 268435456,
+    "runtime": 30,
+    "expectedMSETThroughputValue_linux": 5500000,
+    "expectedGETThroughputValue_linux": 44000000,
+    "expectedMSETThroughputValue_win": 6300000,
+    "expectedGETThroughputValue_win": 34600000,
+    "acceptableGETThroughputRange": 10,
+    "acceptableMSETThroughputRange": 15
+}
+  

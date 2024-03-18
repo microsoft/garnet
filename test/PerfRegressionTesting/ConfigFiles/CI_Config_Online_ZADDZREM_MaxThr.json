@@ -1,0 +1,29 @@
+{
+    "_comment": "Note: MAX is actually total number of cores / 2",
+    "_comment2": "To get proper expected results, the ExpectedCoresToTestOn needs to match the number of cores on test machine.",
+    "ExpectedCoresToTestOn_win": 48,
+    "ExpectedCoresToTestOn_linux": 48,
+    "op_workload": "ZADD,ZREM",
+    "onlineMode": "--online",
+    "batchsize": 1,
+    "threads": "MAX",
+    "op_percent": "50,50",
+    "client": "GarnetClientSession",
+    "keyLength": 8,
+    "sscardinality": 1024,    
+    "expectedMedianValue_linux": 66,
+    "expectedMedianValue_win": 225,
+    "acceptableRangeMedian": 15,
+
+    "expected99Value_linux": 97,
+    "expected99Value_win": 300,
+    "acceptableRange99": 10,
+
+    "expected99_9Value_linux": 130,
+    "expected99_9Value_win": 375,
+    "acceptableRange99_9": 10,
+
+    "expectedTPTValue_linux": 360,
+    "expectedTPTValue_win": 105,
+    "acceptableRangeTPT": 20
+}

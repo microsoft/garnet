@@ -1,0 +1,5 @@
+# All files
+[*]
+generated_code = true
+file_header_template = unset
+dotnet_analyzer_diagnostic.category-Style.severity = none

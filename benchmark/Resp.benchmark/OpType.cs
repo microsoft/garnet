@@ -1,0 +1,17 @@
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+namespace Resp.benchmark
+{
+    public enum OpType
+    {
+        NONE, MGET, INCR, MSET, SET, SETEX, GET, DEL, PING, PFADD, MPFADD, PFCOUNT, PFMERGE, ZADD, ZREM, ZADDREM, GEOADD, GEOADDREM, ZCARD, ZADDCARD,
+        SETBIT, GETBIT, BITCOUNT, BITPOS, BITOP_AND, BITOP_OR, BITOP_XOR, BITOP_NOT,
+        BITFIELD, BITFIELD_GET, BITFIELD_SET, BITFIELD_INCR,
+        SETIFPM, MYDICTGET, MYDICTSET,
+        DBSIZE,
+        READ_TXN, WRITE_TXN, READWRITETX, WATCH_TXN, SAMPLEUPDATETX, SAMPLEDELETETX,
+        READONLY = 8888,
+        AUTH = 9999,
+    }
+}

@@ -1,0 +1,13 @@
+{
+    "_comment": "Note: MAX is actually total number of cores / 2",
+    "_comment2": "To get proper expected results, the ExpectedCoresToTestOn needs to match the number of cores on test machine.",
+    "ExpectedCoresToTestOn_win": 48,
+    "ExpectedCoresToTestOn_linux": 48,
+    "op": "ZADDREM",
+    "threads": "MAX",
+    "expectedGETThroughputValue_linux": 7800000,
+    "expectedGETThroughputValue_win": 9400000,
+    "acceptableGETThroughputRange": 10,
+    "acceptableMSETThroughputRange": 10
+
+}

@@ -1,0 +1,11 @@
+{
+    "_comment": "To get proper expected results, the ExpectedCoresToTestOn needs to match the number of cores on test machine.",
+    "ExpectedCoresToTestOn_win": 48,
+    "ExpectedCoresToTestOn_linux": 48,
+    "op": "ZADDREM",
+    "threads": "1",
+    "expectedGETThroughputValue_linux": 710000,
+    "expectedGETThroughputValue_win": 620000,
+    "acceptableGETThroughputRange": 10,
+    "acceptableMSETThroughputRange": 10
+}

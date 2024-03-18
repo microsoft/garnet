@@ -1,0 +1,15 @@
+{
+    "_comment": "To get proper expected results, the ExpectedCoresToTestOn needs to match the number of cores on test machine.",
+    "ExpectedCoresToTestOn_win": 48,
+    "ExpectedCoresToTestOn_linux": 48,
+    "op": "GET",
+    "threads": "1",
+    "dbsize": 268435456,
+    "runtime": 30,
+    "expectedMSETThroughputValue_linux": 4800000,
+    "expectedGETThroughputValue_linux": 2000000,
+    "expectedMSETThroughputValue_win": 6200000,
+    "expectedGETThroughputValue_win": 1580000,
+    "acceptableGETThroughputRange": 10,
+    "acceptableMSETThroughputRange": 15
+}

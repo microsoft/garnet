@@ -1,0 +1,30 @@
+{
+    "_comment": "To get proper expected results, the ExpectedCoresToTestOn needs to match the number of cores on test machine.",
+    "ExpectedCoresToTestOn_win": 48,
+    "ExpectedCoresToTestOn_linux": 48,
+    "op_workload": "ZADD,ZREM",
+    "onlineMode": "--online",
+    "batchsize": 1,
+    "threads": "1",
+    "op_percent": "50,50",
+    "client": "GarnetClientSession",
+    "keyLength": 8,
+    "sscardinality": 1024,
+    "expectedMedianValue_linux": 55,
+    "expectedMedianValue_win": 115,
+    "acceptableRangeMedian": 10,
+
+    "expected99Value_linux": 77,
+    "expected99Value_win": 145,
+    "acceptableRange99": 10,
+
+    "expected99_9Value_linux": 102,
+    "expected99_9Value_win": 210,
+    "acceptableRange99_9": 10,
+
+    "expectedTPTValue_linux": 18,
+    "expectedTPTValue_win": 9,
+    "acceptableRangeTPT": 20
+}
+
+
