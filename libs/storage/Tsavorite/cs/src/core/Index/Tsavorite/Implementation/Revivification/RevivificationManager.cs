@@ -25,7 +25,7 @@ namespace Tsavorite.core
         {
             // Set these first in case revivification is not enabled; they still tell us not to expect fixed-length.
             if (isFixedLen)
-                FixedValueLength = Utility.GetSize(default(Value));
+                FixedValueLength = Unsafe.SizeOf<Value>();
 
             revivifiableFraction = revivSettings is null || revivSettings.RevivifiableFraction == RevivificationSettings.DefaultRevivifiableFraction
                 ? logSettings.MutableFraction

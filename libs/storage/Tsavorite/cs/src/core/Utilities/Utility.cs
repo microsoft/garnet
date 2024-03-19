@@ -28,18 +28,6 @@ namespace Tsavorite.core
     /// </summary>
     public static class Utility
     {
-        /// <summary>
-        /// Get size of type
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        internal static unsafe int GetSize<T>(this T value)
-        {
-            T[] arr = new T[2];
-            return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
-        }
-
         internal static bool IsBlittableType(Type t)
         {
             var mi = typeof(Utility).GetMethod("IsBlittable", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.InvokeMethod);

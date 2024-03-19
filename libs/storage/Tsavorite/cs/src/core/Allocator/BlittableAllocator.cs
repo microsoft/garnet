@@ -17,10 +17,10 @@ namespace Tsavorite.core
         private readonly long* nativePointers;
 
         // Record sizes
-        private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
-        private static readonly int recordInfoSize = Utility.GetSize(default(RecordInfo));
-        private static readonly int keySize = Utility.GetSize(default(Key));
-        private static readonly int valueSize = Utility.GetSize(default(Value));
+        private static readonly int recordSize = Unsafe.SizeOf<Record<Key, Value>>();
+        private static readonly int recordInfoSize = Unsafe.SizeOf<RecordInfo>();
+        private static readonly int keySize = Unsafe.SizeOf<Key>();
+        private static readonly int valueSize = Unsafe.SizeOf<Value>();
 
         internal static int RecordSize => recordSize;
 

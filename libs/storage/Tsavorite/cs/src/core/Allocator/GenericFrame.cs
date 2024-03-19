@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
@@ -12,7 +13,7 @@ namespace Tsavorite.core
     {
         private readonly Record<Key, Value>[][] frame;
         public readonly int frameSize, pageSize;
-        private readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
+        private readonly int recordSize = Unsafe.SizeOf<Record<Key, Value>>();
 
         public GenericFrame(int frameSize, int pageSize)
         {
