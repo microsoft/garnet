@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 
 namespace Garnet.server
 {
@@ -49,12 +50,7 @@ namespace Garnet.server
                 hashState = magicno * hashState + *pC;
             }
 
-            return (long)Rotr64(magicno * hashState, 4);
-        }
-
-        static ulong Rotr64(ulong x, int n)
-        {
-            return (((x) >> n) | ((x) << (64 - n)));
+            return (long)BitOperations.RotateRight(magicno * hashState, 4);
         }
     }
 }
