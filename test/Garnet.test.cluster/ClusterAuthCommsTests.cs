@@ -86,7 +86,7 @@ namespace Garnet.test.cluster
                 context.credManager.GetUserCredentials("admin");
 
             // Update cluster credential before setting up cluster
-            for (int i = 0; i < shards; i++)
+            for (var i = 0; i < shards; i++)
             {
                 context.clusterTestUtils.ConfigSet(i, "cluster-username", cred.user);
                 context.clusterTestUtils.ConfigSet(i, "cluster-password", cred.password);

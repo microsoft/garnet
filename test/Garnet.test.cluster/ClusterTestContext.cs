@@ -397,7 +397,7 @@ namespace Garnet.test.cluster
             int primaryIndex = 0,
             int[] slotMap = null)
         {
-            var keys = orderedKeys ? kvPairs.Keys.Select(int.Parse).ToList().OrderBy(x => x).Select(x => x.ToString()) : kvPairs.Keys;
+            var keys = orderedKeys ? kvPairs.Keys.Select(x => int.Parse(x)).ToList().OrderBy(x => x).Select(x => x.ToString()) : kvPairs.Keys;
             foreach (var key in keys)
             {
                 var value = kvPairs[key];

@@ -157,7 +157,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                context.logger?.LogError(ex, "An error occurred at ClusterResetTest");
+                context.logger?.LogError(ex, "An error occured at ClusterResetTest");
             }
 
             //Hard reset node state. clean db data and cluster config
@@ -188,7 +188,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                context.logger?.LogError(ex, "An error occurred at ClusterResetTest");
+                context.logger?.LogError(ex, "An error occured at ClusterResetTest");
             }
 
             //Add node back to the cluster
@@ -198,9 +198,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(0, context.logger);
         }
 
-        // Disabling test until it stabilizes on CI
-        // [Test, Order(5)]
-        // [Category("CLUSTER")]
+        //[Test, Order(5)]
+        //[Category("CLUSTER")]
         public void ClusterRestartNodeDropGossip()
         {
             var logger = context.loggerFactory.CreateLogger("ClusterRestartNodeDropGossip");
