@@ -381,7 +381,7 @@ namespace Garnet.cluster
                     readHead = (int)(ptr - recvBufferPtr);
                     if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
                     {
-                        var resp = Encoding.ASCII.GetBytes("-ERR The user can assign a config epoch only when the node does not know any other node.\r\n");
+                        ReadOnlySpan<byte> resp = "-ERR The user can assign a config epoch only when the node does not know any other node.\r\n"u8;
                         while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                             SendAndReset();
                     }
@@ -565,7 +565,7 @@ namespace Garnet.cluster
                     }
                     else
                     {
-                        resp = Encoding.ASCII.GetBytes("-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n");
+                        resp = "-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n"u8;
                     }
                     while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                         SendAndReset();

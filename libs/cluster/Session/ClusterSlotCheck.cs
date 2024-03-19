@@ -34,7 +34,7 @@ namespace Garnet.cluster
             if (port != 0)
                 resp = Encoding.ASCII.GetBytes($"-MOVED {slot} {address}:{port}\r\n");
             else
-                resp = Encoding.ASCII.GetBytes("-CLUSTERDOWN Hash slot not served\r\n");
+                resp = "-CLUSTERDOWN Hash slot not served\r\n"u8.ToArray();
 
             logger?.LogDebug("SEND: {msg}", Encoding.ASCII.GetString(resp).Replace("\n", "!").Replace("\r", "|"));
             while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
@@ -43,7 +43,7 @@ namespace Garnet.cluster
 
         private void WriteClusterSlotVerificationMessage(ClusterConfig config, ClusterSlotVerificationResult vres, ref byte* dcurr, ref byte* dend)
         {
-            byte[] resp = default;
+            ReadOnlySpan<byte> resp = default;
             SlotVerifiedState state = vres.state;
             ushort slot = vres.slot;
             string address;
@@ -55,17 +55,17 @@ namespace Garnet.cluster
                     resp = Encoding.ASCII.GetBytes($"-MOVED {slot} {address}:{port}\r\n");
                     break;
                 case SlotVerifiedState.MIGRATING:
-                    resp = Encoding.ASCII.GetBytes("-MIGRATING.\r\n");
+                    resp = "-MIGRATING.\r\n"u8;
                     break;
                 case SlotVerifiedState.CLUSTERDOWN:
-                    resp = Encoding.ASCII.GetBytes("-CLUSTERDOWN Hash slot not served\r\n");
+                    resp = "-CLUSTERDOWN Hash slot not served\r\n"u8;
                     break;
                 case SlotVerifiedState.ASK:
                     (address, port) = config.AskEndpointFromSlot(slot);
                     resp = Encoding.ASCII.GetBytes($"-ASK {slot} {address}:{port}\r\n");
                     break;
                 case SlotVerifiedState.CROSSLOT:
-                    resp = Encoding.ASCII.GetBytes($"-CROSSSLOT Keys in request don't hash to the same slot\r\n");
+                    resp = "-CROSSSLOT Keys in request don't hash to the same slot\r\n"u8;
                     break;
                 default:
                     throw new Exception($"Unknown SlotVerifiedState {state}");
