@@ -149,7 +149,7 @@ namespace Tsavorite.core
         /// <param name="key1"></param>
         /// <param name="key2"></param>
         /// <returns></returns>
-        public unsafe bool Equals(ref byte[] key1, ref byte[] key2) => key1.AsSpan().SequenceEqual(key2);
+        public bool Equals(ref byte[] key1, ref byte[] key2) => key1.AsSpan().SequenceEqual(key2);
 
         /// <summary>
         /// GetHashCode64
