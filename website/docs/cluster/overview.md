@@ -27,7 +27,7 @@ For example, keys \{abc\}xyz and xyz\{abc\} will hash in the same hashlot.
 
 Clients can connect to any node in the cluster and issues single/multi-key operations or any type of
 cluster management operations.
-The receiving node processes single/multi-key operations by calculating the hashlot value(s) for the key(s) associatew with the corresponding operation 
+The receiving node processes single/multi-key operations by calculating the hashlot value(s) for the key(s) associated with the corresponding operation 
 and responds in one of the following ways:
 
 - If the slot is owned by the receiving node, it performs the actual operation as expected from standalone Garnet.
