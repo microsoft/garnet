@@ -17,12 +17,13 @@ namespace Tsavorite.core
         internal bool restoreDeletedRecordsIfBinIsFull;
         internal bool useFreeRecordPoolForCTT;
 
-        internal readonly bool IsFixedLength => FixedValueLength != 0;
+        internal readonly bool IsFixedLength { get; }
 
         internal double revivifiableFraction;
 
         public RevivificationManager(TsavoriteKV<Key, Value> store, bool isFixedLen, RevivificationSettings revivSettings, LogSettings logSettings)
         {
+            IsFixedLength = isFixedLen;
             revivifiableFraction = revivSettings is null || revivSettings.RevivifiableFraction == RevivificationSettings.DefaultRevivifiableFraction
                 ? logSettings.MutableFraction
                 : revivSettings.RevivifiableFraction;
