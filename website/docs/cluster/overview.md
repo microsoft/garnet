@@ -27,7 +27,7 @@ For example, keys \{abc\}xyz and xyz\{abc\} will hash in the same hashlot.
 
 Clients can connect to any node in the cluster and issues single/multi-key operations or any type of
 cluster management operations.
-The receiving node processes single/multi-key operations by calculating the hashlot value(s) for the key(s) associatew with the corresponding operation 
+The receiving node processes single/multi-key operations by calculating the hashlot value(s) for the key(s) associated with the corresponding operation 
 and responds in one of the following ways:
 
 - If the slot is owned by the receiving node, it performs the actual operation as expected from standalone Garnet.
@@ -35,7 +35,7 @@ and responds in one of the following ways:
 - If the receiving node is a replica, it will serve only read requests to the slots owned by its primaruy and redirect any write requests to the primary using -MOVED message.
 - If the slot is owned by the receiving node and that slot is migrating then:
 	- If the key exists, then read requests are served as normal while write requests return -MIGRATING.
-	- If the key does not exits, then read and write requests return -ASK \<slot\> \<address\> \<port\>.
+	- If the key does not exist, then read and write requests return -ASK \<slot\> \<address\> \<port\>.
 - If the slot is owned by the another node and the receiving node is the target of the migration operation then:
 	- Read and write requests are served only if ASKING issued before hand. Note that write safety is not ensured if ASKING is used, so clients should take extra care when using it.
 
