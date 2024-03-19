@@ -28,13 +28,6 @@ namespace Garnet.client
             return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
         }
 
-        internal static bool IsBlittableType(Type t)
-        {
-            var mi = typeof(Utility).GetMethod("IsBlittable", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.InvokeMethod);
-            var fooRef = mi.MakeGenericMethod(t);
-            return (bool)fooRef.Invoke(null, null);
-        }
-
         /// <summary>
         /// Parse size in string notation into long.
         /// Examples: 4k, 4K, 4KB, 4 KB, 8m, 8MB, 12g, 12 GB, 16t, 16 TB, 32p, 32 PB.
@@ -136,23 +129,7 @@ namespace Garnet.client
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <returns></returns>
-        internal static bool IsBlittable<T>()
-        {
-            if (default(T) == null)
-                return false;
-
-            try
-            {
-                var tmp = new T[1];
-                var h = GCHandle.Alloc(tmp, GCHandleType.Pinned);
-                h.Free();
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-            return true;
-        }
+        internal static bool IsBlittable<T>() => !RuntimeHelpers.IsReferenceOrContainsReferences<T>();
 
         /// <summary>
         /// Check if two byte arrays of given length are equal
