@@ -16,13 +16,9 @@ namespace Tsavorite.core
         private readonly long[] pointers;
         private readonly long* nativePointers;
 
-        // Record sizes
-        private static readonly int recordSize = Unsafe.SizeOf<Record<Key, Value>>();
-        private static readonly int recordInfoSize = Unsafe.SizeOf<RecordInfo>();
-        private static readonly int keySize = Unsafe.SizeOf<Key>();
-        private static readonly int valueSize = Unsafe.SizeOf<Value>();
-
-        internal static int RecordSize => recordSize;
+        internal static int KeySize => Unsafe.SizeOf<Key>();
+        internal static int ValueSize => Unsafe.SizeOf<Value>();
+        internal static int RecordSize => Unsafe.SizeOf<Record<Key, Value>>();
 
         private readonly OverflowPool<PageUnit> overflowPagePool;
 
@@ -88,37 +84,34 @@ namespace Tsavorite.core
 
         public override ref Value GetValue(long physicalAddress)
         {
-            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + keySize);
+            return ref Unsafe.AsRef<Value>((byte*)physicalAddress + RecordInfo.GetLength() + KeySize);
         }
 
         public override (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress)
         {
-            return (recordSize, recordSize);
+            return (RecordSize, RecordSize);
         }
 
         public override (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TsavoriteSession tsavoriteSession)
         {
-            return (recordSize, recordSize, keySize);
+            return (RecordSize, RecordSize, KeySize);
         }
 
-        public override int GetAverageRecordSize()
-        {
-            return recordSize;
-        }
+        public override int GetAverageRecordSize() => RecordSize;
 
-        public override int GetFixedRecordSize() => recordSize;
+        public override int GetFixedRecordSize() => RecordSize;
 
         public override (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, TsavoriteSession tsavoriteSession)
         {
-            return (recordSize, recordSize, keySize);
+            return (RecordSize, RecordSize, KeySize);
         }
 
         public override (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value)
         {
-            return (recordSize, recordSize, keySize);
+            return (RecordSize, RecordSize, KeySize);
         }
 
-        public override int GetValueLength(ref Value value) => valueSize;
+        public override int GetValueLength(ref Value value) => ValueSize;
 
         /// <summary>
         /// Dispose memory allocator
@@ -136,7 +129,7 @@ namespace Tsavorite.core
 
         public override AddressInfo* GetValueAddressInfo(long physicalAddress)
         {
-            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength() + keySize);
+            return (AddressInfo*)((byte*)physicalAddress + RecordInfo.GetLength() + KeySize);
         }
 
         /// <summary>
