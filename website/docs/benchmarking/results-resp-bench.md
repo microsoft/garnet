@@ -90,7 +90,7 @@ In contrast, our latency experiments were performed on an empty database and for
 
 For the experiment depicted in Figure 1., we used large batches of GET operations (4096 requests per batch) and small payloads (8-byte keys and values) to minimize network overhead.
 As we increase the number of client sesssions, we observe that **Garnet** exhibits better scalability than Redis or KeyDB.
-Dragonfly exhibits similar scaling scharacteristics though only up to 16 threads. Note also, that DragonFly is a pure in-memory system.
+Dragonfly exhibits similar scaling characteristics though only up to 16 threads. Note also, that DragonFly is a pure in-memory system.
 Overall, **Garnet**'s throughput relative to the other systems is consistently higher even when the database size (i.e., the number of distinct keys pre-loaded) is larger (at 256 million keys) than the size of the processor cache.
 
 <details>
