@@ -346,7 +346,7 @@ namespace Garnet.test.cluster
             var shards = new List<ShardInfo>();
             var slots = new List<ushort>();
 
-            //Assign slots to primaries
+            // Assign slots to primaries
             for (int i = 0; i < slotRanges.Length; i++)
             {
                 foreach (var slotRange in slotRanges[i])
@@ -436,7 +436,7 @@ namespace Garnet.test.cluster
                     j = (j + 1) % primary_count;
                 }
 
-                //WaitForReplicas to connect
+                // WaitForReplicas to connect
                 j = 0;
                 for (int i = 0; i < primary_count; i++)
                 {

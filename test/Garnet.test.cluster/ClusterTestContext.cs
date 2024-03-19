@@ -319,7 +319,7 @@ namespace Garnet.test.cluster
             {
                 var key = orderedKeys ? (keyOffset++).ToString() : clusterTestUtils.RandomStr(keyLength);
 
-                //Use slotMap
+                // Use slotMap
                 var keyBytes = Encoding.ASCII.GetBytes(key);
                 if (slotMap != null)
                 {
@@ -349,7 +349,6 @@ namespace Garnet.test.cluster
                     key = clusterTestUtils.RandomStr(keyLength);
                 kvPairsObj.Add(key, value);
 
-                //int insertCount = 0;
                 if (!set)
                     clusterTestUtils.Lpush(primaryIndex, key, value, logger);
                 else
@@ -375,7 +374,7 @@ namespace Garnet.test.cluster
             int addCount = 5;
             for (int i = 0; i < iter; i++)
             {
-                //Populate Primary
+                // Populate Primary
                 if (disableObjects)
                 {
                     if (!performRMW)
@@ -471,7 +470,7 @@ namespace Garnet.test.cluster
 
         public void ClusterFailoveSpinWait(int replicaNodeIndex, ILogger logger)
         {
-            //Failover primary
+            // Failover primary
             clusterTestUtils.ClusterFailover(replicaNodeIndex, "ABORT", logger);
             clusterTestUtils.ClusterFailover(replicaNodeIndex, logger: logger);
 
@@ -491,7 +490,7 @@ namespace Garnet.test.cluster
 
         public void ClusterFailoverRetry(int replicaNodeIndex)
         {
-            //Failover primary
+            // Failover primary
             clusterTestUtils.ClusterFailover(replicaNodeIndex, "ABORT", logger);
             clusterTestUtils.ClusterFailover(replicaNodeIndex, logger: logger);
 
@@ -512,15 +511,15 @@ namespace Garnet.test.cluster
         public void AttachAndWaitForSync(int primary_count, int replica_count, bool disableObjects)
         {
             var primaryId = clusterTestUtils.GetNodeIdFromNode(0, logger);
-            //Issue meet to replicas
+            // Issue meet to replicas
             for (int i = primary_count; i < primary_count + replica_count; i++)
                 clusterTestUtils.Meet(i, 0);
 
-            //Wait until primary node is known so as not to fail replicate
+            // Wait until primary node is known so as not to fail replicate
             for (int i = primary_count; i < primary_count + replica_count; i++)
                 clusterTestUtils.WaitUntilNodeIdIsKnown(i, primaryId, logger: logger);
 
-            //Issue cluster replicate and bump epoch manually to capture config.
+            // Issue cluster replicate and bump epoch manually to capture config.
             for (int i = primary_count; i < primary_count + replica_count; i++)
             {
                 clusterTestUtils.ClusterReplicate(i, primaryId, async: true, logger: logger);
@@ -529,7 +528,7 @@ namespace Garnet.test.cluster
 
             if (!checkpointTask.Wait(TimeSpan.FromSeconds(100))) Assert.Fail("Checkpoint task timeout");
 
-            //Wait for recovery and AofSync
+            // Wait for recovery and AofSync
             for (int i = primary_count; i < replica_count; i++)
             {
                 clusterTestUtils.WaitForReplicaRecovery(i, logger);
@@ -538,7 +537,7 @@ namespace Garnet.test.cluster
 
             clusterTestUtils.WaitForConnectedReplicaCount(0, replica_count, logger: logger);
 
-            //Validate data on replicas
+            // Validate data on replicas
             for (int i = primary_count; i < replica_count; i++)
             {
                 if (disableObjects)

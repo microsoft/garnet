@@ -19,7 +19,7 @@ namespace Garnet.test.cluster
 
         readonly HashSet<string> monitorTests = new()
         {
-            //Add test names here to change logger verbosity
+            // Add test names here to change logger verbosity
         };
 
         [SetUp]
@@ -106,21 +106,21 @@ namespace Garnet.test.cluster
 
             var nodeIds = context.clusterTestUtils.GetNodeIds(logger: context.logger);
 
-            //forget node0
+            // Forget node0
             for (int i = 1; i < node_count; i++)
             {
-                //issue forget node i to node 0 for 30 seconds
+                // Issue forget node i to node 0 for 30 seconds
                 context.clusterTestUtils.ClusterForget(0, nodeIds[i], 30, context.logger);
-                //issue forget node 0 to node i
+                // Issue forget node 0 to node i
                 context.clusterTestUtils.ClusterForget(i, nodeIds[0], 30, context.logger);
             }
 
-            //Retrieve config for nodes 1 to i-1
+            // Retrieve config for nodes 1 to i-1
             List<ClusterConfiguration> configs = new();
             for (int i = 1; i < node_count; i++)
                 configs.Add(context.clusterTestUtils.ClusterNodes(i, context.logger));
 
-            //Check if indeed nodes 1 to i-1 have forgotten node 0
+            // Check if indeed nodes 1 to i-1 have forgotten node 0
             foreach (var config in configs)
                 foreach (var node in config.Nodes)
                     Assert.AreNotEqual(nodeIds[0], node.NodeId, "node 0 node forgotten");
@@ -134,7 +134,7 @@ namespace Garnet.test.cluster
             context.CreateConnection();
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(node_count, 0, logger: context.logger);
 
-            //Get slot ranges for node 0
+            // Get slot ranges for node 0
             var config = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var slots = config.Nodes.First().Slots;
             List<(int, int)> slotRanges = new();
@@ -142,13 +142,13 @@ namespace Garnet.test.cluster
                 slotRanges.Add((slot.From, slot.To));
 
             var nodeIds = context.clusterTestUtils.GetNodeIds(logger: context.logger);
-            //Issue forget of node 0 to nodes 1 to i-1
+            // Issue forget of node 0 to nodes 1 to i-1
             for (int i = 1; i < node_count; i++)
                 context.clusterTestUtils.ClusterForget(i, nodeIds[0], 10, context.logger);
 
             try
             {
-                //Add data to server
+                // Add data to server
                 var resp = context.clusterTestUtils.GetServer(0).Execute("SET", "wxz", "1234");
                 Assert.AreEqual("OK", (string)resp);
 
@@ -160,12 +160,12 @@ namespace Garnet.test.cluster
                 context.logger?.LogError(ex, "An error occured at ClusterResetTest");
             }
 
-            //Hard reset node state. clean db data and cluster config
+            // Hard reset node state. clean db data and cluster config
             context.clusterTestUtils.ClusterReset(0, soft: false, 10, context.logger);
             config = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var node = config.Nodes.First();
 
-            //Assert node 0 does not know anything about the cluster
+            // Assert node 0 does not know anything about the cluster
             Assert.AreEqual(1, config.Nodes.Count);
             Assert.AreNotEqual(nodeIds[0], node.NodeId);
             Assert.AreEqual(0, node.Slots.Count);
@@ -175,11 +175,11 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.AddSlotsRange(0, slotRanges, context.logger);
             try
             {
-                //Check DB was flushed due to hard reset
+                // Check DB was flushed due to hard reset
                 var resp = context.clusterTestUtils.GetServer(0).Execute("GET", "wxz");
                 Assert.IsTrue(resp.IsNull, "DB not flushed after HARD reset");
 
-                //Add data to server
+                // Add data to server
                 resp = context.clusterTestUtils.GetServer(0).Execute("SET", "wxz", "1234");
                 Assert.AreEqual("OK", (string)resp);
 
@@ -191,7 +191,7 @@ namespace Garnet.test.cluster
                 context.logger?.LogError(ex, "An error occured at ClusterResetTest");
             }
 
-            //Add node back to the cluster
+            // Add node back to the cluster
             context.clusterTestUtils.SetConfigEpoch(0, 1, context.logger);
             context.clusterTestUtils.Meet(0, 1, context.logger);
 

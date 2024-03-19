@@ -599,7 +599,7 @@ namespace Garnet.test.cluster
             while (sourcePort == targetPort)
                 targetPort = msp[(ushort)context.r.Next(0, 16384)];
 
-            //Check data are inserted correctly
+            // Check data are inserted correctly
             foreach (var entry in data)
             {
                 var value = context.clusterTestUtils.GetKey(context.clusterTestUtils.GetEndPointFromPort(sourcePort), entry.Key, out var _slot, out var _address, out var _port, out var responseState);
@@ -610,11 +610,11 @@ namespace Garnet.test.cluster
             }
 
             context.logger.LogDebug($"3. Initiating async migration");
-            //Initiate Migration            
+            // Initiate Migration            
             context.clusterTestUtils.MigrateSlots(sourcePort, targetPort, new List<int>() { slot }, logger: context.logger);
 
             context.logger.LogDebug($"4. Checking keys starting");
-            //Wait for keys to become available for reading
+            // Wait for keys to become available for reading
             var keysList = data.Keys.ToList();
             for (int i = 0; i < keysList.Count; i++)
             {
@@ -631,7 +631,7 @@ namespace Garnet.test.cluster
             context.logger.LogDebug($"5. Checking keys done");
 
             context.logger.LogDebug($"6. Checking configuration update starting");
-            //Check if configuration has updated by
+            // Check if configuration has updated by
             var otherPorts = context.clusterTestUtils.GetEndPoints().Select(x => ((IPEndPoint)x).Port).Where(x => x != sourcePort || x != targetPort);
             while (true)
             {
@@ -645,8 +645,8 @@ namespace Garnet.test.cluster
                     moved |= movedPort == targetPort;
                 }
 
-                //Check if slot is accesible only from target and not source,
-                //and other nodes have been informed.
+                // Check if slot is accesible only from target and not source,
+                // and other nodes have been informed.
                 if (moved && targetSlotPortMap.ContainsKey((ushort)slot) &&
                     !sourceSlotPortMap.ContainsKey((ushort)slot))
                     break;
@@ -936,7 +936,7 @@ namespace Garnet.test.cluster
             }
             context.logger.LogDebug("2. Test keys loaded");
 
-            //Start migration
+            // Start migration
             var respImport = context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "IMPORTING", sourceNodeId, logger: context.logger);
             Assert.AreEqual(respImport, "OK");
             context.logger.LogDebug("3. Set slot {_slot} to IMPORTING state on node {port}", _workingSlot, context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port);
@@ -966,7 +966,7 @@ namespace Garnet.test.cluster
             Assert.AreEqual(respNodeSource, "OK");
             context.logger.LogDebug("9b. SetSlot {_slot} to source NODE {port}", _workingSlot, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
             context.clusterTestUtils.BumpEpoch(sourceNodeIndex, waitForSync: true, logger: context.logger);
-            //End Migration
+            // End Migration
 
             context.logger.LogDebug("10. Checking config epoch");
             var targetConfigEpochFromTarget = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(targetNodeIndex, targetNodeId, context.logger);
@@ -1065,7 +1065,7 @@ namespace Garnet.test.cluster
             }
             context.logger.LogDebug($"4. Checking keys before migration done");
 
-            //Start Migration
+            // Start Migration
             var respImport = context.clusterTestUtils.SetSlot(targetNodeIndex, _slot, "IMPORTING", sourceNodeId, logger: context.logger);
             Assert.AreEqual("OK", respImport, "IMPORTING");
             context.logger.LogDebug("5. Set slot {_slot} to IMPORTING state on node {port}", _slot, context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port);
@@ -1092,7 +1092,7 @@ namespace Garnet.test.cluster
             var respNodeSource = context.clusterTestUtils.SetSlot(sourceNodeIndex, _slot, "NODE", targetNodeId, logger: context.logger);
             Assert.AreEqual(respNodeSource, "OK");
             context.logger.LogDebug("9b. SetSlot {_slot} to source NODE {port}", _slot, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
-            //End Migration
+            // End Migration
 
             context.logger.LogDebug("10. Checking config epoch");
             var targetConfigEpochFromTarget = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(targetNodeIndex, targetNodeId, context.logger);
@@ -1171,7 +1171,7 @@ namespace Garnet.test.cluster
                         case ResponseState.OK:
                             Assert.AreEqual(value, getValue);
                             break;
-                        case ResponseState.MOVED: //everyone redirect to node that is current owner
+                        case ResponseState.MOVED: // Everyone redirect to node that is current owner
                             var srcNodeIndex = context.clusterTestUtils.GetEndPointIndexFromPort(redirectPortA);
                             Assert.AreNotEqual(srcNodeIndex, -1);
                             getValue = context.clusterTestUtils.GetKey(srcNodeIndex, key, out _, out var redirectAddressB, out var redirectPortB, out status, logger: context.logger);

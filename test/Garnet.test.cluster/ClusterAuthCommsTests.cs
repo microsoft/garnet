@@ -18,7 +18,7 @@ namespace Garnet.test.cluster
 
         readonly HashSet<string> monitorTests = new()
         {
-            //Add test names here to change logger verbosity
+            // Add test names here to change logger verbosity
         };
 
         [SetUp]
@@ -235,7 +235,7 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.ConfigSet(i, "cluster-password", cc[1].password);
             }
 
-            // get epoch value and port for node 0
+            // Get epoch value and port for node 0
             var epoch0 = context.clusterTestUtils.GetConfigEpoch(0, logger: context.logger);
             var port0 = context.clusterTestUtils.GetEndPoint(0).Port;
 
