@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
@@ -203,7 +204,7 @@ namespace Garnet.server
         void ExpandScratchBuffer(int newLength)
         {
             if (newLength < 64) newLength = 64;
-            else newLength = (int)NextPowerOf2(newLength);
+            else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
 
             var _scratchBuffer = GC.AllocateArray<byte>(newLength, true);
             var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref _scratchBuffer[0]);
@@ -211,18 +212,6 @@ namespace Garnet.server
                 new ReadOnlySpan<byte>(scratchBufferHead, scratchBufferOffset).CopyTo(new Span<byte>(_scratchBufferHead, scratchBufferOffset));
             scratchBuffer = _scratchBuffer;
             scratchBufferHead = _scratchBufferHead;
-        }
-
-        static long NextPowerOf2(long v)
-        {
-            v--;
-            v |= v >> 1;
-            v |= v >> 2;
-            v |= v >> 4;
-            v |= v >> 8;
-            v |= v >> 16;
-            v |= v >> 32;
-            return v + 1;
         }
 
         /// <summary>
