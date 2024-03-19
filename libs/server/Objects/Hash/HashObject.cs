@@ -45,25 +45,23 @@ namespace Garnet.server
         /// <summary>
         ///  HashObject Constructor
         /// </summary>
-        public HashObject()
+        public HashObject(long expiration = 0) : base(expiration, MemoryUtils.DictionaryOverhead)
         {
             hash = new Dictionary<byte[], byte[]>(new ByteArrayComparer());
-            this.Size = MemoryUtils.DictionaryOverhead;
         }
 
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public HashObject(Dictionary<byte[], byte[]> hash, long size)
+        public HashObject(Dictionary<byte[], byte[]> hash, long expiration, long size) : base(expiration, size)
         {
             this.hash = hash;
-            this.Size = size;
         }
 
         /// <summary>
         /// Construct from binary serialized form
         /// </summary>
-        public HashObject(BinaryReader reader) : this()
+        public HashObject(BinaryReader reader, long expiration) : this(expiration)
         {
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
@@ -97,7 +95,7 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new HashObject(hash, Size);
+        public override GarnetObjectBase Clone() => new HashObject(hash, Expiration, Size);
 
         /// <inheritdoc />
         public override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange)

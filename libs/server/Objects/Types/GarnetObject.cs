@@ -16,14 +16,14 @@ namespace Garnet.server
         /// </summary>
         /// <param name="garnetObjectType"></param>
         /// <returns></returns>
-        internal static IGarnetObject Create(GarnetObjectType garnetObjectType)
+        internal static IGarnetObject Create(GarnetObjectType garnetObjectType, long expiration = 0)
         {
             return garnetObjectType switch
             {
-                GarnetObjectType.SortedSet => new SortedSetObject(),
-                GarnetObjectType.List => new ListObject(),
-                GarnetObjectType.Hash => new HashObject(),
-                GarnetObjectType.Set => new SetObject(),
+                GarnetObjectType.SortedSet => new SortedSetObject(expiration),
+                GarnetObjectType.List => new ListObject(expiration),
+                GarnetObjectType.Hash => new HashObject(expiration),
+                GarnetObjectType.Set => new SetObject(expiration),
                 _ => throw new Exception("Unsupported data type"),
             };
         }
@@ -83,14 +83,14 @@ namespace Garnet.server
         {
             using var ms = new MemoryStream(data);
             using var reader = new BinaryReader(ms);
+            var expiration = reader.ReadInt64();
             var type = (GarnetObjectType)reader.ReadByte();
-
             return type switch
             {
-                GarnetObjectType.SortedSet => new SortedSetObject(reader),
-                GarnetObjectType.List => new ListObject(reader),
-                GarnetObjectType.Hash => new HashObject(reader),
-                GarnetObjectType.Set => new SetObject(reader),
+                GarnetObjectType.SortedSet => new SortedSetObject(reader, expiration),
+                GarnetObjectType.List => new ListObject(reader, expiration),
+                GarnetObjectType.Hash => new HashObject(reader, expiration),
+                GarnetObjectType.Set => new SetObject(reader, expiration),
                 _ => throw new Exception("Unsupported data type"),
             };
         }

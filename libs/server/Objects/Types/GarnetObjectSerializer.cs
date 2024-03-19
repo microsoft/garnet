@@ -23,21 +23,22 @@ namespace Garnet.server
         /// <inheritdoc />
         public override void Deserialize(out IGarnetObject obj)
         {
+            var expiration = reader.ReadInt64();
             var type = (GarnetObjectType)reader.ReadByte();
             obj = type switch
             {
-                GarnetObjectType.SortedSet => new SortedSetObject(reader),
-                GarnetObjectType.List => new ListObject(reader),
-                GarnetObjectType.Hash => new HashObject(reader),
-                GarnetObjectType.Set => new SetObject(reader),
-                _ => CustomDeserialize((byte)type),
+                GarnetObjectType.SortedSet => new SortedSetObject(reader, expiration),
+                GarnetObjectType.List => new ListObject(reader, expiration),
+                GarnetObjectType.Hash => new HashObject(reader, expiration),
+                GarnetObjectType.Set => new SetObject(reader, expiration),
+                _ => CustomDeserialize((byte)type, expiration),
             };
         }
 
-        private IGarnetObject CustomDeserialize(byte type)
+        private IGarnetObject CustomDeserialize(byte type, long expiration)
         {
             if (type < CustomCommandManager.StartOffset) return null;
-            return customCommands[type - CustomCommandManager.StartOffset].factory.Deserialize(type, reader);
+            return customCommands[type - CustomCommandManager.StartOffset].factory.Deserialize(type, expiration, reader);
         }
 
         /// <inheritdoc />

@@ -36,25 +36,23 @@ namespace Garnet.server
         /// <summary>
         ///  SetObject Constructor
         /// </summary>
-        public SetObject()
+        public SetObject(long expiration = 0) : base(expiration, MemoryUtils.HashSetOverhead)
         {
             set = new HashSet<byte[]>(new ByteArrayComparer());
-            this.Size = MemoryUtils.HashSetOverhead;
         }
 
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public SetObject(HashSet<byte[]> set, long size)
+        public SetObject(HashSet<byte[]> set, long expiration, long size) : base(expiration, size)
         {
             this.set = set;
-            this.Size = size;
         }
 
         /// <summary>
         /// Construct from binary serialized form
         /// </summary>
-        public SetObject(BinaryReader reader) : this()
+        public SetObject(BinaryReader reader, long expiration) : this(expiration)
         {
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
@@ -85,7 +83,7 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new SetObject(set, Size);
+        public override GarnetObjectBase Clone() => new SetObject(set, Expiration, Size);
 
         /// <inheritdoc />
         public override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange)

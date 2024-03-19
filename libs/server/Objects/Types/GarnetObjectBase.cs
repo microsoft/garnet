@@ -24,6 +24,13 @@ namespace Garnet.server
         /// <inheritdoc />
         public long Size { get; set; }
 
+        protected GarnetObjectBase(long expiration, long size)
+        {
+            Debug.Assert(size >= 0);
+            this.Expiration = expiration;
+            this.Size = size;
+        }
+
         /// <inheritdoc />
         public void Serialize(BinaryWriter writer)
         {
@@ -32,6 +39,7 @@ namespace Garnet.server
                 if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
                 {
                     // Directly serialize to wire, do not cache serialized state
+                    writer.Write(Expiration);
                     DoSerialize(writer);
                     serializationState = (int)SerializationPhase.REST;
                     return;
@@ -62,6 +70,7 @@ namespace Garnet.server
                     using (var ms = new MemoryStream())
                     {
                         using var writer = new BinaryWriter(ms, new UTF8Encoding(), true);
+                        writer.Write(Expiration);
                         DoSerialize(writer);
                         serialized = ms.ToArray();
                     }

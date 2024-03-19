@@ -80,11 +80,10 @@ namespace Garnet.server
         /// <summary>
         /// Constructor
         /// </summary>
-        public SortedSetObject()
+        public SortedSetObject(long expiration = 0) : base(expiration, MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
         {
             sortedSet = new(sortedSetComparer);
             sortedSetDict = new Dictionary<byte[], double>(byteArrayComparer);
-            this.Size = MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead;
         }
 
         /// <summary>
@@ -97,18 +96,16 @@ namespace Garnet.server
         /// </summary>
         public SortedSetObject(
             SortedSet<(double, byte[])> sortedSet,
-            Dictionary<byte[], double> sortedSetDict, long expiration, long size)
+            Dictionary<byte[], double> sortedSetDict, long expiration, long size) : base(expiration, size)
         {
             this.sortedSet = sortedSet;
             this.sortedSetDict = sortedSetDict;
-            Expiration = expiration;
-            this.Size = size;
         }
 
         /// <summary>
         /// Construct from binary serialized form
         /// </summary>
-        public SortedSetObject(BinaryReader reader) : this()
+        public SortedSetObject(BinaryReader reader, long expiration) : this(expiration)
         {
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)

@@ -13,13 +13,13 @@ namespace Garnet.server
         /// <summary>
         /// Create new (empty) instance of custom object
         /// </summary>
-        public abstract CustomObjectBase Create(byte type);
+        public abstract CustomObjectBase Create(byte type, long expiration = 0);
 
         /// <summary>
         /// Deserialize value object from given reader
         /// </summary>
         /// <param name="type"></param>
         /// <param name="reader"></param>
-        public abstract CustomObjectBase Deserialize(byte type, BinaryReader reader);
+        public abstract CustomObjectBase Deserialize(byte type, long expiration, BinaryReader reader);
     }
 }

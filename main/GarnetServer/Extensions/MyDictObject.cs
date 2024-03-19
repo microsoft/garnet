@@ -13,24 +13,24 @@ namespace Garnet
 {
     class MyDictFactory : CustomObjectFactory
     {
-        public override CustomObjectBase Create(byte type)
-            => new MyDict(type);
+        public override CustomObjectBase Create(byte type, long expiration)
+            => new MyDict(type, expiration);
 
-        public override CustomObjectBase Deserialize(byte type, BinaryReader reader)
-            => new MyDict(type, reader);
+        public override CustomObjectBase Deserialize(byte type, long expiration, BinaryReader reader)
+            => new MyDict(type, expiration, reader);
     }
 
     class MyDict : CustomObjectBase
     {
         readonly Dictionary<byte[], byte[]> dict;
 
-        public MyDict(byte type) : base(type, MemoryUtils.DictionaryOverhead)
+        public MyDict(byte type, long expiration) : base(type, expiration, MemoryUtils.DictionaryOverhead)
             => dict = new(new ByteArrayComparer());
 
         public MyDict(MyDict obj) : base(obj)
             => dict = obj.dict;
 
-        public MyDict(byte type, BinaryReader reader) : this(type)
+        public MyDict(byte type, long expiration, BinaryReader reader) : this(type, expiration)
         {
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)

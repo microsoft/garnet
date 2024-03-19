@@ -30,19 +30,16 @@ namespace Garnet.server
         /// </summary>
         /// <param name="type">Object type</param>
         /// <param name="size"></param>
-        protected CustomObjectBase(byte type, long size = 0)
+        protected CustomObjectBase(byte type, long expiration, long size = 0) : base(expiration, size)
         {
-            Debug.Assert(size >= 0);
-
             this.type = type;
-            this.Size = size;
         }
 
         /// <summary>
         /// Base copy constructor
         /// </summary>
         /// <param name="obj">Other object</param>
-        protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.Size) { }
+        protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.Expiration, obj.Size) { }
 
         /// <summary>
         /// Create output as simple string, from given string

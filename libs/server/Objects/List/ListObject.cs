@@ -60,19 +60,17 @@ namespace Garnet.server
         /// <summary>
         /// ListObject Constructor
         /// </summary>
-        public ListObject()
+        public ListObject(long expiration = 0) : base(expiration, MemoryUtils.ListOverhead)
         {
             list = new LinkedList<byte[]>();
-            this.Size = MemoryUtils.ListOverhead;
         }
 
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public ListObject(LinkedList<byte[]> list, long size)
+        public ListObject(LinkedList<byte[]> list, long expiration, long size) : base(expiration, size)
         {
             this.list = list;
-            this.Size = size;
         }
 
         /// <summary>
@@ -83,7 +81,7 @@ namespace Garnet.server
         /// <summary>
         /// Construct from binary serialized form
         /// </summary>
-        public ListObject(BinaryReader reader) : this()
+        public ListObject(BinaryReader reader, long expiration) : this(expiration)
         {
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
@@ -114,7 +112,7 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new ListObject(list, Size);
+        public override GarnetObjectBase Clone() => new ListObject(list, Expiration, Size);
 
         /// <inheritdoc />
         public override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange)
