@@ -157,19 +157,19 @@ Garnet/benchmark/Resp.benchmark
 For a run with 1 client session: 
 
 ```bash
-dotnet run -c Release --f net8.0 -- --online --op-workload GET,SET --op-percent 50,50 -b 1  -t 1
+dotnet run -c Release -f net8.0 -- --online --op-workload GET,SET --op-percent 50,50 -b 1  -t 1
 ```
 
 For a run with 16 client sessions:
 
 ```bash
-dotnet run -c Release --f net8.0 -- --online --op-workload GET,SET --op-percent 50,50 -b 1  -t 16
+dotnet run -c Release -f net8.0 -- --online --op-workload GET,SET --op-percent 50,50 -b 1  -t 16
 ```
 
 For a run using ZADD and ZCARD commands:
 
 ```bash
-dotnet run -c Release --f net8.0 -- --online --op-workload ZADD,ZCARD --op-percent 50,50 -b 1  -t 1 --keylength --client SERedis
+dotnet run -c Release -f net8.0 -- --online --op-workload ZADD,ZCARD --op-percent 50,50 -b 1  -t 1 --keylength --client SERedis
 ```
 
 **Where:**
@@ -189,11 +189,11 @@ This category of benchmark use our `LightClient` with pre-created batches, to me
 Some examples of running offline benchmarks are:
 
 ```bash
-dotnet run -c Release --f net8.0 -- --op GET -t 2,4,8,16 -b 512 --dbsize 10241024 --keylength 1024
+dotnet run -c Release -f net8.0 -- --op GET -t 2,4,8,16 -b 512 --dbsize 10241024 --keylength 1024
 ```
 
 ```bash
-dotnet run -c Release --f net8.0 -- --op ZADDCARD -t 64 --b 512 --dbsize 16777216 --keylength 512
+dotnet run -c Release -f net8.0 -- --op ZADDCARD -t 64 --b 512 --dbsize 16777216 --keylength 512
 ```
 **Where:**
 
@@ -208,13 +208,13 @@ You can pre-populate the store with keys before running GET benchmarks by perfor
 - Execute MSET with the Resp Benchmark tool:
 
 ```bash
-dotnet run -c Release --f net8.0 -- --op MSET --dbsize 16777216 --keylength 512
+dotnet run -c Release -f net8.0 -- --op MSET --dbsize 16777216 --keylength 512
 ```
 
 Then execute the GET command in online mode:
 
 ```bash
-dotnet run -c Release --f net8.0 -- --op-workload GET --online -b 1 --op-percent 100 -t 64 --client GarnetClientSession --itp 1024 --runtime -1 --dbsize 16777216 --keylength 512
+dotnet run -c Release -f net8.0 -- --op-workload GET --online -b 1 --op-percent 100 -t 64 --client GarnetClientSession --itp 1024 --runtime -1 --dbsize 16777216 --keylength 512
 ```
 
 If you want to know how high the hit rate you can execute from any client CLI tool:
