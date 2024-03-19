@@ -45,7 +45,7 @@ namespace Garnet.client
             offset = curr;
 
             //1
-            while (!RespWriteUtils.WriteBulkString("AUTH"u8, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(AUTH, ref curr, end))
             {
                 Flush();
                 curr = offset;
