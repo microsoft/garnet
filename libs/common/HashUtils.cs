@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace Garnet.common
@@ -10,14 +11,9 @@ namespace Garnet.common
     /// </summary>
     public static class HashUtils
     {
-        /// <summary>
-        /// rotate shift left
-        /// </summary>
-        /// <param name="v"></param>
-        /// <param name="r"></param>
-        /// <returns></returns>
+        /// <inheritdoc cref="BitOperations.RotateLeft(ulong, int)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static unsafe ulong Rotl64(ulong v, int r) => ((ulong)(v << r)) | ((ulong)(v >> (64 - r)));
+        static unsafe ulong Rotl64(ulong v, int r) => BitOperations.RotateLeft(v, r);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static unsafe ulong fmix64(ulong k)
