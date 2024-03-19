@@ -107,10 +107,10 @@ namespace Garnet.server
 
         /// <summary>
         /// Serialize to given writer
+        /// NOTE: Make sure to first call base.DoSerialize(writer) in all derived classes.
         /// </summary>
         public virtual void DoSerialize(BinaryWriter writer)
         {
-            writer.Write(Type);
             writer.Write(Expiration);
         }
 

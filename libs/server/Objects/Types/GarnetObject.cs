@@ -84,13 +84,12 @@ namespace Garnet.server
             using var ms = new MemoryStream(data);
             using var reader = new BinaryReader(ms);
             var type = (GarnetObjectType)reader.ReadByte();
-            var expiration = reader.ReadInt64();
             return type switch
             {
-                GarnetObjectType.SortedSet => new SortedSetObject(reader),
-                GarnetObjectType.List => new ListObject(reader),
-                GarnetObjectType.Hash => new HashObject(reader),
-                GarnetObjectType.Set => new SetObject(reader),
+                GarnetObjectType.SortedSet => new SortedSetObject(reader, expiration),
+                GarnetObjectType.List => new ListObject(reader, expiration),
+                GarnetObjectType.Hash => new HashObject(reader, expiration),
+                GarnetObjectType.Set => new SetObject(reader, expiration),
                 _ => throw new Exception("Unsupported data type"),
             };
         }
