@@ -439,17 +439,17 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
             }
 
-            byte[] operation = default;
+            ReadOnlySpan<byte> operation = default;
             var sortedOperation = SortedSetOperation.ZRANGE;
             switch (sortedSetOrderOperation)
             {
                 case SortedSetOrderOperation.ByScore:
                     sortedOperation = SortedSetOperation.ZRANGEBYSCORE;
-                    operation = "BYSCORE"u8.ToArray();
+                    operation = "BYSCORE"u8;
                     break;
                 case SortedSetOrderOperation.ByLex:
                     sortedOperation = SortedSetOperation.ZRANGE;
-                    operation = "BYLEX"u8.ToArray();
+                    operation = "BYLEX"u8;
                     break;
                 case SortedSetOrderOperation.ByRank:
                     if (reverse)

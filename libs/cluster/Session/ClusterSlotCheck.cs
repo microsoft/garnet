@@ -30,11 +30,11 @@ namespace Garnet.cluster
         private void Redirect(ushort slot, ClusterConfig config)
         {
             var (address, port) = config.GetEndpointFromSlot(slot);
-            byte[] resp;
+            ReadOnlySpan<byte> resp;
             if (port != 0)
                 resp = Encoding.ASCII.GetBytes($"-MOVED {slot} {address}:{port}\r\n");
             else
-                resp = "-CLUSTERDOWN Hash slot not served\r\n"u8.ToArray();
+                resp = "-CLUSTERDOWN Hash slot not served\r\n"u8;
 
             logger?.LogDebug("SEND: {msg}", Encoding.ASCII.GetString(resp).Replace("\n", "!").Replace("\r", "|"));
             while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
