@@ -60,8 +60,6 @@ namespace Tsavorite.test.Expiration
             internal TestOp testOp;
         }
 
-        private readonly int InputSize = Utility.GetSize(default(ExpirationInput));
-
         public struct ExpirationOutput
         {
             internal int retrievedValue;
