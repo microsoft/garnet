@@ -187,40 +187,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Check if two byte arrays of given length are equal
-        /// </summary>
-        /// <param name="src"></param>
-        /// <param name="dst"></param>
-        /// <param name="length"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe bool IsEqual(byte* src, byte* dst, int length)
-        {
-            for (int i = 0; i < length; i++)
-            {
-                if (*(src + i) != *(dst + i))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// Copy numBytes bytes from src to dest
-        /// </summary>
-        /// <param name="src"></param>
-        /// <param name="dest"></param>
-        /// <param name="numBytes"></param>
-        public static unsafe void Copy(byte* src, byte* dest, int numBytes)
-        {
-            for (int i = 0; i < numBytes; i++)
-            {
-                *(dest + i) = *(src + i);
-            }
-        }
-
-        /// <summary>
         /// Get 64-bit hash code for a long value
         /// </summary>
         /// <param name="input"></param>
