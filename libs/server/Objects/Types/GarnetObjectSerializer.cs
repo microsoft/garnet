@@ -45,13 +45,9 @@ namespace Garnet.server
         public override void Serialize(ref IGarnetObject obj)
         {
             if (obj == null)
-            {
                 writer.Write((byte)GarnetObjectType.Null);
-            }
             else
-            {
                 obj.Serialize(writer);
-            }
         }
     }
 }
