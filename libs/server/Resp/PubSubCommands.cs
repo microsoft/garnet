@@ -93,7 +93,7 @@ namespace Garnet.server
 
             if (subscribeBroker == null)
             {
-                var resp = Encoding.ASCII.GetBytes("-ERR PUBLISH is disabled, enable it with --pubsub option.\r\n");
+                ReadOnlySpan<byte> resp = "-ERR PUBLISH is disabled, enable it with --pubsub option.\r\n"u8;
                 while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
@@ -151,7 +151,7 @@ namespace Garnet.server
 
             if (disabledBroker)
             {
-                var resp = Encoding.ASCII.GetBytes("-ERR SUBSCRIBE is disabled, enable it with --pubsub option.\r\n");
+                ReadOnlySpan<byte> resp = "-ERR SUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
                 while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
@@ -203,7 +203,7 @@ namespace Garnet.server
 
             if (disabledBroker)
             {
-                var resp = Encoding.ASCII.GetBytes("-ERR SUBSCRIBE is disabled, enable it with --pubsub option.\r\n");
+                ReadOnlySpan<byte> resp = "-ERR SUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
                 while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
@@ -225,7 +225,7 @@ namespace Garnet.server
             {
                 if (subscribeBroker == null)
                 {
-                    var resp = Encoding.ASCII.GetBytes("-ERR UNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n");
+                    ReadOnlySpan<byte> resp = "-ERR UNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
                     while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
@@ -259,8 +259,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
-                    byte[] commandLowerBytes = Encoding.ASCII.GetBytes("unsubscribe");
-                    while (!RespWriteUtils.WriteBulkString(commandLowerBytes, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
                     while (!RespWriteUtils.WriteNull(ref dcurr, dend))
                         SendAndReset();
@@ -307,7 +306,7 @@ namespace Garnet.server
 
             if (subscribeBroker == null)
             {
-                var resp = Encoding.ASCII.GetBytes("-ERR UNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n");
+                ReadOnlySpan<byte> resp = "-ERR UNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
                 while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                     SendAndReset();
             }
@@ -325,7 +324,7 @@ namespace Garnet.server
             {
                 if (subscribeBroker == null)
                 {
-                    var resp = Encoding.ASCII.GetBytes("-ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n");
+                    ReadOnlySpan<byte> resp = "-ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
                     while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
@@ -394,7 +393,7 @@ namespace Garnet.server
 
             if (subscribeBroker == null)
             {
-                var resp = Encoding.ASCII.GetBytes("-ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n");
+                ReadOnlySpan<byte> resp = "-ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
                 while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                     SendAndReset();
             }

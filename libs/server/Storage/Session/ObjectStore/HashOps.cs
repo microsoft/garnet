@@ -370,7 +370,7 @@ namespace Garnet.server
             inputLength += tmp.length;
 
             //write withvalues
-            var withValuesBytes = Encoding.ASCII.GetBytes("WITHVALUES");
+            ReadOnlySpan<byte> withValuesBytes = "WITHVALUES"u8;
             fixed (byte* withValuesPtr = withValuesBytes)
             {
                 withValuesArgSlice = new ArgSlice(withValuesPtr, withValuesBytes.Length);

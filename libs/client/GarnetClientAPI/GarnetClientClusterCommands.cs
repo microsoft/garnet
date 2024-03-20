@@ -14,8 +14,8 @@ namespace Garnet.client
         /// <summary>
         /// CLUSTER resp formatted
         /// </summary>
-        public static readonly Memory<byte> CLUSTER = Encoding.ASCII.GetBytes("$7\r\nCLUSTER\r\n");
-        static readonly Memory<byte> FAILOVER = Encoding.ASCII.GetBytes("FAILOVER");
+        public static readonly Memory<byte> CLUSTER = "$7\r\nCLUSTER\r\n"u8.ToArray();
+        static readonly Memory<byte> FAILOVER = "FAILOVER"u8.ToArray();
 
         /// <summary>
         /// Issue cluster failover command to replica node
