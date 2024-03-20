@@ -149,22 +149,7 @@ namespace Tsavorite.core
         /// <param name="key1"></param>
         /// <param name="key2"></param>
         /// <returns></returns>
-        public unsafe bool Equals(ref byte[] key1, ref byte[] key2)
-        {
-            // Use locals in case the record space is cleared.
-            byte[] k1 = key1, k2 = key2;
-            if (k1 is null || k2 is null)
-                return false;
-
-            int length = k1.Length;
-            if (length != k2.Length)
-                return false;
-
-            fixed (byte* b1 = k1, b2 = k2)
-            {
-                return Utility.IsEqual(b1, b2, length);
-            }
-        }
+        public bool Equals(ref byte[] key1, ref byte[] key2) => key1.AsSpan().SequenceEqual(key2);
 
         /// <summary>
         /// GetHashCode64
