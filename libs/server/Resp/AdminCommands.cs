@@ -140,16 +140,9 @@ namespace Garnet.server
                     {
                         var key = GetCommand(bufSpan, out bool success2);
                         if (!success2) return false;
-                        if (CmdStrings.GetConfig(key.ToArray(), out var val))
-                        {
-                            while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(val), ref dcurr, dend))
+
+                        while (!RespWriteUtils.WriteResponse(CmdStrings.GetConfig(key), ref dcurr, dend))
                                 SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
-                                SendAndReset();
-                        }
                     }
                 }
                 else if (param.SequenceEqual(CmdStrings.REWRITE) || param.SequenceEqual(CmdStrings.rewrite))

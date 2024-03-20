@@ -23,7 +23,7 @@ namespace Garnet.server
         /// </summary>
         int zaddAddCount;
 
-        static readonly byte[] withscores = Encoding.ASCII.GetBytes("WITHSCORES");
+        static ReadOnlySpan<byte> withscores => "WITHSCORES"u8;
 
         /// <summary>
         /// Adds all the specified members with the specified scores to the sorted set stored at key.
@@ -606,7 +606,7 @@ namespace Garnet.server
                         if (output.countDone == Int32.MaxValue)
                         {
                             // Error in arguments
-                            var errorMessage = Encoding.ASCII.GetBytes("-ERR max or min value is not a float value.\r\n");
+                            ReadOnlySpan<byte> errorMessage = "-ERR max or min value is not a float value.\r\n"u8;
                             while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
                                 SendAndReset();
                         }
@@ -705,7 +705,7 @@ namespace Garnet.server
                         if (output.countDone == Int32.MaxValue)
                         {
                             // Error in arguments
-                            var errorMessage = Encoding.ASCII.GetBytes("-ERR max or min value not in a valid range.\r\n");
+                            ReadOnlySpan<byte> errorMessage = "-ERR max or min value not in a valid range.\r\n"u8;
                             while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
                                 SendAndReset();
                         }
@@ -790,7 +790,7 @@ namespace Garnet.server
                 //restore input
                 *inputPtr = save;
 
-                byte[] errorMessage = default;
+                ReadOnlySpan<byte> errorMessage = default;
 
                 switch (status)
                 {
@@ -801,7 +801,7 @@ namespace Garnet.server
                             var tokens = ReadLeftToken(count - 2, ref ptr);
                             if (tokens < count - 2)
                                 return false;
-                            errorMessage = Encoding.ASCII.GetBytes("-ERR wrong key type used in ZINCRBY command.\r\n");
+                            errorMessage = "-ERR wrong key type used in ZINCRBY command.\r\n"u8;
                         }
                         else
                         {
@@ -811,7 +811,7 @@ namespace Garnet.server
                             if (objOutputHeader.countDone == Int32.MinValue)
                                 return false;
                             else if (objOutputHeader.countDone == Int32.MaxValue)
-                                errorMessage = Encoding.ASCII.GetBytes("-ERR increment value is not valid.\r\n");
+                                errorMessage = "-ERR increment value is not valid.\r\n"u8;
                             ptr += objOutputHeader.bytesDone;
                         }
                         break;
@@ -1043,7 +1043,7 @@ namespace Garnet.server
                 }
 
                 var paramCount = 0;
-                ReadOnlySpan<byte> withScoresSpan = Encoding.ASCII.GetBytes("WITHSCORES");
+                ReadOnlySpan<byte> withScoresSpan = "WITHSCORES"u8;
                 Byte[] includeWithScores = default;
 
                 bool includedCount = false;
