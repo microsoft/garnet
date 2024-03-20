@@ -36,7 +36,6 @@
   
   <ItemGroup>
 	  <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-    <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="7.0.0" />
   </ItemGroup>
   
