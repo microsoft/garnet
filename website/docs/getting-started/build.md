@@ -16,7 +16,6 @@ git clone git@github.com:microsoft/garnet.git
 ## Build the Project
 
 Make sure .NET 8 is installed, following instructions [here](https://dotnet.microsoft.com/en-us/download). You can use either Linux or Windows; Garnet works equally well on both platforms.
-You can also use it on Mac OS X.
 
 Go to the root folder of the repo and build using dotnet, or open Garnet.sln and build using Visual Studio 2022 (we recommend the Preview version for the latest features). Make sure Visual Studio is up to date by checking for updates.
 
