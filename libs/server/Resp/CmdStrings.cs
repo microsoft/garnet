@@ -12,24 +12,15 @@ namespace Garnet.server
     /// </summary>
     static partial class CmdStrings
     {
-        /// <summary>
-        /// Config map
-        /// </summary>
-        static readonly Dictionary<byte[], byte[]> configGetMap;
-
-        static CmdStrings()
+        public static ReadOnlySpan<byte> GetConfig(ReadOnlySpan<byte> key)
         {
-            configGetMap = new Dictionary<byte[], byte[]>(new ByteArrayComparer())
-            {
-                [Encoding.ASCII.GetBytes("timeout")] = Encoding.ASCII.GetBytes("*2\r\n$7\r\ntimeout\r\n$1\r\n0\r\n"),
-                [Encoding.ASCII.GetBytes("save")] = Encoding.ASCII.GetBytes("*2\r\n$4\r\nsave\r\n$0\r\n\r\n"),
-                [Encoding.ASCII.GetBytes("appendonly")] = Encoding.ASCII.GetBytes("*2\r\n$10\r\nappendonly\r\n$2\r\nno\r\n"),
-                [Encoding.ASCII.GetBytes("slave-read-only")] = Encoding.ASCII.GetBytes("$3\r\nyes\r\n"),
-                [Encoding.ASCII.GetBytes("databases")] = Encoding.ASCII.GetBytes("$2\r\n16\r\n"),
-            };
+            if (key.SequenceEqual("timeout"u8)) return "*2\r\n$7\r\ntimeout\r\n$1\r\n0\r\n"u8;
+            else if (key.SequenceEqual("save"u8)) return "*2\r\n$4\r\nsave\r\n$0\r\n\r\n"u8;
+            else if (key.SequenceEqual("appendonly"u8)) return "*2\r\n$10\r\nappendonly\r\n$2\r\nno\r\n"u8;
+            else if (key.SequenceEqual("slave-read-only"u8)) return "$3\r\nyes\r\n"u8;
+            else if (key.SequenceEqual("databases"u8)) return "$2\r\n16\r\n"u8;
+            else return RESP_EMPTYLIST;
         }
-
-        public static bool GetConfig(byte[] key, out byte[] value) => configGetMap.TryGetValue(key, out value);
 
         /// <summary>        
         /// Request strings        

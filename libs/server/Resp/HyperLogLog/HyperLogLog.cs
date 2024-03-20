@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 #endif
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 
@@ -142,43 +143,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public byte clz(long hv)
         {
-#if NET5_0_OR_GREATER
             ulong bits = (ulong)hv;
-            byte lz = (byte)(System.Runtime.Intrinsics.X86.Lzcnt.X64.LeadingZeroCount(bits));
+            byte lz = (byte)(BitOperations.LeadingZeroCount(bits));
             return lz >= qbit ? (byte)(qbit + 1) : (byte)(lz + 1);
-#else
-            ulong bits = (ulong)((ulong)hv >> pbit);
-            byte pc = popc(bsmr(bits));
-            return (byte)(qbit - pc + 1);
-#endif
-        }
-
-        //bit smearing
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static ulong bsmr(ulong x)
-        {
-            ulong y = x;
-            y |= y >> 1;
-            y |= y >> 2;
-            y |= y >> 4;
-            y |= y >> 8;
-            y |= y >> 16;
-            y |= y >> 32;
-            return y;
-        }
-
-        //count bit set
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static byte popc(ulong x)
-        {
-            ulong y = x;
-            y = (y & 0x5555555555555555) + ((y >> 1) & 0x5555555555555555);
-            y = (y & 0x3333333333333333) + ((y >> 2) & 0x3333333333333333);
-            y = (y & 0x0F0F0F0F0F0F0F0F) + ((y >> 4) & 0x0F0F0F0F0F0F0F0F);
-            y = (y & 0x007F007F007F007F) + ((y >> 8) & 0x007F007F007F007F);
-            y = (y & 0x0000007F0000007F) + ((y >> 16) & 0x0000007F0000007F);
-            y = (y & 0x000000000000007F) + ((y >> 32) & 0x000000000000007F);
-            return (byte)(y & 0x7F);
         }
 
         /// <summary>

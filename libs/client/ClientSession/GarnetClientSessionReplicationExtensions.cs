@@ -16,10 +16,10 @@ namespace Garnet.client
     /// </summary>
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
-        static readonly byte[] initiate_replica_sync = Encoding.ASCII.GetBytes("initiate_replica_sync");
-        static readonly byte[] send_ckpt_metadata = Encoding.ASCII.GetBytes("send_ckpt_metadata");
-        static readonly byte[] send_ckpt_file_segment = Encoding.ASCII.GetBytes("send_ckpt_file_segment");
-        static readonly byte[] begin_replica_recover = Encoding.ASCII.GetBytes("begin_replica_recover");
+        static ReadOnlySpan<byte> initiate_replica_sync => "initiate_replica_sync"u8;
+        static ReadOnlySpan<byte> send_ckpt_metadata => "send_ckpt_metadata"u8;
+        static ReadOnlySpan<byte> send_ckpt_file_segment => "send_ckpt_file_segment"u8;
+        static ReadOnlySpan<byte> begin_replica_recover => "begin_replica_recover"u8;
 
         /// <summary>
         /// Initiate checkpoint retrieval from replica by sending replica checkpoint information and AOF address range
@@ -142,7 +142,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(fileTokenBytes, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(fileTokenBytes.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -158,7 +158,7 @@ namespace Garnet.client
             offset = curr;
 
             //5
-            while (!RespWriteUtils.WriteBulkString(data, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(data.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -208,7 +208,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(fileTokenBytes, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(fileTokenBytes.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;

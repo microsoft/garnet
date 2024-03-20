@@ -208,3 +208,7 @@ nativebin/
 
 # Garnet cluster tests temporary files
 test/tmp/
+
+# IDE files
+.vscode/
+.idea/
