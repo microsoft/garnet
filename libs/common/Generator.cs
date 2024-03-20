@@ -11,7 +11,7 @@ namespace Garnet.common
     /// </summary>
     public class Generator
     {
-        static readonly byte[] hexchars = Encoding.ASCII.GetBytes("0123456789abcdef");
+        static ReadOnlySpan<byte> hexchars => "0123456789abcdef"u8;
 
         /// <summary>
         /// Random hex id

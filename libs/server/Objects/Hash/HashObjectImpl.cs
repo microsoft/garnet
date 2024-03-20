@@ -430,7 +430,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        var errorMessage = Encoding.ASCII.GetBytes("-ERR field value is not a number\r\n");
+                        ReadOnlySpan<byte> errorMessage = "-ERR field value is not a number\r\n"u8;
                         while (!RespWriteUtils.WriteResponse(errorMessage, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
@@ -439,7 +439,7 @@ namespace Garnet.server
                 {
                     if (!Single.TryParse(Encoding.ASCII.GetString(incr), out var resultIncr))
                     {
-                        var errorMessage = Encoding.ASCII.GetBytes("-ERR field value is not a number\r\n");
+                        ReadOnlySpan<byte> errorMessage = "-ERR field value is not a number\r\n"u8;
                         while (!RespWriteUtils.WriteResponse(errorMessage, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }

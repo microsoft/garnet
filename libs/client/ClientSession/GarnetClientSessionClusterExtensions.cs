@@ -16,7 +16,7 @@ namespace Garnet.client
     /// </summary>
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
-        static readonly byte[] GOSSIP = Encoding.ASCII.GetBytes("GOSSIP");
+        static ReadOnlySpan<byte> GOSSIP => "GOSSIP"u8;
 
         /// <summary>
         /// Send gossip message to corresponding node
@@ -55,7 +55,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(byteArray, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(byteArray.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
