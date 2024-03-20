@@ -439,17 +439,17 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
             }
 
-            byte[] operation = default;
+            ReadOnlySpan<byte> operation = default;
             var sortedOperation = SortedSetOperation.ZRANGE;
             switch (sortedSetOrderOperation)
             {
                 case SortedSetOrderOperation.ByScore:
                     sortedOperation = SortedSetOperation.ZRANGEBYSCORE;
-                    operation = Encoding.ASCII.GetBytes("BYSCORE");
+                    operation = "BYSCORE"u8;
                     break;
                 case SortedSetOrderOperation.ByLex:
                     sortedOperation = SortedSetOperation.ZRANGE;
-                    operation = Encoding.ASCII.GetBytes("BYLEX");
+                    operation = "BYLEX"u8;
                     break;
                 case SortedSetOrderOperation.ByRank:
                     if (reverse)
@@ -484,7 +484,7 @@ namespace Garnet.server
             //reverse
             if (sortedOperation != SortedSetOperation.ZREVRANGE && reverse)
             {
-                var reverseBytes = Encoding.ASCII.GetBytes("REV");
+                ReadOnlySpan<byte> reverseBytes = "REV"u8;
                 fixed (byte* ptrOp = reverseBytes)
                 {
                     tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice { ptr = ptrOp, length = reverseBytes.Length });
@@ -495,7 +495,7 @@ namespace Garnet.server
             //limit parameter
             if (limit != default && (sortedSetOrderOperation == SortedSetOrderOperation.ByScore || sortedSetOrderOperation == SortedSetOrderOperation.ByLex))
             {
-                var limitBytes = Encoding.ASCII.GetBytes("LIMIT");
+                ReadOnlySpan<byte> limitBytes = "LIMIT"u8;
                 fixed (byte* ptrOp = limitBytes)
                 {
                     tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice { ptr = ptrOp, length = limitBytes.Length });
