@@ -16,7 +16,6 @@
     <language>en-US</language>
     <tags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</tags>
     <dependencies>
-        <dependency id="System.Runtime.CompilerServices.Unsafe" version="6.0.0" />
 		<dependency id="Microsoft.Extensions.Logging" version="7.0.0" />
 		<dependency id="Microsoft.Extensions.Logging.Configuration" version="7.0.0" />
 		<dependency id="Microsoft.Extensions.Logging.Console" version="7.0.0" />

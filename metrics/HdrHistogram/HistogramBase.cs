@@ -9,6 +9,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Numerics;
 using System.Text.RegularExpressions;
 using System.Threading;
 using HdrHistogram.Iteration;
@@ -610,7 +611,7 @@ namespace HdrHistogram
         }
         private static int GetBucketIndex(long value, long subBucketMask, int bucketIndexOffset)
         {
-            var leadingZeros = Bitwise.NumberOfLeadingZeros(value | subBucketMask); // smallest power of 2 containing value
+            var leadingZeros = BitOperations.LeadingZeroCount((ulong)(value | subBucketMask)); // smallest power of 2 containing value
             return bucketIndexOffset - leadingZeros;
         }
 
