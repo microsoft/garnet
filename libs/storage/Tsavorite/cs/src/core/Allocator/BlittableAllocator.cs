@@ -392,7 +392,6 @@ namespace Tsavorite.core
                                         CancellationTokenSource cts = null)
         {
             var usedDevice = device;
-            IDevice usedObjlogDevice = objectLogDevice;
 
             if (device == null)
             {
