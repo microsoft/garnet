@@ -12,9 +12,9 @@ namespace Garnet.client
 {
     public sealed partial class GarnetClient
     {
-        static readonly Memory<byte> SAVE = Encoding.ASCII.GetBytes("$4\r\nSAVE\r\n");
-        static readonly Memory<byte> INFO = Encoding.ASCII.GetBytes("$4\r\nINFO\r\n");
-        static readonly Memory<byte> REPLICAOF = Encoding.ASCII.GetBytes("$9\r\nREPLICAOF\r\n");
+        static readonly Memory<byte> SAVE = "$4\r\nSAVE\r\n"u8.ToArray();
+        static readonly Memory<byte> INFO = "$4\r\nINFO\r\n"u8.ToArray();
+        static readonly Memory<byte> REPLICAOF = "$9\r\nREPLICAOF\r\n"u8.ToArray();
 
         /// <summary>
         /// Take a checkpoint of the Garnet instance.

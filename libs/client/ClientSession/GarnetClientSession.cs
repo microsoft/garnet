@@ -195,8 +195,8 @@ namespace Garnet.client
             Flush();
         }
 
-        static readonly byte[] CLUSTER = Encoding.ASCII.GetBytes("$7\r\nCLUSTER\r\n");
-        static readonly byte[] appendLog = Encoding.ASCII.GetBytes("appendlog");
+        static ReadOnlySpan<byte> CLUSTER => "$7\r\nCLUSTER\r\n"u8;
+        static ReadOnlySpan<byte> appendLog => "appendlog"u8;
 
         /// <summary>
         /// ClusterAppendLog

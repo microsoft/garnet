@@ -151,13 +151,13 @@ namespace Garnet.common
         /// <summary>
         /// Write byte array directly
         /// </summary>
-        public static bool WriteDirect(byte[] item, ref byte* curr, byte* end)
+        public static bool WriteDirect(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {
             int totalLen = item.Length;
             if (totalLen > (int)(end - curr))
                 return false;
 
-            new ReadOnlySpan<byte>(item).CopyTo(new Span<byte>(curr, item.Length));
+            item.CopyTo(new Span<byte>(curr, item.Length));
             curr += item.Length;
             return true;
         }
@@ -175,25 +175,10 @@ namespace Garnet.common
             return true;
         }
 
-
-        /// <summary>
-        /// Write byte array directly
-        /// </summary>
-        public static bool WriteDirect(Memory<byte> item, ref byte* curr, byte* end)
-        {
-            int totalLen = item.Length;
-            if (totalLen > (int)(end - curr))
-                return false;
-
-            item.Span.CopyTo(new Span<byte>(curr, item.Length));
-            curr += item.Length;
-            return true;
-        }
-
         /// <summary>
         /// Write bulk string
         /// </summary>
-        public static bool WriteBulkString(byte[] item, ref byte* curr, byte* end)
+        public static bool WriteBulkString(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {
             var itemDigits = NumUtils.NumDigits(item.Length);
             int totalLen = 1 + itemDigits + 2 + item.Length + 2;
@@ -203,26 +188,7 @@ namespace Garnet.common
             *curr++ = (byte)'$';
             NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
             WriteNewline(ref curr);
-            new ReadOnlySpan<byte>(item).CopyTo(new Span<byte>(curr, item.Length));
-            curr += item.Length;
-            WriteNewline(ref curr);
-            return true;
-        }
-
-        /// <summary>
-        /// Write bulk string
-        /// </summary>
-        public static bool WriteBulkString(Memory<byte> item, ref byte* curr, byte* end)
-        {
-            var itemDigits = NumUtils.NumDigits(item.Length);
-            int totalLen = 1 + itemDigits + 2 + item.Length + 2;
-            if (totalLen > (int)(end - curr))
-                return false;
-
-            *curr++ = (byte)'$';
-            NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
-            WriteNewline(ref curr);
-            item.Span.CopyTo(new Span<byte>(curr, item.Length));
+            item.CopyTo(new Span<byte>(curr, item.Length));
             curr += item.Length;
             WriteNewline(ref curr);
             return true;

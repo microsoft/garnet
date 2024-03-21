@@ -143,9 +143,9 @@ namespace GarnetClientSample
             long n = db.StringDecrement(strKey, nDecr);
             int nRetVal = Convert.ToInt32(db.StringGet(strKey));
             if (nVal - nDecr != nRetVal)
-                Console.WriteLine("SingleIncr: Error");
+                Console.WriteLine("SingleDecrBy: Error");
             else
-                Console.WriteLine("SingleIncr: Success");
+                Console.WriteLine("SingleDecrBy: Success");
         }
 
         void SingleDecr(string strKey, int nVal)
@@ -170,6 +170,7 @@ namespace GarnetClientSample
 
             // Key storing integer
             var strKey = "key1";
+            int init = Convert.ToInt32(db.StringGet(strKey));
             db.StringIncrement(strKey);
 
             int retVal = Convert.ToInt32(db.StringGet(strKey));
@@ -177,10 +178,10 @@ namespace GarnetClientSample
             db.StringIncrement(strKey);
             retVal = Convert.ToInt32(db.StringGet(strKey));
 
-            if (2 != retVal)
-                Console.WriteLine("SingleSetGet: Error");
+            if (init + 2 != retVal)
+                Console.WriteLine("SingleIncrNoKey: Error");
             else
-                Console.WriteLine("SingleSetGet: Success");
+                Console.WriteLine("SingleIncrNoKey: Success");
         }
 
         void SingleExists()
@@ -211,7 +212,7 @@ namespace GarnetClientSample
             db.StringSet(strKey, nVal);
             db.KeyDelete(strKey);
 
-            bool fExists = false;
+            bool fExists = db.KeyExists("key1", CommandFlags.None);
             if (!fExists)
                 Console.WriteLine("Pass: strKey, Key does not exists");
             else

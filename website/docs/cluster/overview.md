@@ -71,7 +71,7 @@ If you don't specify the `--checkpointdir` option Garnet will you the startup fo
 ```bash
 	GarnetServer --cluster --checkpointdir clusterData/7000 --port 7000
 	GarnetServer --cluster --checkpointdir clusterData/7001 --port 7001
-	GarnetServer --cluster --checkpointdir clusterData/7001 --port 7002
+	GarnetServer --cluster --checkpointdir clusterData/7002 --port 7002
 ```
 
 Once the instance are up and running, you can use any kind of redis compatible client to initialize
