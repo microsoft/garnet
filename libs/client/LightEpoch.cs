@@ -15,22 +15,22 @@ namespace Garnet.client
     public sealed unsafe class LightEpoch
     {
         /// Size of cache line in bytes
-        public const int kCacheLineBytes = 64;
+        private const int KCacheLineBytes = 64;
 
         /// <summary>
         /// Default invalid index entry.
         /// </summary>
-        const int kInvalidIndex = 0;
+        const int KInvalidIndex = 0;
 
         /// <summary>
         /// Default number of entries in the entries table
         /// </summary>
-        static readonly ushort kTableSize = Math.Max((ushort)128, (ushort)(Environment.ProcessorCount * 2));
+        static readonly ushort KTableSize = Math.Max((ushort)128, (ushort)(Environment.ProcessorCount * 2));
 
         /// <summary>
         /// Default drainlist size
         /// </summary>
-        const int kDrainListSize = 16;
+        const int KDrainListSize = 16;
 
         /// <summary>
         /// Thread protection status entries.
@@ -53,7 +53,7 @@ namespace Garnet.client
         /// ensure latest value is seen by the last suspended thread.
         /// </summary>
         volatile int drainCount = 0;
-        readonly EpochActionPair[] drainList = new EpochActionPair[kDrainListSize];
+        readonly EpochActionPair[] drainList = new EpochActionPair[KDrainListSize];
 
         /// <summary>
         /// A thread's entry in the epoch table.
@@ -100,7 +100,7 @@ namespace Garnet.client
 
             // Over-allocate to do cache-line alignment
 #if NET5_0_OR_GREATER
-            threadIndex = GC.AllocateArray<Entry>(kTableSize + 2, true);
+            threadIndex = GC.AllocateArray<Entry>(KTableSize + 2, true);
             p = (long)Unsafe.AsPointer(ref threadIndex[0]);
 #else
             threadIndex = new Entry[kTableSize + 2];
@@ -108,7 +108,7 @@ namespace Garnet.client
             p = (long)threadIndexHandle.AddrOfPinnedObject();
 #endif
             // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
+            long p2 = (p + (KCacheLineBytes - 1)) & ~(KCacheLineBytes - 1);
             threadIndexAligned = (Entry*)p2;
         }
 
@@ -120,7 +120,7 @@ namespace Garnet.client
             long p;
 
 #if NET5_0_OR_GREATER
-            tableRaw = GC.AllocateArray<Entry>(kTableSize + 2, true);
+            tableRaw = GC.AllocateArray<Entry>(KTableSize + 2, true);
             p = (long)Unsafe.AsPointer(ref tableRaw[0]);
 #else
             // Over-allocate to do cache-line alignment
@@ -129,14 +129,14 @@ namespace Garnet.client
             p = (long)tableHandle.AddrOfPinnedObject();
 #endif
             // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
+            long p2 = (p + (KCacheLineBytes - 1)) & ~(KCacheLineBytes - 1);
             tableAligned = (Entry*)p2;
 
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
 
-            for (int i = 0; i < kDrainListSize; i++)
-                drainList[i].epoch = int.MaxValue;
+            for (int i = 0; i < KDrainListSize; i++)
+                drainList[i].Epoch = int.MaxValue;
             drainCount = 0;
         }
 
@@ -159,7 +159,7 @@ namespace Garnet.client
         public bool ThisInstanceProtected()
         {
             int entry = threadEntryIndex;
-            if (kInvalidIndex != entry)
+            if (KInvalidIndex != entry)
             {
                 if ((*(tableAligned + entry)).threadId == entry)
                     return true;
@@ -174,7 +174,7 @@ namespace Garnet.client
         public static bool AnyInstanceProtected()
         {
             int entry = threadEntryIndex;
-            if (kInvalidIndex != entry)
+            if (KInvalidIndex != entry)
             {
                 return threadEntryIndexCount > 0;
             }
@@ -239,39 +239,39 @@ namespace Garnet.client
         /// <returns></returns>
         public void BumpCurrentEpoch(Action onDrain)
         {
-            int PriorEpoch = BumpCurrentEpoch() - 1;
+            int priorEpoch = BumpCurrentEpoch() - 1;
 
             int i = 0;
             while (true)
             {
-                if (drainList[i].epoch == int.MaxValue)
+                if (drainList[i].Epoch == int.MaxValue)
                 {
-                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, int.MaxValue) == int.MaxValue)
+                    if (Interlocked.CompareExchange(ref drainList[i].Epoch, int.MaxValue - 1, int.MaxValue) == int.MaxValue)
                     {
-                        drainList[i].action = onDrain;
-                        drainList[i].epoch = PriorEpoch;
+                        drainList[i].Action = onDrain;
+                        drainList[i].Epoch = priorEpoch;
                         Interlocked.Increment(ref drainCount);
                         break;
                     }
                 }
                 else
                 {
-                    var triggerEpoch = drainList[i].epoch;
+                    var triggerEpoch = drainList[i].Epoch;
 
                     if (triggerEpoch <= SafeToReclaimEpoch)
                     {
-                        if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, triggerEpoch) == triggerEpoch)
+                        if (Interlocked.CompareExchange(ref drainList[i].Epoch, int.MaxValue - 1, triggerEpoch) == triggerEpoch)
                         {
-                            var triggerAction = drainList[i].action;
-                            drainList[i].action = onDrain;
-                            drainList[i].epoch = PriorEpoch;
+                            var triggerAction = drainList[i].Action;
+                            drainList[i].Action = onDrain;
+                            drainList[i].Epoch = priorEpoch;
                             triggerAction();
                             break;
                         }
                     }
                 }
 
-                if (++i == kDrainListSize)
+                if (++i == KDrainListSize)
                 {
                     ProtectAndDrain();
                     i = 0;
@@ -306,13 +306,13 @@ namespace Garnet.client
         public bool CheckIsComplete(int markerIdx, long version)
         {
             // check if all threads have reported complete
-            for (int index = 1; index <= kTableSize; ++index)
+            for (int index = 1; index <= KTableSize; ++index)
             {
-                int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
-                int fc_version = (*(tableAligned + index)).markers[markerIdx];
-                if (0 != entry_epoch)
+                int entryEpoch = (*(tableAligned + index)).localCurrentEpoch;
+                int fcVersion = (*(tableAligned + index)).markers[markerIdx];
+                if (0 != entryEpoch)
                 {
-                    if ((fc_version != (int)version) && (entry_epoch < int.MaxValue))
+                    if ((fcVersion != (int)version) && (entryEpoch < int.MaxValue))
                     {
                         return false;
                     }
@@ -344,14 +344,14 @@ namespace Garnet.client
         {
             int oldestOngoingCall = currentEpoch;
 
-            for (int index = 1; index <= kTableSize; ++index)
+            for (int index = 1; index <= KTableSize; ++index)
             {
-                int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
-                if (0 != entry_epoch)
+                int entryEpoch = (*(tableAligned + index)).localCurrentEpoch;
+                if (0 != entryEpoch)
                 {
-                    if (entry_epoch < oldestOngoingCall)
+                    if (entryEpoch < oldestOngoingCall)
                     {
-                        oldestOngoingCall = entry_epoch;
+                        oldestOngoingCall = entryEpoch;
                     }
                 }
             }
@@ -373,10 +373,10 @@ namespace Garnet.client
                 // Barrier ensures we see the latest epoch table entries. Ensures
                 // that the last suspended thread drains all pending actions.
                 Thread.MemoryBarrier();
-                for (int index = 1; index <= kTableSize; ++index)
+                for (int index = 1; index <= KTableSize; ++index)
                 {
-                    int entry_epoch = (*(tableAligned + index)).localCurrentEpoch;
-                    if (0 != entry_epoch)
+                    int entryEpoch = (*(tableAligned + index)).localCurrentEpoch;
+                    if (0 != entryEpoch)
                     {
                         return;
                     }
@@ -395,19 +395,19 @@ namespace Garnet.client
         {
             ComputeNewSafeToReclaimEpoch(nextEpoch);
 
-            for (int i = 0; i < kDrainListSize; i++)
+            for (int i = 0; i < KDrainListSize; i++)
             {
-                var trigger_epoch = drainList[i].epoch;
+                var triggerEpoch = drainList[i].Epoch;
 
-                if (trigger_epoch <= SafeToReclaimEpoch)
+                if (triggerEpoch <= SafeToReclaimEpoch)
                 {
-                    if (Interlocked.CompareExchange(ref drainList[i].epoch, int.MaxValue - 1, trigger_epoch) == trigger_epoch)
+                    if (Interlocked.CompareExchange(ref drainList[i].Epoch, int.MaxValue - 1, triggerEpoch) == triggerEpoch)
                     {
-                        var trigger_action = drainList[i].action;
-                        drainList[i].action = null;
-                        drainList[i].epoch = int.MaxValue;
+                        var triggerAction = drainList[i].Action;
+                        drainList[i].Action = null;
+                        drainList[i].Epoch = int.MaxValue;
                         Interlocked.Decrement(ref drainCount);
-                        trigger_action();
+                        triggerAction();
                         if (drainCount == 0) break;
                     }
                 }
@@ -420,7 +420,7 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Acquire()
         {
-            if (threadEntryIndex == kInvalidIndex)
+            if (threadEntryIndex == KInvalidIndex)
                 threadEntryIndex = ReserveEntryForThread();
 
             Debug.Assert((*(tableAligned + threadEntryIndex)).localCurrentEpoch == 0,
@@ -447,7 +447,7 @@ namespace Garnet.client
             if (threadEntryIndexCount == 0)
             {
                 (threadIndexAligned + threadEntryIndex)->threadId = 0;
-                threadEntryIndex = kInvalidIndex;
+                threadEntryIndex = KInvalidIndex;
             }
         }
 
@@ -476,9 +476,9 @@ namespace Garnet.client
                     startOffset2 = 0;
                 }
                 else startOffset1++; // Probe next sequential entry
-                if (startOffset1 > kTableSize)
+                if (startOffset1 > KTableSize)
                 {
-                    startOffset1 -= kTableSize;
+                    startOffset1 -= KTableSize;
                     Thread.Yield();
                 }
             }
@@ -495,8 +495,8 @@ namespace Garnet.client
             {
                 threadId = Environment.CurrentManagedThreadId;
                 uint code = (uint)Utility.Murmur3(threadId);
-                startOffset1 = (ushort)(1 + (code % kTableSize));
-                startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
+                startOffset1 = (ushort)(1 + (code % KTableSize));
+                startOffset2 = (ushort)(1 + ((code >> 16) % KTableSize));
             }
             return ReserveEntry();
         }
@@ -504,7 +504,7 @@ namespace Garnet.client
         /// <summary>
         /// Epoch table entry (cache line size).
         /// </summary>
-        [StructLayout(LayoutKind.Explicit, Size = kCacheLineBytes)]
+        [StructLayout(LayoutKind.Explicit, Size = KCacheLineBytes)]
         struct Entry
         {
             /// <summary>
@@ -528,8 +528,8 @@ namespace Garnet.client
 
         struct EpochActionPair
         {
-            public long epoch;
-            public Action action;
+            public long Epoch;
+            public Action Action;
         }
     }
 }
