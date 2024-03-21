@@ -45,16 +45,15 @@ namespace Tsavorite.core
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
         // Record sizes
-        private static readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
         private readonly SerializerSettings<Key, Value> SerializerSettings;
         private readonly bool keyBlittable = Utility.IsBlittable<Key>();
         private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
-        internal static int RecordSize => recordSize;
 
         // We do not support variable-length keys in GenericAllocator
-        private int keySize = Utility.GetSize(default(Key));
-        private int valueSize = Utility.GetSize(default(Value));
+        internal static int KeySize => Unsafe.SizeOf<Key>();
+        internal static int ValueSize => Unsafe.SizeOf<Value>();
+        internal static int RecordSize => Unsafe.SizeOf<Record<Key, Value>>();
 
         private readonly OverflowPool<Record<Key, Value>[]> overflowPagePool;
 
@@ -136,7 +135,7 @@ namespace Tsavorite.core
 
         public override void Initialize()
         {
-            Initialize(recordSize);
+            Initialize(RecordSize);
         }
 
         /// <summary>
@@ -157,7 +156,7 @@ namespace Tsavorite.core
         public override long GetFirstValidLogicalAddress(long page)
         {
             if (page == 0)
-                return (page << LogPageSizeBits) + recordSize;
+                return (page << LogPageSizeBits) + RecordSize;
 
             return page << LogPageSizeBits;
         }
@@ -170,7 +169,7 @@ namespace Tsavorite.core
             // Index of page within the circular buffer
             int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
 
-            return ref values[pageIndex][offset / recordSize].info;
+            return ref values[pageIndex][offset / RecordSize].info;
         }
 
         public override ref RecordInfo GetInfoFromBytePointer(byte* ptr)
@@ -186,7 +185,7 @@ namespace Tsavorite.core
             // Index of page within the circular buffer
             int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
 
-            return ref values[pageIndex][offset / recordSize].key;
+            return ref values[pageIndex][offset / RecordSize].key;
         }
 
         public override ref Value GetValue(long physicalAddress)
@@ -197,36 +196,36 @@ namespace Tsavorite.core
             // Index of page within the circular buffer
             int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
 
-            return ref values[pageIndex][offset / recordSize].value;
+            return ref values[pageIndex][offset / RecordSize].value;
         }
 
         public override (int actualSize, int allocatedSize) GetRecordSize(long physicalAddress)
         {
-            return (recordSize, recordSize);
+            return (RecordSize, RecordSize);
         }
 
-        public override int GetValueLength(ref Value value) => valueSize;
+        public override int GetValueLength(ref Value value) => ValueSize;
 
         public override (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TsavoriteSession tsavoriteSession)
         {
-            return (recordSize, recordSize, keySize);
+            return (RecordSize, RecordSize, KeySize);
         }
 
         public override int GetAverageRecordSize()
         {
-            return recordSize;
+            return RecordSize;
         }
 
-        public override int GetFixedRecordSize() => recordSize;
+        public override int GetFixedRecordSize() => RecordSize;
 
         public override (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, TsavoriteSession tsavoriteSession)
         {
-            return (recordSize, recordSize, keySize);
+            return (RecordSize, RecordSize, KeySize);
         }
 
         public override (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value)
         {
-            return (recordSize, recordSize, keySize);
+            return (RecordSize, RecordSize, KeySize);
         }
 
         internal override bool TryComplete()
@@ -292,10 +291,10 @@ namespace Tsavorite.core
                 return item;
 
             Record<Key, Value>[] tmp;
-            if (PageSize % recordSize == 0)
-                tmp = new Record<Key, Value>[PageSize / recordSize];
+            if (PageSize % RecordSize == 0)
+                tmp = new Record<Key, Value>[PageSize / RecordSize];
             else
-                tmp = new Record<Key, Value>[1 + (PageSize / recordSize)];
+                tmp = new Record<Key, Value>[1 + (PageSize / RecordSize)];
             Array.Clear(tmp, 0, tmp.Length);
             return tmp;
         }
@@ -303,7 +302,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long SnapToLogicalAddressBoundary(ref long logicalAddress)
         {
-            return logicalAddress = ((logicalAddress - Constants.kFirstValidAddress) / recordSize) * recordSize + Constants.kFirstValidAddress;
+            return logicalAddress = ((logicalAddress - Constants.kFirstValidAddress) / RecordSize) * RecordSize + Constants.kFirstValidAddress;
         }
 
         public override long GetPhysicalAddress(long logicalAddress)
@@ -381,7 +380,7 @@ namespace Tsavorite.core
 
         internal override void ClearPage(long page, int offset)
         {
-            Array.Clear(values[page % BufferSize], offset / recordSize, values[page % BufferSize].Length - offset / recordSize);
+            Array.Clear(values[page % BufferSize], offset / RecordSize, values[page % BufferSize].Length - offset / RecordSize);
         }
 
         internal override void FreePage(long page)
@@ -495,12 +494,12 @@ namespace Tsavorite.core
             // Track the size to be written to the object log.
             long endPosition = 0;
 
-            for (int i = start / recordSize; i < end / recordSize; i++)
+            for (int i = start / RecordSize; i < end / RecordSize; i++)
             {
                 if (!src[i].info.Invalid)
                 {
                     // Calculate the logical address of the 'values' page currently being written.
-                    var address = (flushPage << LogPageSizeBits) + i * recordSize;
+                    var address = (flushPage << LogPageSizeBits) + i * RecordSize;
 
                     // Do not write v+1 records (e.g. during a checkpoint)
                     if (address < fuzzyStartLogicalAddress || !src[i].info.IsInNewVersion)
@@ -511,7 +510,7 @@ namespace Tsavorite.core
                             keySerializer.Serialize(ref src[i].key);
 
                             // Store the key address into the 'buffer' AddressInfo image as an offset into 'ms'.
-                            var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
+                            var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * RecordSize));
                             key_address->Address = pos;
                             key_address->Size = (int)(ms.Position - pos);
                             addr.Add((long)key_address);
@@ -524,7 +523,7 @@ namespace Tsavorite.core
                             valueSerializer.Serialize(ref src[i].value);
 
                             // Store the value address into the 'buffer' AddressInfo image as an offset into 'ms'.
-                            var value_address = GetValueAddressInfo((long)(buffer.aligned_pointer + i * recordSize));
+                            var value_address = GetValueAddressInfo((long)(buffer.aligned_pointer + i * RecordSize));
                             value_address->Address = pos;
                             value_address->Size = (int)(ms.Position - pos);
                             addr.Add((long)value_address);
@@ -534,13 +533,13 @@ namespace Tsavorite.core
                     else
                     {
                         // Mark v+1 records as invalid to avoid deserializing them on recovery
-                        ref var record = ref Unsafe.AsRef<Record<Key, Value>>(buffer.aligned_pointer + i * recordSize);
+                        ref var record = ref Unsafe.AsRef<Record<Key, Value>>(buffer.aligned_pointer + i * RecordSize);
                         record.info.SetInvalid();
                     }
                 }
 
                 // If this record's serialized size surpassed ObjectBlockSize or it's the last record to be written, write to the object log.
-                if (endPosition > ObjectBlockSize || i == (end / recordSize) - 1)
+                if (endPosition > ObjectBlockSize || i == (end / RecordSize) - 1)
                 {
                     var memoryStreamActualLength = ms.Position;
                     var memoryStreamTotalLength = (int)endPosition;
@@ -573,7 +572,7 @@ namespace Tsavorite.core
                         ((AddressInfo*)address)->Address += _objAddr;
 
                     // If we have not written all records, prepare for the next chunk of records to be written.
-                    if (i < (end / recordSize) - 1)
+                    if (i < (end / RecordSize) - 1)
                     {
                         // Create a new MemoryStream for the next chunk of records to be written.
                         ms = new MemoryStream();
@@ -892,7 +891,7 @@ namespace Tsavorite.core
             while (ptr < untilptr)
             {
                 ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
-                src[ptr / recordSize].info = record.info;
+                src[ptr / RecordSize].info = record.info;
 
                 if (!record.info.Invalid)
                 {
@@ -905,11 +904,11 @@ namespace Tsavorite.core
                             stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
                         }
 
-                        keySerializer.Deserialize(out src[ptr / recordSize].key);
+                        keySerializer.Deserialize(out src[ptr / RecordSize].key);
                     }
                     else
                     {
-                        src[ptr / recordSize].key = record.key;
+                        src[ptr / RecordSize].key = record.key;
                     }
 
                     if (!record.info.Tombstone)
@@ -923,11 +922,11 @@ namespace Tsavorite.core
                                 stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
                             }
 
-                            valueSerializer.Deserialize(out src[ptr / recordSize].value);
+                            valueSerializer.Deserialize(out src[ptr / RecordSize].value);
                         }
                         else
                         {
-                            src[ptr / recordSize].value = record.value;
+                            src[ptr / RecordSize].value = record.value;
                         }
                     }
                 }
@@ -1129,7 +1128,7 @@ namespace Tsavorite.core
         {
             fixed (RecordInfo* pin = &destinationPage[0].info)
             {
-                Debug.Assert(required_bytes <= recordSize * destinationPage.Length);
+                Debug.Assert(required_bytes <= RecordSize * destinationPage.Length);
 
                 Buffer.MemoryCopy(src, Unsafe.AsPointer(ref destinationPage[0]), required_bytes, required_bytes);
             }
@@ -1174,10 +1173,10 @@ namespace Tsavorite.core
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
             long pageStartAddress = beginAddress & ~PageSizeMask;
-            int start = (int)(beginAddress & PageSizeMask) / recordSize;
-            int count = (int)(endAddress - beginAddress) / recordSize;
+            int start = (int)(beginAddress & PageSizeMask) / RecordSize;
+            int count = (int)(endAddress - beginAddress) / RecordSize;
             int end = start + count;
-            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end, pageStartAddress, recordSize);
+            using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end, pageStartAddress, RecordSize);
             Debug.Assert(epoch.ThisInstanceProtected());
             try
             {
