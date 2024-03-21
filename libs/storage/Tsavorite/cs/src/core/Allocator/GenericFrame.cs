@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
@@ -12,7 +13,7 @@ namespace Tsavorite.core
     {
         private readonly Record<Key, Value>[][] frame;
         public readonly int frameSize, pageSize;
-        private readonly int recordSize = Utility.GetSize(default(Record<Key, Value>));
+        private static int RecordSize => Unsafe.SizeOf<Record<Key, Value>>();
 
         public GenericFrame(int frameSize, int pageSize)
         {
@@ -24,10 +25,10 @@ namespace Tsavorite.core
         public void Allocate(int index)
         {
             Record<Key, Value>[] tmp;
-            if (pageSize % recordSize == 0)
-                tmp = new Record<Key, Value>[pageSize / recordSize];
+            if (pageSize % RecordSize == 0)
+                tmp = new Record<Key, Value>[pageSize / RecordSize];
             else
-                tmp = new Record<Key, Value>[1 + (pageSize / recordSize)];
+                tmp = new Record<Key, Value>[1 + (pageSize / RecordSize)];
             Array.Clear(tmp, 0, tmp.Length);
             frame[index] = tmp;
         }

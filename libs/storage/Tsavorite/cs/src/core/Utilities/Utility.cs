@@ -30,18 +30,6 @@ namespace Tsavorite.core
     public static class Utility
     {
         /// <summary>
-        /// Get size of type
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        internal static unsafe int GetSize<T>(this T value)
-        {
-            T[] arr = new T[2];
-            return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
-        }
-
-        /// <summary>
         /// Parse size in string notation into long.
         /// Examples: 4k, 4K, 4KB, 4 KB, 8m, 8MB, 12g, 12 GB, 16t, 16 TB, 32p, 32 PB.
         /// </summary>
@@ -162,40 +150,6 @@ namespace Tsavorite.core
         /// <typeparam name="T"></typeparam>
         /// <returns></returns>
         internal static bool IsBlittable<T>() => !RuntimeHelpers.IsReferenceOrContainsReferences<T>();
-
-        /// <summary>
-        /// Check if two byte arrays of given length are equal
-        /// </summary>
-        /// <param name="src"></param>
-        /// <param name="dst"></param>
-        /// <param name="length"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe bool IsEqual(byte* src, byte* dst, int length)
-        {
-            for (int i = 0; i < length; i++)
-            {
-                if (*(src + i) != *(dst + i))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// Copy numBytes bytes from src to dest
-        /// </summary>
-        /// <param name="src"></param>
-        /// <param name="dest"></param>
-        /// <param name="numBytes"></param>
-        public static unsafe void Copy(byte* src, byte* dest, int numBytes)
-        {
-            for (int i = 0; i < numBytes; i++)
-            {
-                *(dest + i) = *(src + i);
-            }
-        }
 
         /// <summary>
         /// Get 64-bit hash code for a long value
