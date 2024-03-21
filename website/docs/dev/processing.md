@@ -11,7 +11,7 @@ Messages to Garnet server are processed once the networking layer reads the inco
 Within a session, the `TryConsumeMessages` method is responsible for processing the incoming messages by
 * Measuring and tracking latency of processing along with bytes consumed and operations performed.
 * Process messages further using the `ProcessMessages` method.
-* Acts as the catch all for any exceptions occuring during message processing. This ensures that the server continues to run, even if processing of a message causes a critical unhandled exception and all resources are being freed up correctly.
+* Acts as the catch all for any exceptions occurring during message processing. This ensures that the server continues to run, even if processing of a message causes a critical unhandled exception and all resources are being freed up correctly.
 
 The `ProcessMessages` method does a fast parsing of the incoming data to quickly identify the right command type. Based on the type of the command, further processing is performed by one of the below methods.
 
