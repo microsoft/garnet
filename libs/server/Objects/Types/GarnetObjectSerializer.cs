@@ -43,7 +43,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override void Serialize(ref IGarnetObject obj)
         {
-            writer.Write((byte)obj.Type);
+            writer.Write(obj.Type);
             obj.Serialize(writer);
         }
     }
