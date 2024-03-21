@@ -21,7 +21,7 @@ env:
   DOTNET_NOLOGO: true
 
 jobs:
-  website:
+  website_changed:
     name: Check if website changed  
     runs-on: ubuntu-latest  
     permissions:
@@ -134,12 +134,12 @@ jobs:
 
   build-website:
     name: Build Website
-    needs: website    
+    needs: website_changed    
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: website
-    if: needs.website.outputs.website == 'true'   
+    if: needs.website_changed.outputs.website == 'true'   
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
