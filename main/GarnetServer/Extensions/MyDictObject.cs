@@ -25,7 +25,7 @@ namespace Garnet
         readonly Dictionary<byte[], byte[]> dict;
 
         public MyDict(byte type)
-            : base(type, MemoryUtils.DictionaryOverhead)
+            : base(type, 0, MemoryUtils.DictionaryOverhead)
         {
             dict = new(new ByteArrayComparer());
         }
