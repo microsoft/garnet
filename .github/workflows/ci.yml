@@ -3,7 +3,6 @@ on:
   workflow_dispatch:
   push:
     paths-ignore:
-      - 'website/**'
       - '**/*.md'
       - '.github'
       - '.azure'
@@ -11,7 +10,6 @@ on:
       - main
   pull_request:
     paths-ignore:
-      - 'website/**'
       - '**/*.md'
       - '.github'
       - '.azure'
@@ -23,8 +21,27 @@ env:
   DOTNET_NOLOGO: true
 
 jobs:
+  website:
+    name: Check if website changed  
+    runs-on: ubuntu-latest  
+    permissions:
+      pull-requests: read
+      contents: read
+    outputs:
+      website: ${{ steps.filter.outputs.website }}
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+    - name: Check if Website changed
+      uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          website:
+            - 'website/**'
+
   changes:
-    name: Check if changes to Tsavorite code
+    name: Check if Tsavorite changed
     runs-on: ubuntu-latest  # don't need matrix to test where the changes were made in code
     permissions:
       pull-requests: read
@@ -114,3 +131,26 @@ jobs:
           name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}
           path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}
         if: ${{ always() }}
+
+  build-website:
+    name: Build Website
+    needs: website    
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    if: needs.changes.outputs.website == 'true'   
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: yarn
+          cache-dependency-path: ./website/yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      - name: Build website
+        run: yarn build
+      
