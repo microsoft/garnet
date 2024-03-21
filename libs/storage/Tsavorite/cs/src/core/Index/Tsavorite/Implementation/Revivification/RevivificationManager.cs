@@ -13,20 +13,17 @@ namespace Tsavorite.core
         internal RevivificationStats stats = new();
 
         internal readonly bool IsEnabled = false;
-        internal readonly int FixedValueLength;
+        internal readonly int FixedValueLength => Unsafe.SizeOf<Value>();
         internal bool restoreDeletedRecordsIfBinIsFull;
         internal bool useFreeRecordPoolForCTT;
 
-        internal readonly bool IsFixedLength => FixedValueLength != 0;
+        internal readonly bool IsFixedLength { get; }
 
         internal double revivifiableFraction;
 
         public RevivificationManager(TsavoriteKV<Key, Value> store, bool isFixedLen, RevivificationSettings revivSettings, LogSettings logSettings)
         {
-            // Set these first in case revivification is not enabled; they still tell us not to expect fixed-length.
-            if (isFixedLen)
-                FixedValueLength = Utility.GetSize(default(Value));
-
+            IsFixedLength = isFixedLen;
             revivifiableFraction = revivSettings is null || revivSettings.RevivifiableFraction == RevivificationSettings.DefaultRevivifiableFraction
                 ? logSettings.MutableFraction
                 : revivSettings.RevivifiableFraction;
