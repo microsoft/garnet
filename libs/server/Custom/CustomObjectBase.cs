@@ -48,7 +48,7 @@ namespace Garnet.server
         protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.Expiration, obj.Size) { }
 
         /// <inheritdoc />
-        public override byte Type => type;
+        protected override byte Type => type;
 
         /// <summary>
         /// Create output as simple string, from given string
@@ -167,9 +167,7 @@ namespace Garnet.server
         /// <returns></returns>
         public sealed override GarnetObjectBase Clone() => CloneObject();
 
-        /// <summary>
-        /// Serialize to giver writer
-        /// </summary>
+        /// <inheritdoc />
         public sealed override void DoSerialize(BinaryWriter writer)
         {
             base.DoSerialize(writer);

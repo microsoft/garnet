@@ -119,7 +119,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override byte Type => (byte)GarnetObjectType.SortedSet;
+        protected override byte Type => (byte)GarnetObjectType.SortedSet;
 
         /// <summary>
         /// Get sorted set as a dictionary

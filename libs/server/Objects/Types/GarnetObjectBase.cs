@@ -21,7 +21,7 @@ namespace Garnet.server
         /// <summary>
         /// Type of object
         /// </summary>
-        public abstract byte Type { get; }
+        protected abstract byte Type { get; }
 
         /// <inheritdoc />
         public long Expiration { get; set; }
@@ -37,7 +37,7 @@ namespace Garnet.server
         }
 
         protected GarnetObjectBase(BinaryReader reader, long size)
-            : this(reader.ReadInt64(), size)
+            : this(expiration: reader.ReadInt64(), size: size)
         {
         }
 
