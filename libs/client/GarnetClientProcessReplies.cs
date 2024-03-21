@@ -157,7 +157,7 @@ namespace Garnet.client
                     if ((ptr + 5 <= end) && (*(int*)(ptr + 1) == 168643407))
                     {
                         ptr += 5;
-                        result = RESP_OK;
+                        result = RespOk;
                         break;
                     }
                     if (!RespReadUtils.ReadSimpleString(memoryPool, out result, ref ptr, end))
