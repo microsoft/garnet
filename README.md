@@ -1,4 +1,4 @@
-# Garnet
+# Garnet :
 [![.NET CI](https://github.com/microsoft/garnet/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/microsoft/garnet/actions/workflows/ci.yml)
 [![Discord Shield](https://discordapp.com/api/guilds/1213937452272582676/widget.png?style=shield)](https://aka.ms/garnet-discord)
 
@@ -13,7 +13,7 @@ Garnet is a new remote cache-store from Microsoft Research, that offers several 
 
 This repo contains the code to build and run Garnet. For more information and documentation, check out our website at [https://microsoft.github.io/garnet](https://microsoft.github.io/garnet).
 
-## Feature Summary
+## Feature Summary :
 
 Garnet implements a wide range of APIs including raw strings (e.g., gets, sets, and key expiration), analytical (e.g., HyperLogLog and Bitmap), and object (e.g., sorted sets and lists)
 operations. It can handle multi-key transactions in the form of client-side RESP transactions and our own server-side stored procedures in C# and allows users to define custom
@@ -29,11 +29,11 @@ Finally, Garnet supports a cluster mode of operation with support for sharding, 
   <img src="https://github.com/microsoft/garnet/assets/18355833/851be90b-e43a-40ca-ae56-7dc087cf6adc" width=350 />
 </p>
 
-## Performance Preview
+## Performance Preview :
 
 We illustrate a few key results on our [website](https://microsoft.github.io/garnet/docs/benchmarking/overview) comparing Garnet to leading open-source cache-stores.
 
-## Design Highlights
+## Design Highlights :
 
 Garnet’s design re-thinks the entire cache-store stack – from receiving packets on the network, to parsing and processing database operations, to performing storage interactions. We build on 
 top of years of our [prior research](https://microsoft.github.io/FASTER/docs/td-research-papers/). Below is Garnet’s overall architecture.
@@ -55,25 +55,25 @@ A distinguishing feature of Garnet’s design is its narrow-waist Tsavorite stor
 read-modify-write operations, implemented with asynchronous callbacks for Garnet to interject logic at various points during each operation. Our storage API model allows us to cleanly separate Garnet’s parsing and query
 processing concerns from storage details such as concurrency, storage tiering, and checkpointing. Garnet uses two-phase locking for multi-key transactions.
 
-### Cluster Mode
+### Cluster Mode :
 
 In addition to single-node execution, Garnet supports a cluster mode, which allows users to create and manage a sharded and replicated deployment. Garnet also supports an efficient and dynamic key migration scheme 
 to rebalance shards. Users can use standard Redis cluster commands to create and manage Garnet clusters, and nodes perform gossip to share and evolve cluster state. Cluster is still work in progress.
 
-## Next Steps
+## Next Steps :
 
 Head over to our [documentation](https://microsoft.github.io/garnet) site, or jump directly to the [getting started](https://microsoft.github.io/garnet/docs/getting-started) or 
 [releases](https://microsoft.github.io/garnet/docs/welcome/releases) section.
 
-## License
+## License :
 
 This project is licensed under the [MIT License](https://opensource.org/licenses/MIT), see the [LICENSE](LICENSE) file.
 
-## Privacy
+## Privacy :
 
 Privacy information can be found at [https://privacy.microsoft.com/en-us/](https://privacy.microsoft.com/en-us/privacystatement).
 
-## Contributing
+## Contributing :
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
 Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
