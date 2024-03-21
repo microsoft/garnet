@@ -39,7 +39,7 @@ namespace Garnet
             int offset = 0;
             var newVal = GetNextArg(input, ref offset);
             var prefix = GetNextArg(input, ref offset);
-            if (prefix.SequenceEqual(newVal.Slice(0, prefix.Length)))
+            if (prefix.SequenceEqual(newVal[..prefix.Length]))
             {
                 if (newVal.Length > value.Length) return false;
                 newVal.CopyTo(value);
@@ -55,7 +55,7 @@ namespace Garnet
             int offset = 0;
             var newVal = GetNextArg(input, ref offset);
             var prefix = GetNextArg(input, ref offset);
-            return prefix.SequenceEqual(newVal.Slice(0, prefix.Length));
+            return prefix.SequenceEqual(newVal[..prefix.Length]);
         }
 
         /// <inheritdoc />
