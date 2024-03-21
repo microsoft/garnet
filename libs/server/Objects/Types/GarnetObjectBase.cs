@@ -79,7 +79,6 @@ namespace Garnet.server
                     using (var ms = new MemoryStream())
                     {
                         using var writer = new BinaryWriter(ms, new UTF8Encoding(), true);
-                        writer.Write(Expiration);
                         DoSerialize(writer);
                         serialized = ms.ToArray();
                     }

@@ -83,8 +83,8 @@ namespace Garnet.server
         {
             using var ms = new MemoryStream(data);
             using var reader = new BinaryReader(ms);
-            var expiration = reader.ReadInt64();
             var type = (GarnetObjectType)reader.ReadByte();
+            var expiration = reader.ReadInt64();
             return type switch
             {
                 GarnetObjectType.SortedSet => new SortedSetObject(reader),
