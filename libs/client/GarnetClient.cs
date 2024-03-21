@@ -18,10 +18,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.client
 {
-    struct OK_MEM : IMemoryOwner<byte>
+    struct OkMem : IMemoryOwner<byte>
     {
-        static readonly Memory<byte> RESP_OK = "OK"u8.ToArray();
-        public Memory<byte> Memory => RESP_OK;
+        static readonly Memory<byte> RespOk = "OK"u8.ToArray();
+        public Memory<byte> Memory => RespOk;
+
         public void Dispose() { }
     }
 
@@ -41,7 +42,7 @@ namespace Garnet.client
         static readonly Memory<byte> DECRBY = "$6\r\nDECRBY\r\n"u8.ToArray();
         static readonly Memory<byte> QUIT = "$4\r\nQUIT\r\n"u8.ToArray();
         static readonly Memory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
-        static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
+        static readonly MemoryResult<byte> RespOk = new(default(OkMem));
 
         readonly string address;
         readonly int port;
@@ -97,7 +98,7 @@ namespace Garnet.client
         /// <summary>
         /// Whether we are connected to the server
         /// </summary>
-        public bool IsConnected => socket != null && socket.Connected && !Disposed;
+        public bool IsConnected => socket is { Connected: true } && !Disposed;
 
         /// <summary>
         /// Get the max number of allowed outstanding tasks.
@@ -191,7 +192,7 @@ namespace Garnet.client
 
             if (timeoutMilliseconds > 0)
             {
-                Task.Run(TimeoutChecker);
+                Task.Run(TimeoutChecker, token);
             }
 
             try
@@ -224,7 +225,7 @@ namespace Garnet.client
 
             if (timeoutMilliseconds > 0)
             {
-                _ = Task.Run(TimeoutChecker);
+                _ = Task.Run(TimeoutChecker, token);
             }
 
             try
@@ -310,7 +311,10 @@ namespace Garnet.client
                     break;
                 }
             }
-            catch { }
+            catch
+            {
+                // ignored
+            }
         }
 
         /// <summary>
@@ -324,7 +328,11 @@ namespace Garnet.client
                 socket?.Dispose();
                 networkWriter?.Dispose();
             }
-            catch { }
+            catch
+            {
+                // ignored
+            }
+
             Connect(token);
         }
 
@@ -339,7 +347,11 @@ namespace Garnet.client
                 socket?.Dispose();
                 networkWriter?.Dispose();
             }
-            catch { }
+            catch
+            {
+                // ignored
+            }
+
             await ConnectAsync(token);
         }
 
