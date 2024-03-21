@@ -108,17 +108,17 @@ namespace Garnet.client
                     if ((ptr + 5 <= end) && (*(int*)(ptr + 1) == 168643407))
                     {
                         ptr += 5;
-                        result = new[] { "OK" };
+                        result = ["OK"];
                         break;
                     }
                     if (!RespReadUtils.ReadSimpleString(out var _result, ref ptr, end))
                         return false;
-                    result = new[] { _result };
+                    result = [_result];
                     break;
                 case (byte)':':
                     if (!RespReadUtils.ReadIntegerAsString(out _result, ref ptr, end))
                         return false;
-                    result = new[] { _result };
+                    result = [_result];
                     break;
 
                 case (byte)'-':
@@ -129,7 +129,7 @@ namespace Garnet.client
                 case (byte)'$':
                     if (!RespReadUtils.ReadStringWithLengthHeader(out _result, ref ptr, end))
                         return false;
-                    result = new[] { _result };
+                    result = [_result];
                     break;
 
                 case (byte)'*':
