@@ -70,7 +70,7 @@ namespace Garnet
             var prefix = GetNextArg(input, ref offset);
 
             prefix.CopyTo(value);
-            newVal.CopyTo(value.Slice(8));
+            newVal.CopyTo(value[8..]);
 
             return true;
         }
@@ -93,12 +93,12 @@ namespace Garnet
                     return false;
                 if (prefix.Length < 8)
                 {
-                    value.Slice(0, 8).Fill(0);
-                    prefix.CopyTo(value.Slice(8 - prefix.Length));
+                    value[..8].Clear();
+                    prefix.CopyTo(value[(8 - prefix.Length)..]);
                 }
                 else
-                    prefix.Slice(0, 8).CopyTo(value);
-                newVal.CopyTo(value.Slice(8));
+                    prefix[..8].CopyTo(value);
+                newVal.CopyTo(value[8..]);
                 valueLength = prefix.Length + newVal.Length;
             }
 
