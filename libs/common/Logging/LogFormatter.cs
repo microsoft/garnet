@@ -4,26 +4,26 @@
 using System;
 using System.Globalization;
 
-namespace Garnet.common
+namespace Garnet.common.Logging
 {
     /// <summary>
     /// Log formatter primitives
     /// </summary>
     public static class LogFormatter
     {
-        private const string TIME_FORMAT = "HH:mm:ss.ffff";
-        private const string DATE_FORMAT = "yyyy-MM-dd " + TIME_FORMAT;
+        private const string TimeFormat = "HH:mm:ss.ffff";
+        private const string DateFormat = "yyyy-MM-dd " + TimeFormat;
 
         /// <summary>
         /// Format date
         /// </summary>
         /// <param name="dateTime"></param>
-        public static string FormatDate(DateTime dateTime) => dateTime.ToString(DATE_FORMAT, CultureInfo.InvariantCulture);
+        public static string FormatDate(DateTime dateTime) => dateTime.ToString(DateFormat, CultureInfo.InvariantCulture);
 
         /// <summary>
         /// Format time
         /// </summary>
         /// <param name="dateTime"></param>
-        public static string FormatTime(DateTime dateTime) => dateTime.ToString(TIME_FORMAT, CultureInfo.InvariantCulture);
+        public static string FormatTime(DateTime dateTime) => dateTime.ToString(TimeFormat, CultureInfo.InvariantCulture);
     }
 }

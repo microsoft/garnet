@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using Garnet.common.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.common

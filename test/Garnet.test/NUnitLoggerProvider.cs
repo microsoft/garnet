@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Garnet.common;
+using Garnet.common.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.test
