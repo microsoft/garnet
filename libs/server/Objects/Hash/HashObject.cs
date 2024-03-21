@@ -80,7 +80,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        protected override byte Type => (byte)GarnetObjectType.Hash;
+        public override byte Type => (byte)GarnetObjectType.Hash;
 
         /// <inheritdoc />
         public override void DoSerialize(BinaryWriter writer)

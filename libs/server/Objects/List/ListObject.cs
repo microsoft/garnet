@@ -94,7 +94,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        protected override byte Type => (byte)GarnetObjectType.List;
+        public override byte Type => (byte)GarnetObjectType.List;
 
         /// <summary>
         /// Public getter for the list

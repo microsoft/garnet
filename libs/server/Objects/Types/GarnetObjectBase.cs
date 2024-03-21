@@ -18,10 +18,8 @@ namespace Garnet.server
         int serializationState;
         byte[] serialized;
 
-        /// <summary>
-        /// Type of object
-        /// </summary>
-        protected abstract byte Type { get; }
+        /// <inheritdoc />
+        public abstract byte Type { get; }
 
         /// <inheritdoc />
         public long Expiration { get; set; }

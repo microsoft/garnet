@@ -48,7 +48,7 @@ namespace Garnet.server
         protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.Expiration, obj.Size) { }
 
         /// <inheritdoc />
-        protected override byte Type => type;
+        public override byte Type => type;
 
         /// <summary>
         /// Create output as simple string, from given string
