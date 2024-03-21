@@ -30,7 +30,14 @@ namespace Garnet.server
         /// </summary>
         /// <param name="type">Object type</param>
         /// <param name="size"></param>
-        protected CustomObjectBase(byte type, long expiration, long size = 0) : base(expiration, size)
+        protected CustomObjectBase(byte type, long expiration, long size = 0)
+            : base(expiration, size)
+        {
+            this.type = type;
+        }
+
+        protected CustomObjectBase(byte type, BinaryReader reader, long size = 0)
+            : base(reader, size)
         {
             this.type = type;
         }
@@ -40,6 +47,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="obj">Other object</param>
         protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.Expiration, obj.Size) { }
+
+        /// <inheritdoc />
+        public override byte Type => type;
 
         /// <summary>
         /// Create output as simple string, from given string
@@ -163,7 +173,7 @@ namespace Garnet.server
         /// </summary>
         public sealed override void DoSerialize(BinaryWriter writer)
         {
-            writer.Write(type);
+            base.DoSerialize(writer);
             SerializeObject(writer);
         }
 

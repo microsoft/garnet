@@ -13,33 +13,43 @@ namespace Garnet
 {
     class MyDictFactory : CustomObjectFactory
     {
-        public override CustomObjectBase Create(byte type, long expiration)
-            => new MyDict(type, expiration);
+        public override CustomObjectBase Create(byte type)
+            => new MyDict(type);
 
-        public override CustomObjectBase Deserialize(byte type, long expiration, BinaryReader reader)
-            => new MyDict(type, expiration, reader);
+        public override CustomObjectBase Deserialize(byte type, BinaryReader reader)
+            => new MyDict(type, reader);
     }
 
     class MyDict : CustomObjectBase
     {
         readonly Dictionary<byte[], byte[]> dict;
 
-        public MyDict(byte type, long expiration) : base(type, expiration, MemoryUtils.DictionaryOverhead)
-            => dict = new(new ByteArrayComparer());
-
-        public MyDict(MyDict obj) : base(obj)
-            => dict = obj.dict;
-
-        public MyDict(byte type, long expiration, BinaryReader reader) : this(type, expiration)
+        public MyDict(byte type)
+            : base(type, MemoryUtils.DictionaryOverhead)
         {
+            dict = new(new ByteArrayComparer());
+        }
+
+        public MyDict(byte type, BinaryReader reader)
+            : base(type, reader, MemoryUtils.DictionaryOverhead)
+        {
+            dict = new(new ByteArrayComparer());
+
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
             {
                 var key = reader.ReadBytes(reader.ReadInt32());
                 var value = reader.ReadBytes(reader.ReadInt32());
                 dict.Add(key, value);
+
                 UpdateSize(key, value);
             }
+        }
+
+        public MyDict(MyDict obj)
+            : base(obj)
+        {
+            dict = obj.dict;
         }
 
         public override CustomObjectBase CloneObject() => new MyDict(this);

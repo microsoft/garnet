@@ -34,26 +34,22 @@ namespace Garnet.server
         readonly HashSet<byte[]> set;
 
         /// <summary>
-        ///  SetObject Constructor
+        ///  Constructor
         /// </summary>
-        public SetObject(long expiration = 0) : base(expiration, MemoryUtils.HashSetOverhead)
+        public SetObject(long expiration = 0)
+            : base(expiration, MemoryUtils.HashSetOverhead)
         {
             set = new HashSet<byte[]>(new ByteArrayComparer());
         }
 
         /// <summary>
-        /// Copy constructor
-        /// </summary>
-        public SetObject(HashSet<byte[]> set, long expiration, long size) : base(expiration, size)
-        {
-            this.set = set;
-        }
-
-        /// <summary>
         /// Construct from binary serialized form
         /// </summary>
-        public SetObject(BinaryReader reader, long expiration) : this(expiration)
+        public SetObject(BinaryReader reader)
+            : base(reader, MemoryUtils.HashSetOverhead)
         {
+            set = new HashSet<byte[]>(new ByteArrayComparer());
+
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
             {
@@ -64,10 +60,23 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Copy constructor
+        /// </summary>
+        public SetObject(HashSet<byte[]> set, long expiration, long size)
+            : base(expiration, size)
+        {
+            this.set = set;
+        }
+
+        /// <inheritdoc />
+        public override byte Type => (byte)GarnetObjectType.Set;
+
         /// <inheritdoc />
         public override void DoSerialize(BinaryWriter writer)
         {
-            writer.Write((byte)GarnetObjectType.Set);
+            base.DoSerialize(writer);
+
             int count = set.Count;
             writer.Write(count);
             foreach (var item in set)

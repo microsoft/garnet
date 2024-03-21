@@ -87,10 +87,10 @@ namespace Garnet.server
             var type = (GarnetObjectType)reader.ReadByte();
             return type switch
             {
-                GarnetObjectType.SortedSet => new SortedSetObject(reader, expiration),
-                GarnetObjectType.List => new ListObject(reader, expiration),
-                GarnetObjectType.Hash => new HashObject(reader, expiration),
-                GarnetObjectType.Set => new SetObject(reader, expiration),
+                GarnetObjectType.SortedSet => new SortedSetObject(reader),
+                GarnetObjectType.List => new ListObject(reader),
+                GarnetObjectType.Hash => new HashObject(reader),
+                GarnetObjectType.Set => new SetObject(reader),
                 _ => throw new Exception("Unsupported data type"),
             };
         }

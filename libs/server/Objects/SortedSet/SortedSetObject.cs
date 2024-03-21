@@ -80,33 +80,22 @@ namespace Garnet.server
         /// <summary>
         /// Constructor
         /// </summary>
-        public SortedSetObject(long expiration = 0) : base(expiration, MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
+        public SortedSetObject(long expiration = 0)
+            : base(expiration, MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
         {
             sortedSet = new(sortedSetComparer);
             sortedSetDict = new Dictionary<byte[], double>(byteArrayComparer);
         }
 
         /// <summary>
-        /// Get sorted set as a dictionary
-        /// </summary>
-        public Dictionary<byte[], double> Dictionary => sortedSetDict;
-
-        /// <summary>
-        /// Copy constructor
-        /// </summary>
-        public SortedSetObject(
-            SortedSet<(double, byte[])> sortedSet,
-            Dictionary<byte[], double> sortedSetDict, long expiration, long size) : base(expiration, size)
-        {
-            this.sortedSet = sortedSet;
-            this.sortedSetDict = sortedSetDict;
-        }
-
-        /// <summary>
         /// Construct from binary serialized form
         /// </summary>
-        public SortedSetObject(BinaryReader reader, long expiration) : this(expiration)
+        public SortedSetObject(BinaryReader reader)
+            : base(reader, MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
         {
+            sortedSet = new(sortedSetComparer);
+            sortedSetDict = new Dictionary<byte[], double>(byteArrayComparer);
+
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
             {
@@ -120,11 +109,30 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Copy constructor
+        /// </summary>
+        public SortedSetObject(SortedSet<(double, byte[])> sortedSet, Dictionary<byte[], double> sortedSetDict, long expiration, long size)
+            : base(expiration, size)
+        {
+            this.sortedSet = sortedSet;
+            this.sortedSetDict = sortedSetDict;
+        }
+
+        /// <inheritdoc />
+        public override byte Type => (byte)GarnetObjectType.SortedSet;
+
+        /// <summary>
+        /// Get sorted set as a dictionary
+        /// </summary>
+        public Dictionary<byte[], double> Dictionary => sortedSetDict;
+
+        /// <summary>
         /// Serialize
         /// </summary>
         public override void DoSerialize(BinaryWriter writer)
         {
-            writer.Write((byte)GarnetObjectType.SortedSet);
+            base.DoSerialize(writer);
+
             int count = sortedSetDict.Count;
             writer.Write(count);
             foreach (var kvp in sortedSetDict)

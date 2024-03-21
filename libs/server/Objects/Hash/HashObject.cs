@@ -43,26 +43,22 @@ namespace Garnet.server
         readonly Dictionary<byte[], byte[]> hash;
 
         /// <summary>
-        ///  HashObject Constructor
+        ///  Constructor
         /// </summary>
-        public HashObject(long expiration = 0) : base(expiration, MemoryUtils.DictionaryOverhead)
+        public HashObject(long expiration = 0)
+            : base(expiration, MemoryUtils.DictionaryOverhead)
         {
             hash = new Dictionary<byte[], byte[]>(new ByteArrayComparer());
         }
 
         /// <summary>
-        /// Copy constructor
-        /// </summary>
-        public HashObject(Dictionary<byte[], byte[]> hash, long expiration, long size) : base(expiration, size)
-        {
-            this.hash = hash;
-        }
-
-        /// <summary>
         /// Construct from binary serialized form
         /// </summary>
-        public HashObject(BinaryReader reader, long expiration) : this(expiration)
+        public HashObject(BinaryReader reader)
+            : base(reader, MemoryUtils.DictionaryOverhead)
         {
+            hash = new Dictionary<byte[], byte[]>(new ByteArrayComparer());
+
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
             {
@@ -74,10 +70,23 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Copy constructor
+        /// </summary>
+        public HashObject(Dictionary<byte[], byte[]> hash, long expiration, long size)
+            : base(expiration, size)
+        {
+            this.hash = hash;
+        }
+
+        /// <inheritdoc />
+        public override byte Type => (byte)GarnetObjectType.Hash;
+
         /// <inheritdoc />
         public override void DoSerialize(BinaryWriter writer)
         {
-            writer.Write((byte)GarnetObjectType.Hash);
+            base.DoSerialize(writer);
+
             int count = hash.Count;
             writer.Write(count);
             foreach (var kvp in hash)

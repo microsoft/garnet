@@ -18,6 +18,11 @@ namespace Garnet.server
         int serializationState;
         byte[] serialized;
 
+        /// <summary>
+        /// Type of object
+        /// </summary>
+        public abstract byte Type { get; }
+
         /// <inheritdoc />
         public long Expiration { get; set; }
 
@@ -31,6 +36,11 @@ namespace Garnet.server
             this.Size = size;
         }
 
+        protected GarnetObjectBase(BinaryReader reader, long size)
+            : this(reader.ReadInt64(), size)
+        {
+        }
+
         /// <inheritdoc />
         public void Serialize(BinaryWriter writer)
         {
@@ -39,7 +49,6 @@ namespace Garnet.server
                 if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
                 {
                     // Directly serialize to wire, do not cache serialized state
-                    writer.Write(Expiration);
                     DoSerialize(writer);
                     serializationState = (int)SerializationPhase.REST;
                     return;
@@ -100,7 +109,11 @@ namespace Garnet.server
         /// <summary>
         /// Serialize to given writer
         /// </summary>
-        public abstract void DoSerialize(BinaryWriter writer);
+        public virtual void DoSerialize(BinaryWriter writer)
+        {
+            writer.Write(Type);
+            writer.Write(Expiration);
+        }
 
         private bool MakeTransition(SerializationPhase expectedPhase, SerializationPhase nextPhase)
         {

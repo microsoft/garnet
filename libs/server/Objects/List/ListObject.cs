@@ -51,52 +51,61 @@ namespace Garnet.server
 
 
     /// <summary>
-    /// Sorted Set
+    /// List
     /// </summary>
     public partial class ListObject : GarnetObjectBase
     {
         readonly LinkedList<byte[]> list;
 
         /// <summary>
-        /// ListObject Constructor
+        /// Constructor
         /// </summary>
-        public ListObject(long expiration = 0) : base(expiration, MemoryUtils.ListOverhead)
+        public ListObject(long expiration = 0)
+            : base(expiration, MemoryUtils.ListOverhead)
         {
             list = new LinkedList<byte[]>();
         }
 
         /// <summary>
+        /// Construct from binary serialized form
+        /// </summary>
+        public ListObject(BinaryReader reader)
+            : base(reader, MemoryUtils.ListOverhead)
+        {
+            list = new LinkedList<byte[]>();
+
+            int count = reader.ReadInt32();
+            for (int i = 0; i < count; i++)
+            {
+                var item = reader.ReadBytes(reader.ReadInt32());
+                list.AddLast(item);
+
+                this.UpdateSize(item);
+            }
+        }
+
+        /// <summary>
         /// Copy constructor
         /// </summary>
-        public ListObject(LinkedList<byte[]> list, long expiration, long size) : base(expiration, size)
+        public ListObject(LinkedList<byte[]> list, long expiration, long size)
+            : base(expiration, size)
         {
             this.list = list;
         }
+
+        /// <inheritdoc />
+        public override byte Type => (byte)GarnetObjectType.List;
 
         /// <summary>
         /// Public getter for the list
         /// </summary>
         public LinkedList<byte[]> LnkList => list;
 
-        /// <summary>
-        /// Construct from binary serialized form
-        /// </summary>
-        public ListObject(BinaryReader reader, long expiration) : this(expiration)
-        {
-            int count = reader.ReadInt32();
-            for (int i = 0; i < count; i++)
-            {
-                var item = reader.ReadBytes(reader.ReadInt32());
-
-                list.AddLast(item);
-                this.UpdateSize(item);
-            }
-        }
-
         /// <inheritdoc />
         public override void DoSerialize(BinaryWriter writer)
         {
-            writer.Write((byte)GarnetObjectType.List);
+            base.DoSerialize(writer);
+
             int count = list.Count;
             writer.Write(count);
             foreach (var item in list)
