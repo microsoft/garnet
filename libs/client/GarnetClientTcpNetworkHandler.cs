@@ -9,13 +9,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.client
 {
-    sealed class GarnetClientTcpNetworkHandler : TcpNetworkHandlerBase<GarnetClient, ClientTcpNetworkSender>
+    sealed class GarnetClientTcpNetworkHandler(
+        GarnetClient serverHook,
+        Action<object> callback,
+        Socket socket,
+        LimitedFixedBufferPool networkPool,
+        bool useTLS,
+        IMessageConsumer messageConsumer,
+        int networkSendThrottleMax = 8,
+        ILogger logger = null)
+        : TcpNetworkHandlerBase<GarnetClient, ClientTcpNetworkSender>(serverHook,
+            new ClientTcpNetworkSender(socket, callback, networkPool, networkSendThrottleMax), socket, networkPool,
+            useTLS, messageConsumer, logger)
     {
-        public GarnetClientTcpNetworkHandler(GarnetClient serverHook, Action<object> callback, Socket socket, LimitedFixedBufferPool networkPool, bool useTLS, IMessageConsumer messageConsumer, int networkSendThrottleMax = 8, ILogger logger = null)
-            : base(serverHook, new ClientTcpNetworkSender(socket, callback, networkPool, networkSendThrottleMax), socket, networkPool, useTLS, messageConsumer, logger)
-        {
-        }
-
         public byte[] RawTransportBuffer => transportReceiveBuffer;
     }
 }
