@@ -665,7 +665,7 @@ namespace Garnet.test.cluster
 
         public IPEndPoint GetEndPoint(int nodeIndex) => (IPEndPoint)endpoints[nodeIndex];
 
-        public IPEndPoint GetEndPointFromPort(int Port) => endpoints.Select(x => (IPEndPoint)x).Where(x => x.Port == Port).First();
+        public IPEndPoint GetEndPointFromPort(int Port) => endpoints.Select(x => (IPEndPoint)x).First(x => x.Port == Port);
 
         public void RandomBytesRestrictedToSlot(ref byte[] data, int slot, int startOffset = -1, int endOffset = -1)
         {
@@ -1398,11 +1398,11 @@ namespace Garnet.test.cluster
                 for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
                     var range = nodeInfo[i].Split('-');
-                    ushort slotStart = UInt16.Parse(range[0]);
+                    ushort slotStart = ushort.Parse(range[0]);
                     ushort slotEnd;
                     if (range.Length > 1)
                     {
-                        slotEnd = UInt16.Parse(range[1]);
+                        slotEnd = ushort.Parse(range[1]);
                         slots.AddRange(Enumerable.Range(slotStart, slotEnd - slotStart + 1));
                     }
                     else
@@ -1682,7 +1682,7 @@ namespace Garnet.test.cluster
             try
             {
                 var result = server.Execute("cluster", "MTASKS");
-                return Int32.Parse((string)result);
+                return int.Parse((string)result);
             }
             catch (Exception ex)
             {
@@ -1972,9 +1972,10 @@ namespace Garnet.test.cluster
                     var slots = (RedisResult[])shard[1];
                     var nodes = (RedisResult[])shard[3];
 
-                    ShardInfo shardInfo = new();
-
-                    shardInfo.slotRanges = new();
+                    ShardInfo shardInfo = new()
+                    {
+                        slotRanges = new()
+                    };
                     for (int i = 0; i < slots.Length; i += 2)
                         shardInfo.slotRanges.Add(((int)slots[i], (int)slots[i + 1]));
 

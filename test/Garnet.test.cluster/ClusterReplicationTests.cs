@@ -71,7 +71,7 @@ namespace Garnet.test.cluster
             x[37] = new(() => ClusterSRPrimaryRestart(true, true), "ClusterSRPrimaryRestart(true, true)");
 
             //7
-            x[38] = new(() => ClusterSRRedirectWrites(), "ClusterSRRedirectWrites()");
+            x[38] = new(ClusterSRRedirectWrites, "ClusterSRRedirectWrites()");
 
             return x;
         }

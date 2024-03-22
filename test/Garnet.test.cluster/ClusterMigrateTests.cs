@@ -21,37 +21,37 @@ namespace Garnet.test.cluster
         {
             (Action, string)[] x = new (Action, string)[11];
             //1
-            x[0] = new(() => ClusterSimpleInitialize(), "ClusterSimpleInitialize()");
+            x[0] = new(ClusterSimpleInitialize, "ClusterSimpleInitialize()");
 
             //2
-            x[1] = new(() => ClusterSimpleSlotInfo(), "ClusterSimpleSlotInfo()");
+            x[1] = new(ClusterSimpleSlotInfo, "ClusterSimpleSlotInfo()");
 
             //3
-            x[2] = new(() => ClusterAddDelSlots(), "ClusterAddDelSlots()");
+            x[2] = new(ClusterAddDelSlots, "ClusterAddDelSlots()");
 
             //4
-            x[3] = new(() => ClusterSlotChangeStatus(), "ClusterSlotChangeStatus()");
+            x[3] = new(ClusterSlotChangeStatus, "ClusterSlotChangeStatus()");
 
             //5
-            x[4] = new(() => ClusterRedirectMessage(), "ClusterRedirectMessage()");
+            x[4] = new(ClusterRedirectMessage, "ClusterRedirectMessage()");
 
             //6
-            x[5] = new(() => ClusterSimpleMigrateSlots(), "ClusterSimpleMigrateSlots()");
+            x[5] = new(ClusterSimpleMigrateSlots, "ClusterSimpleMigrateSlots()");
 
             //7
-            x[6] = new(() => ClusterSimpleMigrateSlotsExpiry(), "ClusterSimpleMigrateSlotsExpiry()");
+            x[6] = new(ClusterSimpleMigrateSlotsExpiry, "ClusterSimpleMigrateSlotsExpiry()");
 
             //8
-            x[7] = new(() => ClusterSimpleMigrateSlotsWithObjects(), "ClusterSimpleMigrateSlotsWithObjects()");
+            x[7] = new(ClusterSimpleMigrateSlotsWithObjects, "ClusterSimpleMigrateSlotsWithObjects()");
 
             //9
-            x[8] = new(() => ClusterSimpleMigrateKeys(), "ClusterSimpleMigrateKeys()");
+            x[8] = new(ClusterSimpleMigrateKeys, "ClusterSimpleMigrateKeys()");
 
             //10
-            x[9] = new(() => ClusterSimpleMigrateKeysWithObjects(), "ClusterSimpleMigrateKeysWithObjects()");
+            x[9] = new(ClusterSimpleMigrateKeysWithObjects, "ClusterSimpleMigrateKeysWithObjects()");
 
             //11
-            x[10] = new(() => ClusterSimpleMigrateWithReadWrite(), "ClusterSimpleMigrateWithReadWrite()");
+            x[10] = new(ClusterSimpleMigrateWithReadWrite, "ClusterSimpleMigrateWithReadWrite()");
 
             return x;
         }
