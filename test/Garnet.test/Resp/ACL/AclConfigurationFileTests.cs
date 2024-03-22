@@ -107,8 +107,8 @@ namespace Garnet.test.Resp.ACL
         public async Task AclLoad()
         {
             // Create a modified ACL that (1) removes two users, (2) adds one user, (3) removes one password and (4) removes the default user
-            string originalConfigurationFile = "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin\r\nuser testC on >passw0rd\r\nuser default on nopass +@admin";
-            string modifiedConfigurationFile = "user testD on >password123\r\nuser testB on >passw0rd +@admin";
+            const string originalConfigurationFile = "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin\r\nuser testC on >passw0rd\r\nuser default on nopass +@admin";
+            const string modifiedConfigurationFile = "user testD on >password123\r\nuser testB on >passw0rd +@admin";
 
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
 
@@ -178,8 +178,8 @@ namespace Garnet.test.Resp.ACL
         public async Task AclLoadErrors()
         {
             // Create a modified ACL that (1) adds a new user, (2) modifies an existing user and (3) fails.
-            string originalConfigurationFile = "user testA on >password123 +@admin";
-            string modifiedConfigurationFile = $"user testB on nopass\r\nuser testA on >password123 >{DummyPassword} +@admin\r\nuser badinput testC on >passw0rd +@admin";
+            const string originalConfigurationFile = "user testA on >password123 +@admin";
+            const string modifiedConfigurationFile = $"user testB on nopass\r\nuser testA on >password123 >{DummyPassword} +@admin\r\nuser badinput testC on >passw0rd +@admin";
 
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
 
