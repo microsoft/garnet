@@ -4,14 +4,12 @@ on:
   push:
     paths-ignore:
       - '**/*.md'
-      - '.github'
       - '.azure'
     branches:
       - main
   pull_request:
     paths-ignore:
       - '**/*.md'
-      - '.github'
       - '.azure'
     branches:
       - main
@@ -21,33 +19,15 @@ env:
   DOTNET_NOLOGO: true
 
 jobs:
-  website_changed:
-    name: Check if website changed  
-    runs-on: ubuntu-latest  
-    permissions:
-      pull-requests: read
-      contents: read
-    outputs:
-      website: ${{ steps.filter.outputs.website }}
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v4
-    - name: Check if Website changed
-      uses: dorny/paths-filter@v3
-      id: filter
-      with:
-        filters: |
-          website:
-            - 'website/**'
-
   changes:
-    name: Check if Tsavorite changed
+    name: Check Tsavorite and Website changed
     runs-on: ubuntu-latest  # don't need matrix to test where the changes were made in code
     permissions:
       pull-requests: read
       contents: read
     outputs:
       tsavorite: ${{ steps.filter.outputs.tsavorite }}
+      website: ${{ steps.filter.outputs.website }}
     steps:
     - name: Check out code
       uses: actions/checkout@v4
@@ -58,7 +38,9 @@ jobs:
         filters: |
           tsavorite:
             - 'libs/storage/Tsavorite/**'
-
+          website:
+            - 'website/**'
+  
   # Job to build and test Garnet code
   build-test-garnet:
     name: Garnet - Build and Test
@@ -134,12 +116,12 @@ jobs:
 
   build-website:
     name: Build Website
-    needs: website_changed    
+    needs: changes    
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: website
-    if: needs.website_changed.outputs.website == 'true'   
+    if: needs.changes.outputs.website == 'true'   
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
