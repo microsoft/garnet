@@ -504,7 +504,7 @@ namespace Tsavorite.core
                         while (physicalAddress < endPhysicalAddress)
                         {
                             ref var info = ref GetInfo(physicalAddress);
-                            var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
+                            var (_, alignedRecordSize) = GetRecordSize(physicalAddress);
                             if (info.Dirty)
                             {
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
@@ -1342,8 +1342,7 @@ namespace Tsavorite.core
             notifyDone = null;
             tailAddress = GetTailAddress();
             long localTailAddress = tailAddress;
-            long currentReadOnlyOffset = ReadOnlyAddress;
-            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, tailAddress, out long oldReadOnlyOffset))
+            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, tailAddress, out _))
             {
                 notifyFlushedUntilAddressSemaphore = new SemaphoreSlim(0);
                 notifyDone = notifyFlushedUntilAddressSemaphore;
@@ -1361,7 +1360,7 @@ namespace Tsavorite.core
         /// <param name="noFlush"></param>
         public bool ShiftReadOnlyAddress(long newReadOnlyAddress, bool noFlush = false)
         {
-            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out long oldReadOnlyOffset))
+            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, out _))
             {
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(newReadOnlyAddress, noFlush));
                 return true;
@@ -1378,7 +1377,7 @@ namespace Tsavorite.core
         public void ShiftBeginAddress(long newBeginAddress, bool truncateLog, bool noFlush = false)
         {
             // First update the begin address
-            if (!Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out long oldBeginAddress))
+            if (!Utility.MonotonicUpdate(ref BeginAddress, newBeginAddress, out _))
             {
                 if (truncateLog)
                     epoch.BumpCurrentEpoch(() => TruncateUntilAddress(newBeginAddress));
@@ -1413,7 +1412,7 @@ namespace Tsavorite.core
             }
 
             // Then shift head address
-            var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out long old);
+            var h = Utility.MonotonicUpdate(ref HeadAddress, newBeginAddress, out _);
 
             if (h || truncateLog)
             {
@@ -1586,10 +1585,9 @@ namespace Tsavorite.core
         /// <param name="currentTailAddress"></param>
         private void PageAlignedShiftReadOnlyAddress(long currentTailAddress)
         {
-            long currentReadOnlyAddress = ReadOnlyAddress;
             long pageAlignedTailAddress = currentTailAddress & ~PageSizeMask;
             long desiredReadOnlyAddress = pageAlignedTailAddress - ReadOnlyLagAddress;
-            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out long oldReadOnlyAddress))
+            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, desiredReadOnlyAddress, out _))
             {
                 // Debug.WriteLine("Allocate: Moving read-only offset from {0:X} to {1:X}", oldReadOnlyAddress, desiredReadOnlyAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(desiredReadOnlyAddress));
@@ -1619,7 +1617,7 @@ namespace Tsavorite.core
                 newHeadAddress = currentFlushedUntilAddress;
             }
 
-            if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out long oldHeadAddress))
+            if (Utility.MonotonicUpdate(ref HeadAddress, newHeadAddress, out _))
             {
                 // Debug.WriteLine("Allocate: Moving head offset from {0:X} to {1:X}", oldHeadAddress, newHeadAddress);
                 epoch.BumpCurrentEpoch(() => OnPagesClosed(newHeadAddress));
@@ -1909,7 +1907,7 @@ namespace Tsavorite.core
             long endPage = untilAddress >> LogPageSizeBits;
             int numPages = (int)(endPage - startPage);
 
-            long offsetInStartPage = GetOffsetInPage(fromAddress);
+            _ = GetOffsetInPage(fromAddress);
             long offsetInEndPage = GetOffsetInPage(untilAddress);
 
             // Extra (partial) page being flushed
@@ -2000,7 +1998,7 @@ namespace Tsavorite.core
         {
             for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
-                int pageIndex = GetPageIndexForPage(flushPage);
+               _ = GetPageIndexForPage(flushPage);
                 var asyncResult = new PageAsyncFlushResult<TContext>()
                 {
                     page = flushPage,
@@ -2267,7 +2265,7 @@ namespace Tsavorite.core
                         while (physicalAddress < endPhysicalAddress)
                         {
                             ref var info = ref GetInfo(physicalAddress);
-                            var (recordSize, alignedRecordSize) = GetRecordSize(physicalAddress);
+                            var (_, alignedRecordSize) = GetRecordSize(physicalAddress);
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;

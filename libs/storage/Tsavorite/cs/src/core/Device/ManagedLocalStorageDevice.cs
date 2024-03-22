@@ -470,10 +470,10 @@ namespace Tsavorite.core
             }
 
             if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3),
-                                        out uint lpSectorsPerCluster,
+                                        out _,
                                         out uint _sectorSize,
-                                        out uint lpNumberOfFreeClusters,
-                                        out uint lpTotalNumberOfClusters))
+                                        out _,
+                                        out _))
             {
                 Debug.WriteLine("Unable to retrieve information for disk " + filename.Substring(0, 3) + " - check if the disk is available and you have specified the full path with drive name. Assuming sector size of 512 bytes.");
                 _sectorSize = 512;
