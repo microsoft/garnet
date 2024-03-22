@@ -19,7 +19,7 @@ insert_final_newline = false
 
 # Code analyzers
 dotnet_analyzer_diagnostic.category-Security.severity = error
-dotnet_analyzer_diagnostic.category-Style.severity = none
+dotnet_analyzer_diagnostic.category-Style.severity = error
 
 # Temporary code analysis supressions
 # IDE1006: Naming Styles
@@ -46,6 +46,8 @@ dotnet_diagnostic.IDE0240.severity = suggestion
 dotnet_diagnostic.CS1573.severity = suggestion
 # CS1591: Missing XML comment for publicly visible type or member
 dotnet_diagnostic.CS1591.severity = suggestion
+# IDE0003: Remove qualification
+dotnet_diagnostic.IDE0003.severity = suggestion
 # IDE0250: Make struct 'readonly'
 dotnet_diagnostic.IDE0250.severity = none
 
