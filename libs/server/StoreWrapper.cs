@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -163,6 +164,26 @@ namespace Garnet.server
 
             ctsCommit = new();
             run_id = Generator.CreateHexId();
+        }
+
+        public byte[] SerializeGarnetObject(IGarnetObject garnetObject)
+        {
+            using var ms = new MemoryStream();
+            var serializer = new GarnetObjectSerializer(customCommandManager);
+            serializer.BeginSerialize(ms);
+            serializer.Serialize(ref garnetObject);
+            serializer.EndSerialize();
+            return ms.ToArray();
+        }
+
+        public IGarnetObject CreateGarnetObject(byte[] data)
+        {
+            using var ms = new MemoryStream(data);
+            var serializer = new GarnetObjectSerializer(customCommandManager);
+            serializer.BeginDeserialize(ms);
+            serializer.Deserialize(out var obj);
+            serializer.EndDeserialize();
+            return obj;
         }
 
         /// <summary>
