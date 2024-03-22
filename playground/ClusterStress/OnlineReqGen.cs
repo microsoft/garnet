@@ -75,10 +75,10 @@ namespace Resp.benchmark
             int key = randomGen ? (zipf ? zipfg.Next() : keyRandomGen.Next(DbSize)) : (keyIndex++ % DbSize);
             slot = Garnet.common.NumUtils.HashSlot(Encoding.ASCII.GetBytes(key.ToString()));
             byte[] keyBytes = GetClusterKeyBytes(key);
-#if DEBUG
+
             int _slot = Garnet.common.NumUtils.HashSlot(keyBytes);
             Debug.Assert(_slot == slot, $"GenerateKeyBytes slot number incosistence {_slot}:{slot}");
-#endif
+
             return keyBytes;
         }
 
@@ -87,10 +87,10 @@ namespace Resp.benchmark
             int key = randomGen ? (zipf ? zipfg.Next() : keyRandomGen.Next(DbSize)) : (keyIndex++ % DbSize);
             slot = Garnet.common.NumUtils.HashSlot(Encoding.ASCII.GetBytes(key.ToString()));
             byte[] keyBytes = GetClusterKeyBytes(key);
-#if DEBUG
+
             int _slot = Garnet.common.NumUtils.HashSlot(keyBytes);
             Debug.Assert(_slot == slot, $"GenerateKeyBytes slot number incosistence {_slot}:{slot}");
-#endif
+
             return Encoding.ASCII.GetString(keyBytes);
         }
 
