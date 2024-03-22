@@ -53,7 +53,7 @@ namespace Garnet.client
         /// ensure latest value is seen by the last suspended thread.
         /// </summary>
         volatile int drainCount = 0;
-        readonly EpochActionPair[] drainList = new EpochActionPair[KDrainListSize];
+        private readonly EpochActionPair[] drainList = new EpochActionPair[DrainListSize];
 
         /// <summary>
         /// A thread's entry in the epoch table.
