@@ -3,8 +3,6 @@
 
 using System;
 using System.IO;
-using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using ErrorEventArgs = Newtonsoft.Json.Serialization.ErrorEventArgs;

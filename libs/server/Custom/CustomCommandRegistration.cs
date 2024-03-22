@@ -2,9 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 
 namespace Garnet.server.Custom
 {
@@ -85,12 +83,12 @@ namespace Garnet.server.Custom
         /// <summary>
         /// All supported custom command types 
         /// </summary>
-        public static readonly ImmutableArray<Type> SupportedCustomCommandBaseTypes =
+        public static readonly ImmutableArray<Type> SupportedCustomCommandBaseTypes = ImmutableArray.Create(
         [
             typeof(CustomRawStringFunctions),
             typeof(CustomObjectFactory),
             typeof(CustomTransactionProcedure)
-        ];
+        ]);
 
         public abstract void Register(CustomCommandManager customCommandManager);
     }
