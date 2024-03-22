@@ -3,8 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -60,11 +58,7 @@ namespace Garnet.cluster
 
                     if (slots.Contains(slot) && !ClusterSession.Expired(ref value))
                     {
-                        using var ms = new MemoryStream();
-                        using var writer = new BinaryWriter(ms, Encoding.ASCII);
-
-                        value.Serialize(writer);
-                        byte[] objectData = ms.ToArray();
+                        byte[] objectData = session.clusterProvider.storeWrapper.SerializeGarnetObject(value);
                         if (!session.WriteOrSendObjectStoreKeyValuePair(key, objectData, value.Expiration))
                             return false;
                     }
