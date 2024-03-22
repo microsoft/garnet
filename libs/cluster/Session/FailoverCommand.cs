@@ -13,22 +13,19 @@ namespace Garnet.cluster
     {
         private bool TryFAILOVER(int count, byte* ptr)
         {
-            //FAILOVER [TO host port [FORCE]] [ABORT] [TIMEOUT milliseconds]
-            //$8\r\nFAIL OVER \r\n
-            //ptr += 14;
-            int args = count - 1;
-            FailoverOption failoverOption = FailoverOption.DEFAULT;
-            string replicaAddress = String.Empty;
-            int replicaPort = 0;
-            int timeout = -1;
-            bool abort = false;
-            bool force = false;
+            var args = count - 1;
+            var replicaAddress = string.Empty;
+            var replicaPort = 0;
+            var timeout = -1;
+            var abort = false;
+            var force = false;
 
             while (args > 0)
             {
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
+                FailoverOption failoverOption;
                 try
                 {
                     failoverOption = (FailoverOption)Enum.Parse(typeof(FailoverOption), option);
@@ -45,11 +42,11 @@ namespace Garnet.cluster
                 switch (failoverOption)
                 {
                     case FailoverOption.TO:
-                        //1. Address
+                        // 1. Address
                         if (!RespReadUtils.ReadStringWithLengthHeader(out replicaAddress, ref ptr, recvBufferPtr + bytesRead))
                             return false;
 
-                        //2. Port
+                        // 2. Port
                         if (!RespReadUtils.ReadIntWithLengthHeader(out replicaPort, ref ptr, recvBufferPtr + bytesRead))
                             return false;
 
@@ -73,19 +70,19 @@ namespace Garnet.cluster
 
             if (clusterProvider.clusterManager.CurrentConfig.GetLocalNodeRole() != NodeRole.PRIMARY)
             {
-                var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Cannot failover a non master node.\r\n"));
+                var resp = CmdStrings.RESP_CANNOT_FAILOVER_FROM_NON_MASTER;
                 while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            //Validate failing over node config
-            if (replicaPort != -1 && replicaAddress != String.Empty)
+            // Validate failing over node config
+            if (replicaPort != -1 && replicaAddress != string.Empty)
             {
                 var replicaNodeId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(replicaAddress, replicaPort);
                 if (replicaNodeId == null)
                 {
-                    var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Endpoint does not known.\r\n"));
+                    var resp = CmdStrings.RESP_UNKNOWN_ENDPOINT_ERROR;
                     while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
@@ -109,7 +106,7 @@ namespace Garnet.cluster
                 }
             }
 
-            //Try abort ongoing failover
+            // Try abort ongoing failover
             if (abort)
             {
                 clusterProvider.clusterManager.TrySetLocalNodeRole(NodeRole.PRIMARY);
@@ -118,7 +115,7 @@ namespace Garnet.cluster
             else
             {
                 var timeoutTimeSpan = timeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(timeout);
-                clusterProvider.failoverManager.TryStartPrimaryFailover(replicaAddress, replicaPort, force ? FailoverOption.FORCE : FailoverOption.DEFAULT, timeoutTimeSpan);
+                _ = clusterProvider.failoverManager.TryStartPrimaryFailover(replicaAddress, replicaPort, force ? FailoverOption.FORCE : FailoverOption.DEFAULT, timeoutTimeSpan);
             }
 
             while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
