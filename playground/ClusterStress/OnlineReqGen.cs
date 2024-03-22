@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -77,7 +76,7 @@ namespace Resp.benchmark
             byte[] keyBytes = GetClusterKeyBytes(key);
 #if DEBUG
             int _slot = Garnet.common.NumUtils.HashSlot(keyBytes);
-            Debug.Assert(_slot == slot, $"GenerateKeyBytes slot number incosistence {_slot}:{slot}");
+            System.Diagnostics.Debug.Assert(_slot == slot, $"GenerateKeyBytes slot number incosistence {_slot}:{slot}");
 #endif
             return keyBytes;
         }
@@ -89,7 +88,7 @@ namespace Resp.benchmark
             byte[] keyBytes = GetClusterKeyBytes(key);
 #if DEBUG
             int _slot = Garnet.common.NumUtils.HashSlot(keyBytes);
-            Debug.Assert(_slot == slot, $"GenerateKeyBytes slot number incosistence {_slot}:{slot}");
+            System.Diagnostics.Debug.Assert(_slot == slot, $"GenerateKeyBytes slot number incosistence {_slot}:{slot}");
 #endif
             return Encoding.ASCII.GetString(keyBytes);
         }
