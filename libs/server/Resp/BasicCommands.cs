@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -467,6 +468,7 @@ namespace Garnet.server
                     continue;
                 }
 
+                logger?.LogError("ptr: {0}", *(long*)ptr);
                 if (*(long*)ptr == 724332168621142564) // [EX]
                 {
                     ptr += 8;
@@ -483,6 +485,29 @@ namespace Garnet.server
                         continue;
                     }
                     expOption = ExpirationOption.EX;
+                    if (expiry <= 0)
+                    {
+                        errorMessage = CmdStrings.RESP_ERRINVALIDEXP_IN_SET;
+                        error = true;
+                        continue;
+                    }
+                }
+                else if (*(long*)ptr == 724332215865782820) // [PX]
+                {
+                    ptr += 8;
+                    cmdcount--;
+
+                    if (!RespReadUtils.ReadIntWithLengthHeader(out expiry, ref ptr, recvBufferPtr + bytesRead))
+                        return false;
+                    cmdcount--;
+
+                    if (expOption != ExpirationOption.None)
+                    {
+                        errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                        error = true;
+                        continue;
+                    }
+                    expOption = ExpirationOption.PX;
                     if (expiry <= 0)
                     {
                         errorMessage = CmdStrings.RESP_ERRINVALIDEXP_IN_SET;
@@ -566,12 +591,26 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue ?
-                                NetworkSET_Conditional(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi) :
-                                NetworkSET_EX(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, ref storageApi); // Can perform a blind update
+                                NetworkSET_Conditional(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false) :
+                                NetworkSET_EX(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, ref storageApi, false); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
+                    }
+                    break;
+                
+                case ExpirationOption.PX:
+                    switch (existOptions)
+                    {
+                        case ExistOptions.None:
+                            return getValue ?
+                                NetworkSET_Conditional(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, true) :
+                                NetworkSET_EX(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, ref storageApi, true); // Can perform a blind update
+                        case ExistOptions.XX:
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, true);
+                        case ExistOptions.NX:
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, true);
                     }
                     break;
 
@@ -581,11 +620,11 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
                     }
                     break;
             }
@@ -595,7 +634,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, byte* ptr, int expiry, byte* keyPtr, byte* valPtr, int vsize, ref TGarnetApi storageApi)
+        private bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, byte* ptr, int expiry, byte* keyPtr, byte* valPtr, int vsize, ref TGarnetApi storageApi, bool highPrecision)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SET);
@@ -609,7 +648,7 @@ namespace Garnet.server
                 // Move payload forward to make space for metadata
                 Buffer.MemoryCopy(valPtr + sizeof(int), valPtr + sizeof(int) + sizeof(long), vsize, vsize);
                 *(int*)valPtr = vsize + sizeof(long);
-                SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
+                SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks + (highPrecision ? TimeSpan.FromMilliseconds(expiry).Ticks : TimeSpan.FromSeconds(expiry).Ticks);
             }
 
             storageApi.SET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
@@ -620,7 +659,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, byte* ptr, int expiry, byte* keyPtr, byte* inputPtr, int isize, bool getValue, ref TGarnetApi storageApi)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, byte* ptr, int expiry, byte* keyPtr, byte* inputPtr, int isize, bool getValue, ref TGarnetApi storageApi, bool highPrecision)
             where TGarnetApi : IGarnetApi
         {
             // Make space for RespCommand in input
@@ -643,7 +682,7 @@ namespace Garnet.server
                 ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->flags = 0;
                 if (getValue)
                     ((RespInputHeader*)(inputPtr + sizeof(int) + sizeof(long)))->SetSetGetFlag();
-                SpanByte.Reinterpret(inputPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
+                SpanByte.Reinterpret(inputPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks + (highPrecision ? TimeSpan.FromMilliseconds(expiry).Ticks : TimeSpan.FromSeconds(expiry).Ticks);
             }
 
             if (getValue)
