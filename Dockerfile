@@ -3,11 +3,12 @@ WORKDIR /source
 
 # Copy files
 COPY . .
-RUN dotnet restore
+WORKDIR /source/main/GarnetServer
+
+RUN dotnet restore 
 RUN dotnet build -c Release
 
 # Copy and publish app and libraries
-WORKDIR /source/main/GarnetServer
 RUN dotnet publish -c Release -o /app --self-contained false -f net8.0
 
 # Final stage/image
