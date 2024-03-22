@@ -18,9 +18,9 @@ namespace Garnet.cluster
     /// </summary>
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        static readonly Memory<byte> IMPORTING = Encoding.ASCII.GetBytes("IMPORTING");
-        static readonly Memory<byte> NODE = Encoding.ASCII.GetBytes("NODE");
-        static readonly Memory<byte> STABLE = Encoding.ASCII.GetBytes("STABLE");
+        static readonly Memory<byte> IMPORTING = "IMPORTING"u8.ToArray();
+        static readonly Memory<byte> NODE = "NODE"u8.ToArray();
+        static readonly Memory<byte> STABLE = "STABLE"u8.ToArray();
 
         readonly ClusterProvider clusterProvider;
         readonly LocalServerSession localServerSession;

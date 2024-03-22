@@ -12,9 +12,9 @@ namespace Garnet.client
     public sealed partial class GarnetClient
     {
 
-        static readonly Memory<byte> ZCARD = Encoding.ASCII.GetBytes("$5\r\nZCARD\r\n");
-        static readonly Memory<byte> ZADD = Encoding.ASCII.GetBytes("$4\r\nZADD\r\n");
-        static readonly Memory<byte> ZREM = Encoding.ASCII.GetBytes("$4\r\nZREM\r\n");
+        static readonly Memory<byte> ZCARD = "$5\r\nZCARD\r\n"u8.ToArray();
+        static readonly Memory<byte> ZADD = "$4\r\nZADD\r\n"u8.ToArray();
+        static readonly Memory<byte> ZREM = "$4\r\nZREM\r\n"u8.ToArray();
 
         /// <summary>
         /// Adds/Updates a member, score in a SortedSet

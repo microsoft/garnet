@@ -1,0 +1,29 @@
+version: '3.4'
+
+services:
+  garnet:
+    restart: always
+    image: garnet
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3278:3278"
+
+  # garnet.nanoserver-x64:
+  #   restart: always
+  #   image: garnet.nanoserver-x64
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.nanoserver-x64
+  #   ports:
+  #     - "3278:3278"
+
+  # garnet.ubuntu-x64:
+  #   restart: always
+  #   image: garnet.ubuntu-x64
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.ubuntu-x64
+  #   ports:
+  #     - "3278:3278"

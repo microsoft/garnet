@@ -33,13 +33,10 @@
     <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
-    <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
-  </ItemGroup>
-
 	<ItemGroup>
 	<PackageReference Include="Azure.Storage.Blobs" Version="12.14.1" />
 	<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
+	<PackageReference Include="System.Interactive.Async" Version="6.0.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\core\Tsavorite.core.csproj" />
