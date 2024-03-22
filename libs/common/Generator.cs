@@ -12,25 +12,25 @@ namespace Garnet.common
     public static class Generator
     {
         /// <summary>
-        /// Random hex id
+        /// Generates a random hex string of specified length
         /// </summary>
-        /// <param name="size"></param>
+        /// <param name="size">The length of the hex identifier string</param>
         /// <returns></returns>
         public static string CreateHexId(int size = 40)
         {
-            Span<byte> nodeIdBuffer = stackalloc byte[size];
+            Span<byte> nodeIdBuffer = stackalloc byte[size / 2];
             RandomNumberGenerator.Fill(nodeIdBuffer);
             return Convert.ToHexString(nodeIdBuffer).ToLowerInvariant();
         }
 
         /// <summary>
-        /// Default hex id
+        /// Generates a default hex string of specified length (all zeros)
         /// </summary>
-        /// <param name="size"></param>
+        /// <param name="size">The length of the hex identifier string</param>
         /// <returns></returns>
         public static string DefaultHexId(int size = 40)
         {
-            Span<byte> nodeIdBuffer = stackalloc byte[size];
+            Span<byte> nodeIdBuffer = stackalloc byte[size / 2];
             nodeIdBuffer.Clear();
             return Convert.ToHexString(nodeIdBuffer).ToLowerInvariant();
         }
