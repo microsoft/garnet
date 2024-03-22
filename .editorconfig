@@ -46,6 +46,8 @@ dotnet_diagnostic.IDE0240.severity = suggestion
 dotnet_diagnostic.CS1573.severity = suggestion
 # CS1591: Missing XML comment for publicly visible type or member
 dotnet_diagnostic.CS1591.severity = suggestion
+# IDE0003: Remove qualification
+dotnet_diagnostic.IDE0003.severity = suggestion
 # IDE0250: Make struct 'readonly'
 dotnet_diagnostic.IDE0250.severity = none
 
@@ -61,10 +63,10 @@ dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
 dotnet_style_predefined_type_for_member_access = true:suggestion
 
 # avoid this. unless absolutely necessary
-dotnet_style_qualification_for_field = false:none
-dotnet_style_qualification_for_property = false:none
-dotnet_style_qualification_for_method = false:none
-dotnet_style_qualification_for_event = false:none
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
 
 # name all constant fields using PascalCase
 dotnet_naming_rule.constant_fields_should_be_pascal_case.severity = suggestion
