@@ -51,7 +51,7 @@ namespace Garnet.cluster
             try
             {
                 PauseConfigMerge();
-                ReadOnlySpan<byte> resp = CmdStrings.RESP_OK;
+                var resp = CmdStrings.RESP_OK;
                 while (true)
                 {
                     var current = currentConfig;
@@ -66,8 +66,8 @@ namespace Garnet.cluster
                         return new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Can't forget my primary!\r\n"));
 
                     var newConfig = current.RemoveWorker(nodeid);
-                    long expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
-                    workerBanList.AddOrUpdate(nodeid, expiry, (key, oldValue) => expiry);
+                    var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
+                    _ = workerBanList.AddOrUpdate(nodeid, expiry, (key, oldValue) => expiry);
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
                 }
@@ -91,22 +91,22 @@ namespace Garnet.cluster
             try
             {
                 PauseConfigMerge();
-                ReadOnlySpan<byte> resp = CmdStrings.RESP_OK;
+                var resp = CmdStrings.RESP_OK;
 
                 while (true)
                 {
                     var current = currentConfig;
-                    string newNodeId = soft ? current.GetLocalNodeId() : Generator.CreateHexId();
-                    string address = current.GetLocalNodeIp();
-                    int port = current.GetLocalNodePort();
+                    var newNodeId = soft ? current.GetLocalNodeId() : Generator.CreateHexId();
+                    var address = current.GetLocalNodeIp();
+                    var port = current.GetLocalNodePort();
 
-                    long configEpoch = soft ? current.GetLocalNodeConfigEpoch() : 0;
-                    long currentConfigEpoch = soft ? current.GetLocalNodeCurrentConfigEpoch() : 0;
-                    long lastVotedConfigEpoch = soft ? current.GetLocalNodeLastVotedEpoch() : 0;
+                    var configEpoch = soft ? current.GetLocalNodeConfigEpoch() : 0;
+                    var currentConfigEpoch = soft ? current.GetLocalNodeCurrentConfigEpoch() : 0;
+                    var lastVotedConfigEpoch = soft ? current.GetLocalNodeLastVotedEpoch() : 0;
 
-                    long expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
+                    var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
                     foreach (var nodeId in current.GetRemoteNodeIds())
-                        workerBanList.AddOrUpdate(nodeId, expiry, (key, oldValue) => expiry);
+                        _ = workerBanList.AddOrUpdate(nodeId, expiry, (key, oldValue) => expiry);
 
                     var newConfig = new ClusterConfig().InitializeLocalWorker(
                         newNodeId,
@@ -148,7 +148,7 @@ namespace Garnet.cluster
                 if (current.GetLocalNodeId().Equals(nodeid))
                 {
                     logger?.LogError("-ERR Can't replicate myself");
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Can't replicate myself.\r\n"));
+                    resp = CmdStrings.RESP_CANNOT_REPLICATE_SELF_ERROR;
                     return false;
                 }
 
@@ -161,12 +161,12 @@ namespace Garnet.cluster
 
                 if (!force && current.HasAssignedSlots(1))
                 {
-                    logger?.LogError("-ERR To set a master the node must be empty and without assigned slots.");
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR To set a master the node must be empty and without assigned slots.\r\n"));
+                    logger?.LogError("{msg}", Encoding.ASCII.GetString(CmdStrings.RESP_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS));
+                    resp = CmdStrings.RESP_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS;
                     return false;
                 }
 
-                int workerId = current.GetWorkerIdFromNodeId(nodeid);
+                var workerId = current.GetWorkerIdFromNodeId(nodeid);
                 if (workerId == 0)
                 {
                     logger?.LogError("-ERR I don't know about node {nodeid}.", nodeid);
