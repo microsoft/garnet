@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -438,6 +439,7 @@ namespace Garnet
         /// <param name="invalidOptions">List of invalid options</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if all property values are valid</returns>
+        [RequiresUnreferencedCode("Calls System.ComponentModel.DataAnnotations.ValidationContext.ValidationContext(Object)")]
         public bool IsValid(out List<string> invalidOptions, ILogger logger)
         {
             invalidOptions = new List<string>();

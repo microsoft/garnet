@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using Garnet.cluster;
@@ -64,6 +65,7 @@ namespace Garnet
         /// </summary>
         /// <param name="commandLineArgs">Command line arguments</param>
         /// <param name="loggerFactory">Logger factory</param>
+        [RequiresUnreferencedCode("Calls Garnet.Options.IsValid(out List<String>, ILogger)")]
         public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null)
         {
             Trace.Listeners.Add(new ConsoleTraceListener());

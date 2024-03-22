@@ -30,6 +30,11 @@ namespace Garnet.server.ACL
         };
 
         /// <summary>
+        /// Highest bit flag value
+        /// </summary> 
+        internal static readonly Flag HighestFlag = Enum.GetValues<Flag>().Max();
+
+        /// <summary>
         /// Map of category names to bit flag
         /// </summary>
         static readonly Dictionary<string, Flag> _categoryNames = new()

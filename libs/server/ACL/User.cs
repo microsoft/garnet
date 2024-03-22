@@ -189,7 +189,7 @@ namespace Garnet.server.ACL
             }
 
             // Categories
-            var highestFlag = Enum.GetValues(typeof(CommandCategory.Flag)).Cast<int>().Max();
+            var highestFlag = (int)CommandCategory.HighestFlag;
 
             for (int i = 0; i <= highestFlag; i++)
             {

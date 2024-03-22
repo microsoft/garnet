@@ -15,11 +15,10 @@ namespace Garnet.server
     /// </summary>
     internal class GarnetLatencyMetrics
     {
-        public static readonly LatencyMetricsType[] defaultLatencyTypes =
-            Enum.GetValues(typeof(LatencyMetricsType)).Cast<LatencyMetricsType>().ToArray();
+        public static readonly LatencyMetricsType[] defaultLatencyTypes = Enum.GetValues<LatencyMetricsType>();
 
         // Whether each latency type in LatencyMetricsType enum is in ticks or is a directly reported value
-        static readonly bool[] defaultLatencyTypesTicks = new bool[6] { true, true, true, false, false, true };
+        static readonly bool[] defaultLatencyTypesTicks = [true, true, true, false, false, true];
 
         public LatencyMetricsEntry[] metrics;
 

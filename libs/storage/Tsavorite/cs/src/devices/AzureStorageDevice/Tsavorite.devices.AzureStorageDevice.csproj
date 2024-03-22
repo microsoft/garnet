@@ -8,6 +8,7 @@
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
     <RootNamespace>Tsavorite.devices</RootNamespace>
     <AssemblyName>Tsavorite.devices.AzureStorageDevice</AssemblyName>
     <ErrorReport>prompt</ErrorReport>

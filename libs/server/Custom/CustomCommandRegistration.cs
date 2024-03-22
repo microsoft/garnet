@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 
 namespace Garnet.server.Custom
@@ -84,32 +85,12 @@ namespace Garnet.server.Custom
         /// <summary>
         /// All supported custom command types 
         /// </summary>
-        public static Lazy<Type[]> SupportedCustomCommandBaseTypesLazy = new(() =>
-        {
-            var supportedTypes = new HashSet<Type>();
-            foreach (var type in typeof(RegisterCustomCommandProviderBase).Assembly.GetTypes().Where(t =>
-                         typeof(RegisterCustomCommandProviderBase).IsAssignableFrom(t) && t.IsClass && !t.IsAbstract))
-            {
-                var baseType = type.BaseType;
-                while (baseType != null && baseType != typeof(RegisterCustomCommandProviderBase))
-                {
-                    if (baseType.IsGenericType && baseType.GetGenericTypeDefinition() ==
-                        typeof(RegisterCustomCommandProviderBase<,>))
-                    {
-                        var customCmdType = baseType.GetGenericArguments().FirstOrDefault();
-                        if (customCmdType != null)
-                        {
-                            supportedTypes.Add(customCmdType);
-                            break;
-                        }
-                    }
-
-                    baseType = baseType.BaseType;
-                }
-            }
-
-            return supportedTypes.ToArray();
-        });
+        public static readonly ImmutableArray<Type> SupportedCustomCommandBaseTypes =
+        [
+            typeof(CustomRawStringFunctions),
+            typeof(CustomObjectFactory),
+            typeof(CustomTransactionProcedure)
+        ];
 
         public abstract void Register(CustomCommandManager customCommandManager);
     }

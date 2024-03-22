@@ -267,7 +267,7 @@ namespace Garnet.server
                 classInstances.ContainsKey(t.Name)).ToArray();
 
             // Check that all types implement one of the supported custom command base classes
-            var supportedCustomCommandTypes = RegisterCustomCommandProviderBase.SupportedCustomCommandBaseTypesLazy.Value;
+            var supportedCustomCommandTypes = RegisterCustomCommandProviderBase.SupportedCustomCommandBaseTypes;
             if (loadedTypes.Any(t => !supportedCustomCommandTypes.Any(st => st.IsAssignableFrom(t))))
             {
                 return CmdStrings.RESP_ERROR_REGISTERCS_UNSUPPORTED_CLASS;

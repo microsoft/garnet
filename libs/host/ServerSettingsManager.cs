@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -33,6 +34,7 @@ namespace Garnet
         /// <param name="options">Options object containing parsed configuration settings</param>
         /// <param name="invalidOptions">List of Options properties that did not pass validation</param>
         /// <returns>True if parsing succeeded</returns>
+        [RequiresUnreferencedCode("Calls Garnet.Options.IsValid(out List<String>, ILogger)")]
         internal static bool TryParseCommandLineArguments(string[] args, out Options options, out List<string> invalidOptions, ILogger logger = null)
         {
             if (logger == null)

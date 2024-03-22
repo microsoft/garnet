@@ -3,6 +3,7 @@
 	<PropertyGroup>
 		<TargetFrameworks>net8.0;net7.0;net6.0</TargetFrameworks>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<IsAotCompatible>true</IsAotCompatible>
 		<Platforms>AnyCPU</Platforms>
 		<LangVersion>latest</LangVersion>
 		<SignAssembly>true</SignAssembly>

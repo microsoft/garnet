@@ -108,10 +108,10 @@ namespace Garnet
 
         public bool TryExportOptions(string path, IStreamProvider streamProvider, Options options, ILogger logger)
         {
-            string jsonSettings;
+            byte[] jsonSettings;
             try
             {
-                jsonSettings = JsonSerializer.Serialize(options, new JsonSerializerOptions { WriteIndented = true });
+                jsonSettings = JsonSerializer.SerializeToUtf8Bytes(options, OptionsSerializerContext.Default.OptionsType);
             }
             catch (NotSupportedException e)
             {
@@ -119,8 +119,7 @@ namespace Garnet
                 return false;
             }
 
-            var data = Encoding.ASCII.GetBytes(jsonSettings);
-            streamProvider.Write(path, data);
+            streamProvider.Write(path, jsonSettings);
 
             return true;
         }

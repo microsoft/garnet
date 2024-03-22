@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Garnet
 {
@@ -90,6 +91,7 @@ Specify your subject name via the cert-subject-name command line argument, if ap
     /// This is required in order to determine order of precedence when setting options from multiple sources
     /// </summary>
     /// <typeparam name="T">The underlying type of the option</typeparam>
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)]
     internal class Option<T>
     {
         public T Value { get; set; }
