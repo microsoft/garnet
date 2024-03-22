@@ -7,7 +7,7 @@ using System.Linq;
 using System.Threading;
 using CommandLine;
 using Garnet.client;
-using Garnet.common;
+using Garnet.common.Logging;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 

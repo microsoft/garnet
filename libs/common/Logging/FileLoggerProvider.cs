@@ -5,10 +5,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
-using Garnet.common.Logging;
 using Microsoft.Extensions.Logging;
 
-namespace Garnet.common
+namespace Garnet.common.Logging
 {
     /// <summary>
     /// Extension methods to configure ILoggingBuilder with FileLoggerProvider
@@ -40,7 +39,7 @@ namespace Garnet.common
     public class FileLoggerOutput : IDisposable
     {
         private StreamWriter streamWriter;
-        private readonly object lockObj = new object();
+        private readonly object lockObj = new();
         private readonly TimeSpan flushInterval = Debugger.IsAttached ? TimeSpan.FromMilliseconds(10) : TimeSpan.FromMilliseconds(10);
         private DateTime lastFlush = DateTime.UtcNow;
 

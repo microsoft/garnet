@@ -7,6 +7,7 @@ using System.IO;
 using System.Threading;
 using Garnet.cluster;
 using Garnet.common;
+using Garnet.common.Logging;
 using Garnet.networking;
 using Garnet.server;
 using Microsoft.Extensions.Logging;

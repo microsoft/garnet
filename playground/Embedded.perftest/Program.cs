@@ -3,7 +3,7 @@
 
 using System;
 using CommandLine;
-using Garnet.common;
+using Garnet.common.Logging;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
