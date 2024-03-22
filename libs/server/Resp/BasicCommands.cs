@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
-using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -468,7 +467,6 @@ namespace Garnet.server
                     continue;
                 }
 
-                logger?.LogError("ptr: {0}", *(long*)ptr);
                 if (*(long*)ptr == 724332168621142564) // [EX]
                 {
                     ptr += 8;
