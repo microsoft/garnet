@@ -1998,7 +1998,7 @@ namespace Tsavorite.core
         {
             for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
-               _ = GetPageIndexForPage(flushPage);
+                _ = GetPageIndexForPage(flushPage);
                 var asyncResult = new PageAsyncFlushResult<TContext>()
                 {
                     page = flushPage,
