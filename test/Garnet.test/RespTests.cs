@@ -186,7 +186,7 @@ namespace Garnet.test
 
             string retValue = db.StringGet("mykey");
             Assert.AreEqual(origValue, retValue);
-            
+
             Thread.Sleep(1000);
             retValue = db.StringGet("mykey");
             Assert.AreEqual(origValue, retValue);
@@ -370,7 +370,7 @@ namespace Garnet.test
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
             Assert.IsTrue(int.TryParse(resp, out var ttl) && ttl == -1);
-            
+
             // px
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000");
             Assert.AreEqual(okResponse, resp);
@@ -410,7 +410,7 @@ namespace Garnet.test
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
             Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
-            
+
             // px .. nx, non-existing key
             Assert.IsTrue(db.KeyDelete(key));
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "nx");
