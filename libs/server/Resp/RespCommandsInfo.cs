@@ -62,7 +62,7 @@ namespace Garnet.server
             return result;
         }
 
-        private static readonly Dictionary<RespCommand, RespCommandsInfo> basicCommandsInfoMap = new Dictionary<RespCommand, RespCommandsInfo>
+        private static readonly Dictionary<RespCommand, RespCommandsInfo> basicCommandsInfoMap = new()
         {
             {RespCommand.GET,       new RespCommandsInfo("GET", RespCommand.GET,             2, null)},
             {RespCommand.SET,       new RespCommandsInfo("SET", RespCommand.SET,            -3, new HashSet<RespCommandOption>{
@@ -135,7 +135,7 @@ namespace Garnet.server
             {RespCommand.REGISTERCS, new RespCommandsInfo("REGISTERCS", RespCommand.REGISTERCS, -5, null)},
         };
 
-        private static readonly Dictionary<byte, RespCommandsInfo> sortedSetCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
+        private static readonly Dictionary<byte, RespCommandsInfo> sortedSetCommandsInfoMap = new()
         {
             {(byte)SortedSetOperation.ZADD,             new RespCommandsInfo("ZADD", RespCommand.SortedSet,             -4,null, (byte)SortedSetOperation.ZADD)},
             {(byte)SortedSetOperation.ZREM,             new RespCommandsInfo("ZREM", RespCommand.SortedSet,             -3,null, (byte)SortedSetOperation.ZREM)},
@@ -163,7 +163,7 @@ namespace Garnet.server
             {(byte)SortedSetOperation.ZSCAN,            new RespCommandsInfo("ZSCAN", RespCommand.SortedSet,            -3,null, (byte)SortedSetOperation.ZSCAN)},
         };
 
-        private static readonly Dictionary<byte, RespCommandsInfo> listCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
+        private static readonly Dictionary<byte, RespCommandsInfo> listCommandsInfoMap = new()
         {
             {(byte)ListOperation.LPUSH,     new RespCommandsInfo("LPUSH",   RespCommand.List,   -3, null, (byte)ListOperation.LPUSH)},
             {(byte)ListOperation.LPOP,      new RespCommandsInfo("LPOP",    RespCommand.List,   -2, null, (byte)ListOperation.LPOP)},
@@ -177,7 +177,7 @@ namespace Garnet.server
             {(byte)ListOperation.LREM,      new RespCommandsInfo("LREM",    RespCommand.List,    4, null, (byte)ListOperation.LREM) },
         };
 
-        private static readonly Dictionary<byte, RespCommandsInfo> hashCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
+        private static readonly Dictionary<byte, RespCommandsInfo> hashCommandsInfoMap = new()
         {
             {(byte)HashOperation.HSET,          new RespCommandsInfo("HSET",            RespCommand.Hash,   -4,  null,   (byte)HashOperation.HSET) },
             {(byte)HashOperation.HMSET,         new RespCommandsInfo("HMSET",           RespCommand.Hash,   -4,  null,   (byte)HashOperation.HMSET)},
@@ -196,7 +196,7 @@ namespace Garnet.server
             {(byte)HashOperation.HSCAN,         new RespCommandsInfo("HSCAN",           RespCommand.Hash,   -3,  null,   (byte)HashOperation.HSCAN)},
         };
 
-        private static readonly Dictionary<byte, RespCommandsInfo> setCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
+        private static readonly Dictionary<byte, RespCommandsInfo> setCommandsInfoMap = new()
         {
             {(byte)SetOperation.SADD,       new RespCommandsInfo("SADD",     RespCommand.Set,   -3, null, (byte)SetOperation.SADD)},
             {(byte)SetOperation.SMEMBERS,   new RespCommandsInfo("SMEMBERS", RespCommand.Set,    2, null, (byte)SetOperation.SMEMBERS)},
@@ -206,7 +206,7 @@ namespace Garnet.server
             {(byte)SetOperation.SSCAN,      new RespCommandsInfo("SSCAN",    RespCommand.Set,   -3, null, (byte)SetOperation.SSCAN) },
         };
 
-        private static readonly Dictionary<RespCommand, RespCommandsInfo> customCommandsInfoMap = new Dictionary<RespCommand, RespCommandsInfo>
+        private static readonly Dictionary<RespCommand, RespCommandsInfo> customCommandsInfoMap = new()
         {
             {RespCommand.COSCAN,    new RespCommandsInfo("COSCAN",   RespCommand.All,   -3, null, (byte)RespCommand.COSCAN) },
         };
