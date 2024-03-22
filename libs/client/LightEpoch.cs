@@ -108,7 +108,7 @@ namespace Garnet.client
             p = (long)threadIndexHandle.AddrOfPinnedObject();
 #endif
             // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (KCacheLineBytes - 1)) & ~(KCacheLineBytes - 1);
+            long p2 = (p + (CacheLineBytes - 1)) & ~(CacheLineBytes - 1);
             threadIndexAligned = (Entry*)p2;
         }
 
@@ -129,7 +129,7 @@ namespace Garnet.client
             p = (long)tableHandle.AddrOfPinnedObject();
 #endif
             // Force the pointer to align to 64-byte boundaries
-            long p2 = (p + (KCacheLineBytes - 1)) & ~(KCacheLineBytes - 1);
+            long p2 = (p + (CacheLineBytes - 1)) & ~(CacheLineBytes - 1);
             tableAligned = (Entry*)p2;
 
             CurrentEpoch = 1;
@@ -504,7 +504,7 @@ namespace Garnet.client
         /// <summary>
         /// Epoch table entry (cache line size).
         /// </summary>
-        [StructLayout(LayoutKind.Explicit, Size = KCacheLineBytes)]
+        [StructLayout(LayoutKind.Explicit, Size = CacheLineBytes)]
         struct Entry
         {
             /// <summary>
