@@ -190,7 +190,7 @@ namespace GarnetClientSample
 
             await db.StringIncrement(strKey);
             retVal = int.Parse(await db.StringGetAsync(strKey));
-            
+
             if (init + 2 != retVal)
                 throw new Exception("IncrNoKeyAsync: Error");
             Console.WriteLine("IncrNoKeyAsync: Success");

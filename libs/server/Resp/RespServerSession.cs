@@ -585,7 +585,7 @@ namespace Garnet.server
 
                 if (count - 1 != ocmd.NumKeys + ocmd.NumParams)
                 {
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Invalid number of parameters, expected {cmd.NumKeys + cmd.NumParams}, actual {count - 1}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Invalid number of parameters, expected {ocmd.NumKeys + ocmd.NumParams}, actual {count - 1}\r\n"), ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
