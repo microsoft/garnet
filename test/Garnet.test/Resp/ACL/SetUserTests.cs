@@ -19,7 +19,7 @@ namespace Garnet.test.Resp.ACL
         /// Tests that new connections start with default user when no users are defined
         /// </summary>
         [Test]
-        public void PasswordlessDefaultUserTest()
+        public void PasswordLessDefaultUserTest()
         {
             // Create a new test server without password - should automatically login default user
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
@@ -29,7 +29,7 @@ namespace Garnet.test.Resp.ACL
             using var lightClientRequest = TestUtils.CreateRequest();
             var expectedResponse = "+default\r\n";
             var response = lightClientRequest.SendCommand("ACL WHOAMI");
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            var actualValue = Encoding.ASCII.GetString(response)[..expectedResponse.Length];
 
             // Correctness check
             Assert.AreEqual(expectedResponse, actualValue);
@@ -321,7 +321,7 @@ namespace Garnet.test.Resp.ACL
         /// </summary>
         /// <returns></returns>
         [Test]
-        public async Task PasswordlessUserTest()
+        public async Task PasswordLessUserTest()
         {
             // Create a new test server with password - should disallow any operation
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true);
