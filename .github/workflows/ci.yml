@@ -60,7 +60,7 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
       - name: Build Garnet
-        run: dotnet build
+        run: dotnet build -c Release
       - name: Test Garnet
         run: dotnet test -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}"
       - name: Upload test results
