@@ -15,7 +15,7 @@ namespace Garnet.client
     public sealed unsafe class LightEpoch
     {
         /// Size of cache line in bytes
-        private const int KCacheLineBytes = 64;
+        private const int CacheLineBytes = 64;
 
         /// <summary>
         /// Default invalid index entry.
