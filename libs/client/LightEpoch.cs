@@ -20,7 +20,7 @@ namespace Garnet.client
         /// <summary>
         /// Default invalid index entry.
         /// </summary>
-        const int KInvalidIndex = 0;
+        private const int InvalidIndex = 0;
 
         /// <summary>
         /// Default number of entries in the entries table
