@@ -3,16 +3,12 @@ on:
   workflow_dispatch:
   push:
     paths-ignore:
-      - '**/*.md'
+      - '**.md'
       - '.azure'
-    branches:
-      - main
   pull_request:
     paths-ignore:
-      - '**/*.md'
+      - '**.md'
       - '.azure'
-    branches:
-      - main
   
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
