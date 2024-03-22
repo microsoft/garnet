@@ -597,7 +597,6 @@ namespace Garnet.server
                             return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
                     }
                     break;
-                
                 case ExpirationOption.PX:
                     switch (existOptions)
                     {
