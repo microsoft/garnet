@@ -57,13 +57,13 @@ namespace Garnet.cluster
                     var current = currentConfig;
 
                     if (current.GetLocalNodeId().Equals(nodeid))
-                        return new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR I tried hard but I can't forget myself.\r\n"));
+                        return CmdStrings.RESP_CANNOT_FORGET_MYSELF_ERROR;
 
                     if (current.GetNodeRoleFromNodeId(nodeid) == NodeRole.UNASSIGNED)
                         return new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}.\r\n"));
 
                     if (current.GetLocalNodeRole() == NodeRole.REPLICA && current.GetLocalNodePrimaryId().Equals(nodeid))
-                        return new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Can't forget my primary!\r\n"));
+                        return CmdStrings.RESP_CANNOT_FORGET_MY_PRIMARY_ERROR;
 
                     var newConfig = current.RemoveWorker(nodeid);
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
@@ -147,7 +147,7 @@ namespace Garnet.cluster
                 //(error) ERR Can't replicate myself
                 if (current.GetLocalNodeId().Equals(nodeid))
                 {
-                    logger?.LogError("-ERR Can't replicate myself");
+                    logger?.LogError("{msg}", Encoding.ASCII.GetString(CmdStrings.RESP_CANNOT_REPLICATE_SELF_ERROR));
                     resp = CmdStrings.RESP_CANNOT_REPLICATE_SELF_ERROR;
                     return false;
                 }
@@ -161,8 +161,8 @@ namespace Garnet.cluster
 
                 if (!force && current.HasAssignedSlots(1))
                 {
-                    logger?.LogError("{msg}", Encoding.ASCII.GetString(CmdStrings.RESP_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS));
-                    resp = CmdStrings.RESP_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS;
+                    logger?.LogError("{msg}", Encoding.ASCII.GetString(CmdStrings.RESP_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS_ERROR));
+                    resp = CmdStrings.RESP_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS_ERROR;
                     return false;
                 }
 

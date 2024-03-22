@@ -114,7 +114,10 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_MIGRATE_TO_MYSELF_ERROR => "-ERR Can't MIGRATE to myself\r\n"u8;
         public static ReadOnlySpan<byte> RESP_SLOTSTATE_TRANSITION_ERROR => "-ERR Slot already in that state\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CANNOT_REPLICATE_SELF_ERROR => "-ERR Can't replicate myself\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS => "-ERR Primary has been assigned slots and cannot be a replica\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS_ERROR => "-ERR Primary has been assigned slots and cannot be a replica\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_CANNOT_FORGET_MYSELF_ERROR => "-ERR I tried hard but I can't forget myself\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_CANNOT_FORGET_MY_PRIMARY_ERROR => "-ERR I tried hard but I can't forget myself\r\n"u8;
+
 
     }
 }
