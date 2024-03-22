@@ -46,7 +46,7 @@ namespace Garnet.test.Resp.ACL
         {
             // Create a simple input configuration file
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
-            File.WriteAllText(configurationFile, "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin ");
+            await File.WriteAllTextAsync(configurationFile, "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin ");
 
             // Start up Garnet
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
@@ -72,7 +72,7 @@ namespace Garnet.test.Resp.ACL
         {
             // Create an input with 3 user definitions (including default)
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
-            File.WriteAllText(configurationFile, "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin\r\nuser default on nopass +@admin");
+            await File.WriteAllTextAsync(configurationFile, "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin\r\nuser default on nopass +@admin");
 
             // Start up Garnet with a defined default user password
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
@@ -112,7 +112,7 @@ namespace Garnet.test.Resp.ACL
 
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
 
-            File.WriteAllText(configurationFile, originalConfigurationFile);
+            await File.WriteAllTextAsync(configurationFile, originalConfigurationFile);
 
             // Start up Garnet
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
@@ -144,7 +144,7 @@ namespace Garnet.test.Resp.ACL
             }
 
             // Update the configuration file and reload
-            File.WriteAllText(configurationFile, modifiedConfigurationFile);
+            await File.WriteAllTextAsync(configurationFile, modifiedConfigurationFile);
             c.Execute("ACL", "LOAD");
 
             // Check the integrity of the list
@@ -183,7 +183,7 @@ namespace Garnet.test.Resp.ACL
 
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
 
-            File.WriteAllText(configurationFile, originalConfigurationFile);
+            await File.WriteAllTextAsync(configurationFile, originalConfigurationFile);
 
             // Start up Garnet
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
@@ -200,7 +200,7 @@ namespace Garnet.test.Resp.ACL
 
             // Update and reload the configuration file
             // Ensure the command fails and that the user list has not changed
-            File.WriteAllText(configurationFile, modifiedConfigurationFile);
+            await File.WriteAllTextAsync(configurationFile, modifiedConfigurationFile);
 
             try
             {
@@ -239,7 +239,7 @@ namespace Garnet.test.Resp.ACL
         {
             // Create a file with two users with name "test"
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
-            File.WriteAllText(configurationFile, $"user test on >{DummyPassword} +@admin\r\nuser test off");
+            await File.WriteAllTextAsync(configurationFile, $"user test on >{DummyPassword} +@admin\r\nuser test off");
 
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile);
             server.Start();
@@ -272,7 +272,7 @@ namespace Garnet.test.Resp.ACL
         /// Ensure Garnet handles non-existing configuration file paths by throwing an appropriate exception
         /// </summary>
         [Test]
-        public void BadInputNonexistingFile()
+        public void BadInputNonExistingFile()
         {
             // NOTE: Do not create the configuration file
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
