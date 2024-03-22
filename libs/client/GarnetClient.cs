@@ -20,7 +20,7 @@ namespace Garnet.client
 {
     struct OK_MEM : IMemoryOwner<byte>
     {
-        static readonly Memory<byte> RESP_OK = Encoding.ASCII.GetBytes("OK");
+        static readonly Memory<byte> RESP_OK = "OK"u8.ToArray();
         public Memory<byte> Memory => RESP_OK;
         public void Dispose() { }
     }
@@ -30,17 +30,17 @@ namespace Garnet.client
     /// </summary>
     public sealed partial class GarnetClient : IServerHook, IMessageConsumer, IDisposable
     {
-        static readonly Memory<byte> GET = Encoding.ASCII.GetBytes("$3\r\nGET\r\n");
-        static readonly Memory<byte> MGET = Encoding.ASCII.GetBytes("$4\r\nMGET\r\n");
-        static readonly Memory<byte> SET = Encoding.ASCII.GetBytes("$3\r\nSET\r\n");
-        static readonly Memory<byte> DEL = Encoding.ASCII.GetBytes("$3\r\nDEL\r\n");
-        static readonly Memory<byte> PING = Encoding.ASCII.GetBytes("$4\r\nPING\r\n");
-        static readonly Memory<byte> INCR = Encoding.ASCII.GetBytes("$4\r\nINCR\r\n");
-        static readonly Memory<byte> INCRBY = Encoding.ASCII.GetBytes("$6\r\nINCRBY\r\n");
-        static readonly Memory<byte> DECR = Encoding.ASCII.GetBytes("$4\r\nDECR\r\n");
-        static readonly Memory<byte> DECRBY = Encoding.ASCII.GetBytes("$6\r\nDECRBY\r\n");
-        static readonly Memory<byte> QUIT = Encoding.ASCII.GetBytes("$4\r\nQUIT\r\n");
-        static readonly Memory<byte> AUTH = Encoding.ASCII.GetBytes("$4\r\nAUTH\r\n");
+        static readonly Memory<byte> GET = "$3\r\nGET\r\n"u8.ToArray();
+        static readonly Memory<byte> MGET = "$4\r\nMGET\r\n"u8.ToArray();
+        static readonly Memory<byte> SET = "$3\r\nSET\r\n"u8.ToArray();
+        static readonly Memory<byte> DEL = "$3\r\nDEL\r\n"u8.ToArray();
+        static readonly Memory<byte> PING = "$4\r\nPING\r\n"u8.ToArray();
+        static readonly Memory<byte> INCR = "$4\r\nINCR\r\n"u8.ToArray();
+        static readonly Memory<byte> INCRBY = "$6\r\nINCRBY\r\n"u8.ToArray();
+        static readonly Memory<byte> DECR = "$4\r\nDECR\r\n"u8.ToArray();
+        static readonly Memory<byte> DECRBY = "$6\r\nDECRBY\r\n"u8.ToArray();
+        static readonly Memory<byte> QUIT = "$4\r\nQUIT\r\n"u8.ToArray();
+        static readonly Memory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
         static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
 
         readonly string address;
@@ -525,7 +525,7 @@ namespace Garnet.client
                     byte* end = curr + totalLen;
                     RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
 
-                    RespWriteUtils.WriteDirect(op, ref curr, end);
+                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
                     if (param1 != null)
                         RespWriteUtils.WriteBulkString(param1, ref curr, end);
                     if (param2 != null)
@@ -649,8 +649,8 @@ namespace Garnet.client
                     byte* end = curr + totalLen;
                     RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
 
-                    RespWriteUtils.WriteDirect(op, ref curr, end);
-                    RespWriteUtils.WriteBulkString(clusterOp, ref curr, end);
+                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
+                    RespWriteUtils.WriteBulkString(clusterOp.Span, ref curr, end);
                     RespWriteUtils.WriteBulkString(nodeId, ref curr, end);
                     RespWriteUtils.WriteArrayItem(currentAddress, ref curr, end);
                     RespWriteUtils.WriteArrayItem(nextAddress, ref curr, end);
@@ -738,11 +738,11 @@ namespace Garnet.client
                     byte* end = curr + totalLen;
                     RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
 
-                    RespWriteUtils.WriteDirect(op, ref curr, end);
+                    RespWriteUtils.WriteDirect(op.Span, ref curr, end);
                     if (!param1.IsEmpty)
-                        RespWriteUtils.WriteBulkString(param1, ref curr, end);
+                        RespWriteUtils.WriteBulkString(param1.Span, ref curr, end);
                     if (!param2.IsEmpty)
-                        RespWriteUtils.WriteBulkString(param2, ref curr, end);
+                        RespWriteUtils.WriteBulkString(param2.Span, ref curr, end);
 
                     Debug.Assert(curr == end);
                 }
@@ -970,11 +970,11 @@ namespace Garnet.client
                     byte* curr = (byte*)networkWriter.GetPhysicalAddress(address);
                     byte* end = curr + totalLen;
                     RespWriteUtils.WriteArrayLength(arraySize, ref curr, end);
-                    RespWriteUtils.WriteDirect(respOp, ref curr, end);
+                    RespWriteUtils.WriteDirect(respOp.Span, ref curr, end);
                     if (isArray)//Write arg data
                     {
                         foreach (var arg in args)
-                            RespWriteUtils.WriteBulkString(arg, ref curr, end);
+                            RespWriteUtils.WriteBulkString(arg.Span, ref curr, end);
                     }
                     Debug.Assert(curr == end);
                 }

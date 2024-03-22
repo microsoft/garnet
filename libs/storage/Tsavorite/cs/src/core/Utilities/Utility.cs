@@ -3,9 +3,8 @@
 
 using System;
 using System.Diagnostics;
-using System.Reflection;
+using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -28,25 +27,6 @@ namespace Tsavorite.core
     /// </summary>
     public static class Utility
     {
-        /// <summary>
-        /// Get size of type
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        internal static unsafe int GetSize<T>(this T value)
-        {
-            T[] arr = new T[2];
-            return (int)((long)Unsafe.AsPointer(ref arr[1]) - (long)Unsafe.AsPointer(ref arr[0]));
-        }
-
-        internal static bool IsBlittableType(Type t)
-        {
-            var mi = typeof(Utility).GetMethod("IsBlittable", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.InvokeMethod);
-            var fooRef = mi.MakeGenericMethod(t);
-            return (bool)fooRef.Invoke(null, null);
-        }
-
         /// <summary>
         /// Parse size in string notation into long.
         /// Examples: 4k, 4K, 4KB, 4 KB, 8m, 8MB, 12g, 12 GB, 16t, 16 TB, 32p, 32 PB.
@@ -152,7 +132,6 @@ namespace Tsavorite.core
         /// <param name="value">Value to be aligned</param>
         /// <param name="alignment">Align to this</param>
         /// <returns>Aligned value</returns>
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int RoundUp(int value, int alignment) => (value + (alignment - 1)) & ~(alignment - 1);
 
@@ -168,57 +147,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <returns></returns>
-        internal static bool IsBlittable<T>()
-        {
-            if (default(T) == null)
-                return false;
-
-            try
-            {
-                var tmp = new T[1];
-                var h = GCHandle.Alloc(tmp, GCHandleType.Pinned);
-                h.Free();
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// Check if two byte arrays of given length are equal
-        /// </summary>
-        /// <param name="src"></param>
-        /// <param name="dst"></param>
-        /// <param name="length"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe bool IsEqual(byte* src, byte* dst, int length)
-        {
-            for (int i = 0; i < length; i++)
-            {
-                if (*(src + i) != *(dst + i))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// Copy numBytes bytes from src to dest
-        /// </summary>
-        /// <param name="src"></param>
-        /// <param name="dest"></param>
-        /// <param name="numBytes"></param>
-        public static unsafe void Copy(byte* src, byte* dest, int numBytes)
-        {
-            for (int i = 0; i < numBytes; i++)
-            {
-                *(dest + i) = *(src + i);
-            }
-        }
+        internal static bool IsBlittable<T>() => !RuntimeHelpers.IsReferenceOrContainsReferences<T>();
 
         /// <summary>
         /// Get 64-bit hash code for a long value
@@ -300,54 +229,21 @@ namespace Tsavorite.core
             return result;
         }
 
-
+        /// <inheritdoc cref="BitOperations.RotateRight(ulong, int)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static ulong Rotr64(ulong x, int n)
-        {
-            return (((x) >> n) | ((x) << (64 - n)));
-        }
+        internal static ulong Rotr64(ulong x, int n) => BitOperations.RotateRight(x, n);
 
-        /// <summary>
-        /// Is power of 2
-        /// </summary>
-        /// <param name="x"></param>
-        /// <returns></returns>
+        /// <inheritdoc cref="BitOperations.IsPow2(ulong)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsPowerOfTwo(long x)
-        {
-            return (x > 0) && ((x & (x - 1)) == 0);
-        }
+        public static bool IsPowerOfTwo(long x) => BitOperations.IsPow2(x);
 
-        internal static readonly int[] MultiplyDeBruijnBitPosition2 = new int[32]
-        {
-            0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8,
-            31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9
-        };
-
-        /// <summary>
-        /// Get log base 2
-        /// </summary>
-        /// <param name="x"></param>
-        /// <returns></returns>
+        /// <inheritdoc cref="BitOperations.Log2(uint)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetLogBase2(int x)
-        {
-            return MultiplyDeBruijnBitPosition2[(uint)(x * 0x077CB531U) >> 27];
-        }
+        public static int GetLogBase2(int x) => BitOperations.Log2((uint)x);
 
-        /// <summary>
-        /// Get log base 2
-        /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        public static int GetLogBase2(ulong value)
-        {
-            int i;
-            for (i = -1; value != 0; i++)
-                value >>= 1;
-
-            return (i == -1) ? 0 : i;
-        }
+        /// <inheritdoc cref="BitOperations.Log2(ulong)"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int GetLogBase2(ulong value) => BitOperations.Log2(value);
 
         /// <summary>
         /// Check if power of two

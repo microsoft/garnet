@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -364,7 +365,7 @@ namespace Garnet.server
 
                     if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) | !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
                     {
-                        var errorMessage = Encoding.ASCII.GetBytes("-ERR max or min value is not a float value.\r\n");
+                        ReadOnlySpan<byte> errorMessage = "-ERR max or min value is not a float value.\r\n"u8;
                         while (!RespWriteUtils.WriteResponse(errorMessage, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone = _input->count;
@@ -397,7 +398,7 @@ namespace Garnet.server
                         int minIndex = (int)minValue, maxIndex = (int)maxValue;
                         if (options.ValidLimit)
                         {
-                            var errorMessage = Encoding.ASCII.GetBytes("-ERR syntax error, LIMIT is only supported in BYSCORE or BYLEX.\r\n");
+                            ReadOnlySpan<byte> errorMessage = "-ERR syntax error, LIMIT is only supported in BYSCORE or BYLEX.\r\n"u8;
                             while (!RespWriteUtils.WriteResponse(errorMessage, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             countDone = _input->count;
@@ -459,7 +460,7 @@ namespace Garnet.server
 
                     if (errorCode == int.MaxValue)
                     {
-                        var errorMessage = Encoding.ASCII.GetBytes("-ERR max or min value not valid string range.\r\n");
+                        ReadOnlySpan<byte> errorMessage = "-ERR max or min value not valid string range.\r\n"u8;
                         while (!RespWriteUtils.WriteResponse(errorMessage, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone = _input->count;
@@ -651,7 +652,6 @@ namespace Garnet.server
             MemoryHandle ptrHandle = default;
             byte* ptr = output.SpanByte.ToPointer();
 
-            Random random = new();
             var curr = ptr;
             var end = curr + output.Length;
 
@@ -680,10 +680,7 @@ namespace Garnet.server
                     // The order of fields in the reply is truly random.
                     indexes = new int[Math.Abs(count)];
                     for (int i = 0; i < indexes.Length; i++)
-                        indexes[i] = random.Next(0, sortedSetDict.Count);
-
-                    // Guarantee random order
-                    indexes = indexes.OrderBy(x => random.Next()).ToArray();
+                        indexes[i] = RandomNumberGenerator.GetInt32(0, sortedSetDict.Count);
                 }
 
                 foreach (var item in indexes)

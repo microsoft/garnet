@@ -503,7 +503,7 @@ namespace Resp.benchmark
                     case OpType.SET:
                         byte* setCurr = setBuffer + 13;
                         RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(req.GenerateKey()), ref setCurr, setEnd);
-                        RespWriteUtils.WriteBulkString(req.GenerateValueBytes(), ref setCurr, setEnd);
+                        RespWriteUtils.WriteBulkString(req.GenerateValueBytes().Span, ref setCurr, setEnd);
                         client.Send(setBuffer, (int)(setCurr - setBuffer), 1);
                         client.CompletePendingRequests();
                         break;
@@ -511,7 +511,7 @@ namespace Resp.benchmark
                         byte* setexCurr = setexBuffer + 15;
                         RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(req.GenerateKey()), ref setexCurr, setexEnd);
                         RespWriteUtils.WriteIntegerAsBulkString(opts.Ttl, ref setexCurr, setexEnd);
-                        RespWriteUtils.WriteBulkString(req.GenerateValueBytes(), ref setexCurr, setexEnd);
+                        RespWriteUtils.WriteBulkString(req.GenerateValueBytes().Span, ref setexCurr, setexEnd);
                         client.Send(setexBuffer, (int)(setexCurr - setexBuffer), 1);
                         client.CompletePendingRequests();
                         break;

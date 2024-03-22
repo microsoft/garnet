@@ -358,7 +358,7 @@ namespace Garnet.server
                 var canParse = Int32.TryParse(Encoding.ASCII.GetString(countParameterByteArray), out countParameter);
                 if (!canParse || countParameter < 0)
                 {
-                    var errorMessage = Encoding.ASCII.GetBytes("-ERR value is not an integer or out of range\r\n");
+                    ReadOnlySpan<byte> errorMessage = "-ERR value is not an integer or out of range\r\n"u8;
                     while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
                         SendAndReset();
 

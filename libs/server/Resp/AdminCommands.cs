@@ -65,10 +65,10 @@ namespace Garnet.server
                     bool success = true;
 
                     // Optional Argument: <username>
-                    ReadOnlySpan<Byte> username = (count > 2) ? GetCommand(bufSpan, out success) : null;
+                    ReadOnlySpan<byte> username = (count > 2) ? GetCommand(bufSpan, out success) : null;
 
                     // Mandatory Argument: <password>
-                    ReadOnlySpan<Byte> password = success ? GetCommand(bufSpan, out success) : null;
+                    ReadOnlySpan<byte> password = success ? GetCommand(bufSpan, out success) : null;
 
                     // If any of the parsing failed, exit here
                     if (!success)
@@ -140,16 +140,9 @@ namespace Garnet.server
                     {
                         var key = GetCommand(bufSpan, out bool success2);
                         if (!success2) return false;
-                        if (CmdStrings.GetConfig(key.ToArray(), out var val))
-                        {
-                            while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(val), ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
-                                SendAndReset();
-                        }
+
+                        while (!RespWriteUtils.WriteResponse(CmdStrings.GetConfig(key), ref dcurr, dend))
+                            SendAndReset();
                     }
                 }
                 else if (param.SequenceEqual(CmdStrings.REWRITE) || param.SequenceEqual(CmdStrings.rewrite))

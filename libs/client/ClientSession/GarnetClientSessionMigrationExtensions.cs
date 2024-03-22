@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -18,11 +17,11 @@ namespace Garnet.client
     /// </summary>
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
-        static readonly Memory<byte> AUTH = Encoding.ASCII.GetBytes("AUTH");
-        static readonly Memory<byte> SETSLOTSRANGE = Encoding.ASCII.GetBytes("SETSLOTSRANGE");
-        static readonly Memory<byte> MIGRATE = Encoding.ASCII.GetBytes("MIGRATE");
-        static readonly Memory<byte> DELKEY = Encoding.ASCII.GetBytes("DELKEY");
-        static readonly Memory<byte> GETKVPAIRINSLOT = Encoding.ASCII.GetBytes("GETKVPAIRINSLOT");
+        static ReadOnlySpan<byte> AUTH => "AUTH"u8;
+        static ReadOnlySpan<byte> SETSLOTSRANGE => "SETSLOTSRANGE"u8;
+        static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
+        static ReadOnlySpan<byte> DELKEY => "DELKEY"u8;
+        static ReadOnlySpan<byte> GETKVPAIRINSLOT => "GETKVPAIRINSLOT"u8;
 
         /// <summary>
         /// Send AUTH command to target node to authenticate connection.
@@ -119,7 +118,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(state, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(state.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -207,7 +206,7 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.WriteBulkString(replaceOption, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(replaceOption.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -215,7 +214,7 @@ namespace Garnet.client
             offset = curr;
 
             //5
-            while (!RespWriteUtils.WriteBulkString(storeType, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(storeType.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -223,7 +222,7 @@ namespace Garnet.client
             offset = curr;
 
             //6
-            while (!RespWriteUtils.WriteBulkString(data, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(data.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -374,7 +373,7 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.WriteBulkString(replaceOption, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(replaceOption.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -382,7 +381,7 @@ namespace Garnet.client
             offset = curr;
 
             //5
-            while (!RespWriteUtils.WriteBulkString(storeType, ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(storeType.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;

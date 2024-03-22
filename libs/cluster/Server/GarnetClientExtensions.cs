@@ -12,8 +12,8 @@ namespace Garnet.cluster
 {
     internal static partial class GarnetClientExtensions
     {
-        static readonly Memory<byte> GOSSIP = Encoding.ASCII.GetBytes("GOSSIP");
-        static readonly Memory<byte> WITHMEET = Encoding.ASCII.GetBytes("WITHMEET");
+        static readonly Memory<byte> GOSSIP = "GOSSIP"u8.ToArray();
+        static readonly Memory<byte> WITHMEET = "WITHMEET"u8.ToArray();
 
         /// <summary>
         /// Send config

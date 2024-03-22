@@ -32,7 +32,13 @@ namespace GarnetClientSample
             await PingAsync();
             await SetGetAsync();
             SetGetSync();
-            await IncrementByAsync();
+            await IncrAsync();
+            await IncrByAsync(99);
+            await DecrByAsync(99);
+            await DecrAsync("test", 5);
+            await IncrNoKeyAsync();
+            await ExistsAsync();
+            await DeleteAsync();
             await SetGetMemoryAsync();
         }
 
@@ -43,6 +49,7 @@ namespace GarnetClientSample
             var pong = await db.PingAsync();
             if (pong != "PONG")
                 throw new Exception("PingAsync: Error");
+            Console.WriteLine("Ping: Success");
         }
 
         async Task SetGetAsync()
@@ -57,6 +64,7 @@ namespace GarnetClientSample
 
             if (origValue != retValue)
                 throw new Exception("SetGetAsync: Error");
+            Console.WriteLine("SetGetAsync: Success");
         }
 
         void SetGetSync()
@@ -70,15 +78,40 @@ namespace GarnetClientSample
             ManualResetEventSlim e = new();
             db.StringGet("mykey", (c, s) => { if (s != origValue) throw new Exception("SetGetSync: Error"); e.Set(); });
             e.Wait();
+            Console.WriteLine("SetGetSync: Success");
         }
 
-        async Task IncrementByAsync()
+        async Task IncrAsync()
         {
             using var db = new GarnetClient(address, port, GetSslOpts());
             await db.ConnectAsync();
 
             // Key storing integer
-            int nVal = 1000, nIncr = 25;
+            int nVal = 1000;
+            var strKey = "key1";
+            await db.StringSetAsync(strKey, $"{nVal}");
+            var s = await db.StringGetAsync(strKey);
+
+            if (s != $"{nVal}")
+                throw new Exception("IncrementAsync: Error");
+
+            long n = await db.StringIncrement(strKey);
+            if (n != nVal + 1)
+                throw new Exception("IncrementAsync: Error");
+
+            int nRetVal = int.Parse(await db.StringGetAsync(strKey));
+            if (n != nRetVal)
+                throw new Exception("IncrementAsync: Error");
+            Console.WriteLine("IncrementAsync: Success");
+        }
+
+        async Task IncrByAsync(long nIncr)
+        {
+            using var db = new GarnetClient(address, port, GetSslOpts());
+            await db.ConnectAsync();
+
+            // Key storing integer
+            int nVal = 1000;
 
             var strKey = "key1";
             await db.StringSetAsync(strKey, $"{nVal}");
@@ -94,7 +127,108 @@ namespace GarnetClientSample
             int nRetVal = int.Parse(await db.StringGetAsync(strKey));
             if (n != nRetVal)
                 throw new Exception("IncrementByAsync: Error");
+            Console.WriteLine("IncrementByAsync: Success");
         }
+
+        async Task DecrByAsync(long nDecr)
+        {
+            using var db = new GarnetClient(address, port, GetSslOpts());
+            await db.ConnectAsync();
+
+            // Key storing integer
+            int nVal = 900;
+
+            var strKey = "key1";
+            await db.StringSetAsync(strKey, $"{nVal}");
+            var s = await db.StringGetAsync(strKey);
+
+            if (s != $"{nVal}")
+                throw new Exception("DecrByAsync: Error");
+
+            long n = int.Parse(await db.ExecuteForStringResultAsync("DECRBY", new string[] { strKey, nDecr.ToString() }));
+            if (n != nVal - nDecr)
+                throw new Exception("DecrByAsync: Error");
+
+            int nRetVal = int.Parse(await db.StringGetAsync(strKey));
+            if (n != nRetVal)
+                throw new Exception("DecrByAsync: Error");
+            Console.WriteLine("DecrByAsync: Success");
+        }
+
+        async Task DecrAsync(string strKey, int nVal)
+        {
+            using var db = new GarnetClient(address, port, GetSslOpts());
+            await db.ConnectAsync();
+
+            await db.StringSetAsync(strKey, $"{nVal}");
+            var s = await db.StringGetAsync(strKey);
+
+            if (s != $"{nVal}")
+                throw new Exception("DecrAsync: Error");
+
+            long n = await db.StringDecrement(strKey);
+            if (n != nVal - 1)
+                throw new Exception("DecrAsync: Error");
+
+            int nRetVal = int.Parse(await db.StringGetAsync(strKey));
+            if (n != nRetVal)
+                throw new Exception("DecrAsync: Error");
+            Console.WriteLine("DecrAsync: Success");
+        }
+
+        async Task IncrNoKeyAsync()
+        {
+            using var db = new GarnetClient(address, port, GetSslOpts());
+            await db.ConnectAsync();
+
+            // Key storing integer
+            var strKey = "key1";
+            int init = int.Parse(await db.StringGetAsync(strKey));
+            await db.StringIncrement(strKey);
+
+            var retVal = int.Parse(await db.StringGetAsync(strKey));
+
+            await db.StringIncrement(strKey);
+            retVal = int.Parse(await db.StringGetAsync(strKey));
+
+            if (init + 2 != retVal)
+                throw new Exception("IncrNoKeyAsync: Error");
+            Console.WriteLine("IncrNoKeyAsync: Success");
+        }
+
+        async Task ExistsAsync()
+        {
+            using var db = new GarnetClient(address, port, GetSslOpts());
+            await db.ConnectAsync();
+
+            // Key storing integer
+            int nVal = 100;
+            var strKey = "key1";
+            await db.StringSetAsync(strKey, $"{nVal}");
+
+            bool fExists = int.Parse(await db.ExecuteForStringResultAsync("EXISTS", new string[] { strKey })) == 1 ? true : false;
+            if (!fExists)
+                throw new Exception("ExistsAsync: Error");
+            Console.WriteLine("ExistsAsync: Success");
+        }
+
+        async Task DeleteAsync()
+        {
+            using var db = new GarnetClient(address, port, GetSslOpts());
+            await db.ConnectAsync();
+
+            // Key storing integer
+            var nVal = 100;
+            var strKey = "key1";
+            await db.StringSetAsync(strKey, $"{nVal}");
+            await db.KeyDeleteAsync(strKey);
+
+            bool fExists = int.Parse(await db.ExecuteForStringResultAsync("EXISTS", new string[] { strKey })) == 1 ? true : false;
+            if (fExists)
+                throw new Exception("DeleteAsync: Error");
+            Console.WriteLine("DeleteAsync: Success");
+        }
+
 
         async Task SetGetMemoryAsync()
         {
@@ -114,6 +248,8 @@ namespace GarnetClientSample
 
             if (!origValue.Span.SequenceEqual(retValue.Span))
                 throw new Exception("SetGetAsync: Error");
+
+            Console.WriteLine("SetGetMemoryAsync: Success");
         }
 
         SslClientAuthenticationOptions GetSslOpts() => useTLS ? new()

@@ -557,7 +557,7 @@ namespace Garnet.server
                         //TODO: validation for different object type, pending to review
                         if (output.countDone == 0 && output.countDone == 0 && output.bytesDone == 0)
                         {
-                            var errorMessage = Encoding.ASCII.GetBytes("-ERR wrong key type used in LINSERT command.\r\n");
+                            ReadOnlySpan<byte> errorMessage = "-ERR wrong key type used in LINSERT command.\r\n"u8;
                             while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
                                 SendAndReset();
                         }
