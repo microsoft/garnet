@@ -25,12 +25,12 @@ namespace Garnet.client
         /// <summary>
         /// Default number of entries in the entries table
         /// </summary>
-        static readonly ushort KTableSize = Math.Max((ushort)128, (ushort)(Environment.ProcessorCount * 2));
+        private static readonly ushort TableSize = Math.Max((ushort)128, (ushort)(Environment.ProcessorCount * 2));
 
         /// <summary>
         /// Default drainlist size
         /// </summary>
-        const int KDrainListSize = 16;
+        private const int DrainListSize = 16;
 
         /// <summary>
         /// Thread protection status entries.
@@ -100,7 +100,7 @@ namespace Garnet.client
 
             // Over-allocate to do cache-line alignment
 #if NET5_0_OR_GREATER
-            threadIndex = GC.AllocateArray<Entry>(KTableSize + 2, true);
+            threadIndex = GC.AllocateArray<Entry>(TableSize + 2, true);
             p = (long)Unsafe.AsPointer(ref threadIndex[0]);
 #else
             threadIndex = new Entry[kTableSize + 2];
@@ -120,7 +120,7 @@ namespace Garnet.client
             long p;
 
 #if NET5_0_OR_GREATER
-            tableRaw = GC.AllocateArray<Entry>(KTableSize + 2, true);
+            tableRaw = GC.AllocateArray<Entry>(TableSize + 2, true);
             p = (long)Unsafe.AsPointer(ref tableRaw[0]);
 #else
             // Over-allocate to do cache-line alignment
@@ -135,7 +135,7 @@ namespace Garnet.client
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
 
-            for (int i = 0; i < KDrainListSize; i++)
+            for (int i = 0; i < DrainListSize; i++)
                 drainList[i].Epoch = int.MaxValue;
             drainCount = 0;
         }
@@ -159,7 +159,7 @@ namespace Garnet.client
         public bool ThisInstanceProtected()
         {
             int entry = threadEntryIndex;
-            if (KInvalidIndex != entry)
+            if (InvalidIndex != entry)
             {
                 if ((*(tableAligned + entry)).threadId == entry)
                     return true;
@@ -174,7 +174,7 @@ namespace Garnet.client
         public static bool AnyInstanceProtected()
         {
             int entry = threadEntryIndex;
-            if (KInvalidIndex != entry)
+            if (InvalidIndex != entry)
             {
                 return threadEntryIndexCount > 0;
             }
@@ -271,7 +271,7 @@ namespace Garnet.client
                     }
                 }
 
-                if (++i == KDrainListSize)
+                if (++i == DrainListSize)
                 {
                     ProtectAndDrain();
                     i = 0;
@@ -306,7 +306,7 @@ namespace Garnet.client
         public bool CheckIsComplete(int markerIdx, long version)
         {
             // check if all threads have reported complete
-            for (int index = 1; index <= KTableSize; ++index)
+            for (int index = 1; index <= TableSize; ++index)
             {
                 int entryEpoch = (*(tableAligned + index)).localCurrentEpoch;
                 int fcVersion = (*(tableAligned + index)).markers[markerIdx];
@@ -344,7 +344,7 @@ namespace Garnet.client
         {
             int oldestOngoingCall = currentEpoch;
 
-            for (int index = 1; index <= KTableSize; ++index)
+            for (int index = 1; index <= TableSize; ++index)
             {
                 int entryEpoch = (*(tableAligned + index)).localCurrentEpoch;
                 if (0 != entryEpoch)
@@ -373,7 +373,7 @@ namespace Garnet.client
                 // Barrier ensures we see the latest epoch table entries. Ensures
                 // that the last suspended thread drains all pending actions.
                 Thread.MemoryBarrier();
-                for (int index = 1; index <= KTableSize; ++index)
+                for (int index = 1; index <= TableSize; ++index)
                 {
                     int entryEpoch = (*(tableAligned + index)).localCurrentEpoch;
                     if (0 != entryEpoch)
@@ -395,7 +395,7 @@ namespace Garnet.client
         {
             ComputeNewSafeToReclaimEpoch(nextEpoch);
 
-            for (int i = 0; i < KDrainListSize; i++)
+            for (int i = 0; i < DrainListSize; i++)
             {
                 var triggerEpoch = drainList[i].Epoch;
 
@@ -420,7 +420,7 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Acquire()
         {
-            if (threadEntryIndex == KInvalidIndex)
+            if (threadEntryIndex == InvalidIndex)
                 threadEntryIndex = ReserveEntryForThread();
 
             Debug.Assert((*(tableAligned + threadEntryIndex)).localCurrentEpoch == 0,
@@ -447,7 +447,7 @@ namespace Garnet.client
             if (threadEntryIndexCount == 0)
             {
                 (threadIndexAligned + threadEntryIndex)->threadId = 0;
-                threadEntryIndex = KInvalidIndex;
+                threadEntryIndex = InvalidIndex;
             }
         }
 
@@ -476,9 +476,9 @@ namespace Garnet.client
                     startOffset2 = 0;
                 }
                 else startOffset1++; // Probe next sequential entry
-                if (startOffset1 > KTableSize)
+                if (startOffset1 > TableSize)
                 {
-                    startOffset1 -= KTableSize;
+                    startOffset1 -= TableSize;
                     Thread.Yield();
                 }
             }
@@ -495,8 +495,8 @@ namespace Garnet.client
             {
                 threadId = Environment.CurrentManagedThreadId;
                 uint code = (uint)Utility.Murmur3(threadId);
-                startOffset1 = (ushort)(1 + (code % KTableSize));
-                startOffset2 = (ushort)(1 + ((code >> 16) % KTableSize));
+                startOffset1 = (ushort)(1 + (code % TableSize));
+                startOffset2 = (ushort)(1 + ((code >> 16) % TableSize));
             }
             return ReserveEntry();
         }
