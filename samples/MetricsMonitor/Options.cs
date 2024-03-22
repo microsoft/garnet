@@ -27,7 +27,7 @@ namespace MetricsMonitor
         public LatencyMetricsType LatencyEvent { get; set; }
 
         [Option("info-metrics-type", Required = false, Default = InfoMetricsType.STATS, HelpText = "Info metrics types to track (SERVER, MEMORY, CLUSTER, STATS, STORE, OBJECTSTORE, ALL)")]
-        public InfoMetricsType infoType { get; set; }
+        public InfoMetricsType InfoType { get; set; }
 
         [Option("metrics", Required = false, Default = Metric.INFO, HelpText = "What type of server side metrics to retrieve (LATENCY, INFO)")]
         public Metric MetricsType { get; set; }

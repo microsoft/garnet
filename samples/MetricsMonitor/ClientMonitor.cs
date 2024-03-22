@@ -109,7 +109,7 @@ namespace MetricsMonitor
         public void MonitorServerSideMetrics()
         {
             var db = connectionMultiplexer.GetDatabase(0);
-            var infoType = opts.infoType;
+            var infoType = opts.InfoType;
             Console.WriteLine($"[Capturing server side metrics for event ({infoType}) using client]");
             while (true)
             {
@@ -123,7 +123,7 @@ namespace MetricsMonitor
         public void MonitorClusterServerSideMetrics()
         {
             var nodes = clusterConfig?.Nodes.ToArray();
-            var infoType = opts.infoType;
+            var infoType = opts.InfoType;
             Console.WriteLine($"[Capturing server side metrics for event ({infoType}) using client]");
 
             while (true)
