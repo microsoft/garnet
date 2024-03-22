@@ -295,7 +295,7 @@ namespace Garnet.server
             ref var input = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
             ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + input.TotalSize);
 
-            var valB = storeWrapper.CreateGarnetObject(value.ToByteArray());
+            var valB = storeWrapper.DeserializeGarnetObject(value.ToByteArray());
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
             session.Upsert(ref keyB, ref valB);

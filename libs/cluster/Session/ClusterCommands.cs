@@ -1256,7 +1256,7 @@ namespace Garnet.cluster
 
                             migrateSetCount++;
 
-                            var value = this.clusterProvider.storeWrapper.CreateGarnetObject(data);
+                            var value = clusterProvider.storeWrapper.DeserializeGarnetObject(data);
                             value.Expiration = expiration;
 
                             // Set if key replace flag is set or key does not exist

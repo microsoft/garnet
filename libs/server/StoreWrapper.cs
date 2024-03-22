@@ -176,7 +176,7 @@ namespace Garnet.server
             return ms.ToArray();
         }
 
-        public IGarnetObject CreateGarnetObject(byte[] data)
+        public IGarnetObject DeserializeGarnetObject(byte[] data)
         {
             using var ms = new MemoryStream(data);
             var serializer = new GarnetObjectSerializer(customCommandManager);
