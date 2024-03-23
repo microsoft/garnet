@@ -254,7 +254,7 @@ namespace Garnet.server
                             dstListObject.LnkList.AddLast(element);
 
                         dstListObject.UpdateSize(element);
-                        newListValue = new ListObject(dstListObject.LnkList, dstListObject.Size);
+                        newListValue = new ListObject(dstListObject.LnkList, dstListObject.Expiration, dstListObject.Size);
                     }
                     else
                     {

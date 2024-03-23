@@ -24,22 +24,32 @@ namespace Garnet
     {
         readonly Dictionary<byte[], byte[]> dict;
 
-        public MyDict(byte type) : base(type, MemoryUtils.DictionaryOverhead)
-            => dict = new(new ByteArrayComparer());
-
-        public MyDict(MyDict obj) : base(obj)
-            => dict = obj.dict;
-
-        public MyDict(byte type, BinaryReader reader) : this(type)
+        public MyDict(byte type)
+            : base(type, 0, MemoryUtils.DictionaryOverhead)
         {
+            dict = new(new ByteArrayComparer());
+        }
+
+        public MyDict(byte type, BinaryReader reader)
+            : base(type, reader, MemoryUtils.DictionaryOverhead)
+        {
+            dict = new(new ByteArrayComparer());
+
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
             {
                 var key = reader.ReadBytes(reader.ReadInt32());
                 var value = reader.ReadBytes(reader.ReadInt32());
                 dict.Add(key, value);
+
                 UpdateSize(key, value);
             }
+        }
+
+        public MyDict(MyDict obj)
+            : base(obj)
+        {
+            dict = obj.dict;
         }
 
         public override CustomObjectBase CloneObject() => new MyDict(this);
