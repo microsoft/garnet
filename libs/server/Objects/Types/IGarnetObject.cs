@@ -14,6 +14,11 @@ namespace Garnet.server
     public interface IGarnetObject : IDisposable
     {
         /// <summary>
+        /// Type of object
+        /// </summary>
+        byte Type { get; }
+
+        /// <summary>
         /// Expiration time of object
         /// </summary>
         long Expiration { get; set; }
