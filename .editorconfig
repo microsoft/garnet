@@ -17,41 +17,21 @@ insert_final_newline = false
 
 #### .NET Coding Conventions ####
 
-# Code analyzers
-dotnet_analyzer_diagnostic.category-Security.severity = error
-dotnet_analyzer_diagnostic.category-Style.severity = error
-
 # Temporary code analysis supressions
-# IDE1006: Naming Styles
-dotnet_diagnostic.IDE1006.severity = suggestion
-# IDE0058: Expression value is never used
-dotnet_diagnostic.IDE0058.severity = suggestion
 # IDE0004: Remove Unnecessary Cast
 dotnet_diagnostic.IDE0004.severity = suggestion
-# IDE0059: Unnecessary assignment of a value
-dotnet_diagnostic.IDE0059.severity = suggestion
-# IDE0072: Add missing cases
-dotnet_diagnostic.IDE0072.severity = suggestion
 # IDE0010: Add missing cases
 dotnet_diagnostic.IDE0010.severity = suggestion
-# IDE0300: Simplify collection initialization
-dotnet_diagnostic.IDE0300.severity = suggestion
-# IDE0302: Simplify collection initialization
-dotnet_diagnostic.IDE0302.severity = suggestion
-# IDE0028: Simplify collection initialization
-dotnet_diagnostic.IDE0028.severity = suggestion
+# IDE0072: Add missing cases
+dotnet_diagnostic.IDE0072.severity = suggestion
 # IDE0240: Remove redundant nullable directive
 dotnet_diagnostic.IDE0240.severity = suggestion
 # CS1573: Parameter has no matching param tag in the XML comment (but other parameters do)
 dotnet_diagnostic.CS1573.severity = suggestion
 # CS1591: Missing XML comment for publicly visible type or member
 dotnet_diagnostic.CS1591.severity = suggestion
-# IDE0003: Remove qualification
-dotnet_diagnostic.IDE0003.severity = suggestion
-# IDE0250: Make struct 'readonly'
-dotnet_diagnostic.IDE0250.severity = none
 
-# temporary security analysis supressions
+# Temporary security analysis supressions
 # CA5359: Do not disable certificate validation
 dotnet_diagnostic.CA5359.severity = suggestion
 
@@ -143,6 +123,7 @@ csharp_preserve_single_line_statements = false:none
 csharp_prefer_static_local_function = true:suggestion
 csharp_prefer_simple_using_statement = false:none
 csharp_style_prefer_switch_expression = true:suggestion
+csharp_style_prefer_readonly_struct = false:suggestion
 
 # Expression-bodied members
 csharp_style_expression_bodied_methods = true:refactoring
@@ -182,6 +163,8 @@ csharp_style_prefer_utf8_string_literals = true:suggestion
 csharp_style_deconstructed_variable_declaration = true:suggestion
 csharp_style_prefer_top_level_statements = false:suggestion
 csharp_style_prefer_local_over_anonymous_function = true:suggestion
+csharp_style_unused_value_assignment_preference = discard_variable:suggestion
+csharp_style_unused_value_expression_statement_preference = discard_variable:suggestion
 
 # Space preferences
 csharp_space_after_cast = false
