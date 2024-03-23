@@ -115,7 +115,7 @@ namespace Garnet.test.cluster
         public RedisResult Execute(IPEndPoint endPoint, string cmd, ICollection<object> args, bool skipLogging = false, ILogger logger = null)
         {
             if (!skipLogging)
-                logger?.LogInformation("({address}:{port}) > {cmd} {args}", endPoint.Address, endPoint.Port, cmd, String.Join(' ', args));
+                logger?.LogInformation("({address}:{port}) > {cmd} {args}", endPoint.Address, endPoint.Port, cmd, string.Join(' ', args));
             try
             {
                 var server = GetServer(endPoint);
@@ -134,14 +134,14 @@ namespace Garnet.test.cluster
 
         public string NodesMyself(IPEndPoint endPoint, ClusterInfoTag tag, ILogger logger)
         {
-            var nodeConfigInfo = String.Empty;
+            var nodeConfigInfo = string.Empty;
             var nodeConfigStr = (string)NodesV2(endPoint, logger);
             if (nodeConfigStr != null)
             {
                 var lines = nodeConfigStr.ToString().Split('\n');
                 var properties = lines[0].ToString().Split(' ');
                 int index = (int)tag;
-                nodeConfigInfo = index < properties.Length ? properties[index].Trim() : String.Empty;
+                nodeConfigInfo = index < properties.Length ? properties[index].Trim() : string.Empty;
             }
             return nodeConfigInfo;
         }
@@ -161,7 +161,7 @@ namespace Garnet.test.cluster
                 {
                     var tag = tags[i];
                     int index = (int)tag;
-                    nodeConfigInfo[i] = index < properties.Length ? properties[index].Trim() : String.Empty;
+                    nodeConfigInfo[i] = index < properties.Length ? properties[index].Trim() : string.Empty;
                 }
             }
             return nodeConfigInfo;
@@ -174,18 +174,18 @@ namespace Garnet.test.cluster
             if (nodeConfigStr != null)
             {
                 var lines = nodeConfigStr.ToString().Split('\n');
-                for (int i = 0; i < lines.Length; i++)
+                for (var i = 0; i < lines.Length; i++)
                 {
                     var properties = lines[i].ToString().Split(' ');
                     if (nodeid != null && !nodeid.Equals(properties[0].Trim()))
                         continue;
 
                     nodeConfigInfo.Add(new string[tags.Length]);
-                    for (int j = 0; j < tags.Length; j++)
+                    for (var j = 0; j < tags.Length; j++)
                     {
                         var tag = tags[j];
-                        int index = (int)tag;
-                        nodeConfigInfo[^1][j] = index < properties.Length ? properties[index].Trim() : String.Empty;
+                        var index = (int)tag;
+                        nodeConfigInfo[^1][j] = index < properties.Length ? properties[index].Trim() : string.Empty;
                     }
                 }
             }
@@ -496,8 +496,8 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     var address = tokens[5].Split(':')[0];
-                    var port = Int32.Parse(tokens[5].Split(':')[1]);
-                    var slot = Int32.Parse(tokens[8]);
+                    var port = int.Parse(tokens[5].Split(':')[1]);
+                    var slot = int.Parse(tokens[8]);
                     var responseState = ResponseState.MOVED;
 
                     return new ClusterResponse(address, port, slot, responseState, RedisResult.Create(ex.Message, ResultType.Error));
@@ -505,8 +505,8 @@ namespace Garnet.test.cluster
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     var address = tokens[1].Split(':')[0];
-                    var port = Int32.Parse(tokens[1].Split(':')[1]);
-                    var slot = Int32.Parse(tokens[4]);
+                    var port = int.Parse(tokens[1].Split(':')[1]);
+                    var slot = int.Parse(tokens[4]);
                     var responseState = ResponseState.ASK;
                     return new ClusterResponse(address, port, slot, responseState, RedisResult.Create(ex.Message, ResultType.Error));
                 }
@@ -735,7 +735,7 @@ namespace Garnet.test.cluster
             fixed (byte* ptr = key)
             {
                 byte* keyPtr = ptr;
-                return Garnet.common.NumUtils.HashSlot(keyPtr, key.Length);
+                return NumUtils.HashSlot(keyPtr, key.Length);
             }
         }
 
@@ -843,17 +843,17 @@ namespace Garnet.test.cluster
 
             if (result[0] == (byte)'+' || result[0] == (byte)':' || result[0] == '*' || result[0] == '$')
             {
-                returnValue = ClusterTestUtils.ParseRespToString(result, out returnValueArray);
+                returnValue = ParseRespToString(result, out returnValueArray);
                 return ResponseState.OK;
             }
             else if (result.AsSpan()[..MOVED.Length].SequenceEqual(MOVED))
             {
-                ClusterTestUtils.GetEndPointFromResponse(result, out slot, out address, out port);
+                GetEndPointFromResponse(result, out slot, out address, out port);
                 return ResponseState.MOVED;
             }
             else if (result.AsSpan()[..ASK.Length].SequenceEqual(ASK))
             {
-                ClusterTestUtils.GetEndPointFromResponse(result, out slot, out address, out port);
+                GetEndPointFromResponse(result, out slot, out address, out port);
                 return ResponseState.ASK;
             }
             else if (result.AsSpan()[..MIGRATING.Length].SequenceEqual(MIGRATING))
@@ -892,20 +892,20 @@ namespace Garnet.test.cluster
             {
                 port = node.Port;
                 address = node.Address;
-                slot = ClusterTestUtils.HashSlot(key);
-                var strValue = ClusterTestUtils.ParseRespToString(result, out values);
+                slot = HashSlot(key);
+                var strValue = ParseRespToString(result, out values);
                 if (strValue != null)
                     value = Encoding.ASCII.GetBytes(strValue);
                 return ResponseState.OK;
             }
             else if (result.AsSpan()[..MOVED.Length].SequenceEqual(MOVED))
             {
-                ClusterTestUtils.GetEndPointFromResponse(result, out slot, out address, out port);
+                GetEndPointFromResponse(result, out slot, out address, out port);
                 return ResponseState.MOVED;
             }
             else if (result.AsSpan()[..ASK.Length].SequenceEqual(ASK))
             {
-                ClusterTestUtils.GetEndPointFromResponse(result, out slot, out address, out port);
+                GetEndPointFromResponse(result, out slot, out address, out port);
                 return ResponseState.ASK;
             }
             else if (result.AsSpan()[..MIGRATING.Length].SequenceEqual(MIGRATING))
@@ -1324,7 +1324,7 @@ namespace Garnet.test.cluster
                 }
                 return 0;
             }
-            return ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : 0;
+            return ResultType.Integer == result.Type ? int.Parse(result.ToString()) : 0;
         }
 
         public int CountKeysInSlot(int nodeIndex, int slot, ILogger logger = null)
@@ -1414,7 +1414,7 @@ namespace Garnet.test.cluster
 
         public static string GetNodeIdFromNode(ref LightClientRequest sourceNode)
         {
-            var nodeConfig = ClusterTestUtils.Nodes(ref sourceNode);
+            var nodeConfig = Nodes(ref sourceNode);
             var nodeInfo = nodeConfig[0].Split(' ');
             return nodeInfo[(int)ClusterInfoTag.NODEID];
         }
@@ -1435,15 +1435,15 @@ namespace Garnet.test.cluster
                 for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
                     var range = nodeInfo[i].Split('-');
-                    ushort slotStart = UInt16.Parse(range[0]);
+                    ushort slotStart = ushort.Parse(range[0]);
                     ushort slotEnd;
                     if (range.Length > 1)
                     {
-                        slotEnd = UInt16.Parse(range[1]);
+                        slotEnd = ushort.Parse(range[1]);
                         if (slot >= slotStart && slot <= slotEnd)
                         {
                             var portStr = nodeInfo[(int)ClusterInfoTag.ADDRESS].Split('@')[0].Split(':')[1];
-                            return Int32.Parse(portStr);
+                            return int.Parse(portStr);
                         }
                     }
                     else
@@ -1451,7 +1451,7 @@ namespace Garnet.test.cluster
                         if (slot == slotStart)
                         {
                             var portStr = nodeInfo[(int)ClusterInfoTag.ADDRESS].Split('@')[0].Split(':')[1];
-                            return Int32.Parse(portStr);
+                            return int.Parse(portStr);
                         }
                     }
                 }
@@ -1473,16 +1473,16 @@ namespace Garnet.test.cluster
         {
             for (int j = 0; j < connections.Length; j++)
             {
-                var nodeConfig = ClusterTestUtils.Nodes(ref connections[j])[0];
+                var nodeConfig = Nodes(ref connections[j])[0];
                 var nodeInfo = nodeConfig.Split(' ');
-                for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
+                for (var i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
                     var range = nodeInfo[i].Split('-');
-                    ushort slotStart = UInt16.Parse(range[0]);
-                    ushort slotEnd;
+                    var slotStart = ushort.Parse(range[0]);
+                    int slotEnd;
                     if (range.Length > 1)
                     {
-                        slotEnd = UInt16.Parse(range[1]);
+                        slotEnd = ushort.Parse(range[1]);
                         if (slot >= slotStart && slot <= slotEnd)
                         {
                             return j;
@@ -1502,18 +1502,18 @@ namespace Garnet.test.cluster
 
         public int GetSourceNodeIndexFromSlot(ushort slot, ILogger logger)
         {
-            for (int j = 0; j < endpoints.Count; j++)
+            for (var j = 0; j < endpoints.Count; j++)
             {
                 var nodeConfig = Nodes((IPEndPoint)endpoints[j], logger)[0];
                 var nodeInfo = nodeConfig.Split(' ');
-                for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
+                for (var i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
                     var range = nodeInfo[i].Split('-');
-                    ushort slotStart = UInt16.Parse(range[0]);
+                    var slotStart = ushort.Parse(range[0]);
                     ushort slotEnd;
                     if (range.Length > 1)
                     {
-                        slotEnd = UInt16.Parse(range[1]);
+                        slotEnd = ushort.Parse(range[1]);
                         if (slot >= slotStart && slot <= slotEnd)
                         {
                             return j;
@@ -1535,9 +1535,9 @@ namespace Garnet.test.cluster
         {
             var strResp = Encoding.ASCII.GetString(resp);
             var data = strResp.Split(' ');
-            slot = Int32.Parse(data[1]);
+            slot = int.Parse(data[1]);
             address = data[2].Split(':')[0];
-            port = Int32.Parse(data[2].Split(':')[1].Split('\r')[0]);
+            port = int.Parse(data[2].Split(':')[1].Split('\r')[0]);
         }
 
         public string AddDelSlots(int nodeIndex, List<int> slots, bool addslot, ILogger logger = null)
@@ -1561,7 +1561,7 @@ namespace Garnet.test.cluster
 
         public string AddDelSlotsRange(int nodeIndex, List<(int, int)> ranges, bool addslot, ILogger logger = null)
         {
-            var endPoint = ((IPEndPoint)endpoints[nodeIndex]);
+            var endPoint = (IPEndPoint)endpoints[nodeIndex];
             var server = redis.GetServer(endPoint);
             var objects = ranges.SelectMany(x => new List<object> { (object)x.Item1, (object)x.Item2 }).ToList();
             objects.Insert(0, addslot ? "addslotsrange" : "delslotsrange");
@@ -1581,7 +1581,7 @@ namespace Garnet.test.cluster
         public static string SetSlot(ref LightClientRequest node, int slot, string state, string nodeid)
         {
             var resp = node.SendCommand($"cluster setslot {slot} {state} {nodeid}");
-            return ClusterTestUtils.ParseRespToString(resp, out _);
+            return ParseRespToString(resp, out _);
         }
 
         public string SetSlot(int nodeIndex, int slot, string state, string nodeid, ILogger logger = null)
@@ -2039,15 +2039,15 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     address = tokens[5].Split(':')[0];
-                    port = Int32.Parse(tokens[5].Split(':')[1]);
-                    slot = Int32.Parse(tokens[8]);
+                    port = int.Parse(tokens[5].Split(':')[1]);
+                    slot = int.Parse(tokens[8]);
                     return ResponseState.MOVED;
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     address = tokens[1].Split(':')[0];
-                    port = Int32.Parse(tokens[1].Split(':')[1]);
-                    slot = Int32.Parse(tokens[4]);
+                    port = int.Parse(tokens[1].Split(':')[1]);
+                    slot = int.Parse(tokens[4]);
                     return ResponseState.ASK;
                 }
                 else if (e.Message.StartsWith("CLUSTERDOWN"))
@@ -2088,7 +2088,7 @@ namespace Garnet.test.cluster
             {
                 ICollection<object> args = new List<object>() { (object)key };
                 result = (string)server.Execute("get", args, CommandFlags.NoRedirect);
-                slot = ClusterTestUtils.HashSlot(key);
+                slot = HashSlot(key);
                 responseState = ResponseState.OK;
                 return result;
             }
@@ -2098,24 +2098,24 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     address = tokens[5].Split(':')[0];
-                    port = Int32.Parse(tokens[5].Split(':')[1]);
-                    slot = Int32.Parse(tokens[8]);
+                    port = int.Parse(tokens[5].Split(':')[1]);
+                    slot = int.Parse(tokens[8]);
                     responseState = ResponseState.MOVED;
                     return "MOVED";
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     address = tokens[1].Split(':')[0];
-                    port = Int32.Parse(tokens[1].Split(':')[1]);
-                    slot = Int32.Parse(tokens[4]);
+                    port = int.Parse(tokens[1].Split(':')[1]);
+                    slot = int.Parse(tokens[4]);
                     responseState = ResponseState.ASK;
                     return "ASK";
                 }
                 else if (tokens[0].Equals("ASK"))
                 {
                     address = tokens[2].Split(':')[0];
-                    port = Int32.Parse(tokens[2].Split(':')[1]);
-                    slot = Int32.Parse(tokens[1]);
+                    port = int.Parse(tokens[2].Split(':')[1]);
+                    slot = int.Parse(tokens[1]);
                     responseState = ResponseState.ASK;
                     return "ASK";
                 }
@@ -2138,7 +2138,7 @@ namespace Garnet.test.cluster
             var server = GetServer(nodeIndex);
 
             ICollection<object> args = new List<object>();
-            for (int i = 0; i < keys.Count; i++)
+            for (var i = 0; i < keys.Count; i++)
             {
                 args.Add(keys[i]);
                 args.Add(values[i]);
@@ -2154,15 +2154,15 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     address = tokens[5].Split(':')[0];
-                    port = Int32.Parse(tokens[5].Split(':')[1]);
-                    slot = Int32.Parse(tokens[8]);
+                    port = int.Parse(tokens[5].Split(':')[1]);
+                    slot = int.Parse(tokens[8]);
                     return "MOVED";
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     address = tokens[1].Split(':')[0];
-                    port = Int32.Parse(tokens[1].Split(':')[1]);
-                    slot = Int32.Parse(tokens[4]);
+                    port = int.Parse(tokens[1].Split(':')[1]);
+                    slot = int.Parse(tokens[4]);
                     return "ASK";
                 }
 
@@ -2201,15 +2201,15 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     address = tokens[5].Split(':')[0];
-                    port = Int32.Parse(tokens[5].Split(':')[1]);
-                    slot = Int32.Parse(tokens[8]);
+                    port = int.Parse(tokens[5].Split(':')[1]);
+                    slot = int.Parse(tokens[8]);
                     return "MOVED";
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     address = tokens[1].Split(':')[0];
-                    port = Int32.Parse(tokens[1].Split(':')[1]);
-                    slot = Int32.Parse(tokens[4]);
+                    port = int.Parse(tokens[1].Split(':')[1]);
+                    slot = int.Parse(tokens[4]);
                     return "ASK";
                 }
 

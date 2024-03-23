@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -247,7 +246,7 @@ namespace Garnet.test.cluster
                 foreach (var node in config.Nodes)
                 {
                     var port = ((IPEndPoint)node.EndPoint).Port;
-                    var epoch = Int32.Parse(node.Raw.Split(" ")[6]);
+                    var epoch = int.Parse(node.Raw.Split(" ")[6]);
                     if (port == port0 && epoch == epoch0)
                     {
                         i++;

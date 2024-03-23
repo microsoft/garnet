@@ -131,7 +131,7 @@ namespace Garnet.test.cluster
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
-            var slotRangesStr = String.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
@@ -168,7 +168,7 @@ namespace Garnet.test.cluster
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
-            var slotRangesStr = String.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
@@ -235,7 +235,7 @@ namespace Garnet.test.cluster
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
-            var slotRangesStr = String.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
@@ -329,7 +329,7 @@ namespace Garnet.test.cluster
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
-            var slotRangesStr = String.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
@@ -403,7 +403,7 @@ namespace Garnet.test.cluster
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
-            var slotRangesStr = String.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
@@ -462,7 +462,7 @@ namespace Garnet.test.cluster
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
-            var slotRangesStr = String.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
@@ -527,7 +527,7 @@ namespace Garnet.test.cluster
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
-            var slotRangesStr = String.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
@@ -590,7 +590,7 @@ namespace Garnet.test.cluster
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
-            var slotRangesStr = String.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             shards = context.clusterTestUtils.ClusterShards(0, context.logger);
@@ -646,7 +646,7 @@ namespace Garnet.test.cluster
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var primary = cconfig.Nodes.First();
-            var slotRangesStr = String.Join(",", primary.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            var slotRangesStr = string.Join(",", primary.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             Assert.AreEqual(1, primary.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             var rconfig1 = context.clusterTestUtils.ClusterNodes(1, context.logger);
@@ -725,7 +725,7 @@ namespace Garnet.test.cluster
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
             var myself = cconfig.Nodes.First();
-            var slotRangesStr = String.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
+            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
             Assert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
 
             var shards = context.clusterTestUtils.ClusterShards(0, context.logger);

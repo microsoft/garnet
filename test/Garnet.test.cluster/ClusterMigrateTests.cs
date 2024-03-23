@@ -750,7 +750,7 @@ namespace Garnet.test.cluster
             try
             {
                 var result = server.Execute("zcount", args, CommandFlags.NoRedirect);
-                count = Int32.Parse((string)result);
+                count = int.Parse((string)result);
                 address = ((IPEndPoint)server.EndPoint).Address.ToString();
                 port = ((IPEndPoint)server.EndPoint).Port;
                 slot = ClusterTestUtils.HashSlot(key);
@@ -762,16 +762,16 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     address = tokens[5].Split(':')[0];
-                    port = Int32.Parse(tokens[5].Split(':')[1]);
-                    slot = Int32.Parse(tokens[8]);
+                    port = int.Parse(tokens[5].Split(':')[1]);
+                    slot = int.Parse(tokens[8]);
                     logger?.LogDebug("MOVED: {address} {port} {slot}", address, port, slot);
                     return "MOVED";
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     address = tokens[1].Split(':')[0];
-                    port = Int32.Parse(tokens[1].Split(':')[1]);
-                    slot = Int32.Parse(tokens[4]);
+                    port = int.Parse(tokens[1].Split(':')[1]);
+                    slot = int.Parse(tokens[4]);
                     logger?.LogDebug("ASK: {address} {port} {slot}", address, port, slot);
                     return "ASK";
                 }
@@ -814,16 +814,16 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     address = tokens[5].Split(':')[0];
-                    port = Int32.Parse(tokens[5].Split(':')[1]);
-                    slot = Int32.Parse(tokens[8]);
+                    port = int.Parse(tokens[5].Split(':')[1]);
+                    slot = int.Parse(tokens[8]);
                     logger?.LogWarning("MOVED: {address} {port} {slot}", address, port, slot);
                     return ("MOVED", null);
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     address = tokens[1].Split(':')[0];
-                    port = Int32.Parse(tokens[1].Split(':')[1]);
-                    slot = Int32.Parse(tokens[4]);
+                    port = int.Parse(tokens[1].Split(':')[1]);
+                    slot = int.Parse(tokens[4]);
                     logger?.LogWarning("ASK: {address} {port} {slot}", address, port, slot);
                     return ("ASK", null);
                 }
