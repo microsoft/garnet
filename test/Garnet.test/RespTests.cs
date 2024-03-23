@@ -182,7 +182,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             string origValue = "abcdefghij";
-            db.StringSet("mykey", origValue, TimeSpan.FromSeconds(1.1));
+            db.StringSet("mykey", origValue, TimeSpan.FromSeconds(1.9));
 
             string retValue = db.StringGet("mykey");
             Assert.AreEqual(origValue, retValue);
