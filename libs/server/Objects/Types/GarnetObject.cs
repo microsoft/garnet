@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.IO;
 
 namespace Garnet.server
 {
@@ -16,14 +15,14 @@ namespace Garnet.server
         /// </summary>
         /// <param name="garnetObjectType"></param>
         /// <returns></returns>
-        internal static IGarnetObject Create(GarnetObjectType garnetObjectType)
+        internal static IGarnetObject Create(GarnetObjectType garnetObjectType, long expiration = 0)
         {
             return garnetObjectType switch
             {
-                GarnetObjectType.SortedSet => new SortedSetObject(),
-                GarnetObjectType.List => new ListObject(),
-                GarnetObjectType.Hash => new HashObject(),
-                GarnetObjectType.Set => new SetObject(),
+                GarnetObjectType.SortedSet => new SortedSetObject(expiration),
+                GarnetObjectType.List => new ListObject(expiration),
+                GarnetObjectType.Hash => new HashObject(expiration),
+                GarnetObjectType.Set => new SetObject(expiration),
                 _ => throw new Exception("Unsupported data type"),
             };
         }
@@ -70,28 +69,6 @@ namespace Garnet.server
                 GarnetObjectType.Expire => false,
                 GarnetObjectType.Persist => false,
                 _ => true,
-            };
-        }
-
-        /// <summary>
-        /// Create an IGarnetObject from an input array.
-        /// </summary>
-        /// <param name="data"></param>
-        /// <returns></returns>
-        /// <exception cref="Exception"></exception>
-        public static IGarnetObject Create(byte[] data)
-        {
-            using var ms = new MemoryStream(data);
-            using var reader = new BinaryReader(ms);
-            var type = (GarnetObjectType)reader.ReadByte();
-
-            return type switch
-            {
-                GarnetObjectType.SortedSet => new SortedSetObject(reader),
-                GarnetObjectType.List => new ListObject(reader),
-                GarnetObjectType.Hash => new HashObject(reader),
-                GarnetObjectType.Set => new SetObject(reader),
-                _ => throw new Exception("Unsupported data type"),
             };
         }
     }

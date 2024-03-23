@@ -1,18 +1,6 @@
-name: Garnet .NET CI
+name: Garnet .NET CI - Test
 on:
   workflow_dispatch:
-  push:
-    paths-ignore:
-      - '**/*.md'
-      - '.azure'
-    branches:
-      - main
-  pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - '.azure'
-    branches:
-      - main
   
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -45,10 +33,12 @@ jobs:
   build-test-garnet:
     name: Garnet - Build and Test
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net6.0', 'net8.0' ]
+        configuration: ['Release', 'Debug']
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -58,8 +48,10 @@ jobs:
           dotnet-version: 8.0.x
       - name: Install dependencies
         run: dotnet restore
+      - name: Format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Garnet
-        run: dotnet build
+        run: dotnet build -c ${{ matrix.configuration }}
       - name: Test Garnet
         run: dotnet test -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}"
       - name: Upload test results
@@ -74,10 +66,12 @@ jobs:
     name: Tsavorite - Build and Test
     needs: changes
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net6.0', 'net8.0' ]
+        configuration: ['Release', 'Debug']
     if: needs.changes.outputs.tsavorite == 'true'   
     steps:
       - name: Check out code
@@ -103,8 +97,10 @@ jobs:
           azurite &
       - name: Install dependencies
         run: dotnet restore
+      - name: Format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Tsavorite
-        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj
+        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -c ${{ matrix.configuration }}
       - name: Test Tsavorite
         run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}"
       - name: Upload test results
