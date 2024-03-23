@@ -19,10 +19,25 @@ namespace Garnet.server
         byte[] serialized;
 
         /// <inheritdoc />
+        public abstract byte Type { get; }
+
+        /// <inheritdoc />
         public long Expiration { get; set; }
 
         /// <inheritdoc />
         public long Size { get; set; }
+
+        protected GarnetObjectBase(long expiration, long size)
+        {
+            Debug.Assert(size >= 0);
+            this.Expiration = expiration;
+            this.Size = size;
+        }
+
+        protected GarnetObjectBase(BinaryReader reader, long size)
+            : this(expiration: reader.ReadInt64(), size: size)
+        {
+        }
 
         /// <inheritdoc />
         public void Serialize(BinaryWriter writer)
@@ -90,8 +105,12 @@ namespace Garnet.server
 
         /// <summary>
         /// Serialize to given writer
+        /// NOTE: Make sure to first call base.DoSerialize(writer) in all derived classes.
         /// </summary>
-        public abstract void DoSerialize(BinaryWriter writer);
+        public virtual void DoSerialize(BinaryWriter writer)
+        {
+            writer.Write(Expiration);
+        }
 
         private bool MakeTransition(SerializationPhase expectedPhase, SerializationPhase nextPhase)
         {

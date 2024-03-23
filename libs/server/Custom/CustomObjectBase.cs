@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Diagnostics;
 using System.IO;
 using Garnet.common;
 using Tsavorite.core;
@@ -30,19 +29,26 @@ namespace Garnet.server
         /// </summary>
         /// <param name="type">Object type</param>
         /// <param name="size"></param>
-        protected CustomObjectBase(byte type, long size = 0)
+        protected CustomObjectBase(byte type, long expiration, long size = 0)
+            : base(expiration, size)
         {
-            Debug.Assert(size >= 0);
-
             this.type = type;
-            this.Size = size;
+        }
+
+        protected CustomObjectBase(byte type, BinaryReader reader, long size = 0)
+            : base(reader, size)
+        {
+            this.type = type;
         }
 
         /// <summary>
         /// Base copy constructor
         /// </summary>
         /// <param name="obj">Other object</param>
-        protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.Size) { }
+        protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.Expiration, obj.Size) { }
+
+        /// <inheritdoc />
+        public override byte Type => type;
 
         /// <summary>
         /// Create output as simple string, from given string
@@ -161,12 +167,10 @@ namespace Garnet.server
         /// <returns></returns>
         public sealed override GarnetObjectBase Clone() => CloneObject();
 
-        /// <summary>
-        /// Serialize to giver writer
-        /// </summary>
+        /// <inheritdoc />
         public sealed override void DoSerialize(BinaryWriter writer)
         {
-            writer.Write(type);
+            base.DoSerialize(writer);
             SerializeObject(writer);
         }
 

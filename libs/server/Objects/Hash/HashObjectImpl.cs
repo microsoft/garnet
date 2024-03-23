@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -215,7 +216,6 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                Random random = new();
                 var withValues = false;
                 int[] indexes = default;
 
@@ -270,9 +270,7 @@ namespace Garnet.server
                             countParameter = Math.Abs(countParameter);
                             indexes = new int[countParameter];
                             for (int i = 0; i < countParameter; i++)
-                                indexes[i] = random.Next(0, hash.Count);
-                            // Shuffle
-                            indexes = indexes.OrderBy(x => random.Next()).ToArray();
+                                indexes[i] = RandomNumberGenerator.GetInt32(0, hash.Count);
                         }
 
                         // Write the size of the array reply
@@ -296,7 +294,7 @@ namespace Garnet.server
                 else if (count == 2) // No count parameter or withvalues is present, we just return a random field
                 {
                     // Write a bulk string value of a random field from the hash value stored at key.
-                    int index = random.Next(hash.Count);
+                    int index = RandomNumberGenerator.GetInt32(0, hash.Count);
                     var pair = hash.ElementAt(index);
                     while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
