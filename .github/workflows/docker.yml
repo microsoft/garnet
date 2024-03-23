@@ -19,7 +19,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ github.repository }}
+          images: ghcr.io/${{ github.repository }}
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -39,7 +39,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           file: Dockerfile
-          platforms: linux/amd64 #,linux/arm64
+          platforms: linux/amd64 # Right now arm64 builds are broken. Once fixed, add: ",linux/arm64"
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
