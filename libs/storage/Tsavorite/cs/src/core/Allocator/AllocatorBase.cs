@@ -1907,7 +1907,6 @@ namespace Tsavorite.core
             long endPage = untilAddress >> LogPageSizeBits;
             int numPages = (int)(endPage - startPage);
 
-            _ = GetOffsetInPage(fromAddress);
             long offsetInEndPage = GetOffsetInPage(untilAddress);
 
             // Extra (partial) page being flushed
@@ -1998,7 +1997,6 @@ namespace Tsavorite.core
         {
             for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
-                _ = GetPageIndexForPage(flushPage);
                 var asyncResult = new PageAsyncFlushResult<TContext>()
                 {
                     page = flushPage,
