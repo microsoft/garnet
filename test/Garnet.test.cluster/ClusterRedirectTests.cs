@@ -652,31 +652,31 @@ namespace Garnet.test.cluster
                     {
                         var resp = connections[sourceNodeIndex].SendCommand(setupCmd[j]);
                         var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
-                        Assert.AreEqual(respStatus, ResponseState.OK);
+                        Assert.AreEqual(ResponseState.OK, respStatus);
                     }
                 }
             }
 
             var respMigrating = ClusterTestUtils.SetSlot(ref connections[sourceNodeIndex], migrateSlot, "MIGRATING", targetNodeId);
-            Assert.AreEqual(respMigrating, "OK");
+            Assert.AreEqual("OK", respMigrating);
 
             result = connections[sourceNodeIndex].SendCommand(testCmd);
             status = ClusterTestUtils.ParseResponseState(result, out _slot, out _address, out _port, out _value, out _values);
 
             var respMigratingStable = ClusterTestUtils.SetSlot(ref connections[sourceNodeIndex], migrateSlot, "STABLE", "");
-            Assert.AreEqual(respMigratingStable, "OK");
+            Assert.AreEqual("OK", respMigratingStable);
 
             if (CheckFlag(command.testFlags, (TestFlags.KEY_EXISTS | TestFlags.READONLY)))
             {
-                Assert.AreEqual(status, ResponseState.OK, command.cmdTag);
+                Assert.AreEqual(ResponseState.OK, status, command.cmdTag);
             }
             else if (CheckFlag(command.testFlags, (TestFlags.KEY_EXISTS)))
             {
-                Assert.AreEqual(status, ResponseState.MIGRATING, command.cmdTag);
+                Assert.AreEqual(ResponseState.MIGRATING, status, command.cmdTag);
             }
             else
             {
-                Assert.AreEqual(status, ResponseState.ASK, command.cmdTag);
+                Assert.AreEqual(ResponseState.ASK, status, command.cmdTag);
                 Assert.AreEqual(_port, connections[targetNodeIndex].Port, command.cmdTag);
                 Assert.AreEqual(_address, connections[targetNodeIndex].Address, command.cmdTag);
             }
@@ -689,7 +689,7 @@ namespace Garnet.test.cluster
                     {
                         var resp = connections[sourceNodeIndex].SendCommand(cleanCmd[j]);
                         var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
-                        Assert.AreEqual(respStatus, ResponseState.OK);
+                        Assert.AreEqual(ResponseState.OK, respStatus);
                     }
                 }
             }
@@ -745,11 +745,11 @@ namespace Garnet.test.cluster
                 string targetNodeId = ClusterTestUtils.GetNodeIdFromNode(ref connections[targetNodeIndex]);
 
                 var respImporting = ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], migrateSlot, "IMPORTING", sourceNodeId);
-                Assert.AreEqual(respImporting, "OK");
+                Assert.AreEqual("OK", respImporting);
                 SendToImportingNode(ref connections, sourceNodeIndex, targetNodeIndex, command, migrateSlot);
 
                 var respImportingStable = ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], migrateSlot, "STABLE", "");
-                Assert.AreEqual(respImportingStable, "OK");
+                Assert.AreEqual("OK", respImportingStable);
                 SendToMigratingNode(ref connections, sourceNodeIndex, sourceNodeId, targetNodeIndex, targetNodeId, command, migrateSlot);
             }
 
@@ -824,11 +824,11 @@ namespace Garnet.test.cluster
                 string targetNodeId = ClusterTestUtils.GetNodeIdFromNode(ref connections[targetNodeIndex]);
 
                 var respImporting = ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], migrateSlot, "IMPORTING", sourceNodeId);
-                Assert.AreEqual(respImporting, "OK");
+                Assert.AreEqual("OK", respImporting);
                 SendToImportingNode(ref connections, sourceNodeIndex, targetNodeIndex, command, migrateSlot);
 
                 var respImportingStable = ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], migrateSlot, "STABLE", "");
-                Assert.AreEqual(respImportingStable, "OK");
+                Assert.AreEqual("OK", respImportingStable);
                 SendToMigratingNode(ref connections, sourceNodeIndex, sourceNodeId, targetNodeIndex, targetNodeId, command, migrateSlot);
             }
 
