@@ -122,7 +122,7 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_INCOMPLETESLOTSRANGE_ERROR => "-ERR incomplete slotrange\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CROSSLOT_ERROR => "-CROSSSLOT Keys in request do not hash to the same slot\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CLUSTERDOWN_ERROR => "-CLUSTERDOWN Hash slot not served\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_MIGRATING_ERROR => "-CLUSTERDOWN Hash slot not served\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_MIGRATING_ERROR => "-MIGRATING\r\n"u8;
 
     }
 }
