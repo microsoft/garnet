@@ -1,15 +1,16 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+ARG TARGETARCH
 WORKDIR /source
 
 # Copy files
 COPY . .
 WORKDIR /source/main/GarnetServer
 
-RUN dotnet restore 
-RUN dotnet build -c Release
+RUN dotnet restore -a $TARGETARCH
+RUN dotnet build -a $TARGETARCH -c Release
 
 # Copy and publish app and libraries
-RUN dotnet publish -c Release -o /app --self-contained false -f net8.0
+RUN dotnet publish -a $TARGETARCH -c Release -o /app --self-contained false -f net8.0
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0
