@@ -589,12 +589,12 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue ?
-                                NetworkSET_Conditional(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false) :
-                                NetworkSET_EX(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, ref storageApi, false); // Can perform a blind update
+                                NetworkSET_Conditional(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, getValue, false, ref storageApi) :
+                                NetworkSET_EX(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, false, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, false, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, false, ref storageApi);
                     }
                     break;
                 case ExpirationOption.PX:
@@ -602,12 +602,12 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             return getValue ?
-                                NetworkSET_Conditional(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, true) :
-                                NetworkSET_EX(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, ref storageApi, true); // Can perform a blind update
+                                NetworkSET_Conditional(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, getValue, true, ref storageApi) :
+                                NetworkSET_EX(RespCommand.SET, ptr, expiry, keyPtr, valPtr, vsize, true, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETEXXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, true);
+                            return NetworkSET_Conditional(RespCommand.SETEXXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, true, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, true);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, true, ref storageApi);
                     }
                     break;
 
@@ -617,11 +617,11 @@ namespace Garnet.server
                     {
                         case ExistOptions.None:
                             // We can never perform a blind update due to KEEPTTL
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTL, ptr, expiry, keyPtr, valPtr, vsize, getValue, false, ref storageApi);
                         case ExistOptions.XX:
-                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
+                            return NetworkSET_Conditional(RespCommand.SETKEEPTTLXX, ptr, expiry, keyPtr, valPtr, vsize, getValue, false, ref storageApi);
                         case ExistOptions.NX:
-                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, ref storageApi, false);
+                            return NetworkSET_Conditional(RespCommand.SETEXNX, ptr, expiry, keyPtr, valPtr, vsize, getValue, false, ref storageApi);
                     }
                     break;
             }
@@ -631,7 +631,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, byte* ptr, int expiry, byte* keyPtr, byte* valPtr, int vsize, ref TGarnetApi storageApi, bool highPrecision)
+        private bool NetworkSET_EX<TGarnetApi>(RespCommand cmd, byte* ptr, int expiry, byte* keyPtr, byte* valPtr, int vsize, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.SET);
@@ -656,7 +656,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, byte* ptr, int expiry, byte* keyPtr, byte* inputPtr, int isize, bool getValue, ref TGarnetApi storageApi, bool highPrecision)
+        private bool NetworkSET_Conditional<TGarnetApi>(RespCommand cmd, byte* ptr, int expiry, byte* keyPtr, byte* inputPtr, int isize, bool getValue, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             // Make space for RespCommand in input
