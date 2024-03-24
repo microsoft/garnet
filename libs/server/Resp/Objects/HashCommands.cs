@@ -293,7 +293,7 @@ namespace Garnet.server
             if (count < 2)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
-                return AbortWithWrongNumberOfArguments("DEL", count);
+                return AbortWithWrongNumberOfArguments("HDEL", count);
             }
             else
             {
