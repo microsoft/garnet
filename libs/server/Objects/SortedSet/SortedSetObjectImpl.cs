@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -15,7 +16,7 @@ namespace Garnet.server
     /// <summary>
     /// Sorted Set - RESP specific operations
     /// </summary>
-    public unsafe partial class SortedSetObject : IGarnetObject
+    public unsafe partial class SortedSetObject : GarnetObjectBase
     {
         /// <summary>
         /// Small struct to store options for ZRange command
@@ -651,7 +652,6 @@ namespace Garnet.server
             MemoryHandle ptrHandle = default;
             byte* ptr = output.SpanByte.ToPointer();
 
-            Random random = new();
             var curr = ptr;
             var end = curr + output.Length;
 
@@ -680,10 +680,7 @@ namespace Garnet.server
                     // The order of fields in the reply is truly random.
                     indexes = new int[Math.Abs(count)];
                     for (int i = 0; i < indexes.Length; i++)
-                        indexes[i] = random.Next(0, sortedSetDict.Count);
-
-                    // Guarantee random order
-                    indexes = indexes.OrderBy(x => random.Next()).ToArray();
+                        indexes[i] = RandomNumberGenerator.GetInt32(0, sortedSetDict.Count);
                 }
 
                 foreach (var item in indexes)
