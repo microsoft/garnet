@@ -251,7 +251,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">Name of the key or object to get the memory usage</param>
         /// <param name="memoryUsage">The value in bytes the key or object is using</param>
-        /// <param name="samples">Number of sampled nested values</param> 
+        /// <param name="samples">Number of sampled nested values</param>
         /// <returns>GarnetStatus</returns>
         GarnetStatus MemoryUsageForKey(ArgSlice key, out long memoryUsage, int samples = 0);
 
@@ -335,7 +335,7 @@ namespace Garnet.server
         GarnetStatus SortedSetRemoveRangeByLex(byte[] key, ArgSlice input, out ObjectOutputHeader output);
 
         /// <summary>
-        /// Removes and returns the first element from the sorted set stored at key, 
+        /// Removes and returns the first element from the sorted set stored at key,
         /// with the scores ordered from low to high (min) or high to low (max).
         /// </summary>
         /// <param name="key"></param>
@@ -355,7 +355,7 @@ namespace Garnet.server
         GarnetStatus SortedSetPop(ArgSlice key, out (ArgSlice score, ArgSlice member)[] pairs, int count = 1, bool lowScoresFirst = true);
 
         /// <summary>
-        /// Increments the score of member in the sorted set stored at key by increment. 
+        /// Increments the score of member in the sorted set stored at key by increment.
         /// If member does not exist in the sorted set, it is added with increment as its score (as if its previous score was 0.0).
         /// </summary>
         /// <param name="key"></param>
@@ -442,7 +442,7 @@ namespace Garnet.server
 
         /// <summary>
         ///  Adds the specified members to the set at key.
-        ///  Specified members that are already a member of this set are ignored. 
+        ///  Specified members that are already a member of this set are ignored.
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <param name="key"></param>
@@ -453,7 +453,7 @@ namespace Garnet.server
 
         /// <summary>
         ///  Adds the specified members to the set at key.
-        ///  Specified members that are already a member of this set are ignored. 
+        ///  Specified members that are already a member of this set are ignored.
         ///  If key does not exist, a new set is created.
         /// </summary>
         /// <param name="key"></param>
@@ -464,7 +464,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Removes the specified member from the set.
-        /// Specified members that are not a member of this set are ignored. 
+        /// Specified members that are not a member of this set are ignored.
         /// If key does not exist, this command returns 0.
         /// </summary>
         /// <param name="key"></param>
@@ -475,7 +475,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Removes the specified members from the set.
-        /// Specified members that are not a member of this set are ignored. 
+        /// Specified members that are not a member of this set are ignored.
         /// If key does not exist, this command returns 0.
         /// </summary>
         /// <param name="key"></param>
@@ -486,7 +486,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Removes the specified members from the set.
-        /// Specified members that are not a member of this set are ignored. 
+        /// Specified members that are not a member of this set are ignored.
         /// If key does not exist, this command returns 0.
         /// </summary>
         /// <param name="key"></param>
@@ -726,7 +726,7 @@ namespace Garnet.server
         GarnetStatus HashSet(byte[] key, ArgSlice input, out ObjectOutputHeader output);
 
         /// <summary>
-        /// Set only if field does not yet exist. If key does not exist, a new key holding a hash is created. 
+        /// Set only if field does not yet exist. If key does not exist, a new key holding a hash is created.
         /// If field already exists, no action is performed.
         /// HashSet only when field does not exist
         /// </summary>
@@ -788,7 +788,7 @@ namespace Garnet.server
         #region BitMaps Methods
 
         /// <summary>
-        /// 
+        ///
         /// </summary>
         /// <param name="key"></param>
         /// <param name="offset"></param>
@@ -818,7 +818,7 @@ namespace Garnet.server
         GarnetStatus StringBitOperation(ArgSlice[] keys, BitmapOperation bitop, out long result);
 
         /// <summary>
-        /// Perform a bitwise operation between multiple keys 
+        /// Perform a bitwise operation between multiple keys
         /// and store the result in the destination key.
         /// </summary>
         /// <param name="bitop"></param>
@@ -865,7 +865,7 @@ namespace Garnet.server
         GarnetStatus HyperLogLogAdd(ArgSlice keys, string[] elements, out bool updated);
 
         /// <summary>
-        /// Merge multiple HyperLogLog values into a unique value that will approximate the cardinality 
+        /// Merge multiple HyperLogLog values into a unique value that will approximate the cardinality
         /// of the union of the observed Sets of the source HyperLogLog structures.
         /// </summary>
         /// <param name="keys"></param>
@@ -987,6 +987,16 @@ namespace Garnet.server
         GarnetStatus SortedSetScore(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
+        /// Returns the score of member in the sorted set at key.
+        /// If member does not exist in the sorted set, or key does not exist, nil is returned.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus SortedSetScores(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
         /// Returns the number of elements in the sorted set at key with a score between min and max.
         /// </summary>
         /// <param name="key"></param>
@@ -997,7 +1007,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Returns the number of elements in the sorted set with a value between min and max.
-        /// When all the elements in a sorted set have the same score, 
+        /// When all the elements in a sorted set have the same score,
         /// this command forces lexicographical ordering.
         /// </summary>
         /// <param name="key"></param>
@@ -1324,7 +1334,7 @@ namespace Garnet.server
         GarnetStatus StringGetBit(ArgSlice key, ArgSlice offset, out bool bValue);
 
         /// <summary>
-        /// Count the number of set bits in a string. 
+        /// Count the number of set bits in a string.
         /// It can be specified an interval for counting, passing the start and end arguments.
         /// </summary>
         /// <param name="key"></param>
@@ -1334,7 +1344,7 @@ namespace Garnet.server
         GarnetStatus StringBitCount(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output);
 
         /// <summary>
-        /// Count the number of set bits in a string. 
+        /// Count the number of set bits in a string.
         /// It can be specified an interval for counting, passing the start and end arguments.
         /// </summary>
         /// <param name="key"></param>
@@ -1379,7 +1389,7 @@ namespace Garnet.server
         GarnetStatus HyperLogLogLength(ArgSlice[] keys, ref SpanByte input, out long count, out bool error);
 
         /// <summary>
-        /// 
+        ///
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="count"></param>

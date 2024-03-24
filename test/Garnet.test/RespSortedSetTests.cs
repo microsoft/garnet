@@ -342,6 +342,29 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanGetMemberScores()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommands("ZMSCORE nokey", "PING");
+            var expectedResponse = "-ERR wrong number of arguments for ZMSCORE command.\r\n+PONG\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            var key = "SortedSet_GetMemberScores";
+            var added = db.SortedSetAdd(key, entries);
+            var scores = db.SortedSetScores(key, ["a", "b", "z", "i"]);
+            Assert.AreEqual(scores, new List<double?>() { 1, 2, null, 9 });
+
+            var memResponse = db.Execute("MEMORY", "USAGE", key);
+            var memActualValue = ResultType.Integer == memResponse.Type ? Int32.Parse(response.ToString()) : -1;
+            var memExpectedResponse = 1808;
+            Assert.AreEqual(memExpectedResponse, memActualValue);
+        }
+
+        [Test]
         public void CandDoZIncrby()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -470,7 +493,7 @@ namespace Garnet.test
             // Add some items
             var r = new Random();
 
-            // Fill a new SortedSetEntry with 1000 random entries 
+            // Fill a new SortedSetEntry with 1000 random entries
             int n = 1000;
             var entries = new SortedSetEntry[n];
 
@@ -550,7 +573,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // Fill a new SortedSetEntry with 1000 random entries 
+            // Fill a new SortedSetEntry with 1000 random entries
             int n = 1000;
             var entries = new SortedSetEntry[n];
             var keySS = new RedisKey("keySS");
@@ -718,13 +741,13 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD board 2 two");
             lightClientRequest.SendCommand("ZADD board 3 three");
 
-            // 1 < score <= 5          
+            // 1 < score <= 5
             response = lightClientRequest.SendCommandChunks("ZRANGEBYSCORE board (1 5", bytesSent, 3);
             var expectedResponse = "*2\r\n$3\r\ntwo\r\n$5\r\nthree\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
-            // 1 < score <= 5          
+            // 1 < score <= 5
             response = lightClientRequest.SendCommands("ZRANGEBYSCORE board (1 5", "PING", 3, 1);
             expectedResponse = "*2\r\n$3\r\ntwo\r\n$5\r\nthree\r\n+PONG\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
@@ -777,7 +800,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD board 0 f");
             lightClientRequest.SendCommand("ZADD board 0 g");
 
-            // get a range by lex order            
+            // get a range by lex order
             response = lightClientRequest.SendCommand("ZRANGE board (a (d BYLEX", 3);
             var expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nc\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
@@ -828,7 +851,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD board 0 e");
             lightClientRequest.SendCommand("ZADD board 0 f");
 
-            // get a range by lex order            
+            // get a range by lex order
             response = lightClientRequest.SendCommandChunks("ZRANGE board 0 -1 REV", bytesSent, 7);
 
             var expectedResponse = "*6\r\n$1\r\nf\r\n$1\r\ne\r\n$1\r\nd\r\n$1\r\nc\r\n$1\r\nb\r\n$1\r\na\r\n";
@@ -1112,7 +1135,7 @@ namespace Garnet.test
         [TestCase(100)]
         public void CanDoZRevRankLC(int bytesSent)
         {
-            //ZREVRANK key member            
+            //ZREVRANK key member
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("ZADD board 340 Dave");
             lightClientRequest.SendCommand("ZADD board 400 Kendra");
@@ -1146,7 +1169,7 @@ namespace Garnet.test
         [TestCase(100)]
         public void CanDoZRemRangeByLexLC(int bytesSent)
         {
-            //ZREMRANGEBYLEX key member            
+            //ZREMRANGEBYLEX key member
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("ZADD myzset 0 aaaa 0 b 0 c 0 d 0 e");
             lightClientRequest.SendCommand("ZADD myzset 0 foo 0 zap 0 zip 0 ALPHA 0 alpha");
@@ -1172,7 +1195,7 @@ namespace Garnet.test
         [TestCase(100)]
         public void CanDoZRemRangeByRank(int bytesSent)
         {
-            //ZREMRANGEBYRANK key start stop            
+            //ZREMRANGEBYRANK key start stop
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("ZADD board 340 Dave");
             lightClientRequest.SendCommand("ZADD board 400 Kendra");
@@ -1755,7 +1778,7 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
-            // Add a large number 
+            // Add a large number
             response = lightClientRequest.SendCommand("ZADD zset1 -9007199254740992 uno");
             expectedResponse = ":1\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);

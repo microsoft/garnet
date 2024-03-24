@@ -515,6 +515,10 @@ namespace Garnet.server
                     if (*(long*)ptr == 4702694082085729572L && *(ushort*)(ptr + 8) == 3406 && *(ptr + 10) == 10)
                         return (RespCommand.SortedSet, (byte)SortedSetOperation.ZSCAN);
 
+                    //[$7|ZMSCORE|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
+                    if (*(long*)ptr == 4851306272719189796L && *(ushort*)(ptr + 8) == 21071 && *(ptr + 10) == 69)
+                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZMSCORE);
+
                     #region SortedSet Operations with Geo Commands
                     //[$6|GEOADD|] = 12 bytes = 8 (long) + 2 (ushort) + 2 bytes
                     if (*(long*)ptr == 4706056307039090212L && *(ushort*)(ptr + 8) == 17476 && *(ptr + 11) == 10)
@@ -643,13 +647,13 @@ namespace Garnet.server
                     //[$8|SMEMBERS|] = 14 bytes = 8 (long) + 2 (ushort) + 2 bytes
                     if (*(long*)ptr == 5567941533359749156L && *(ushort*)(ptr + 8) == 17730 && *(ptr + 13) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SMEMBERS);
-                    //[$4|SREM|] = 10 bytes = 8 (long) + 2 (ushort) 
+                    //[$4|SREM|] = 10 bytes = 8 (long) + 2 (ushort)
                     if (*(long*)ptr == 5567947030917887012L && *(ushort*)(ptr + 8) == 2573 && *(ptr + 9) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SREM);
                     //[$5|SCARD|] = 11 bytes = 8 (long) + 2 (ushort) + 1 byte
                     if (*(long*)ptr == 5927092608526267684L && *(ushort*)(ptr + 8) == 3396 && *(ptr + 10) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SCARD);
-                    //[$4|SPOP|] = 10 bytes = 8 (long) + 2 (ushort) 
+                    //[$4|SPOP|] = 10 bytes = 8 (long) + 2 (ushort)
                     if (*(long*)ptr == 5786932363775521828L && *(ushort*)(ptr + 8) == 2573 && *(ptr + 9) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SPOP);
                     //[$5|SSCAN|] = 14 bytes = 8 (long) + 2 (ushort)

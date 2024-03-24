@@ -138,6 +138,7 @@ namespace Garnet.server
         private static readonly Dictionary<byte, RespCommandsInfo> sortedSetCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
         {
             {(byte)SortedSetOperation.ZADD,             new RespCommandsInfo("ZADD", RespCommand.SortedSet,             -4,null, (byte)SortedSetOperation.ZADD)},
+            {(byte)SortedSetOperation.ZMSCORE,          new RespCommandsInfo("ZMSCORE", RespCommand.SortedSet,          -3,null, (byte)SortedSetOperation.ZMSCORE)},
             {(byte)SortedSetOperation.ZREM,             new RespCommandsInfo("ZREM", RespCommand.SortedSet,             -3,null, (byte)SortedSetOperation.ZREM)},
             {(byte)SortedSetOperation.ZCARD,            new RespCommandsInfo("ZCARD", RespCommand.SortedSet,             2,null, (byte)SortedSetOperation.ZCARD)},
             {(byte)SortedSetOperation.ZPOPMAX,          new RespCommandsInfo("ZPOPMAX", RespCommand.SortedSet,          -2,null, (byte)SortedSetOperation.ZPOPMAX)},

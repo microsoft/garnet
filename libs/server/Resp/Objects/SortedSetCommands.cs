@@ -354,7 +354,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Returns the specified range of elements in the sorted set stored at key. 
+        /// Returns the specified range of elements in the sorted set stored at key.
         /// The ordering is reversed.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
@@ -450,7 +450,83 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Removes and returns the first element from the sorted set stored at key, 
+        /// Returns the score of member in the sorted set at key.
+        /// If member does not exist in the sorted set, or key does not exist, nil is returned.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool SortedSetScores<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            ptr += 13;
+
+            //validation if minimum args
+            if (count - 2 == 0)
+            {
+                // send error to output
+                return AbortWithWrongNumberOfArguments("ZMSCORE", count);
+            }
+            else
+            {
+                // Get the key for SortedSet
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                if (NetworkSingleKeySlotVerify(key, true))
+                {
+                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                    if (!DrainCommands(bufSpan, count)) return true;
+                    return true;
+                }
+
+                // Prepare input
+                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+                //save values
+                var save = *inputPtr;
+
+                // Prepare length of header in input buffer
+                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                int inputCount = count - 2;
+                // Prepare header in input buffer
+                inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.SortedSetOp = SortedSetOperation.ZMSCORE;
+                inputPtr->count = inputCount;
+                inputPtr->done = 0;
+
+                // Prepare GarnetObjectStore output
+                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+                var status = storageApi.SortedSetScore(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+                //restore input
+                *inputPtr = save;
+
+                switch (status)
+                {
+                    case GarnetStatus.OK:
+                        //process output
+                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                        ptr += objOutputHeader.bytesDone;
+                        break;
+                    case GarnetStatus.NOTFOUND:
+                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                }
+            }
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        /// <summary>
+        /// Removes and returns the first element from the sorted set stored at key,
         /// with the scores ordered from low to high (min) or high to low (max).
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
@@ -625,9 +701,9 @@ namespace Garnet.server
 
         /// <summary>
         /// ZLEXCOUNT: Returns the number of elements in the sorted set with a value between min and max.
-        /// When all the elements in a sorted set have the same score, 
+        /// When all the elements in a sorted set have the same score,
         /// this command forces lexicographical ordering.
-        /// ZREMRANGEBYLEX: Removes all elements in the sorted set between the 
+        /// ZREMRANGEBYLEX: Removes all elements in the sorted set between the
         /// lexicographical range specified by min and max.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
@@ -718,7 +794,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Increments the score of member in the sorted set stored at key by increment. 
+        /// Increments the score of member in the sorted set stored at key by increment.
         /// If member does not exist in the sorted set, it is added with increment as its score (as if its previous score was 0.0).
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
@@ -1082,7 +1158,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        ///  Computes a difference operation  between the first and all successive sorted sets 
+        ///  Computes a difference operation  between the first and all successive sorted sets
         ///  and returns the result to the client.
         ///  The total number of input keys is specified.
         /// </summary>
