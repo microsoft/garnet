@@ -14,7 +14,7 @@ env:
 
 jobs:
   changes:
-    name: Check Tsavorite and Website changed
+    name: Check for changes
     runs-on: ubuntu-latest  # don't need matrix to test where the changes were made in code
     permissions:
       pull-requests: read
@@ -22,10 +22,11 @@ jobs:
     outputs:
       tsavorite: ${{ steps.filter.outputs.tsavorite }}
       website: ${{ steps.filter.outputs.website }}
+      garnet: ${{ steps.filter.outputs.garnet }}
     steps:
     - name: Check out code
       uses: actions/checkout@v4
-    - name: Check if Tsavorite changed
+    - name: Apply filter
       uses: dorny/paths-filter@v3
       id: filter
       with:
@@ -34,20 +35,19 @@ jobs:
             - 'libs/storage/Tsavorite/**'
           website:
             - 'website/**'
-          code:
-            - '**/*'
-            - '!website/**'
-            - '!**/*.md'
+          garnet:
+            - '!(website/**)/**'
   
   # Job to build and test Garnet code
   build-test-garnet:
     name: Garnet - Build and Test
+    needs: changes
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net6.0', 'net8.0' ]
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -139,3 +139,4 @@ jobs:
     needs: [ build-test-garnet,  build-test-tsavorite, build-website ]
     steps:
     - run: echo Done!
+    if: ${{ !(failure() || cancelled()) }}
