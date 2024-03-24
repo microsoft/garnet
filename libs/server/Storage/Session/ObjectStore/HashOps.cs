@@ -508,6 +508,19 @@ namespace Garnet.server
             => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
 
         /// <summary>
+        /// Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <returns></returns>
+        public GarnetStatus HashStrLength<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+
+        /// <summary>
         /// Removes the specified fields from the hash key.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
