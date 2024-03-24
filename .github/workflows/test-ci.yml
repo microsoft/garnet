@@ -1,12 +1,6 @@
-name: Garnet .NET CI
+name: Garnet .NET CI - Test
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -14,7 +8,7 @@ env:
 
 jobs:
   changes:
-    name: Check for changes
+    name: Check Tsavorite and Website changed
     runs-on: ubuntu-latest  # don't need matrix to test where the changes were made in code
     permissions:
       pull-requests: read
@@ -22,11 +16,10 @@ jobs:
     outputs:
       tsavorite: ${{ steps.filter.outputs.tsavorite }}
       website: ${{ steps.filter.outputs.website }}
-      garnet: ${{ steps.filter.outputs.garnet }}
     steps:
     - name: Check out code
       uses: actions/checkout@v4
-    - name: Apply filter
+    - name: Check if Tsavorite changed
       uses: dorny/paths-filter@v3
       id: filter
       with:
@@ -35,19 +28,17 @@ jobs:
             - 'libs/storage/Tsavorite/**'
           website:
             - 'website/**'
-          garnet:
-            - '!((*.md)|(website/**))'
   
   # Job to build and test Garnet code
   build-test-garnet:
     name: Garnet - Build and Test
-    needs: changes
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net6.0', 'net8.0' ]
-    if: needs.changes.outputs.garnet == 'true'
+        configuration: ['Release', 'Debug']
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -57,8 +48,10 @@ jobs:
           dotnet-version: 8.0.x
       - name: Install dependencies
         run: dotnet restore
+      - name: Format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Garnet
-        run: dotnet build
+        run: dotnet build -c ${{ matrix.configuration }}
       - name: Test Garnet
         run: dotnet test -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}"
       - name: Upload test results
@@ -73,10 +66,12 @@ jobs:
     name: Tsavorite - Build and Test
     needs: changes
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net6.0', 'net8.0' ]
+        configuration: ['Release', 'Debug']
     if: needs.changes.outputs.tsavorite == 'true'   
     steps:
       - name: Check out code
@@ -102,8 +97,10 @@ jobs:
           azurite &
       - name: Install dependencies
         run: dotnet restore
+      - name: Format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Tsavorite
-        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj
+        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -c ${{ matrix.configuration }}
       - name: Test Tsavorite
         run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}"
       - name: Upload test results
@@ -132,11 +129,4 @@ jobs:
         run: yarn install --frozen-lockfile
       - name: Build website
         run: yarn build
-
-  pipeline-success:
-    name: Garnet CI (Complete)
-    runs-on: ubuntu-latest
-    needs: [ build-test-garnet,  build-test-tsavorite, build-website ]
-    steps:
-    - run: echo Done!
-    if: ${{ !(failure() || cancelled()) }}
+      
