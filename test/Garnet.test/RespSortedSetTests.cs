@@ -359,7 +359,7 @@ namespace Garnet.test
             Assert.AreEqual(scores, new List<double?>() { 1, 2, null, 9 });
 
             var memResponse = db.Execute("MEMORY", "USAGE", key);
-            var memActualValue = ResultType.Integer == memResponse.Type ? Int32.Parse(response.ToString()) : -1;
+            var memActualValue = ResultType.Integer == memResponse.Type ? Int32.Parse(memResponse.ToString()) : -1;
             var memExpectedResponse = 1808;
             Assert.AreEqual(memExpectedResponse, memActualValue);
         }
