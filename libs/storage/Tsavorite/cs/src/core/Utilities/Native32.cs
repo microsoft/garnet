@@ -393,7 +393,7 @@ namespace Tsavorite.core
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 return false;
 
-            if (!SetFilePointerEx(file_handle, file_size, out long newFilePtr, 0))
+            if (!SetFilePointerEx(file_handle, file_size, out _, 0))
             {
                 return false;
             }

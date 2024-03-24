@@ -494,7 +494,7 @@ namespace Tsavorite.core
                     int totalLength = headerSize + Align(newEntryLength);
 
                     // Expand the records in iteration, as long as as they are on the same physical page
-                    while (ExpandGetNextInternal(startPhysicalAddress, ref totalLength, out long newCurrentAddress, out endLogicalAddress, out isCommitRecord))
+                    while (ExpandGetNextInternal(startPhysicalAddress, ref totalLength, out _, out endLogicalAddress, out isCommitRecord))
                     {
                         if (totalLength > maxChunkSize)
                             break;
@@ -708,8 +708,8 @@ namespace Tsavorite.core
             try
             {
                 // Continue looping until we find a record that is a commit record
-                while (GetNextInternal(out long physicalAddress, out var entryLength, out long currentAddress,
-                    out long nextAddress,
+                while (GetNextInternal(out long physicalAddress, out var entryLength, out _,
+                    out _,
                     out var isCommitRecord, out _))
                 {
                     if (!isCommitRecord) continue;
