@@ -155,7 +155,7 @@ namespace Garnet.server
             }
 
             int abs_arity = commandInfo.arity > 0 ? commandInfo.arity : -commandInfo.arity;
-            // Cheking the mininum arity || exact arity 
+            // Checking the minimum arity || exact arity
             bool arity_check = commandInfo.arity < 0 && count < abs_arity || commandInfo.arity > 0 && count != commandInfo.arity;
             // Watch not allowed during TXN
             bool is_watch = (commandInfo.command == RespCommand.WATCH || commandInfo.command == RespCommand.WATCHMS || commandInfo.command == RespCommand.WATCHOS);

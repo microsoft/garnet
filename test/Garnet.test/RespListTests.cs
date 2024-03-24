@@ -653,7 +653,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("LINSERT mykey", "PING", 1, 1);
-            var expectedResponse = "-ERR wrong number of arguments for LINSERT command.\r\n+PONG\r\n";
+            var expectedResponse = "-ERR wrong number of arguments for 'LINSERT' command\r\n+PONG\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }

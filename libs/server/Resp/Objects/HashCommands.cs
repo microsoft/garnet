@@ -375,9 +375,11 @@ namespace Garnet.server
         {
             ptr += 13;
 
-            if (count < 3)
+            if (count != 3)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
+                ReadLeftToken(count - 1, ref ptr);
+
                 // Send error to output
                 WriteErrorTokenNumberInCommand("HEXISTS");
             }
