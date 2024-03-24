@@ -184,6 +184,10 @@ namespace Garnet.test
         }
 
         /// <inheritdoc />
-        public override void Serialize(ref IGarnetObject obj) => obj.Serialize(writer);
+        public override void Serialize(ref IGarnetObject obj)
+        {
+            writer.Write(obj.Type);
+            obj.Serialize(writer);
+        }
     }
 }

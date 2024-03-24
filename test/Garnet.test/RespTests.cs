@@ -182,9 +182,13 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             string origValue = "abcdefghij";
-            db.StringSet("mykey", origValue, TimeSpan.FromSeconds(1.1));
+            db.StringSet("mykey", origValue, TimeSpan.FromSeconds(1.9));
 
             string retValue = db.StringGet("mykey");
+            Assert.AreEqual(origValue, retValue);
+
+            Thread.Sleep(1000);
+            retValue = db.StringGet("mykey");
             Assert.AreEqual(origValue, retValue);
 
             Thread.Sleep(2000);
@@ -367,6 +371,13 @@ namespace Garnet.test
             resp = (string)db.Execute($"{ttlCommand}", key);
             Assert.IsTrue(int.TryParse(resp, out var ttl) && ttl == -1);
 
+            // px
+            resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000");
+            Assert.AreEqual(okResponse, resp);
+            Thread.Sleep(TimeSpan.FromSeconds(1.1));
+            resp = (string)db.Execute($"{ttlCommand}", key);
+            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+
             // keepttl
             Assert.IsTrue(db.StringSet(key, 1, TimeSpan.FromMinutes(1)));
             resp = (string)db.Execute($"{setCommand}", key, value, "keepttl");
@@ -395,6 +406,32 @@ namespace Garnet.test
             // ex .. xx, existing key
             Assert.IsTrue(db.StringSet(key, value));
             resp = (string)db.Execute($"{setCommand}", key, value, "ex", "1", "xx");
+            Assert.AreEqual(okResponse, resp);
+            Thread.Sleep(TimeSpan.FromSeconds(1.1));
+            resp = (string)db.Execute($"{ttlCommand}", key);
+            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+
+            // px .. nx, non-existing key
+            Assert.IsTrue(db.KeyDelete(key));
+            resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "nx");
+            Assert.AreEqual(okResponse, resp);
+            Thread.Sleep(TimeSpan.FromSeconds(1.1));
+            resp = (string)db.Execute($"{ttlCommand}", key);
+            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+
+            // px .. nx, existing key
+            Assert.IsTrue(db.StringSet(key, value));
+            resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "nx");
+            Assert.IsNull(resp);
+
+            // px .. xx, non-existing key
+            Assert.IsTrue(db.KeyDelete(key));
+            resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "xx");
+            Assert.IsNull(resp);
+
+            // px .. xx, existing key
+            Assert.IsTrue(db.StringSet(key, value));
+            resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "xx");
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);

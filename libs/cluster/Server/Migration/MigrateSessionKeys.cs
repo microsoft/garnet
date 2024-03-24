@@ -4,10 +4,8 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -128,11 +126,7 @@ namespace Garnet.cluster
 
                 if (!ClusterSession.Expired(ref value.garnetObject))
                 {
-                    var ms = new MemoryStream();
-                    var writer = new BinaryWriter(ms, Encoding.ASCII);
-
-                    value.garnetObject.Serialize(writer);
-                    byte[] objectData = ms.ToArray();
+                    byte[] objectData = clusterProvider.storeWrapper.SerializeGarnetObject(value.garnetObject);
 
                     if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.garnetObject.Expiration))
                         return false;

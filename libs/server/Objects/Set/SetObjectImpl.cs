@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Buffers;
 using System.Linq;
+using System.Security.Cryptography;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -142,8 +142,6 @@ namespace Garnet.server
             _output->bytesDone = 0;
         }
 
-        static readonly Random random = new();
-
         private void SetPop(byte* input, int length, ref SpanByteAndMemory output)
         {
             // SPOP key[count]
@@ -178,7 +176,7 @@ namespace Garnet.server
                     for (int i = 0; i < countParameter; i++)
                     {
                         // Generate a new index based on the elements left in the set
-                        var index = random.Next(0, set.Count - 1);
+                        var index = RandomNumberGenerator.GetInt32(0, set.Count - 1);
                         var item = set.ElementAt(index);
                         set.Remove(item);
                         this.UpdateSize(item, false);
@@ -190,7 +188,7 @@ namespace Garnet.server
                 else if (count == int.MinValue) // no count parameter is present, we just pop and return a random item of the set
                 {
                     // Write a bulk string value of a random field from the hash value stored at key.
-                    int index = random.Next(set.Count);
+                    int index = RandomNumberGenerator.GetInt32(0, set.Count);
                     var item = set.ElementAt(index);
                     set.Remove(item);
                     this.UpdateSize(item, false);
