@@ -36,7 +36,7 @@ jobs:
           website:
             - 'website/**'
           garnet:
-            - '!(website/**)/**'
+            - '!((*.md)|(website/**))'
   
   # Job to build and test Garnet code
   build-test-garnet:
