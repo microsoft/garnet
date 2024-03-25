@@ -28,6 +28,10 @@ dotnet run -c Release -f net8.0 --runtimes net6.0 net8.0 --filter *RespIntegerWr
 
 See more command-line options at https://benchmarkdotnet.org/articles/guides/console-args.html
 
+### Writing microbenchmarks
+
+Please see the [Microbenchmark Design Guidelines](https://github.com/dotnet/performance/blob/main/docs/microbenchmark-design-guidelines.md) for the best practices when writing microbenchmarks using BenchmarkDotNet.
+
 ## Privacy
 
 [Microsoft Privacy Statement](https://go.microsoft.com/fwlink/?LinkId=521839)
