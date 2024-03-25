@@ -418,6 +418,19 @@ namespace Garnet.server
             => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
 
         /// <summary>
+        /// Returns if member is a member of the set stored at key.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public GarnetStatus SetIsMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+        
+        /// <summary>
         /// Removes and returns one or more random members from the set at key.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
