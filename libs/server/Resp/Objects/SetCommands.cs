@@ -177,11 +177,11 @@ namespace Garnet.server
         {
             ptr += 11;
 
-            if (count - 2 < 0)
+            if (count != 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
-                // Send error to output
-                WriteErrorTokenNumberInCommand("SCARD");
+                return AbortWithWrongNumberOfArguments("SCARD", count);
+
             }
             else
             {
