@@ -557,10 +557,10 @@ namespace Garnet.cluster
                             if (nodeRole == NodeRole.REPLICA)
                             {
                                 if (!clusterProvider.failoverManager.TryStartReplicaFailover(failoverOption, failoverTimeout))
-                                    resp = Encoding.ASCII.GetBytes($"-ERR failed to start failover for primary({current.GetLocalNodePrimaryAddress()})");
+                                    resp = Encoding.ASCII.GetBytes($"-ERR failed to start failover for primary({current.GetLocalNodePrimaryAddress()})\r\n");
                             }
                             else
-                                resp = Encoding.ASCII.GetBytes($"-ERR Node is not a {NodeRole.REPLICA} ~{nodeRole}~");
+                                resp = Encoding.ASCII.GetBytes($"-ERR Node is not a {NodeRole.REPLICA} ~{nodeRole}~\r\n");
                         }
                     }
                     else
