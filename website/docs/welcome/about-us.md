@@ -20,6 +20,6 @@ Knut Magne Risvik, Sarah Williamson, Narayanan Subramanian, Saurabh Singh, Padma
 
 Gabriela Martinez Sanchez, Sajjad Rahnama.
 
-Prior contributors to the [FASTER](https://github.com/microsoft/FASTER) research project.
+All GitHub contributors to the open-source [FASTER](https://github.com/microsoft/FASTER/contributors) and [Garnet](https://github.com/microsoft/garnet/contributors) projects.
 
 You can contact us at garnetteam AT microsoft.com
