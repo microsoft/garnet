@@ -464,7 +464,7 @@ namespace Garnet.server
             ptr += 13;
 
             //validation if minimum args
-            if (count - 2 == 0)
+            if (count <= 2)
             {
                 // send error to output
                 return AbortWithWrongNumberOfArguments("ZMSCORE", count);
