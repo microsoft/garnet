@@ -347,7 +347,7 @@ namespace Garnet.client
             for (int index = 1; index <= TableSize; ++index)
             {
                 int entryEpoch = (*(tableAligned + index)).localCurrentEpoch;
-                if (0 != entryEpoch)
+                if (entryEpoch != 0)
                 {
                     if (entryEpoch < oldestOngoingCall)
                     {
