@@ -5,12 +5,12 @@ Title: Performance Results (Resp.bench)
 ---
 # Evaluating Garnet's Performance Benefits
 
-We have tested **Garnet** thoroughly in a variety of deployment modes:
+We have tested Garnet thoroughly in a variety of deployment modes:
 
 * Same local machine for client and server
 * Two local machines - one client and one server
-* Azure Windows machines
-* Azure Linux machines
+* Azure Windows VMs
+* Azure Linux VMs
 
 Below, we focus on a selected few key results.
 
@@ -274,17 +274,17 @@ In both cases,  **Garnet** consistently maintains higher throughput and better s
 | Figure 8: Throughput (log-scale), varying number of client sessions, for a database size of 1024 keys and 1MB payload. |
 
 In Figure 9, we evaluate the performance of BITOP NOT and BITOP AND (with two source keys) for increasing number of threads and a payload size of 1MB.
-**Garnet** maintains overall higher throughput as they number of client session increase compared to every other system we tested.
-It all also performs very well under high contention given that our DB size is relatively small (i.e. only 1024 keys).
+**Garnet** maintains overall higher throughput as the number of client session increases, compared to every other system we tested.
+It also performs very well under high contention, given that our DB size is relatively small (i.e., only 1024 keys).
 
 
 | ![tpt-bitop-threads.png](../../static/img/benchmark/tpt-bitop-threads.png) | 
 |:--:| 
 | Figure 9: Throughput (log-scale), varying number of client sessions, for a database size of 1024 keys and 1MB payload. |
 
-As show in Figures 10 and 11, even for small batch sizes **Garnet** attain higher throughput that any other system that we tested on the associated bitmap
+As show in Figures 10 and 11, even for small batch sizes, **Garnet** attains a higher throughput that any other system we tested on the associated bitmap
 operations.
-In fact, it does not require much to observe a noticeable difference in throughput since even at batchsize of 4 **Garnet** is signficantly faster.
+In fact, we observe significantly higher throughput with **Garnet** even at a small batchsize of 4.
 
 <details>
     <summary>Varying batch size (GETBIT/SETBIT/BITOP_NOT/BITOP_AND)</summary>
