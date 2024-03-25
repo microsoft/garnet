@@ -50,6 +50,24 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
         }
 
+        [Test]
+        public void CanCheckIfMemberExistsInSet()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = new RedisKey("user1:set");
+
+            db.KeyDelete(key);
+
+            db.SetAdd(key, new RedisValue[] { "Hello", "World" });
+
+            var existingMemberExists = db.SetContains(key, "Hello");
+            Assert.IsTrue(existingMemberExists);
+
+            var nonExistingMemberExists = db.SetContains(key, "NonExistingMember");
+            Assert.IsFalse(nonExistingMemberExists);
+        }
+
 
         [Test]
         public void CanAddAndGetAllMembersWithPendingStatus()
@@ -95,6 +113,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var result = db.SetAdd(new RedisKey("user1:set"), new RedisValue[] { "ItemOne", "ItemTwo", "ItemThree", "ItemFour" });
             Assert.AreEqual(4, result);
+
+            var existingMemberExists = db.SetContains(new RedisKey("user1:set"), "ItemOne");
+            Assert.IsTrue(existingMemberExists, "Existing member 'ItemOne' does not exist in the set.");
 
             var memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
             var actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;

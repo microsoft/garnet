@@ -180,6 +180,7 @@ namespace Garnet.server
                 (byte)SetOperation.SREM => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SCARD => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
+                (byte)SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
                 _ => -1
             };
         }
