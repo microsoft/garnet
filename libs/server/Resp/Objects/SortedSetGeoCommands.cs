@@ -26,11 +26,7 @@ namespace Garnet.server
             // validate the number of parameters
             if (count < 5)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("GEOADD");
+                return AbortWithWrongNumberOfArguments("GEOADD", count);
             }
             else
             {
@@ -135,11 +131,7 @@ namespace Garnet.server
             if (count < paramsRequiredInCommand)
             {
                 zaddDoneCount = zaddAddCount = 0;
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand(cmd);
+                return AbortWithWrongNumberOfArguments(cmd, count);
             }
             else
             {

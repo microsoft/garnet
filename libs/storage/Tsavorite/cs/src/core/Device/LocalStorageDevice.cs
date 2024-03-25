@@ -230,7 +230,7 @@ namespace Tsavorite.core
                 bool _result = Native32.ReadFile(logHandle,
                                                 destinationAddress,
                                                 readLength,
-                                                out uint bytesRead,
+                                                out _,
                                                 ovNative);
 
                 if (!_result)
@@ -297,7 +297,7 @@ namespace Tsavorite.core
                 bool _result = Native32.WriteFile(logHandle,
                                         sourceAddress,
                                         numBytesToWrite,
-                                        out uint bytesWritten,
+                                        out _,
                                         ovNative);
 
                 if (!_result)
@@ -369,7 +369,7 @@ namespace Tsavorite.core
         {
             if (!useIoCompletionPort) return true;
 
-            bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out IntPtr completionKey, out NativeOverlapped* nativeOverlapped, 0);
+            bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out _, out NativeOverlapped* nativeOverlapped, 0);
 
             if (nativeOverlapped != null)
             {
@@ -558,7 +558,7 @@ namespace Tsavorite.core
             while (true)
             {
                 Thread.Yield();
-                bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out IntPtr completionKey, out NativeOverlapped* nativeOverlapped, uint.MaxValue);
+                bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out _, out NativeOverlapped* nativeOverlapped, uint.MaxValue);
 
                 if (nativeOverlapped != null)
                 {
