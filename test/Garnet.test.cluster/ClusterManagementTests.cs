@@ -17,10 +17,7 @@ namespace Garnet.test.cluster
         ClusterTestContext context;
         readonly int defaultShards = 3;
 
-        readonly HashSet<string> monitorTests = new()
-        {
-            // Add test names here to change logger verbosity
-        };
+        readonly HashSet<string> monitorTests = [];
 
         [SetUp]
         public void Setup()

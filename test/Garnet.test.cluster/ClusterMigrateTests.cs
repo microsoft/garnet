@@ -76,10 +76,7 @@ namespace Garnet.test.cluster
             this.UseTLS = UseTLS;
         }
 
-        readonly HashSet<string> authenticationTests = new()
-        {
-            "ClusterSimpleMigrateWithAuth",
-        };
+        readonly HashSet<string> authenticationTests = ["ClusterSimpleMigrateWithAuth"];
 
         readonly HashSet<string> monitorTests = new()
         {

@@ -47,9 +47,9 @@ namespace Garnet.test.cluster
         public void TearDown()
         {
             logger.LogDebug("0. Dispose <<<<<<<<<<<");
-            waiter.Dispose();
+            waiter?.Dispose();
             clusterTestUtils?.Dispose();
-            loggerFactory.Dispose();
+            loggerFactory?.Dispose();
             DisposeCluster();
             TestUtils.DeleteDirectory(TestFolder, true);
         }
@@ -99,7 +99,7 @@ namespace Garnet.test.cluster
             bool useTLS = false,
             bool useAcl = false,
             X509CertificateCollection certificates = null,
-            ServerCredentials clusterCreds = new ServerCredentials())
+            ServerCredential clusterCreds = new ServerCredential())
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
@@ -182,7 +182,7 @@ namespace Garnet.test.cluster
             bool useTLS = false,
             bool useAcl = false,
             X509CertificateCollection certificates = null,
-            ServerCredentials clusterCreds = new ServerCredentials())
+            ServerCredential clusterCreds = new ServerCredential())
         {
 
             var opts = TestUtils.GetGarnetServerOptions(
@@ -225,7 +225,7 @@ namespace Garnet.test.cluster
         {
             if (nodes != null)
             {
-                for (int i = 0; i < nodes.Length; i++)
+                for (var i = 0; i < nodes.Length; i++)
                 {
                     if (nodes[i] != null)
                     {
@@ -247,9 +247,9 @@ namespace Garnet.test.cluster
         public void CreateConnection(
             bool useTLS = false,
             X509CertificateCollection certificates = null,
-            ServerCredentials clientCreds = new ServerCredentials())
+            ServerCredential clientCreds = new ServerCredential())
         {
-            if (clusterTestUtils != null) clusterTestUtils.Dispose();
+            clusterTestUtils?.Dispose();
             clusterTestUtils = new ClusterTestUtils(
                 endpoints,
                 textWriter: logTextWriter,
@@ -265,7 +265,7 @@ namespace Garnet.test.cluster
         /// Generate credential file through credManager
         /// </summary>
         /// <param name="customCreds"></param>
-        public void GenerateCredentials(ServerCredentials[] customCreds = null)
+        public void GenerateCredentials(ServerCredential[] customCreds = null)
             => credManager.GenerateCredentials(TestFolder, customCreds);
 
         public int keyOffset = 0;
