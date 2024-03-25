@@ -25,6 +25,9 @@ namespace Garnet.test.cluster
         public ILoggerFactory loggerFactory;
         public ILogger logger;
 
+        public int defaultShards = 3;
+        public static int Port = 7000;
+
         public Random r = new();
         public ManualResetEventSlim waiter;
 
