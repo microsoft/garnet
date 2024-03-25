@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System.Text;
-using Garnet.common;
 using BenchmarkDotNet.Attributes;
+using Garnet.common;
 
 namespace BenchmarkDotNet.benchmark.Resp
 {
