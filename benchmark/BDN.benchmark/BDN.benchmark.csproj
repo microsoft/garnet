@@ -11,6 +11,6 @@
 		<PackageReference Include="BenchmarkDotNet" Version="0.13.12" />
 	</ItemGroup>
 	<ItemGroup>
-		<ProjectReference Include="..\..\libs\client\Garnet.client.csproj" />
+		<ProjectReference Include="..\..\libs\common\Garnet.common.csproj" />
 	</ItemGroup>
 </Project>

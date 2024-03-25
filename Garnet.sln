@@ -84,7 +84,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ClusterStress", "playground
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Embedded.perftest", "playground\Embedded.perftest\Embedded.perftest.csproj", "{5BEDAC1F-6458-4EBA-8174-EC06B07F2132}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BenchmarkDotNet.benchmark", "benchmark\BenchmarkDotNet.benchmark\BenchmarkDotNet.benchmark.csproj", "{9F6E4734-6341-4A9C-A7FF-636A39D8BEAD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BDN.benchmark", "benchmark\BDN.benchmark\BDN.benchmark.csproj", "{9F6E4734-6341-4A9C-A7FF-636A39D8BEAD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

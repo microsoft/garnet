@@ -8,9 +8,9 @@ This directory contains projects for benchmarking Garnet.
 
 Please visit our website documentation about how to use it in the following link: [The Resp.benchmark tool](https://microsoft.github.io/garnet/docs/benchmarking/resp-bench)
 
-## BenchmarkDotNet.benchmark
+## BDN.benchmark
 
-The `BenchmarkDotNet.benchmark` command-line tool allows contributors to run precise and reproducible micro-benchmarks by utilizing the [BenchmarkDotNet](https://benchmarkdotnet.org/index.html).
+The `BDN.benchmark` command-line tool allows contributors to run precise and reproducible micro-benchmarks by utilizing the [BenchmarkDotNet](https://benchmarkdotnet.org/index.html).
 
 ### Usage
 

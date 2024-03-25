@@ -5,7 +5,7 @@ using System.Text;
 using BenchmarkDotNet.Attributes;
 using Garnet.common;
 
-namespace BenchmarkDotNet.benchmark.Resp
+namespace BDN.benchmark.Resp
 {
     public unsafe class RespIntegerReadBenchmarks
     {
