@@ -1,91 +1,104 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Garnet.common;
+using System.Runtime.InteropServices;
 using BenchmarkDotNet.Attributes;
+using Garnet.common;
 
 namespace BenchmarkDotNet.benchmark.Resp
 {
     public unsafe class RespIntegerWriteBenchmarks
     {
         // Big enough buffer for the benchmarks
-        private const int BufferSize = 32;
+        private readonly byte[] _buffer = new byte[32];
 
-        private readonly int[] _random32BitIntegers = new int[32];
-        private readonly long[] _random64BitIntegers = new long[32];
+        private byte* _bufferPtr;
+        private GCHandle _bufferHandle;
 
-        public RespIntegerWriteBenchmarks()
+        [GlobalSetup]
+        public void GlobalSetup()
         {
-            var random = new Random(42);
-            for (int i = 0; i < _random32BitIntegers.Length; i++)
-            {
-                _random32BitIntegers[i] = random.Next();
-            }
-            for (int i = 0; i < _random64BitIntegers.Length; i++)
-            {
-                _random64BitIntegers[i] = random.NextInt64();
-            }
+            // Pin the buffer for the benchmarks
+            _bufferHandle = GCHandle.Alloc(_buffer, GCHandleType.Pinned);
+            _bufferPtr = (byte*)_bufferHandle.AddrOfPinnedObject();
         }
+
+        [GlobalCleanup]
+        public void GlobalCleanup() => _bufferHandle.Free();
 
         [Benchmark]
         [ArgumentsSource(nameof(SignedInt32Values))]
         public bool WriteInt32(int value)
         {
-            byte* bufferPtr = stackalloc byte[BufferSize];
-            return RespWriteUtils.WriteInteger(value, ref bufferPtr, bufferPtr + BufferSize);
+            var startPtr = _bufferPtr;
+            return RespWriteUtils.WriteInteger(value, ref startPtr, _bufferPtr + _buffer.Length);
         }
 
         [Benchmark]
         [ArgumentsSource(nameof(SignedInt64Values))]
         public bool WriteInt64(long value)
         {
-            byte* bufferPtr = stackalloc byte[BufferSize];
-            return RespWriteUtils.WriteInteger(value, ref bufferPtr, bufferPtr + BufferSize);
+            var startPtr = _bufferPtr;
+            return RespWriteUtils.WriteInteger(value, ref startPtr, _bufferPtr + _buffer.Length);
         }
 
         [Benchmark]
         [ArgumentsSource(nameof(SignedInt32Values))]
         public bool WriteInt32AsBulkString(int value)
         {
-            byte* bufferPtr = stackalloc byte[BufferSize];
-            return RespWriteUtils.WriteIntegerAsBulkString(value, ref bufferPtr, bufferPtr + BufferSize);
+            var startPtr = _bufferPtr;
+            return RespWriteUtils.WriteIntegerAsBulkString(value, ref startPtr, _bufferPtr + _buffer.Length);
         }
 
         [Benchmark]
-        public void WriteRandomInt32()
+        public void WriteInt32_AllAsciiLengths()
         {
-            byte* bufferPtr = stackalloc byte[BufferSize];
-            for (int i = 0; i < _random32BitIntegers.Length; i++)
+            for (int i = 0; i < SignedInt32MultiplesOfTen.Length; i++)
             {
-                var startPtr = bufferPtr;
-                RespWriteUtils.WriteInteger(_random32BitIntegers[i], ref startPtr, bufferPtr + BufferSize);
+                var startPtr = _bufferPtr;
+                RespWriteUtils.WriteInteger(SignedInt32MultiplesOfTen[i], ref startPtr, _bufferPtr + _buffer.Length);
             }
         }
 
         [Benchmark]
-        public void WriteRandomInt64()
+        public void WriteInt64_AllAsciiLengths()
         {
-            byte* bufferPtr = stackalloc byte[BufferSize];
-            for (int i = 0; i < _random64BitIntegers.Length; i++)
+            for (int i = 0; i < SignedInt64MultiplesOfTen.Length; i++)
             {
-                var startPtr = bufferPtr;
-                RespWriteUtils.WriteInteger(_random64BitIntegers[i], ref startPtr, bufferPtr + BufferSize);
+                var startPtr = _bufferPtr;
+                RespWriteUtils.WriteInteger(SignedInt64MultiplesOfTen[i], ref startPtr, _bufferPtr + _buffer.Length);
             }
         }
 
         [Benchmark]
-        public void WriteRandomInt32BulkStrings()
+        public void WriteInt32BulkString_AllAsciiLengths()
         {
-            byte* bufferPtr = stackalloc byte[BufferSize];
-            for (int i = 0; i < _random32BitIntegers.Length; i++)
+            for (int i = 0; i < SignedInt32MultiplesOfTen.Length; i++)
             {
-                var startPtr = bufferPtr;
-                RespWriteUtils.WriteIntegerAsBulkString(_random32BitIntegers[i], ref startPtr, bufferPtr + BufferSize);
+                var startPtr = _bufferPtr;
+                RespWriteUtils.WriteIntegerAsBulkString(SignedInt32MultiplesOfTen[i], ref startPtr, _bufferPtr + _buffer.Length);
             }
         }
+
+        public const int UnsignedInt32MaxValueDigits = 10; // The number of digits in (u)int.MaxValue
+        public const int UnsignedInt64MaxValueDigits = 19; // The number of digits in (u)long.MaxValue
+
+        // All multiples of 10 from 10^-10 to 10^10
+        public static int[] SignedInt32MultiplesOfTen => [
+            ..UnsignedInt32MultiplesOfTen.Select(n => n * -1),
+            ..UnsignedInt32MultiplesOfTen
+        ];
+        public static int[] UnsignedInt32MultiplesOfTen => Enumerable.Range(0, 10).Select(n => (int)Math.Pow(10, n)).ToArray();
+
+        // All multiples of 10 from 10^-19 to 10^19
+        public static long[] SignedInt64MultiplesOfTen => [
+            ..UnsignedInt64MultiplesOfTen.Select(n => n * -1),
+            ..UnsignedInt64MultiplesOfTen
+        ];
+        public static long[] UnsignedInt64MultiplesOfTen => Enumerable.Range(0, 19).Select(n => (long)Math.Pow(10, n)).ToArray();
 
         public static int[] SignedInt32Values => [int.MinValue, -1, 0, int.MaxValue];
-        public static long[] SignedInt64Values => [long.MinValue, int.MinValue, -1, 0, int.MaxValue, long.MaxValue];
+        public static long[] SignedInt64Values => [long.MinValue, -1, 0, long.MaxValue];
         public static ulong[] UnsignedInt64Values => [0, int.MaxValue, ulong.MaxValue];
     }
 }
