@@ -32,7 +32,7 @@ namespace Garnet.test.cluster
         public void Setup()
         {
             context = new ClusterTestContext();
-            context.Setup(new HashSet<string>());
+            context.Setup([]);
         }
 
         [TearDown]
@@ -41,37 +41,25 @@ namespace Garnet.test.cluster
             context.TearDown();
         }
 
-        public class CommandInfo
+        public class CommandInfo(
+            string cmdTag,
+            string[] setupCmd,
+            string testCmd,
+            string[] cleanupCmd,
+            string response,
+            string[] arrayResponse,
+ClusterRedirectTests.TestFlags testFlags)
         {
-            public string cmdTag;
-            public string[] setupCmd;
-            public string testCmd;
-            public string[] cleanupCmd;
-            public string response;
-            public string[] arrayResponseOrig;
-            public string[] arrayResponse;
-            public TestFlags testFlags;
+            public string cmdTag = cmdTag;
+            public string[] setupCmd = setupCmd;
+            public string testCmd = testCmd;
+            public string[] cleanupCmd = cleanupCmd;
+            public string response = response;
+            public string[] arrayResponseOrig = arrayResponse;
+            public string[] arrayResponse = arrayResponse;
+            public TestFlags testFlags = testFlags;
 
-            public CommandInfo(
-                string cmdTag,
-                string[] setupCmd,
-                string testCmd,
-                string[] cleanupCmd,
-                string response,
-                string[] arrayResponse,
-                TestFlags testFlags)
-            {
-                this.cmdTag = cmdTag;
-                this.setupCmd = setupCmd;
-                this.testCmd = testCmd;
-                this.cleanupCmd = cleanupCmd;
-                this.response = response;
-                this.arrayResponseOrig = arrayResponse;
-                this.arrayResponse = arrayResponse;
-                this.testFlags = testFlags;
-            }
-
-            private bool ReplaceKey(ref byte[] key, string cmdStr, int i, out string newCmdStr)
+            private static bool ReplaceKey(ref byte[] key, string cmdStr, int i, out string newCmdStr)
             {
                 newCmdStr = cmdStr;
                 if (cmdStr != null && cmdStr.Contains($"<key#{i}>"))
@@ -82,7 +70,7 @@ namespace Garnet.test.cluster
                 return false;
             }
 
-            private bool ReplaceValue(ref byte[] value, string cmdStr, int i, out string newCmdStr)
+            private static bool ReplaceValue(ref byte[] value, string cmdStr, int i, out string newCmdStr)
             {
                 newCmdStr = cmdStr;
                 if (cmdStr != null && cmdStr.Contains($"<s#{i}>"))
@@ -106,12 +94,12 @@ namespace Garnet.test.cluster
                 var responseInstance = response;
                 arrayResponse = (string[])arrayResponseOrig?.Clone();
 
-                int i = 0;
-                slots = new();
+                var i = 0;
+                slots = [];
                 while (true)
                 {
-                    byte[] key = new byte[keyLen];
-                    byte[] value = new byte[valueLen];
+                    var key = new byte[keyLen];
+                    var value = new byte[valueLen];
                     if (restrictToSlot == -1)
                         clusterTestUtils.RandomBytes(ref key);
                     else
@@ -122,26 +110,26 @@ namespace Garnet.test.cluster
                     clusterTestUtils.RandomBytes(ref value);
 
 
-                    bool successKey = false;
+                    var successKey = false;
                     if (setupCmdInstance != null)
-                        for (int j = 0; j < setupCmdInstance.Length; j++)
+                        for (var j = 0; j < setupCmdInstance.Length; j++)
                             successKey |= ReplaceKey(ref key, setupCmdInstance[j], i, out setupCmdInstance[j]);
                     if (cleanupCmdInstance != null)
-                        for (int j = 0; j < cleanupCmdInstance.Length; j++)
+                        for (var j = 0; j < cleanupCmdInstance.Length; j++)
                             successKey |= ReplaceKey(ref key, cleanupCmdInstance[j], i, out cleanupCmdInstance[j]);
                     successKey |= ReplaceKey(ref key, testCmdInstance, i, out testCmdInstance);
 
-                    bool successValue = false;
+                    var successValue = false;
                     if (setupCmdInstance != null)
-                        for (int j = 0; j < setupCmdInstance.Length; j++)
+                        for (var j = 0; j < setupCmdInstance.Length; j++)
                             successValue |= ReplaceValue(ref value, setupCmdInstance[j], i, out setupCmdInstance[j]);
                     if (cleanupCmdInstance != null)
-                        for (int j = 0; j < cleanupCmdInstance.Length; j++)
+                        for (var j = 0; j < cleanupCmdInstance.Length; j++)
                             successValue |= ReplaceValue(ref value, cleanupCmdInstance[j], i, out cleanupCmdInstance[j]);
                     successValue |= ReplaceValue(ref value, testCmdInstance, i, out testCmdInstance);
                     successValue |= ReplaceValue(ref value, responseInstance, i, out responseInstance);
                     if (arrayResponse != null)
-                        for (int j = 0; j < arrayResponse.Length; j++)
+                        for (var j = 0; j < arrayResponse.Length; j++)
                             successValue |= ReplaceValue(ref value, arrayResponse[j], i, out arrayResponse[j]);
 
                     if (successValue || successKey)
@@ -492,9 +480,9 @@ namespace Garnet.test.cluster
 
             var status = ClusterTestUtils.ParseResponseState(
                 result,
-                out var _slot,
-                out var _address,
-                out var _port,
+                out _,
+                out _,
+                out _,
                 out var value,
                 out var values);
             if (checkAssert)
@@ -516,7 +504,7 @@ namespace Garnet.test.cluster
             Assert.AreEqual(_port, connections[nodeIndex].Port);
 
             result = connections[nodeIndex].SendCommand(cmd);
-            status = ClusterTestUtils.ParseResponseState(result, out slot, out _address, out _port, out _value, out _values);
+            status = ClusterTestUtils.ParseResponseState(result, out _, out _, out _, out _value, out _values);
             Assert.AreEqual(status, ResponseState.OK, cmdTag);
 
             return (status, _value, _values);
@@ -592,17 +580,12 @@ namespace Garnet.test.cluster
             var (setupCmd, testCmd, cleanCmd, response) = command.GenerateSingleKeyCmdInstance(ref context.clusterTestUtils, 4, 4, out var slots, migrateSlot);
             ResponseState status = default;
             byte[] result;
-            int _slot = 0;
-            string _address = "";
-            int _port = 0;
-            string _value;
-            string[] _values;
 
             if (CheckFlag(command.testFlags, TestFlags.KEY_EXISTS))
             {
                 if (setupCmd != null)
                 {
-                    for (int j = 0; j < setupCmd.Length; j++)
+                    for (var j = 0; j < setupCmd.Length; j++)
                     {
                         var resp = connections[sourceNodeIndex].SendCommand(setupCmd[j]);
                         var respStatus = ClusterTestUtils.ParseResponseState(resp, out _, out _, out _, out _, out _);
@@ -615,7 +598,7 @@ namespace Garnet.test.cluster
             Assert.AreEqual(respMigrating, "OK");
 
             result = connections[sourceNodeIndex].SendCommand(testCmd);
-            status = ClusterTestUtils.ParseResponseState(result, out _slot, out _address, out _port, out _value, out _values);
+            status = ClusterTestUtils.ParseResponseState(result, out _, out var _address, out var _port, out _, out _);
 
             var respMigratingStable = ClusterTestUtils.SetSlot(ref connections[sourceNodeIndex], migrateSlot, "STABLE", "");
             Assert.AreEqual(respMigratingStable, "OK");
@@ -689,7 +672,7 @@ namespace Garnet.test.cluster
 
                 if (cleanCmd != null)
                     for (var j = 0; j < cleanCmd.Length; j++)
-                        SendToNodeFromSlot(ref connections, cleanCmd[j], slots[0], command.cmdTag);
+                        _ = SendToNodeFromSlot(ref connections, cleanCmd[j], slots[0], command.cmdTag);
             }
 
             //2. Check response during migration
@@ -731,10 +714,10 @@ namespace Garnet.test.cluster
             //1. test regular operation redirection
             foreach (var command in multiKeyCommands)
             {
-                int restrictedSlot = context.r.Next(0, 16384);
+                var restrictedSlot = context.r.Next(0, 16384);
                 var (setupCmd, testCmd, cleanCmd, response) = command.GenerateSingleKeyCmdInstance(ref context.clusterTestUtils, 4, 4, out var slots, restrictedSlot);
 
-                for (int i = 0; i < slots.Count; i++)
+                for (var i = 0; i < slots.Count; i++)
                     Assert.AreEqual(slots[i], restrictedSlot);
 
                 if (setupCmd != null)
