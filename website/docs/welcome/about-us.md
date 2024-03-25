@@ -17,7 +17,7 @@ Core Team:
 Project Partners:
 * Alan Yang, Pradeep Yadav, Alex Dubinkov, Venugopal Latchupatulla.
 * Knut Magne Risvik, Sarah Williamson, Narayanan Subramanian, Saurabh Singh, Padmanabh Gupta.
-* Open-source contributors to [Garnet](https://github.com/microsoft/garnet/contributors) project.
+* Open-source contributors to [Garnet](https://github.com/microsoft/garnet/contributors).
 
 Prior Contributors:
 * Sajjad Rahnama, Gabriela Martinez Sanchez.
