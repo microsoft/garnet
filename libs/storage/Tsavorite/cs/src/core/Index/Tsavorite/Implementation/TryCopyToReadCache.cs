@@ -23,7 +23,7 @@ namespace Tsavorite.core
         {
             var (actualSize, allocatedSize, _) = hlog.GetRecordSize(ref key, ref recordValue);
 
-            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
+            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, allocatedSize, out long newLogicalAddress, out long newPhysicalAddress, out _))
                 return false;
             ref var newRecordInfo = ref WriteNewRecordInfo(ref key, readcache, newPhysicalAddress, inNewVersion: false, tombstone: false, stackCtx.hei.Address);
             stackCtx.SetNewRecord(newLogicalAddress | Constants.kReadCacheBitMask);

@@ -47,7 +47,10 @@ namespace Garnet.server
             if (obj == null)
                 writer.Write((byte)GarnetObjectType.Null);
             else
+            {
+                writer.Write(obj.Type);
                 obj.Serialize(writer);
+            }
         }
     }
 }

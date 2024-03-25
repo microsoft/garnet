@@ -226,7 +226,9 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlog.GetSegmentSize());
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
 
-                    store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = store.hlog.FlushedUntilAddress;
+                    // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
+                    store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = store.hlog.IsNullDevice ? store.hlog.HeadAddress : store.hlog.FlushedUntilAddress;
+
                     long startPage = store.hlog.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
                     long endPage = store.hlog.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
                     if (store._hybridLogCheckpoint.info.finalLogicalAddress >
@@ -251,7 +253,8 @@ namespace Tsavorite.core
                     break;
                 case Phase.PERSISTENCE_CALLBACK:
                     // Set actual FlushedUntil to the latest possible data in main log that is on disk
-                    store._hybridLogCheckpoint.info.flushedLogicalAddress = store.hlog.FlushedUntilAddress;
+                    // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
+                    store._hybridLogCheckpoint.info.flushedLogicalAddress = store.hlog.IsNullDevice ? store.hlog.HeadAddress : store.hlog.FlushedUntilAddress;
                     base.GlobalBeforeEnteringState(next, store);
                     store._lastSnapshotCheckpoint = store._hybridLogCheckpoint.Transfer();
                     break;

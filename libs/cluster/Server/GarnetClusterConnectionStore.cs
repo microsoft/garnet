@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Security.Cryptography;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -13,8 +14,6 @@ namespace Garnet.cluster
         GarnetServerNode[] connections;
         int numConnection;
         bool _disposed;
-
-        Random rand = new Random(Guid.NewGuid().GetHashCode());
 
         SingleWriterMultiReaderLock _lock;
 
@@ -220,7 +219,7 @@ namespace Garnet.cluster
                 if (_disposed) return false;
                 if (numConnection == 0) return false;
 
-                var offset = rand.Next(0, numConnection);
+                var offset = RandomNumberGenerator.GetInt32(0, numConnection);
                 conn = connections[offset];
                 return true;
             }
