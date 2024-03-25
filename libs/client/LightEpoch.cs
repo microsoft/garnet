@@ -310,7 +310,7 @@ namespace Garnet.client
             {
                 int entryEpoch = (*(tableAligned + index)).localCurrentEpoch;
                 int fcVersion = (*(tableAligned + index)).markers[markerIdx];
-                if (0 != entryEpoch)
+                if (entryEpoch != 0)
                 {
                     if ((fcVersion != (int)version) && (entryEpoch < int.MaxValue))
                     {
