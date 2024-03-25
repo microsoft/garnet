@@ -2,7 +2,6 @@
 id: news
 sidebar_label: News
 title: News
-slug: /
 ---
 
 # In the News
