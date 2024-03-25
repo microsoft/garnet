@@ -9,91 +9,64 @@ namespace BenchmarkDotNet.benchmark.Resp
 {
     public unsafe class RespIntegerReadBenchmarks
     {
-        private const int OperationsPerInvoke = 16;
-
-        [Benchmark(OperationsPerInvoke = OperationsPerInvoke)]
+        [Benchmark]
         [ArgumentsSource(nameof(SignedInt32EncodedValues))]
         public int ReadInt32(AsciiTestCase testCase)
         {
-            int result = 0;
             fixed (byte* inputPtr = testCase.Bytes)
             {
-                for (int i = 0; i < OperationsPerInvoke; i++)
-                {
-                    var start = inputPtr;
-                    _ = RespReadUtils.ReadInt(out var value, ref start, start + testCase.Bytes.Length);
-                    result += value;
-                }
+                var start = inputPtr;
+                RespReadUtils.ReadInt(out var value, ref start, start + testCase.Bytes.Length);
+                return value;
             }
-            return result;
         }
 
-        [Benchmark(OperationsPerInvoke = OperationsPerInvoke)]
+        [Benchmark]
         [ArgumentsSource(nameof(SignedInt64EncodedValues))]
         public long ReadInt64(AsciiTestCase testCase)
         {
-            long result = 0;
             fixed (byte* inputPtr = testCase.Bytes)
             {
-                for (int i = 0; i < OperationsPerInvoke; i++)
-                {
-                    var start = inputPtr;
-                    _ = RespReadUtils.Read64Int(out var value, ref start, start + testCase.Bytes.Length);
-                    result += value;
-                }
+                var start = inputPtr;
+                RespReadUtils.Read64Int(out var value, ref start, start + testCase.Bytes.Length);
+                return value;
             }
-            return result;
         }
 
-        [Benchmark(OperationsPerInvoke = OperationsPerInvoke)]
+        [Benchmark]
         [ArgumentsSource(nameof(SignedInt32EncodedValuesWithLengthHeader))]
         public int ReadIntWithLengthHeader(AsciiTestCase testCase)
         {
-            int result = 0;
             fixed (byte* inputPtr = testCase.Bytes)
             {
-                for (int i = 0; i < OperationsPerInvoke; i++)
-                {
-                    var start = inputPtr;
-                    _ = RespReadUtils.ReadIntWithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
-                    result += value;
-                }
+                var start = inputPtr;
+                RespReadUtils.ReadIntWithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
+                return value;
             }
-            return result;
         }
 
-        [Benchmark(OperationsPerInvoke = OperationsPerInvoke)]
+        [Benchmark]
         [ArgumentsSource(nameof(SignedInt64EncodedValuesWithLengthHeader))]
         public long ReadLongWithLengthHeader(AsciiTestCase testCase)
         {
-            long result = 0;
             fixed (byte* inputPtr = testCase.Bytes)
             {
-                for (int i = 0; i < OperationsPerInvoke; i++)
-                {
-                    var start = inputPtr;
-                    _ = RespReadUtils.ReadLongWithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
-                    result += value;
-                }
+                var start = inputPtr;
+                RespReadUtils.ReadLongWithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
+                return value;
             }
-            return result;
         }
 
-        [Benchmark(OperationsPerInvoke = OperationsPerInvoke)]
+        [Benchmark]
         [ArgumentsSource(nameof(UnsignedInt64EncodedValuesWithLengthHeader))]
         public ulong ReadULongWithLengthHeader(AsciiTestCase testCase)
         {
-            ulong result = 0;
             fixed (byte* inputPtr = testCase.Bytes)
             {
-                for (int i = 0; i < OperationsPerInvoke; i++)
-                {
-                    var start = inputPtr;
-                    _ = RespReadUtils.ReadULongWithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
-                    result += value;
-                }
+                var start = inputPtr;
+                RespReadUtils.ReadULongWithLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
+                return value;
             }
-            return result;
         }
 
         public static IEnumerable<object> SignedInt32EncodedValues
@@ -120,11 +93,18 @@ namespace BenchmarkDotNet.benchmark.Resp
         public static IEnumerable<AsciiTestCase> ToRespIntegerWithLengthHeader<T>(T[] integerValues) where T : struct
             => integerValues.Select(testCase => new AsciiTestCase($"${testCase.ToString()?.Length ?? 0}\r\n{testCase}\r\n"));
 
-        public sealed class AsciiTestCase(string text)
+        public sealed class AsciiTestCase
         {
-            public byte[] Bytes { get; } = Encoding.ASCII.GetBytes(text);
+            public byte[] Bytes { get; }
+            private string Text { get; }
 
-            public override string ToString() => text; // displayed by BDN
+            public AsciiTestCase(string text)
+            {
+                Text = text;
+                Bytes = Encoding.ASCII.GetBytes(text);
+            }
+
+            public override string ToString() => Text; // displayed by BDN
         }
     }
 }
