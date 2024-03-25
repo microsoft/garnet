@@ -42,7 +42,7 @@ namespace Garnet
         protected StoreWrapper storeWrapper;
 
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.1";
+        readonly string version = "0.0.9";
 
         /// <summary>
         /// Metrics API
