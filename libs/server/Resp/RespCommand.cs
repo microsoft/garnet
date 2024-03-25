@@ -643,6 +643,9 @@ namespace Garnet.server
                     //[$8|SMEMBERS|] = 14 bytes = 8 (long) + 2 (ushort) + 2 bytes
                     if (*(long*)ptr == 5567941533359749156L && *(ushort*)(ptr + 8) == 17730 && *(ptr + 13) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SMEMBERS);
+                    //[$9\r\nSISM EMBER\r\n]
+                    if (*(long*)ptr == 5571877784987187492L && *(ushort*)(ptr + 8) == 19781 && *(ptr + 14) == 10)
+                        return (RespCommand.Set, (byte)SetOperation.SISMEMBER);
                     //[$4|SREM|] = 10 bytes = 8 (long) + 2 (ushort) 
                     if (*(long*)ptr == 5567947030917887012L && *(ushort*)(ptr + 8) == 2573 && *(ptr + 9) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SREM);
