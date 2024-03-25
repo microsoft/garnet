@@ -95,7 +95,7 @@ namespace Garnet.test.cluster
         [TearDown]
         public void TearDown()
         {
-            context.TearDown();
+            context?.TearDown();
         }
 
         [Test, Order(1)]
