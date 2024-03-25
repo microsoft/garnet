@@ -1,6 +1,6 @@
 # Benchmarks
 
-This directory contains projects for benchmarking gar
+This directory contains projects for benchmarking Garnet.
 
 ## Resp.benchmark
 
