@@ -360,7 +360,7 @@ namespace Tsavorite.core
         protected void HandleCapacity(int segment)
         {
             // If the device has bounded space, and we are writing a new segment, need to check whether an existing segment needs to be evicted. 
-            if (Capacity != Devices.CAPACITY_UNSPECIFIED && Utility.MonotonicUpdate(ref endSegment, segment, out int oldEnd))
+            if (Capacity != Devices.CAPACITY_UNSPECIFIED && Utility.MonotonicUpdate(ref endSegment, segment, out _))
             {
                 // Attempt to update the stored range until there is enough space on the tier to accomodate the current segment
                 int newStartSegment = endSegment - (int)(Capacity >> segmentSizeBits);
