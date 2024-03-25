@@ -274,7 +274,7 @@ In both cases,  **Garnet** consistently maintains higher throughput and better s
 | Figure 8: Throughput (log-scale), varying number of client sessions, for a database size of 1024 keys and 1MB payload. |
 
 In Figure 9, we evaluate the performance of BITOP NOT and BITOP AND (with two source keys) for increasing number of threads and a payload size of 1MB.
-**Garnet** maintains overall higher throughput as they number of clieant session increase compared to every other system we tested.
+**Garnet** maintains overall higher throughput as they number of client session increase compared to every other system we tested.
 It all also performs very well under high contention given that our DB size is relatively small (i.e. only 1024 keys).
 
 

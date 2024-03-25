@@ -14,7 +14,7 @@ namespace Garnet.server
     /// <summary>
     /// Sorted Set - RESP specific operations for GEO Commands
     /// </summary>
-    public unsafe partial class SortedSetObject : IGarnetObject
+    public unsafe partial class SortedSetObject : GarnetObjectBase
     {
         /// <summary>
         /// Use this struct for the reply of GEOSEARCH command

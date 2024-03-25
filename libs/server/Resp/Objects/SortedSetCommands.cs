@@ -103,11 +103,10 @@ namespace Garnet.server
         {
             ptr += 10;
 
-            if (count - 2 <= 0)
+            if (count < 3)
             {
                 zaddDoneCount = zaddAddCount = 0;
-                // send error to output and forward pointers to the end
-                WriteErrorTokenNumberInCommand("ZREM");
+                return AbortWithWrongNumberOfArguments("ZREM", count);
             }
             else
             {
@@ -191,11 +190,10 @@ namespace Garnet.server
         {
             ptr += 11;
 
-            if (count - 2 < 0)
+            if (count != 2)
             {
                 zaddDoneCount = zaddAddCount = 0;
-                // send error to output
-                WriteErrorTokenNumberInCommand("ZCARD");
+                return AbortWithWrongNumberOfArguments("ZCARD", count);
             }
             else
             {
@@ -386,11 +384,9 @@ namespace Garnet.server
             ptr += 12;
 
             //validation if minimum args
-            if (count - 3 != 0)
+            if (count != 3)
             {
-                // send error to output
-                WriteErrorTokenNumberInCommand("ZSCORE");
-                ReadLeftToken(count - 1, ref ptr);
+                return AbortWithWrongNumberOfArguments("ZSCORE", count);
             }
             else
             {
@@ -467,11 +463,9 @@ namespace Garnet.server
              where TGarnetApi : IGarnetApi
         {
             ptr += 13;
-            if (count - 1 > 2 || count - 1 == 0)
+            if (count < 2 || count > 3)
             {
-                // send error to output
-                WriteErrorTokenNumberInCommand(op == SortedSetOperation.ZPOPMAX ? "ZPOPMAX" : "ZPOPMIN");
-                ReadLeftToken(count - 1, ref ptr);
+                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZPOPMAX ? "ZPOPMAX" : "ZPOPMIN", count);
             }
             else
             {
@@ -559,12 +553,7 @@ namespace Garnet.server
 
             if (count != 4)
             {
-                zaddDoneCount = zaddAddCount = 0;
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("ZCOUNT");
+                return AbortWithWrongNumberOfArguments("ZCOUNT", count);
             }
             else
             {
@@ -655,11 +644,7 @@ namespace Garnet.server
             if (count != 4)
             {
                 zaddDoneCount = zaddAddCount = 0;
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand(op == SortedSetOperation.ZLEXCOUNT ? "ZLEXCOUNT" : "ZREMRANGEBYLEX");
+                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZLEXCOUNT ? "ZLEXCOUNT" : "ZREMRANGEBYLEX", count);
             }
             else
             {
@@ -749,11 +734,7 @@ namespace Garnet.server
             //validation of required args
             if (count != 4)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("ZINCRBY");
+                return AbortWithWrongNumberOfArguments("ZINCRBY", count);
             }
             else
             {
@@ -850,11 +831,7 @@ namespace Garnet.server
             //validation of required args
             if (count < 3 || count > 4)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand(op == SortedSetOperation.ZRANK ? "ZRANK" : "ZREVRANK");
+                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZRANK ? "ZRANK" : "ZREVRANK", count);
             }
             else
             {
@@ -935,11 +912,7 @@ namespace Garnet.server
 
             if (count != 4)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand(op == SortedSetOperation.ZREMRANGEBYRANK ? "ZREMRANGEBYRANK" : "ZREMRANGEBYSCORE");
+                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZREMRANGEBYRANK ? "ZREMRANGEBYRANK" : "ZREMRANGEBYSCORE", count);
             }
             else
             {
@@ -1021,13 +994,9 @@ namespace Garnet.server
         {
             ptr += 18;
 
-            if (count - 2 < 0 || count > 4)
+            if (count < 2 || count > 4)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("ZRANDMEMBER");
+                return AbortWithWrongNumberOfArguments("ZRANDMEMBER", count);
             }
             else
             {
@@ -1126,13 +1095,9 @@ namespace Garnet.server
              where TGarnetApi : IGarnetApi
         {
             ptr += 11;
-            if (count - 3 < 0)
+            if (count < 3)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("ZDIFF");
+                return AbortWithWrongNumberOfArguments("ZDIFF", count);
             }
             else
             {
