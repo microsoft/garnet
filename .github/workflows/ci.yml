@@ -40,13 +40,14 @@ jobs:
   
   # Job to build and test Garnet code
   build-test-garnet:
-    name: Garnet - Build and Test
+    name: Garnet
     needs: changes
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net6.0', 'net8.0' ]
+        configuration: [ 'Debug', 'Release' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
@@ -58,25 +59,26 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
       - name: Build Garnet
-        run: dotnet build
+        run: dotnet build --configuration ${{ matrix.configuration }}
       - name: Test Garnet
-        run: dotnet test -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}"
+        run: dotnet test -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
-          name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}
-          path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}
+          name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
         if: ${{ always() }}
 
   # Job to build and test Tsavorite code (only if there were changes to it)
   build-test-tsavorite:        
-    name: Tsavorite - Build and Test
+    name: Tsavorite
     needs: changes
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net6.0', 'net8.0' ]
+        configuration: [ 'Debug', 'Release' ]
     if: needs.changes.outputs.tsavorite == 'true'   
     steps:
       - name: Check out code
@@ -103,14 +105,14 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
       - name: Build Tsavorite
-        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj
+        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
       - name: Test Tsavorite
-        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}"
+        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
-          name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}
-          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}
+          name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
         if: ${{ always() }}
 
   build-website:
@@ -140,3 +142,4 @@ jobs:
     steps:
     - run: echo Done!
     if: ${{ !(failure() || cancelled()) }}
+    
