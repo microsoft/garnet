@@ -301,14 +301,14 @@ namespace Garnet.server
         public GarnetStatus HashGet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashStrLength(key, input, ref outputFooter);
+            return garnetApi.HashGet(key, input, ref outputFooter);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashStrLength(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        public GarnetStatus HashStrLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGet(key, input, ref outputFooter);
+            return garnetApi.HashStrLength(key, input, out output);
         }
 
         /// <inheritdoc />

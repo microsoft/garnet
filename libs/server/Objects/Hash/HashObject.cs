@@ -147,7 +147,7 @@ namespace Garnet.server
                         HashLength(_output);
                         break;
                     case HashOperation.HSTRLEN:
-                        HashStrLength(_input, input.Length, ref output);
+                        HashStrLength(_input, input.Length, _output);
                         break;
                     case HashOperation.HEXISTS:
                         HashExists(_input, input.Length, _output);

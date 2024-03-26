@@ -345,8 +345,8 @@ namespace Garnet.server
             => storageSession.HashLength(key, input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashStrLength(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashStrLength(key, input, ref outputFooter, ref objectContext);
+        public GarnetStatus HashStrLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+            => storageSession.HashStrLength(key, input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashExists(ArgSlice key, ArgSlice field, out bool exists)

@@ -314,8 +314,6 @@ namespace Garnet.server
                     return true;
                 }
 
-                var inputCount = count - 2;
-
                 // Prepare input
                 var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
 
@@ -328,13 +326,10 @@ namespace Garnet.server
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
                 inputPtr->header.HashOp = HashOperation.HSTRLEN;
-                inputPtr->count = inputCount;
+                inputPtr->count = 1;
                 inputPtr->done = 0;
 
-                // Prepare GarnetObjectStore output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                var status = storageApi.HashStrLength(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+                var status = storageApi.HashStrLength(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
 
                 // Restore input buffer
                 *inputPtr = save;
@@ -343,12 +338,9 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         // Process output
-                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        ptr += objOutputHeader.bytesDone;
-                        hashItemsDoneCount = objOutputHeader.countDone;
-                        hashOpsCount += objOutputHeader.opsDone;
-                        if (hashItemsDoneCount > hashOpsCount)
-                            return false;
+                        while (!RespWriteUtils.WriteInteger(output.countDone, ref dcurr, dend))
+                            SendAndReset();
+                        ptr += output.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
