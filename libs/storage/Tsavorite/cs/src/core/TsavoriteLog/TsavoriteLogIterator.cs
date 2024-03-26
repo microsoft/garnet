@@ -282,7 +282,7 @@ namespace Tsavorite.core
                 if (isCommitRecord)
                 {
                     TsavoriteLogRecoveryInfo info = new();
-                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte*)(headerSize + physicalAddress), entryLength)));
+                    info.Initialize(new ReadOnlySpan<byte>((byte*)(headerSize + physicalAddress), entryLength));
                     if (info.CommitNum != long.MaxValue) continue;
 
                     // Otherwise, no more entries
@@ -379,7 +379,7 @@ namespace Tsavorite.core
                 if (isCommitRecord)
                 {
                     TsavoriteLogRecoveryInfo info = new();
-                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte*)physicalAddress, entryLength)));
+                    info.Initialize(new ReadOnlySpan<byte>((byte*)physicalAddress, entryLength));
                     if (info.CommitNum != long.MaxValue) continue;
 
                     // Otherwise, no more entries
@@ -442,7 +442,7 @@ namespace Tsavorite.core
                 if (isCommitRecord)
                 {
                     TsavoriteLogRecoveryInfo info = new();
-                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream((byte*)physicalAddress, entryLength)));
+                    info.Initialize(new ReadOnlySpan<byte>((byte*)physicalAddress, entryLength));
                     if (info.CommitNum != long.MaxValue) continue;
 
                     // Otherwise, no more entries
@@ -590,7 +590,7 @@ namespace Tsavorite.core
                 if (isCommitRecord)
                 {
                     TsavoriteLogRecoveryInfo info = new();
-                    info.Initialize(new BinaryReader(new UnmanagedMemoryStream(entry, entryLength)));
+                    info.Initialize(new ReadOnlySpan<byte>(entry, entryLength));
                     if (info.CommitNum != long.MaxValue) continue;
 
                     // Otherwise, no more entries
@@ -715,12 +715,7 @@ namespace Tsavorite.core
                     if (!isCommitRecord) continue;
 
                     foundCommit = true;
-                    byte[] entry;
-                    // We allocate a byte array from heap
-                    entry = new byte[entryLength];
-                    fixed (byte* bp = entry)
-                        Buffer.MemoryCopy((void*)(headerSize + physicalAddress), bp, entryLength, entryLength);
-                    info.Initialize(new BinaryReader(new MemoryStream(entry)));
+                    info.Initialize(new ReadOnlySpan<byte>((void*)(headerSize + physicalAddress), entryLength));
 
                     Debug.Assert(info.CommitNum != -1);
 
