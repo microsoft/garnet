@@ -516,7 +516,7 @@ namespace Garnet.server
                         return (RespCommand.SortedSet, (byte)SortedSetOperation.ZSCAN);
 
                     //[$7|ZMSCORE|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
-                    if (*(long*)ptr == 4851306272719189796L && *(ushort*)(ptr + 8) == 21071 && *(ptr + 10) == 69)
+                    if (*(long*)ptr == 4851306272719189796L && *(int*)(ptr + 8) == 222646863 && *(ptr + 12) == 10)
                         return (RespCommand.SortedSet, (byte)SortedSetOperation.ZMSCORE);
 
                     #region SortedSet Operations with Geo Commands

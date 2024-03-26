@@ -342,26 +342,51 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CanGetMemberScores()
+        public void CanDoZMScore()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommands("ZMSCORE nokey", "PING");
-            var expectedResponse = "-ERR wrong number of arguments for ZMSCORE command.\r\n+PONG\r\n";
-            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, actualValue);
 
             var key = "SortedSet_GetMemberScores";
             var added = db.SortedSetAdd(key, entries);
             var scores = db.SortedSetScores(key, ["a", "b", "z", "i"]);
             Assert.AreEqual(scores, new List<double?>() { 1, 2, null, 9 });
 
+            Assert.Throws<RedisServerException>(
+                () => db.SortedSetScores("nokey", ["a", "b", "c"]),
+                "WRONGTYPE Operation against a key holding the wrong kind of value.");
+
+            Assert.Throws<RedisServerException>(
+                () => db.SortedSetScores("nokey", []),
+                "ERR wrong number of arguments for ZMSCORE command.");
+
             var memResponse = db.Execute("MEMORY", "USAGE", key);
             var memActualValue = ResultType.Integer == memResponse.Type ? Int32.Parse(memResponse.ToString()) : -1;
             var memExpectedResponse = 1808;
             Assert.AreEqual(memExpectedResponse, memActualValue);
+        }
+
+        [Test]
+        public void CanDoZMScoreLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommands("ZADD zmscore 0 a 1 b", "PING");
+
+            var response = lightClientRequest.SendCommands("ZMSCORE zmscore", "PING");
+            var expectedResponse = "-ERR wrong number of arguments for ZMSCORE command.\r\n+PONG\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommands("ZMSCORE nokey a", "PING");
+            expectedResponse = "-WRONGTYPE Operation against a key holding the wrong kind of value.\r\n+PONG\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommands("ZMSCORE zmscore a z b", "PING");
+            expectedResponse = "*3\r\n$1\r\n0\r\n$-1\r\n$1\r\n1\r\n+PONG\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]

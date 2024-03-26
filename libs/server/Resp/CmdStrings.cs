@@ -20,9 +20,9 @@ namespace Garnet.server
             else return RESP_EMPTYLIST;
         }
 
-        /// <summary>        
-        /// Request strings        
-        /// </summary>        
+        /// <summary>
+        /// Request strings
+        /// </summary>
         public static ReadOnlySpan<byte> CLIENT => "CLIENT"u8;
         public static ReadOnlySpan<byte> SUBSCRIBE => "SUBSCRIBE"u8;
         public static ReadOnlySpan<byte> RUNTXP => "RUNTXP"u8;
@@ -85,6 +85,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR => "-ERR unknown command\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CLUSTER_DISABLED => "-ERR This instance has cluster support disabled\r\n"u8;
         public static ReadOnlySpan<byte> RESP_WRONG_ARGUMENTS => "-ERR wrong number of arguments for 'config|set' command\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_WRONG_TYPE => "-WRONGTYPE Operation against a key holding the wrong kind of value.\r\n"u8;
         public static ReadOnlySpan<byte> RESP_ERRNOTFOUND => "$-1\r\n"u8;
         public static ReadOnlySpan<byte> RESP_ERRNOSUCHKEY => "-ERR no such key\r\n"u8;
         public static ReadOnlySpan<byte> RESP_NOAUTH => "-NOAUTH Authentication required.\r\n"u8;

@@ -987,8 +987,8 @@ namespace Garnet.server
         GarnetStatus SortedSetScore(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
-        /// Returns the score of member in the sorted set at key.
-        /// If member does not exist in the sorted set, or key does not exist, nil is returned.
+        /// Returns the scores associated with the specified members in the sorted set stored at key.
+        /// For every member that does not exist in the sorted set, a nil value is returned.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
