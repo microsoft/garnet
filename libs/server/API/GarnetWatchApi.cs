@@ -224,6 +224,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus SetIsMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.SetIsMember(key, input, ref outputFooter);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus SetMembers(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
