@@ -32,7 +32,7 @@ Note that this list is subject to change as we continue to expand our API comman
 
 | Category | Command | Implemented in Garnet | Notes |
 | ------------- | ------------- | ------------- | ------------- | 
-| <span id="bitmap">**BITMAP**</span> | [BITCOUNT](analytics.md#bitcount) | ➕ |  |
+| <span class="anchor" id="bitmap">**BITMAP**</span> | [BITCOUNT](analytics.md#bitcount) | ➕ |  |
 |  | [BITFIELD](analytics.md#bitfield) | ➕ |  |
 |  | BITFIELD_RO | ➖ |  |
 |  | [BITOP AND](analytics.md#bitop-and) | ➕ |  |
