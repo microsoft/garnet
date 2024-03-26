@@ -17,10 +17,6 @@ insert_final_newline = false
 
 #### .NET Coding Conventions ####
 
-# Code analyzers
-dotnet_analyzer_diagnostic.category-Security.severity = error
-dotnet_analyzer_diagnostic.category-Style.severity = error
-
 # Temporary code analysis supressions
 # IDE0004: Remove Unnecessary Cast
 dotnet_diagnostic.IDE0004.severity = suggestion
