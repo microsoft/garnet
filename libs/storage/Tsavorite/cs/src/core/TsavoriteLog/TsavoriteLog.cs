@@ -2254,10 +2254,7 @@ namespace Tsavorite.core
             }
 
             info = new TsavoriteLogRecoveryInfo();
-            using (BinaryReader r = new(new MemoryStream(commitInfo)))
-            {
-                info.Initialize(r);
-            }
+            info.Initialize(commitInfo);
 
             if (info.CommitNum == -1)
                 info.CommitNum = commitNum;
