@@ -43,6 +43,7 @@ jobs:
     name: Garnet
     needs: changes
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
@@ -58,6 +59,8 @@ jobs:
           dotnet-version: 8.0.x
       - name: Install dependencies
         run: dotnet restore
+      - name: Format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
       - name: Test Garnet
@@ -74,6 +77,7 @@ jobs:
     name: Tsavorite
     needs: changes
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       matrix:
         os: [ ubuntu-latest, windows-latest ]
@@ -104,6 +108,8 @@ jobs:
           azurite &
       - name: Install dependencies
         run: dotnet restore
+      - name: Format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Tsavorite
         run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
       - name: Test Tsavorite
