@@ -119,9 +119,7 @@ namespace Garnet.server
                 (op == HashOperation.HGET && count != 3) ||
                 (op == HashOperation.HMGET && count < 3))
             {
-                // Send error to output
-                WriteErrorTokenNumberInCommand(op.ToString());
-                ReadLeftToken(count - 1, ref ptr);
+                return AbortWithWrongNumberOfArguments(op.ToString(), count);
             }
             else
             {
@@ -221,11 +219,10 @@ namespace Garnet.server
         {
             ptr += 10;
 
-            if (count - 2 < 0)
+            if (count != 2)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
-                // Send error to output
-                WriteErrorTokenNumberInCommand("HLEN");
+                return AbortWithWrongNumberOfArguments("HLEN", count);
             }
             else
             {
@@ -369,11 +366,10 @@ namespace Garnet.server
         {
             ptr += 10;
 
-            if (count - 2 <= 0)
+            if (count < 2)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
-                // Send error to output
-                WriteErrorTokenNumberInCommand("HDEL");
+                return AbortWithWrongNumberOfArguments("HDEL", count);
             }
             else
             {
@@ -451,11 +447,10 @@ namespace Garnet.server
         {
             ptr += 13;
 
-            if (count < 3)
+            if (count != 3)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
-                // Send error to output
-                WriteErrorTokenNumberInCommand("HEXISTS");
+                return AbortWithWrongNumberOfArguments("HEXISTS", count);
             }
             else
             {
@@ -610,11 +605,9 @@ namespace Garnet.server
             ptr += op == HashOperation.HINCRBY ? 13 : 19;
 
             // Check if parameters number is right
-            if (count < 4)
+            if (count != 4)
             {
-                // Send error to output
-                WriteErrorTokenNumberInCommand(op == HashOperation.HINCRBY ? "HINCRBY" : "HINCRBYFLOAT");
-                ReadLeftToken(count - 1, ref ptr);
+                return AbortWithWrongNumberOfArguments(op == HashOperation.HINCRBY ? "HINCRBY" : "HINCRBYFLOAT", count);
             }
             else
             {

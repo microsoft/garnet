@@ -106,7 +106,6 @@
 
 	<file src="libs\storage\Tsavorite\cs\src\core\bin\AnyCPU\Release\net8.0\runtimes\linux-x64\native\libnative_device.so" target="runtimes\linux-x64\native" />
 	<file src="libs\storage\Tsavorite\cs\src\core\bin\AnyCPU\Release\net8.0\runtimes\win-x64\native\native_device.dll" target="runtimes\win-x64\native" />
-	<file src="libs\storage\Tsavorite\cs\src\core\bin\AnyCPU\Release\net8.0\runtimes\win-x64\native\native_device.pdb" target="runtimes\win-x64\native" />
 	  
   </files>
 </package>

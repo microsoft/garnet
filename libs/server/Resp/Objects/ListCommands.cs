@@ -268,11 +268,7 @@ namespace Garnet.server
 
             if (count != 4)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("LTRIM");
+                return AbortWithWrongNumberOfArguments("LTRIM", count);
             }
             else
             {
@@ -342,11 +338,7 @@ namespace Garnet.server
 
             if (count != 4)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("LRANGE");
+                return AbortWithWrongNumberOfArguments("LRANGE", count);
             }
             else
             {
@@ -424,11 +416,7 @@ namespace Garnet.server
 
             if (count != 3)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("LINDEX");
+                return AbortWithWrongNumberOfArguments("LINDEX", count);
             }
             else
             {
@@ -511,11 +499,7 @@ namespace Garnet.server
 
             if (count != 5)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("LINSERT");
+                return AbortWithWrongNumberOfArguments("LINSERT", count);
             }
             else
             {
@@ -599,11 +583,7 @@ namespace Garnet.server
             // if params are missing return error
             if (count != 4)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("LREM");
+                return AbortWithWrongNumberOfArguments("LREM", count);
             }
             else
             {
@@ -684,11 +664,7 @@ namespace Garnet.server
 
             if (count != 5)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("LMOVE");
+                return AbortWithWrongNumberOfArguments("LMOVE", count);
             }
             else
             {
@@ -742,11 +718,7 @@ namespace Garnet.server
 
             if (count != 3)
             {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-                // send error to output
-                WriteErrorTokenNumberInCommand("RPOPLPUSH");
+                return AbortWithWrongNumberOfArguments("RPOPLPUSH", count);
             }
             else
             {
