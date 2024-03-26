@@ -311,7 +311,7 @@ namespace Garnet.server
                     {
                         if (subscriptionDict.Item2.TryGetValue(sid, out var _session))
                         {
-                            if (_session != session)
+                            if (_session == session)
                             {
                                 subscriptionDict.Item2.TryRemove(sid, out _);
                                 break;
