@@ -9,7 +9,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -62,8 +61,6 @@ namespace Tsavorite.core
     /// <typeparam name="T"></typeparam>
     public class MallocFixedPageSize<T> : IDisposable
     {
-        private const bool ForceUnpinnedAllocation = false;
-
         // We will never get an index of 0 from (Bulk)Allocate
         internal const long kInvalidAllocationIndex = 0;
 
@@ -76,21 +73,19 @@ namespace Tsavorite.core
         private readonly T[][] values = new T[LevelSize][];
         private readonly IntPtr[] pointers = new IntPtr[LevelSize];
 
-        private readonly int RecordSize;
-
         private volatile int writeCacheLevel;
 
         private volatile int count;
 
-        internal bool IsPinned => isPinned;
-        private readonly bool isPinned;
+        internal static int RecordSize => Unsafe.SizeOf<T>();
+        internal static bool IsPinned => Utility.IsBlittable<T>();
 
         private const bool ReturnPhysicalAddress = false;
 
         private int checkpointCallbackCount;
         private SemaphoreSlim checkpointSemaphore;
 
-        private ConcurrentQueue<long> freeList;
+        private readonly ConcurrentQueue<long> freeList;
 
         readonly ILogger logger;
 
@@ -99,7 +94,7 @@ namespace Tsavorite.core
         private AllocationMode allocationMode;
 #endif
 
-        const int sector_size = 512;
+        const int SectorSize = 512;
 
         private int initialAllocation = 0;
 
@@ -113,17 +108,12 @@ namespace Tsavorite.core
         {
             this.logger = logger;
             freeList = new ConcurrentQueue<long>();
-            if (ForceUnpinnedAllocation)
-                isPinned = false;
-            else
-                isPinned = Utility.IsBlittable<T>();
-            Debug.Assert(isPinned || !ReturnPhysicalAddress, "ReturnPhysicalAddress requires pinning");
+            Debug.Assert(IsPinned || !ReturnPhysicalAddress, "ReturnPhysicalAddress requires pinning");
 
-            values[0] = GC.AllocateArray<T>(PageSize + sector_size, isPinned);
-            if (isPinned)
+            values[0] = GC.AllocateArray<T>(PageSize + SectorSize, IsPinned);
+            if (IsPinned)
             {
-                pointers[0] = (IntPtr)(((long)Unsafe.AsPointer(ref values[0][0]) + (sector_size - 1)) & ~(sector_size - 1));
-                RecordSize = Marshal.SizeOf(values[0][0]);
+                pointers[0] = (IntPtr)(((long)Unsafe.AsPointer(ref values[0][0]) + (SectorSize - 1)) & ~(SectorSize - 1));
             }
 
 #if !(CALLOC)
@@ -151,7 +141,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPhysicalAddress(long logicalAddress)
         {
-            Debug.Assert(isPinned, "GetPhysicalAddress requires pinning");
+            Debug.Assert(IsPinned, "GetPhysicalAddress requires pinning");
             if (ReturnPhysicalAddress)
                 return logicalAddress;
             return (long)pointers[logicalAddress >> PageSizeBits] + (logicalAddress & PageSizeMask) * RecordSize;
@@ -168,7 +158,7 @@ namespace Tsavorite.core
             if (ReturnPhysicalAddress)
                 throw new TsavoriteException("Physical pointer returned by allocator: de-reference pointer to get records instead of calling Get");
             Debug.Assert(index != kInvalidAllocationIndex, "Invalid allocation index");
-            if (isPinned)
+            if (IsPinned)
                 return ref Unsafe.AsRef<T>((byte*)(pointers[index >> PageSizeBits]) + (index & PageSizeMask) * RecordSize);
             else
                 return ref values[index >> PageSizeBits][index & PageSizeMask];
@@ -185,7 +175,7 @@ namespace Tsavorite.core
             if (ReturnPhysicalAddress)
                 throw new TsavoriteException("Physical pointer returned by allocator: de-reference pointer to set records instead of calling Set (otherwise, set ForceUnpinnedAllocation to true)");
             Debug.Assert(index != kInvalidAllocationIndex, "Invalid allocation index");
-            if (isPinned)
+            if (IsPinned)
                 Unsafe.AsRef<T>((byte*)(pointers[index >> PageSizeBits]) + (index & PageSizeMask) * RecordSize) = value;
             else
                 values[index >> PageSizeBits][index & PageSizeMask] = value;
@@ -253,9 +243,9 @@ namespace Tsavorite.core
                 // If index 0, then allocate space for next level.
                 if (index == 0)
                 {
-                    var tmp = GC.AllocateArray<T>(PageSize + sector_size, isPinned);
-                    if (isPinned)
-                        pointers[1] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (sector_size - 1)) & ~(sector_size - 1));
+                    var tmp = GC.AllocateArray<T>(PageSize + SectorSize, IsPinned);
+                    if (IsPinned)
+                        pointers[1] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
 #if !(CALLOC)
                     Array.Clear(tmp, 0, PageSize);
@@ -313,9 +303,9 @@ namespace Tsavorite.core
                 // Allocate for next page
                 int newBaseAddr = baseAddr + 1;
 
-                var tmp = GC.AllocateArray<T>(PageSize + sector_size, isPinned);
-                if (isPinned)
-                    pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (sector_size - 1)) & ~(sector_size - 1));
+                var tmp = GC.AllocateArray<T>(PageSize + SectorSize, IsPinned);
+                if (IsPinned)
+                    pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
 #if !(CALLOC)
                 Array.Clear(tmp, 0, PageSize);
