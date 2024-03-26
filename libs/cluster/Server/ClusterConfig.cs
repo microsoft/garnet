@@ -1013,8 +1013,28 @@ namespace Garnet.cluster
         /// <returns>ClusterConfig object with updates.</returns>
         public ClusterConfig TakeOverFromPrimary()
         {
+            var ourNodeId = GetLocalNodeId();
+            var ourReplicaOf = GetLocalNodePrimaryId();;
+
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
+
+            for (int i = 2; i <= NumWorkers; i++)
+            {
+                var worker = newWorkers[i];
+
+                if (worker.role == NodeRole.PRIMARY && worker.nodeid == ourReplicaOf)
+                {
+                    worker.role = NodeRole.REPLICA;
+                    worker.replicaOfNodeId = newWorkers[1].nodeid;
+                } 
+                else if (worker.role == NodeRole.REPLICA && worker.replicaOfNodeId == ourReplicaOf) {
+                    worker.replicaOfNodeId = newWorkers[1].nodeid;
+                }
+            
+                newWorkers[i] = worker;
+            }
+
             newWorkers[1].role = NodeRole.PRIMARY;
             newWorkers[1].replicaOfNodeId = null;
 

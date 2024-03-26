@@ -94,8 +94,8 @@ namespace Garnet.cluster
 
         private async Task AttachReplicas(ClusterConfig oldConfig, ClusterConfig newConfig)
         {
-            var oldPrimaryId = oldConfig.GetLocalNodePrimaryId();
-            var replicaEndpoints = newConfig.GetReplicaEndpoints(oldPrimaryId);
+            var newPrimaryId = newConfig.GetLocalNodeId();
+            var replicaEndpoints = newConfig.GetReplicaEndpoints(newPrimaryId);
             var localAddress = newConfig.GetLocalNodeIp();
             var localPort = newConfig.GetLocalNodePort();
             Task<string>[] tasks = new Task<string>[replicaEndpoints.Count];
