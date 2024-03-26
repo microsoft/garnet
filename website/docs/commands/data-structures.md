@@ -192,6 +192,18 @@ Sets field in the hash stored at **key** to value, only if field does not yet ex
 
 ---
 
+### HSTRLEN
+
+#### Syntax
+
+```bash
+    HSTRLEN key field
+```
+
+Returns the string length of the value associated with **field** in the hash stored at **key**. If the **key** or the **field** do not exist, 0 is returned.
+
+---
+
 ### HVALS
 
 #### Syntax
