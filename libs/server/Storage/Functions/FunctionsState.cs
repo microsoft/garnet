@@ -17,10 +17,11 @@ namespace Garnet.server
         public readonly WatchVersionMap watchVersionMap;
         public readonly MemoryPool<byte> memoryPool;
         public readonly CacheSizeTracker objectStoreSizeTracker;
+        public readonly StoreWrapper storeWrapper;
         public bool StoredProcMode;
 
         public FunctionsState(TsavoriteLog appendOnlyFile, WatchVersionMap watchVersionMap, CustomCommand[] customCommands, CustomObjectCommandWrapper[] customObjectCommands,
-            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker)
+            MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, StoreWrapper storeWrapper)
         {
             this.appendOnlyFile = appendOnlyFile;
             this.watchVersionMap = watchVersionMap;
@@ -28,6 +29,7 @@ namespace Garnet.server
             this.customObjectCommands = customObjectCommands;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
             this.objectStoreSizeTracker = objectStoreSizeTracker;
+            this.storeWrapper = storeWrapper;
         }
     }
 }

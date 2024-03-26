@@ -23,10 +23,15 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             var header = (RespInputHeader*)input.ToPointer();
             header->flags |= RespInputFlags.Deterministic;
+            var valueBytes = functionsState.storeWrapper.SerializeGarnetObject(value);
             fixed (byte* ptr = key)
             {
-                var keySB = SpanByte.FromPointer(ptr, key.Length);
-                functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreUpsert, version = version, sessionID = sessionID }, ref keySB, ref input, out _);
+                fixed (byte* valPtr = valueBytes)
+                {
+                    var keySB = SpanByte.FromPointer(ptr, key.Length);
+                    var valSB = SpanByte.FromPointer(valPtr, valueBytes.Length);
+                    functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreUpsert, version = version, sessionID = sessionID }, ref keySB, ref input, ref valSB, out _);
+                }
             }
         }
 
