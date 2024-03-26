@@ -820,6 +820,11 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(typeName), ref dcurr, dend))
                     SendAndReset();
             }
+            else
+            {
+                while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(@"none"), ref dcurr, dend))
+                    SendAndReset();
+            }
 
             readHead = (int)(ptr - recvBufferPtr);
             return true;
