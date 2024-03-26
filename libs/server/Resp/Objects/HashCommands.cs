@@ -38,61 +38,70 @@ namespace Garnet.server
         {
             ptr += hop == HashOperation.HSET ? 10 : (hop == HashOperation.HSETNX ? 12 : 11);
 
-            // Get the key for Hash
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            if (NetworkSingleKeySlotVerify(key, false))
+            if (((hop == HashOperation.HSET || hop == HashOperation.HMSET) 
+                  && (count < 3 || count % 2 != 0)) ||
+                (hop == HashOperation.HSETNX && count != 4)) 
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
-                    return false;
-                return true;
-            }
-
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - ptr) + sizeof(ObjectInputHeader);
-
-            var inputCount = (count - 2) / 2;
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.Hash;
-            inputPtr->header.HashOp = hop;
-            inputPtr->count = inputCount;
-            inputPtr->done = hashOpsCount;
-
-            storageApi.HashSet(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
-
-            *inputPtr = save; // reset input buffer
-
-            hashItemsDoneCount += output.countDone;
-            hashOpsCount += output.opsDone;
-
-            // Reset buffer and return if HSET did not process the entire command tokens
-            if (hashItemsDoneCount < inputCount)
-                return false;
-
-            // Move head, write result to output, reset session counters
-            ptr += output.bytesDone;
-            readHead = (int)(ptr - recvBufferPtr);
-
-            if (hop == HashOperation.HMSET)
-            {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments(hop.ToString(), count);
             }
             else
             {
-                while (!RespWriteUtils.WriteInteger(hashOpsCount, ref dcurr, dend))
-                    SendAndReset();
-            }
+                // Get the key for Hash
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
 
+                if (NetworkSingleKeySlotVerify(key, false))
+                {
+                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                    if (!DrainCommands(bufSpan, count))
+                        return false;
+                    return true;
+                }
+
+                // Prepare input
+                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+                // Save old values on buffer for possible revert
+                var save = *inputPtr;
+
+                // Prepare length of header in input buffer
+                var inputLength = (int)(recvBufferPtr + bytesRead - ptr) + sizeof(ObjectInputHeader);
+
+                var inputCount = (count - 2) / 2;
+
+                // Prepare header in input buffer
+                inputPtr->header.type = GarnetObjectType.Hash;
+                inputPtr->header.HashOp = hop;
+                inputPtr->count = inputCount;
+                inputPtr->done = hashOpsCount;
+
+                storageApi.HashSet(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
+
+                *inputPtr = save; // reset input buffer
+
+                hashItemsDoneCount += output.countDone;
+                hashOpsCount += output.opsDone;
+
+                // Reset buffer and return if HSET did not process the entire command tokens
+                if (hashItemsDoneCount < inputCount)
+                    return false;
+
+                // Move head, write result to output, reset session counters
+                ptr += output.bytesDone;
+                readHead = (int)(ptr - recvBufferPtr);
+
+                if (hop == HashOperation.HMSET)
+                {
+                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteInteger(hashOpsCount, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+            
             hashItemsDoneCount = hashOpsCount = 0;
             return true;
         }
@@ -119,9 +128,7 @@ namespace Garnet.server
                 (op == HashOperation.HGET && count != 3) ||
                 (op == HashOperation.HMGET && count < 3))
             {
-                // Send error to output
-                WriteErrorTokenNumberInCommand(op.ToString());
-                ReadLeftToken(count - 1, ref ptr);
+                return AbortWithWrongNumberOfArguments(op.ToString(), count);
             }
             else
             {
@@ -221,11 +228,10 @@ namespace Garnet.server
         {
             ptr += 10;
 
-            if (count - 2 < 0)
+            if (count != 2)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
-                // Send error to output
-                WriteErrorTokenNumberInCommand("HLEN");
+                return AbortWithWrongNumberOfArguments("HLEN", count);
             }
             else
             {
@@ -293,11 +299,10 @@ namespace Garnet.server
         {
             ptr += 10;
 
-            if (count - 2 <= 0)
+            if (count < 2)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
-                // Send error to output
-                WriteErrorTokenNumberInCommand("HDEL");
+                return AbortWithWrongNumberOfArguments("HDEL", count);
             }
             else
             {
@@ -375,11 +380,10 @@ namespace Garnet.server
         {
             ptr += 13;
 
-            if (count < 3)
+            if (count != 3)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
-                // Send error to output
-                WriteErrorTokenNumberInCommand("HEXISTS");
+                return AbortWithWrongNumberOfArguments("HEXISTS", count);
             }
             else
             {
@@ -534,11 +538,9 @@ namespace Garnet.server
             ptr += op == HashOperation.HINCRBY ? 13 : 19;
 
             // Check if parameters number is right
-            if (count < 4)
+            if (count != 4)
             {
-                // Send error to output
-                WriteErrorTokenNumberInCommand(op == HashOperation.HINCRBY ? "HINCRBY" : "HINCRBYFLOAT");
-                ReadLeftToken(count - 1, ref ptr);
+                return AbortWithWrongNumberOfArguments(op == HashOperation.HINCRBY ? "HINCRBY" : "HINCRBYFLOAT", count);
             }
             else
             {

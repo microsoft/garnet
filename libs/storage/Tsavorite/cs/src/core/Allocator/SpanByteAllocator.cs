@@ -411,8 +411,6 @@ namespace Tsavorite.core
                                         IDevice device = null, IDevice objectLogDevice = null)
         {
             var usedDevice = device;
-            IDevice usedObjlogDevice = objectLogDevice;
-
             if (device == null)
             {
                 usedDevice = this.device;
