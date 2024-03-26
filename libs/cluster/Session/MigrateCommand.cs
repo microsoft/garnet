@@ -39,10 +39,10 @@ namespace Garnet.cluster
                 case MigrateCmdParseState.SUCCESS:
                     return true;
                 case MigrateCmdParseState.CLUSTERDOWN:
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Cluster nodes not initialized correctly.\r\n"));
+                    resp = CmdStrings.RESP_ERRCLUSTER;
                     break;
                 case MigrateCmdParseState.UNKNOWNTARGET:
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node ({targetAddress}:{targetPort}).\r\n"));
+                    resp = CmdStrings.RESP_UNKNOWN_ENDPOINT_ERROR;
                     break;
                 case MigrateCmdParseState.MULTISLOTREF:
                     resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotMultiRef} specified multiple times\r\n"));
@@ -63,7 +63,7 @@ namespace Garnet.cluster
                     resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotMultiRef} out of range\r\n"));
                     break;
                 default:
-                    resp = "-ERR Parsing error\r\n"u8;
+                    resp = CmdStrings.RESP_PARSING_ERROR;
                     break;
             }
             while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
@@ -86,7 +86,7 @@ namespace Garnet.cluster
 
             //3. Key
             byte* singleKeyPtr = null;
-            int sksize = 0;
+            var sksize = 0;
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref singleKeyPtr, ref sksize, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 

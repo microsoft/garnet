@@ -111,18 +111,24 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_CONFIG_UPDATE_ERROR => "-ERR Updating the config epoch\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CONFIG_EPOCH_ASSIGNMENT_ERROR => "-ERR The user can assign a config epoch only when the node does not know any other node.\r\n"u8;
         public static ReadOnlySpan<byte> RESP_REPLICATION_AOF_TURNEDOFF_ERROR => "-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_MIGRATE_TO_MYSELF_ERROR => "-ERR Can't MIGRATE to myself\r\n"u8;
         public static ReadOnlySpan<byte> RESP_SLOTSTATE_TRANSITION_ERROR => "-ERR Slot already in that state\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CANNOT_REPLICATE_SELF_ERROR => "-ERR Can't replicate myself\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS_ERROR => "-ERR Primary has been assigned slots and cannot be a replica\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CANNOT_FORGET_MYSELF_ERROR => "-ERR I tried hard but I can't forget myself\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CANNOT_FORGET_MY_PRIMARY_ERROR => "-ERR Can't forget my primary\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_CANNOT_FAILOVER_FROM_NON_MASTER => "-ERR Cannot failover a non master node\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_UNKNOWN_ENDPOINT_ERROR => "-ERR Endpoint does not known\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_INCOMPLETESLOTSRANGE_ERROR => "-ERR incomplete slotrange\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_CANNOT_FAILOVER_FROM_NON_MASTER => "-ERR Cannot failover a non-master node\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_UNKNOWN_ENDPOINT_ERROR => "-ERR Unknown endpoint\r\n"u8;
+
+        #region RespSlotValidation
         public static ReadOnlySpan<byte> RESP_CROSSLOT_ERROR => "-CROSSSLOT Keys in request do not hash to the same slot\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CLUSTERDOWN_ERROR => "-CLUSTERDOWN Hash slot not served\r\n"u8;
         public static ReadOnlySpan<byte> RESP_MIGRATING_ERROR => "-MIGRATING\r\n"u8;
+        #endregion
 
+        #region RespMigrateCmd
+        public static ReadOnlySpan<byte> RESP_MIGRATE_TO_MYSELF_ERROR => "-ERR Can't MIGRATE to myself\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_INCOMPLETESLOTSRANGE_ERROR => "-ERR incomplete slotrange\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_PARSING_ERROR => "-ERR Parsing error\r\n"u8;
+        #endregion
     }
 }
