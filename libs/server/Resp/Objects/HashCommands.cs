@@ -38,9 +38,9 @@ namespace Garnet.server
         {
             ptr += hop == HashOperation.HSET ? 10 : (hop == HashOperation.HSETNX ? 12 : 11);
 
-            if (((hop == HashOperation.HSET || hop == HashOperation.HMSET) 
+            if (((hop == HashOperation.HSET || hop == HashOperation.HMSET)
                   && (count < 3 || count % 2 != 0)) ||
-                (hop == HashOperation.HSETNX && count != 4)) 
+                (hop == HashOperation.HSETNX && count != 4))
             {
                 return AbortWithWrongNumberOfArguments(hop.ToString(), count);
             }
@@ -101,7 +101,7 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-            
+
             hashItemsDoneCount = hashOpsCount = 0;
             return true;
         }
