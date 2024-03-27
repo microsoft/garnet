@@ -9,6 +9,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -241,16 +242,7 @@ namespace Tsavorite.core
         private static int Position(int v)
         {
             if (v == 1) return 0;
-            v--;
-
-            int r = 0; // r will be lg(v)
-            while (true) // unroll for more speed...
-            {
-                v >>= 1;
-                if (v == 0) break;
-                r++;
-            }
-            return r + 1;
+            return BitOperations.Log2((uint)v - 1) + 1;
         }
 
         /// <summary>

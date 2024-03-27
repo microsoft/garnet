@@ -111,7 +111,7 @@ namespace Garnet.server
         {
             ptr += 10;
 
-            if (count < 3) 
+            if (count < 3)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SREM", count);
@@ -175,7 +175,7 @@ namespace Garnet.server
                     setOpsCount = setItemsDoneCount = 0;
                 }
             }
-            
+
             readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
@@ -263,7 +263,7 @@ namespace Garnet.server
         {
             ptr += 14;
 
-            if (count < 1 || count > 2) 
+            if (count < 1 || count > 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SMEMBERS", count);
@@ -322,7 +322,7 @@ namespace Garnet.server
                         break;
                 }
             }
-            
+
             // Reset session counters
             setItemsDoneCount = setOpsCount = 0;
 
