@@ -11,7 +11,7 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        internal class MigrationKeyIterationFunctions
+        internal sealed class MigrationKeyIterationFunctions
         {
             internal struct MainStoreMigrateSlots : IScanIteratorFunctions<SpanByte, SpanByte>
             {

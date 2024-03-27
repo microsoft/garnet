@@ -18,19 +18,6 @@ namespace Garnet.cluster
         MIGRATION,
     }
 
-    internal class WorkerComparer : IEqualityComparer<Worker>
-    {
-        public bool Equals(Worker a, Worker b)
-        {
-            return a.nodeid.Equals(b.nodeid);
-        }
-
-        public int GetHashCode(Worker key)
-        {
-            return key.nodeid.GetHashCode();
-        }
-    }
-
 #if NET5_0
     static class MyExtensions
     {
