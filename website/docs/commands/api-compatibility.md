@@ -118,7 +118,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [HSCAN](data-structures.md#hscan) | ➕ |  |
 |  | [HSET](data-structures.md#hset) | ➕ |  |
 |  | [HSETNX](data-structures.md#hsetnx) | ➕ |  |
-|  | HSTRLEN | ➖ |  |
+|  | [HSTRLEN](data-structures.md#hstrlen) | ➕ |  |
 |  | [HVALS](data-structures.md#hvals) | ➕ |  |
 | <span id="hyperloglog">**HYPERLOGLOG**</span> | [PFADD](analytics.md#pfadd) | ➕ |  |
 |  | [PFCOUNT](analytics.md#pfcount) | ➕ |  |

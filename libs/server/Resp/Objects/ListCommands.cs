@@ -202,48 +202,55 @@ namespace Garnet.server
         {
             ptr += 10;
 
-            // Get the key for List
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            if (NetworkSingleKeySlotVerify(key, true))
+            if (count != 2)
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
-                    return false;
-                return true;
-            }
-
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // save old values
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - ptr) + sizeof(ObjectInputHeader);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.ListOp = ListOperation.LLEN;
-            inputPtr->count = count;
-            inputPtr->done = 0;
-
-            var status = storageApi.ListLength(key, new ArgSlice((byte*)inputPtr, inputLength), out var output);
-
-            //restore input buffer
-            *inputPtr = save;
-
-            if (status == GarnetStatus.NOTFOUND)
-            {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                    SendAndReset();
+                return AbortWithWrongNumberOfArguments("LLEN", count);
             }
             else
             {
-                // Process output
-                while (!RespWriteUtils.WriteInteger(output.countDone, ref dcurr, dend))
-                    SendAndReset();
+                // Get the key for List
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                if (NetworkSingleKeySlotVerify(key, true))
+                {
+                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                    if (!DrainCommands(bufSpan, count))
+                        return false;
+                    return true;
+                }
+
+                // Prepare input
+                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+                // save old values
+                var save = *inputPtr;
+
+                // Prepare length of header in input buffer
+                var inputLength = (int)(recvBufferPtr + bytesRead - ptr) + sizeof(ObjectInputHeader);
+
+                // Prepare header in input buffer
+                inputPtr->header.type = GarnetObjectType.List;
+                inputPtr->header.ListOp = ListOperation.LLEN;
+                inputPtr->count = count;
+                inputPtr->done = 0;
+
+                var status = storageApi.ListLength(key, new ArgSlice((byte*)inputPtr, inputLength), out var output);
+
+                //restore input buffer
+                *inputPtr = save;
+
+                if (status == GarnetStatus.NOTFOUND)
+                {
+                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    // Process output
+                    while (!RespWriteUtils.WriteInteger(output.countDone, ref dcurr, dend))
+                        SendAndReset();
+                }
             }
 
             // Move input head, write result to output

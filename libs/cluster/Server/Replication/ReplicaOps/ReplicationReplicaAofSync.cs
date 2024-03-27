@@ -79,7 +79,7 @@ namespace Garnet.cluster
                             throw new Exception("Received FastCommit request at replica AOF processor, but FastCommit is not enabled");
                         }
                         TsavoriteLogRecoveryInfo info = new();
-                        info.Initialize(new BinaryReader(new UnmanagedMemoryStream(ptr + entryLength, -payloadLength)));
+                        info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
                         storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info);
                         entryLength += storeWrapper.appendOnlyFile.UnsafeAlign(-payloadLength);
                     }

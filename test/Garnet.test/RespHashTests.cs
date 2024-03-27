@@ -693,6 +693,12 @@ namespace Garnet.test
             expectedResponse = "-ERR wrong number of arguments for HSTRLEN command.\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
+
+            //too many paramenters
+            response = lightClientRequest.SendCommand("HSTRLEN foo field0 field1");
+            expectedResponse = "-ERR wrong number of arguments for HSTRLEN command.\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]
