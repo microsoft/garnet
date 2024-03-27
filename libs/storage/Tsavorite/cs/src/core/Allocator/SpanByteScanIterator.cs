@@ -36,8 +36,8 @@ namespace Tsavorite.core
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
         internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte> store, SpanByteAllocator hlog, long beginAddress, long endAddress,
-                ScanBufferingMode scanBufferingMode, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits, logger: logger)
+                ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
@@ -50,7 +50,7 @@ namespace Tsavorite.core
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
         internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte> store, ITsavoriteEqualityComparer<SpanByte> comparer, SpanByteAllocator hlog, long beginAddress, LightEpoch epoch, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, epoch, hlog.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
@@ -177,7 +177,8 @@ namespace Tsavorite.core
                 nextAddress = currentAddress + recordSize;
 
                 recordInfo = hlog.GetInfo(physicalAddress);
-                if (recordInfo.SkipOnScan || recordInfo.IsNull())
+                bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                if (skipOnScan || recordInfo.IsNull())
                 {
                     epoch?.Suspend();
                     continue;
@@ -248,7 +249,8 @@ namespace Tsavorite.core
 
                 recordInfo = hlog.GetInfo(physicalAddress);
                 nextAddress = recordInfo.PreviousAddress;
-                if (recordInfo.SkipOnScan || recordInfo.IsNull() || !comparer.Equals(ref hlog.GetKey(physicalAddress), ref key))
+                bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                if (skipOnScan || recordInfo.IsNull() || !comparer.Equals(ref hlog.GetKey(physicalAddress), ref key))
                 {
                     epoch?.Suspend();
                     continue;
