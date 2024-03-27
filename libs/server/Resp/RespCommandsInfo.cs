@@ -194,6 +194,7 @@ namespace Garnet.server
             {(byte)HashOperation.HSETNX,        new RespCommandsInfo("HSETNX",          RespCommand.Hash,    4,  null,   (byte)HashOperation.HSETNX)},
             {(byte)HashOperation.HRANDFIELD,    new RespCommandsInfo("HRANDFIELD",      RespCommand.Hash,   -2,  null,   (byte)HashOperation.HRANDFIELD)},
             {(byte)HashOperation.HSCAN,         new RespCommandsInfo("HSCAN",           RespCommand.Hash,   -3,  null,   (byte)HashOperation.HSCAN)},
+            {(byte)HashOperation.HSTRLEN,       new RespCommandsInfo("HSTRLEN",         RespCommand.Hash,    3,  null,   (byte)HashOperation.HSTRLEN)},
         };
 
         private static readonly Dictionary<byte, RespCommandsInfo> setCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
