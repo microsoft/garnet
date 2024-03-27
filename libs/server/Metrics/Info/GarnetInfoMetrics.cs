@@ -121,7 +121,7 @@ namespace Garnet.server
 
         private void PopulateReplicationInfo(StoreWrapper storeWrapper)
         {
-            if(storeWrapper.clusterProvider == null)
+            if (storeWrapper.clusterProvider == null)
             {
                 replicationInfo =
                 [
