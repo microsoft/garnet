@@ -58,10 +58,6 @@ namespace Garnet.server
                     if (serialized != null)
                     {
                         writer.Write(serialized);
-                        // We can safely delete the serialized image now, as there is
-                        // guaranteed to be a new v+1 image of the object in memory.
-                        // Because "serialized" was created during PostCopyUpdater
-                        //serialized = null;
                     }
                     else
                     {
