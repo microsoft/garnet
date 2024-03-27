@@ -166,6 +166,7 @@ namespace Garnet.server
                 (byte)HashOperation.HINCRBYFLOAT => SingleKey(1, true, LockType.Exclusive),
                 (byte)HashOperation.HSETNX => SingleKey(1, true, LockType.Exclusive),
                 (byte)HashOperation.HRANDFIELD => SingleKey(1, true, LockType.Shared),
+                (byte)HashOperation.HSTRLEN => SingleKey(1, true, LockType.Shared),
                 _ => -1
             };
         }
