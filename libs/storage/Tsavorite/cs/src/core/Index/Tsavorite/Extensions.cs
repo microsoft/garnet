@@ -24,7 +24,7 @@ namespace Tsavorite.core
             return new RecordObservable<Key, Value>(source);
         }
 
-        internal class RecordObservable<Key, Value> : IObservable<Record<Key, Value>>
+        internal sealed class RecordObservable<Key, Value> : IObservable<Record<Key, Value>>
         {
             readonly IObservable<ITsavoriteScanIterator<Key, Value>> o;
 

@@ -85,7 +85,7 @@ namespace Tsavorite.core
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.
-    internal class AsyncIOContextCompletionEvent<Key, Value> : IDisposable
+    internal sealed class AsyncIOContextCompletionEvent<Key, Value> : IDisposable
     {
         internal SemaphoreSlim semaphore;
         internal Exception exception;

@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    internal class CountdownWrapper
+    internal sealed class CountdownWrapper
     {
         // Separate event for sync code and tcs for async code: Do not block on async code.
         private readonly CountdownEvent syncEvent;

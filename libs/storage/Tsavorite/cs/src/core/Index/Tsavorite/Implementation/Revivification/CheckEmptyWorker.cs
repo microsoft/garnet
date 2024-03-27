@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
-    internal class CheckEmptyWorker<Key, Value>
+    internal sealed class CheckEmptyWorker<Key, Value>
     {
         // State control variables.
         internal struct State
