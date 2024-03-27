@@ -26,6 +26,7 @@ namespace Garnet.server
             var type = (GarnetObjectType)reader.ReadByte();
             obj = type switch
             {
+                GarnetObjectType.Null => null,
                 GarnetObjectType.SortedSet => new SortedSetObject(reader),
                 GarnetObjectType.List => new ListObject(reader),
                 GarnetObjectType.Hash => new HashObject(reader),
@@ -43,8 +44,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public override void Serialize(ref IGarnetObject obj)
         {
-            writer.Write(obj.Type);
-            obj.Serialize(writer);
+            if (obj == null)
+                writer.Write((byte)GarnetObjectType.Null);
+            else
+                obj.Serialize(writer);
         }
     }
 }
