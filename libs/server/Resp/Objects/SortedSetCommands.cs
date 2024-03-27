@@ -514,9 +514,14 @@ namespace Garnet.server
                         ptr += objOutputHeader.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_WRONG_TYPE, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteArrayLength(inputCount, ref dcurr, dend))
                             SendAndReset();
-                        ReadLeftToken(count - 2, ref ptr);
+
+                        for (var c = 0; c < inputCount; c++)
+                            while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                                SendAndReset();
+
+                        ReadLeftToken(inputCount, ref ptr);
                         break;
                 }
             }

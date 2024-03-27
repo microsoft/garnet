@@ -352,9 +352,9 @@ namespace Garnet.test
             var scores = db.SortedSetScores(key, ["a", "b", "z", "i"]);
             Assert.AreEqual(scores, new List<double?>() { 1, 2, null, 9 });
 
-            Assert.Throws<RedisServerException>(
-                () => db.SortedSetScores("nokey", ["a", "b", "c"]),
-                "WRONGTYPE Operation against a key holding the wrong kind of value.");
+
+            scores = db.SortedSetScores("nokey", ["a", "b", "c"]);
+            Assert.AreEqual(scores, new List<double?>() { null, null, null });
 
             Assert.Throws<RedisServerException>(
                 () => db.SortedSetScores("nokey", []),
@@ -378,12 +378,12 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
-            response = lightClientRequest.SendCommands("ZMSCORE nokey a", "PING");
-            expectedResponse = "-WRONGTYPE Operation against a key holding the wrong kind of value.\r\n+PONG\r\n";
+            response = lightClientRequest.SendCommands("ZMSCORE nokey a b c", "PING", 4, 1);
+            expectedResponse = "*3\r\n$-1\r\n$-1\r\n$-1\r\n+PONG\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
-            response = lightClientRequest.SendCommands("ZMSCORE zmscore a z b", "PING");
+            response = lightClientRequest.SendCommands("ZMSCORE zmscore a z b", "PING", 4, 1);
             expectedResponse = "*3\r\n$1\r\n0\r\n$-1\r\n$1\r\n1\r\n+PONG\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
