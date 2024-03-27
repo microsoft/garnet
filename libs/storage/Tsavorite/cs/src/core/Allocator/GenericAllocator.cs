@@ -44,13 +44,9 @@ namespace Tsavorite.core
         private readonly int ObjectBlockSize = 100 * (1 << 20);
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
-        // Record sizes
         private readonly SerializerSettings<Key, Value> SerializerSettings;
-        private readonly bool keyBlittable = Utility.IsBlittable<Key>();
-        private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
-
-        // We do not support variable-length keys in GenericAllocator
+        // Record sizes. We do not support variable-length keys in GenericAllocator
         internal static int KeySize => Unsafe.SizeOf<Key>();
         internal static int ValueSize => Unsafe.SizeOf<Value>();
         internal static int RecordSize => Unsafe.SizeOf<Record<Key, Value>>();
@@ -75,7 +71,7 @@ namespace Tsavorite.core
 
             SerializerSettings = serializerSettings ?? new SerializerSettings<Key, Value>();
 
-            if ((!keyBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
+            if ((!Utility.IsBlittable<Key>()) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
 #if DEBUG
                 if (typeof(Key) != typeof(byte[]) && typeof(Key) != typeof(string))
@@ -84,7 +80,7 @@ namespace Tsavorite.core
                 SerializerSettings.keySerializer = ObjectSerializer.Get<Key>();
             }
 
-            if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
+            if ((!Utility.IsBlittable<Value>()) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
 #if DEBUG
                 if (typeof(Value) != typeof(byte[]) && typeof(Value) != typeof(string))
