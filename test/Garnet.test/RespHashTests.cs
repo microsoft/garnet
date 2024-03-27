@@ -160,6 +160,19 @@ namespace Garnet.test
             Assert.AreEqual(false, result);
         }
 
+        [Test]
+        public void CanDoHStrLen()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user.user1", new HashEntry[] { new HashEntry("Title", "Tsavorite") });
+            long r = db.HashStringLength("user.user1", "Title");
+            Assert.AreEqual(9, r, 0);
+            r = db.HashStringLength("user.user1", "NoExist");
+            Assert.AreEqual(0, r, 0);
+            r = db.HashStringLength("user.user2", "Title");
+            Assert.AreEqual(0, r, 0);
+        }
 
         [Test]
         public void CanDoHKeys()
@@ -648,6 +661,45 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
         }
 
+        [Test]
+        public void CanDoHStrLenLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("HSET myhash field1 myvalue");
+            var expectedResponse = ":1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            // get an existing field
+            response = lightClientRequest.SendCommand("HSTRLEN myhash field1");
+            expectedResponse = ":7\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            // get an nonexisting field
+            response = lightClientRequest.SendCommand("HSTRLEN myhash field0");
+            expectedResponse = ":0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            //non existing hash
+            response = lightClientRequest.SendCommand("HSTRLEN foo field0");
+            expectedResponse = ":0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            //missing paramenters
+            response = lightClientRequest.SendCommand("HSTRLEN foo");
+            expectedResponse = "-ERR wrong number of arguments for HSTRLEN command.\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            //too many paramenters
+            response = lightClientRequest.SendCommand("HSTRLEN foo field0 field1");
+            expectedResponse = "-ERR wrong number of arguments for HSTRLEN command.\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
 
         [Test]
         public void CanDoIncrByLC()
