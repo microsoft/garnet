@@ -188,12 +188,21 @@ namespace Garnet.server
                 else if (count == int.MinValue) // no count parameter is present, we just pop and return a random item of the set
                 {
                     // Write a bulk string value of a random field from the hash value stored at key.
-                    int index = RandomNumberGenerator.GetInt32(0, set.Count);
-                    var item = set.ElementAt(index);
-                    set.Remove(item);
-                    this.UpdateSize(item, false);
-                    while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    if (set.Count > 0)
+                    {
+                        int index = RandomNumberGenerator.GetInt32(0, set.Count);
+                        var item = set.ElementAt(index);
+                        set.Remove(item);
+                        this.UpdateSize(item, false);
+                        while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
+                    else
+                    {
+                        // If set empty return nil
+                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
                     countDone++;
                 }
 
