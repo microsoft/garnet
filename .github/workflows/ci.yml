@@ -11,6 +11,8 @@ on:
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
+  ACTIONS_RUNNER_DEBUG: true
+  ACTIONS_STEP_DEBUG: true
 
 jobs:
   changes:
@@ -65,6 +67,16 @@ jobs:
         run: dotnet build --configuration ${{ matrix.configuration }}
       - name: Test Garnet
         run: dotnet test -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+
+      - name: DEBUG - List test result files and their sizes
+        run: dir "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+      - name: DEBUG - System Hard Drive space
+        run: wmic LogicalDisk where DriveType="3" get DeviceID,Size,FreeSpace
+        if: runner.os == 'Windows'
+      - name: DEBUG - System Available Memory
+        run: systeminfo | find "Available Physical Memory"
+        if: runner.os == 'Windows'
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
