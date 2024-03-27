@@ -26,7 +26,6 @@ namespace Garnet.server
             byte* keyPtr = null;
             int ksize = 0;
 
-            ptr += 13;
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
@@ -69,7 +68,6 @@ namespace Garnet.server
             byte* keyPtr = null;
             int ksize = 0;
 
-            ptr += 13;
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
@@ -239,8 +237,6 @@ namespace Garnet.server
         private bool NetworkSET<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 13;
-
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -273,8 +269,6 @@ namespace Garnet.server
         private bool NetworkSetRange<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 18;
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -322,8 +316,6 @@ namespace Garnet.server
         private bool NetworkGetRange<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 18;
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -379,9 +371,6 @@ namespace Garnet.server
         private bool NetworkSETEX<TGarnetApi>(byte* ptr, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 15;
-            if (highPrecision) ptr++; // PSETEX
-
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -427,12 +416,10 @@ namespace Garnet.server
         /// <summary>
         /// SET EX NX
         /// </summary>
-        private bool NetworkSETEXNX<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSETEXNX<TGarnetApi>(byte* ptr, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var _ptr = ptr;
-            int cmdcount = *(ptr + 1) - '0' - 3;
-            ptr += 13;
 
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
@@ -456,25 +443,25 @@ namespace Garnet.server
             ExpirationOption expOption = ExpirationOption.None;
             bool getValue = false;
 
-            while (cmdcount > 0)
+            while (count > 0)
             {
                 if (error)
                 {
                     Span<byte> tmp = default;
                     if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref tmp, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    cmdcount--;
+                    count--;
                     continue;
                 }
 
                 if (*(long*)ptr == 724332168621142564) // [EX]
                 {
                     ptr += 8;
-                    cmdcount--;
+                    count--;
 
                     if (!RespReadUtils.ReadIntWithLengthHeader(out expiry, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    cmdcount--;
+                    count--;
 
                     if (expOption != ExpirationOption.None)
                     {
@@ -493,11 +480,11 @@ namespace Garnet.server
                 else if (*(long*)ptr == 724332215865782820) // [PX]
                 {
                     ptr += 8;
-                    cmdcount--;
+                    count--;
 
                     if (!RespReadUtils.ReadIntWithLengthHeader(out expiry, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    cmdcount--;
+                    count--;
 
                     if (expOption != ExpirationOption.None)
                     {
@@ -516,7 +503,7 @@ namespace Garnet.server
                 else if (*(long*)ptr == 5784105485020772132 && *(int*)(ptr + 8) == 223106132 && *(ptr + 12) == 10) // [KEEPTTL]
                 {
                     ptr += 13;
-                    cmdcount--;
+                    count--;
                     if (expOption != ExpirationOption.None)
                     {
                         errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
@@ -528,7 +515,7 @@ namespace Garnet.server
                 else if (*(long*)ptr == 724332207275848228) // [NX]
                 {
                     ptr += 8;
-                    cmdcount--;
+                    count--;
                     if (existOptions != ExistOptions.None)
                     {
                         errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
@@ -540,7 +527,7 @@ namespace Garnet.server
                 else if (*(long*)ptr == 724332250225521188) // [XX]
                 {
                     ptr += 8;
-                    cmdcount--;
+                    count--;
                     if (existOptions != ExistOptions.None)
                     {
                         errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
@@ -552,7 +539,7 @@ namespace Garnet.server
                 else if (*(long*)ptr == 960468791950390052 && *(ptr + 8) == 10) // [GET]
                 {
                     ptr += 9;
-                    cmdcount--;
+                    count--;
                     getValue = true;
                 }
                 else if (!MakeUpperCase(ptr))
@@ -737,11 +724,6 @@ namespace Garnet.server
         {
             Debug.Assert(cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || cmd == RespCommand.INCR || cmd == RespCommand.DECR);
 
-            if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
-                ptr += 16;
-            else
-                ptr += 14;
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -805,9 +787,6 @@ namespace Garnet.server
         private bool NetworkAppend<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // Length of APPEND command (*3\r\n$6\r\nAPPEND\r\n)
-            ptr += 16;
-
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -845,8 +824,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkPING()
         {
-            var ptr = recvBufferPtr + readHead;
-            readHead += *ptr == '*' ? 14 : 6;
             while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_PONG, ref dcurr, dend))
                 SendAndReset();
             return true;
@@ -858,7 +835,6 @@ namespace Garnet.server
         private bool NetworkASKING()
         {
             //*1\r\n$6\r\n ASKING\r\n = 16
-            readHead += 16;
             if (storeWrapper.serverOptions.EnableCluster)
                 SessionAsking = 2;
             while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -871,7 +847,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkQUIT()
         {
-            readHead += 6;
             while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             toDispose = true;
@@ -885,7 +860,6 @@ namespace Garnet.server
         private bool NetworkREADONLY()
         {
             //*1\r\n$8\r\nREADONLY\r\n
-            readHead += 18;
             clusterSession?.SetReadOnlySession();
             while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -899,7 +873,6 @@ namespace Garnet.server
         private bool NetworkREADWRITE()
         {
             //*1\r\n$9\r\nREADWRITE\r\n
-            readHead += 19;
             clusterSession?.SetReadWriteSession();
             while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -916,8 +889,6 @@ namespace Garnet.server
         private bool NetworkSTRLEN<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 12;
-
             byte* keyPtr = null;
             int ksize = 0;
 

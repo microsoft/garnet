@@ -19,8 +19,6 @@ namespace Garnet.server
         private bool NetworkRENAME<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 16;
-
             byte* key1Ptr = null, key2Ptr = null;
             int ksize1 = 0, ksize2 = 0;
 
@@ -59,8 +57,6 @@ namespace Garnet.server
         private bool NetworkDEL<TGarnetApi>(byte* ptr, ref TGarnetApi garnetApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 13;
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -102,8 +98,6 @@ namespace Garnet.server
         private bool NetworkGETDEL<TGarnetApi>(byte* ptr, ref TGarnetApi garnetApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 16;
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -148,10 +142,9 @@ namespace Garnet.server
         private bool NetworkEXISTS<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 12;
             int exists = 0;
 
-            for (int i = 0; i < count - 1; i++)
+            for (int i = 0; i < count; i++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -186,8 +179,6 @@ namespace Garnet.server
         private bool NetworkEXISTS<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 16;
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -222,12 +213,9 @@ namespace Garnet.server
         /// <param name="command">indicates which command to use, expire or pexpire</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkEXPIRE<TGarnetApi>(byte* ptr, RespCommand command, ref TGarnetApi storageApi)
+        private bool NetworkEXPIRE<TGarnetApi>(byte* ptr, RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            int count = *(ptr + 1) - '0';
-            ptr += command == RespCommand.EXPIRE ? 16 : 17;
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -242,7 +230,8 @@ namespace Garnet.server
             bool invalidOption = false;
             ExpireOption expireOption = ExpireOption.None;
             string optionStr = "";
-            if (count > 3)
+
+            if (count > 2)
             {
                 if (!RespReadUtils.ReadStringWithLengthHeader(out optionStr, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -298,7 +287,6 @@ namespace Garnet.server
         private bool NetworkPERSIST<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 17;
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -336,7 +324,6 @@ namespace Garnet.server
         private bool NetworkTTL<TGarnetApi>(byte* ptr, RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += command == RespCommand.TTL ? 13 : 14;
             byte* keyPtr = null;
             int ksize = 0;
 

@@ -34,8 +34,6 @@ namespace Garnet.server
         private unsafe bool ListPush<TGarnetApi>(int count, byte* ptr, ListOperation lop, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            ptr += (lop == ListOperation.LPUSH || lop == ListOperation.RPUSH) ? 11 : 12;
-
             // Get the key for List
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var sskey, ref ptr, recvBufferPtr + bytesRead))
                 return false;
@@ -54,7 +52,7 @@ namespace Garnet.server
             // Save old values on buffer for possible revert
             var save = *inputPtr;
 
-            var inputCount = count - 2;
+            var inputCount = count - 1;
             // Prepare length of header in input buffer
             var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
@@ -91,8 +89,8 @@ namespace Garnet.server
             //if lpushx or rpushx and not found forward left tokens
             if ((lop == ListOperation.LPUSHX || lop == ListOperation.RPUSHX) && status == GarnetStatus.NOTFOUND)
             {
-                var tokens = ReadLeftToken(count - 2, ref ptr);
-                if (tokens < count - 2)
+               var tokens = ReadLeftToken(count - 1, ref ptr);
+               if (tokens < count - 1)
                     return false;
             }
 
@@ -120,8 +118,6 @@ namespace Garnet.server
         private unsafe bool ListPop<TGarnetApi>(int count, byte* ptr, ListOperation lop, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
             // Get the key for List
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;
@@ -141,7 +137,7 @@ namespace Garnet.server
             // Save old values on buffer for possible revert
             var save = *inputPtr;
 
-            if (count == 3)
+            if (count == 2)
             {
                 // Read count
                 if (!RespReadUtils.ReadIntWithLengthHeader(out popCount, ref ptr, recvBufferPtr + bytesRead))
@@ -200,9 +196,7 @@ namespace Garnet.server
         private unsafe bool ListLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count != 2)
+            if (count != 1)
             {
                 return AbortWithWrongNumberOfArguments("LLEN", count);
             }
@@ -271,9 +265,7 @@ namespace Garnet.server
         private unsafe bool ListTrim<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            ptr += 11;
-
-            if (count != 4)
+            if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("LTRIM", count);
             }
@@ -341,9 +333,7 @@ namespace Garnet.server
         private unsafe bool ListRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 12;
-
-            if (count != 4)
+            if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("LRANGE", count);
             }
@@ -419,9 +409,7 @@ namespace Garnet.server
         private unsafe bool ListIndex<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 12;
-
-            if (count != 3)
+            if (count != 2)
             {
                 return AbortWithWrongNumberOfArguments("LINDEX", count);
             }
@@ -502,9 +490,7 @@ namespace Garnet.server
         private unsafe bool ListInsert<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 13;
-
-            if (count != 5)
+            if (count != 4)
             {
                 return AbortWithWrongNumberOfArguments("LINSERT", count);
             }
@@ -561,8 +547,8 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
-                        var tokens = ReadLeftToken(count - 2, ref ptr);
-                        if (tokens < count - 2)
+                        var tokens = ReadLeftToken(count - 1, ref ptr);
+                        if (tokens < count - 1)
                             return false;
                         while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
@@ -586,9 +572,8 @@ namespace Garnet.server
         private unsafe bool ListRemove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
             // if params are missing return error
-            if (count != 4)
+            if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("LREM", count);
             }
@@ -641,8 +626,8 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
-                        var tokens = ReadLeftToken(count - 3, ref ptr);
-                        if (tokens < count - 3)
+                        var tokens = ReadLeftToken(count - 2, ref ptr);
+                        if (tokens < count - 2)
                             return false;
                         while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
@@ -666,10 +651,9 @@ namespace Garnet.server
         private unsafe bool ListMove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 11;
             bool result = false;
 
-            if (count != 5)
+            if (count != 4)
             {
                 return AbortWithWrongNumberOfArguments("LMOVE", count);
             }
@@ -720,10 +704,9 @@ namespace Garnet.server
         private unsafe bool ListRightPopLeftPush<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 15;
             bool result = false;
 
-            if (count != 3)
+            if (count != 2)
             {
                 return AbortWithWrongNumberOfArguments("RPOPLPUSH", count);
             }
