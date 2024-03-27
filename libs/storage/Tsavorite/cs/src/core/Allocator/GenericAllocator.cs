@@ -1138,15 +1138,15 @@ namespace Tsavorite.core
         /// Iterator interface for scanning Tsavorite log
         /// </summary>
         /// <returns></returns>
-        public override ITsavoriteScanIterator<Key, Value> Scan(TsavoriteKV<Key, Value> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
-            => new GenericScanIterator<Key, Value>(store, this, beginAddress, endAddress, scanBufferingMode, epoch);
+        public override ITsavoriteScanIterator<Key, Value> Scan(TsavoriteKV<Key, Value> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
+            => new GenericScanIterator<Key, Value>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
         internal override bool Scan<TScanFunctions>(TsavoriteKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            using GenericScanIterator<Key, Value> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+            using GenericScanIterator<Key, Value> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -1155,7 +1155,7 @@ namespace Tsavorite.core
         /// </summary>
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<Key, Value> store, ScanCursorState<Key, Value> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using GenericScanIterator<Key, Value> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, epoch, logger: logger);
+            using GenericScanIterator<Key, Value> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
             return ScanLookup<long, long, TScanFunctions, GenericScanIterator<Key, Value>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
         }
 
