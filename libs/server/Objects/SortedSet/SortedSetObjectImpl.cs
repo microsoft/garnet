@@ -175,44 +175,45 @@ namespace Garnet.server
             bool isMemory = false;
             MemoryHandle ptrHandle = default;
 
-            byte* outStartPtr = output.SpanByte.ToPointer();
-            var outCurrPtr = outStartPtr;
-            var outEndPtr = outCurrPtr + output.Length;
+            byte* ptr = output.SpanByte.ToPointer();
+            var curr = ptr;
+            var end = curr + output.Length;
 
-            byte* inputStartPtr = input + sizeof(ObjectInputHeader);
-            byte* inputCurrPtr = inputStartPtr;
-            byte* inputEndPtr = input + length;
+            byte* input_startptr = input + sizeof(ObjectInputHeader);
+            byte* input_currptr = input_startptr;
+            byte* input_endptr = input + length;
+
             try
             {
-                while (!RespWriteUtils.WriteArrayLength(count, ref outCurrPtr, outEndPtr))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref outStartPtr, ref ptrHandle, ref outCurrPtr, ref outEndPtr);
+                while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 for (int c = 0; c < count; c++)
                 {
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var scoreKey, ref inputCurrPtr, inputEndPtr))
+                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var scoreKey, ref input_currptr, input_endptr))
                         return;
                     if (!sortedSetDict.TryGetValue(scoreKey, out var score))
                     {
-                        while (!RespWriteUtils.WriteNull(ref outCurrPtr, outEndPtr))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref outStartPtr, ref ptrHandle, ref outCurrPtr, ref outEndPtr);
+                        while (!RespWriteUtils.WriteNull(ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(score.ToString()), ref outCurrPtr, outEndPtr))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref outStartPtr, ref ptrHandle, ref outCurrPtr, ref outEndPtr);
+                        while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(score.ToString()), ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
-                _output.bytesDone = (int)(inputCurrPtr - inputStartPtr);
+                _output.bytesDone = (int)(input_currptr - input_startptr);
                 _output.countDone = count;
                 _output.opsDone = count;
             }
             finally
             {
-                while (!RespWriteUtils.WriteDirect(ref _output, ref outCurrPtr, outEndPtr))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref outStartPtr, ref ptrHandle, ref outCurrPtr, ref outEndPtr);
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 if (isMemory) ptrHandle.Dispose();
-                output.Length = (int)(outCurrPtr - outStartPtr);
+                output.Length = (int)(curr - ptr);
             }
         }
 
