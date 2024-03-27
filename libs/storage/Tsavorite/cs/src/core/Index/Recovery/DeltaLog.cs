@@ -75,7 +75,7 @@ namespace Tsavorite.core
         /// Constructor
         /// </summary>
         public DeltaLog(IDevice deltaLogDevice, int logPageSizeBits, long tailAddress, ILogger logger = null)
-            : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, default, logPageSizeBits, false, logger: logger)
+            : base(0, tailAddress >= 0 ? tailAddress : deltaLogDevice.GetFileSize(0), ScanBufferingMode.SinglePageBuffering, false, default, logPageSizeBits, false, logger: logger)
         {
             LogPageSizeBits = logPageSizeBits;
             PageSize = 1 << LogPageSizeBits;

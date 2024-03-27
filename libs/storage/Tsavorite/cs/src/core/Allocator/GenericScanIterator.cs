@@ -26,8 +26,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, LightEpoch epoch, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits, logger: logger)
+        public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
@@ -40,7 +40,7 @@ namespace Tsavorite.core
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
         public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocator<Key, Value> hlog, ITsavoriteEqualityComparer<Key> comparer, long beginAddress, LightEpoch epoch, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, epoch, hlog.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
@@ -131,7 +131,8 @@ namespace Tsavorite.core
                     currentFrame = -1;      // Frame is not used in this case.
 
                     recordInfo = hlog.values[currentPage][currentOffset].info;
-                    if (recordInfo.SkipOnScan)
+                    bool _skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                    if (_skipOnScan)
                     {
                         epoch?.Suspend();
                         continue;
@@ -164,7 +165,8 @@ namespace Tsavorite.core
 
                 currentFrame = currentPage % frameSize;
                 recordInfo = frame.GetInfo(currentFrame, currentOffset);
-                if (recordInfo.SkipOnScan || recordInfo.IsNull())
+                bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                if (skipOnScan || recordInfo.IsNull())
                 {
                     epoch?.Suspend();
                     continue;
@@ -215,7 +217,8 @@ namespace Tsavorite.core
                 recordInfo = hlog.values[currentPage][currentOffset].info;
                 nextAddress = currentAddress + recordSize;
 
-                if (recordInfo.SkipOnScan || recordInfo.IsNull() || !comparer.Equals(ref hlog.values[currentPage][currentOffset].key, ref key))
+                bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                if (skipOnScan || recordInfo.IsNull() || !comparer.Equals(ref hlog.values[currentPage][currentOffset].key, ref key))
                 {
                     epoch?.Suspend();
                     continue;

@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
@@ -150,29 +151,17 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         int Position(int v)
         {
-            if (v < minAllocationSize || !IsPowerOfTwo(v))
+            if (v < minAllocationSize || !BitOperations.IsPow2(v))
                 return -1;
 
             v /= minAllocationSize;
 
             if (v == 1) return 0;
-            v--;
 
-            int r = 0; // r will be lg(v)
-            while (true) // unroll for more speed...
-            {
-                v >>= 1;
-                if (v == 0) break;
-                r++;
-            }
-            if (r + 1 >= numLevels)
+            int level = BitOperations.Log2((uint)v - 1) + 1;
+            if (level >= numLevels)
                 return -1;
-            return r + 1;
-        }
-
-        static bool IsPowerOfTwo(long x)
-        {
-            return (x > 0) && ((x & (x - 1)) == 0);
+            return level;
         }
     }
 }
