@@ -30,7 +30,7 @@ namespace Garnet.server
                 // List
                 "LPOP", "LPUSH", "RPOP", "RPUSH", "LLEN", "LTRIM", "LRANGE", "LINDEX", "LINSERT", "LREM", "RPOPLPUSH", "LMOVE", "LPUSHX", "RPUSHX",
                 // Hash
-                "HSET", "HGET", "HMGET", "HMSET", "HDEL", "HLEN", "HEXISTS", "HGETALL", "HKEYS", "HVALS", "HINCRBY", "HINCRBYFLOAT", "HSETNX", "HRANDFIELD", "HSCAN",
+                "HSET", "HGET", "HMGET", "HMSET", "HDEL", "HLEN", "HEXISTS", "HGETALL", "HKEYS", "HVALS", "HINCRBY", "HINCRBYFLOAT", "HSETNX", "HRANDFIELD", "HSCAN", "HSTRLEN",
                 // Hyperloglog
                 "PFADD", "PFCOUNT", "PFMERGE",
                 // Bitmap

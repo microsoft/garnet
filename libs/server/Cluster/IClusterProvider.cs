@@ -29,9 +29,9 @@ namespace Garnet.server
         void FlushConfig();
 
         /// <summary>
-        /// Get gossip info
+        /// Get gossip stats
         /// </summary>
-        void GetGossipInfo(MetricsItem[] statsInfo, int startOffset, bool metricsDisabled);
+        MetricsItem[] GetGossipStats(bool metricsDisabled);
 
         /// <summary>
         /// Get replication info
