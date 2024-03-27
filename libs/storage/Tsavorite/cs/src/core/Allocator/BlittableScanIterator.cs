@@ -35,8 +35,8 @@ namespace Tsavorite.core
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
         internal BlittableScanIterator(TsavoriteKV<Key, Value> store, BlittableAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode,
-                LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits, logger: logger)
+                bool includeSealedRecords, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
@@ -49,7 +49,7 @@ namespace Tsavorite.core
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
         internal BlittableScanIterator(TsavoriteKV<Key, Value> store, BlittableAllocator<Key, Value> hlog, ITsavoriteEqualityComparer<Key> comparer, long beginAddress, LightEpoch epoch, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, epoch, hlog.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
@@ -131,7 +131,8 @@ namespace Tsavorite.core
                 nextAddress = currentAddress + recordSize;
 
                 recordInfo = hlog.GetInfo(physicalAddress);
-                if (recordInfo.SkipOnScan || recordInfo.IsNull())
+                bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                if (skipOnScan || recordInfo.IsNull())
                 {
                     epoch?.Suspend();
                     continue;
