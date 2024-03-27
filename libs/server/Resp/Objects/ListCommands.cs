@@ -252,7 +252,7 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-            
+
             // Move input head, write result to output
             readHead = (int)(ptr - recvBufferPtr);
 
