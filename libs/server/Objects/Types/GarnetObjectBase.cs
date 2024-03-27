@@ -47,6 +47,7 @@ namespace Garnet.server
                 if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
                 {
                     // Directly serialize to wire, do not cache serialized state
+                    writer.Write(Type);
                     DoSerialize(writer);
                     serializationState = (int)SerializationPhase.REST;
                     return;
@@ -55,9 +56,11 @@ namespace Garnet.server
                 if (serializationState == (int)SerializationPhase.SERIALIZED)
                 {
                     // If serialized state is cached, use that
-                    if (serialized != null)
+                    var _serialized = serialized;
+                    if (_serialized != null)
                     {
-                        writer.Write(serialized);
+                        writer.Write(Type);
+                        writer.Write(_serialized);
                     }
                     else
                     {
