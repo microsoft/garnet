@@ -24,8 +24,8 @@ namespace Tsavorite.test
             // where HashBucket contains its own array of entries.
 
             var allocator = new MallocFixedPageSize<HashBucket>();
-            Assert.IsTrue(allocator.IsPinned);  // HashBucket is a struct containing no managed types, so can be pinned
-            var chunkSize = allocMode == AllocMode.Single ? 1 : MallocFixedPageSize<IHeapContainer<Value>>.kAllocateChunkSize;
+            Assert.IsTrue(MallocFixedPageSize<HashBucket>.IsBlittable);  // HashBucket is a blittable struct, so it can be pinned
+            var chunkSize = allocMode == AllocMode.Single ? 1 : MallocFixedPageSize<IHeapContainer<Value>>.AllocateChunkSize;
             var numChunks = 2 * allocator.GetPageSize() / chunkSize;
 
             for (var iter = 0; iter < 2; ++iter)
@@ -86,8 +86,8 @@ namespace Tsavorite.test
             // Bulk:    Value[kAllocateChunkSize]
 
             var allocator = new MallocFixedPageSize<IHeapContainer<Value>>();
-            Assert.IsFalse(allocator.IsPinned); // IHeapContainer itself prevents pinning, regardless of its <T>
-            var chunkSize = allocMode == AllocMode.Single ? 1 : MallocFixedPageSize<IHeapContainer<Value>>.kAllocateChunkSize;
+            Assert.IsFalse(MallocFixedPageSize<IHeapContainer<Value>>.IsBlittable); // IHeapContainer itself prevents pinning, regardless of its <T>
+            var chunkSize = allocMode == AllocMode.Single ? 1 : MallocFixedPageSize<IHeapContainer<Value>>.AllocateChunkSize;
             var numChunks = 2 * allocator.GetPageSize() / chunkSize;
 
             for (var iter = 0; iter < 2; ++iter)
