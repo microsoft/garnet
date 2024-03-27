@@ -62,6 +62,7 @@ namespace Garnet.server
 
             var replayAofStoreWrapper = new StoreWrapper(
                 storeWrapper.version,
+                storeWrapper.redisProtocolVersion,
                 null,
                 storeWrapper.store,
                 storeWrapper.objectStore,
