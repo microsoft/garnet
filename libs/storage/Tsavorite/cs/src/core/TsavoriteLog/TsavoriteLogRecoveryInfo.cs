@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -70,44 +71,52 @@ namespace Tsavorite.core
         /// <summary>
         /// Initialize from stream
         /// </summary>
-        /// <param name="reader"></param>
-        public void Initialize(BinaryReader reader)
+        /// <param name="input"></param>
+        public void Initialize(ReadOnlySpan<byte> input)
         {
-            int version;
-            long checkSum;
-            try
+            int version = BinaryPrimitives.ReadInt32LittleEndian(input);
+            input = input.Slice(sizeof(int));
+
+            long checkSum = BinaryPrimitives.ReadInt64LittleEndian(input);
+            input = input.Slice(sizeof(long));
+
+            BeginAddress = BinaryPrimitives.ReadInt64LittleEndian(input);
+            input = input.Slice(sizeof(long));
+
+            UntilAddress = BinaryPrimitives.ReadInt64LittleEndian(input);
+            input = input.Slice(sizeof(long));
+
+            if (version > 0)
             {
-                version = reader.ReadInt32();
-                checkSum = reader.ReadInt64();
-                BeginAddress = reader.ReadInt64();
-                UntilAddress = reader.ReadInt64();
-                if (version > 0)
-                    CommitNum = reader.ReadInt64();
-                else
-                    CommitNum = -1;
+                CommitNum = BinaryPrimitives.ReadInt64LittleEndian(input);
+                input = input.Slice(sizeof(long));
             }
-            catch (Exception e)
+            else
             {
-                throw new TsavoriteException("Unable to recover from previous commit. Inner exception: " + e.ToString());
+                CommitNum = -1;
             }
+
             if (version < 0 || version > TsavoriteLogRecoveryVersion)
                 throw new TsavoriteException("Invalid version found during commit recovery");
 
-            var iteratorCount = 0;
-            try
-            {
-                iteratorCount = reader.ReadInt32();
-            }
-            catch { }
+            if (BinaryPrimitives.TryReadInt32LittleEndian(input, out var iteratorCount))
+                input = input.Slice(sizeof(int));
 
             if (iteratorCount > 0)
             {
-                Iterators = new Dictionary<string, long>();
-                for (int i = 0; i < iteratorCount; i++)
+                Iterators = new Dictionary<string, long>(iteratorCount);
+                for (var i = 0; i < iteratorCount; i++)
                 {
-                    int len = reader.ReadInt32();
-                    byte[] bytes = reader.ReadBytes(len);
-                    Iterators.Add(Encoding.UTF8.GetString(bytes), reader.ReadInt64());
+                    var keyLength = BinaryPrimitives.ReadInt32LittleEndian(input);
+                    input = input.Slice(sizeof(int));
+
+                    var iteratorKey = Encoding.UTF8.GetString(input.Slice(0, keyLength));
+                    input = input.Slice(keyLength);
+
+                    var iteratorValue = BinaryPrimitives.ReadInt64LittleEndian(input);
+                    input = input.Slice(sizeof(long));
+
+                    Iterators.Add(iteratorKey, iteratorValue);
                 }
             }
 
@@ -115,15 +124,12 @@ namespace Tsavorite.core
             long cookieChecksum = 0;
             if (version >= TsavoriteLogRecoveryVersion)
             {
-                try
-                {
-                    cookieLength = reader.ReadInt32();
-                }
-                catch { }
+                if (BinaryPrimitives.TryReadInt32LittleEndian(input, out cookieLength))
+                    input = input.Slice(sizeof(int));
 
                 if (cookieLength >= 0)
                 {
-                    Cookie = reader.ReadBytes(cookieLength);
+                    Cookie = input.Slice(0, cookieLength).ToArray();
                     unsafe
                     {
                         fixed (byte* ptr = Cookie)
