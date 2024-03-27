@@ -51,34 +51,6 @@ namespace Bitmap
             return (long)count;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static byte popc(ulong x)
-        {
-            ulong y = x;
-            y = (y & 0x5555555555555555) + ((y >> 1) & 0x5555555555555555);
-            y = (y & 0x3333333333333333) + ((y >> 2) & 0x3333333333333333);
-            y = (y & 0x0F0F0F0F0F0F0F0F) + ((y >> 4) & 0x0F0F0F0F0F0F0F0F);
-            y = (y & 0x007F007F007F007F) + ((y >> 8) & 0x007F007F007F007F);
-            y = (y & 0x0000007F0000007F) + ((y >> 16) & 0x0000007F0000007F);
-            y = (y & 0x000000000000007F) + ((y >> 32) & 0x000000000000007F);
-            return (byte)(y & 0x7F);
-        }
-
-        private static int popc(int v)
-        {
-            v = v - ((v >> 1) & 0x55555555);
-            v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
-            return ((v + (v >> 4) & 0xF0F0F0F) * 0x1010101) >> 24;
-        }
-
-        //private static Vector128<int> popc(Vector128<int> v)
-        //{
-        //    v = Sse42.Subtract(v,Sse42.And(Sse42.ShiftRightLogical(v, 1), Vector128.Create(0x55555555)));
-        //    v = Sse42.Add(Sse42.And(v, Vector128.Create(0x33333333)),Sse42.And(Sse42.ShiftRightLogical(v,2), Vector128.Create(0x33333333)));           
-        //    //return Sse42.Multiply(Sse42.Add(v, Sse42.And(Sse42.ShiftLeftLogical(v, 4), Vector128.Create(0xF0F0F0F))), Vector128.Create(0x1010101))
-        //    //return Sse42.ShiftRightLogical(Sse42.Multiply(Sse42.Add(v, Sse42.And(Sse42.ShiftLeftLogical(v, 4), Vector128.Create(0xF0F0F0F))),Vector128.Create(0x1010101)), 24);
-        //}
-
         private static long __scalar_popc(byte* bitmap, int start, int end)
         {
             ulong count = 0;
@@ -91,17 +63,11 @@ namespace Bitmap
             #region popc_4x8
             while (curr < vend)
             {
-#if NET5_0_OR_GREATER
                 ulong v00 = Popcnt.X64.PopCount(*(ulong*)(curr));
                 ulong v01 = Popcnt.X64.PopCount(*(ulong*)(curr + 8));
                 ulong v02 = Popcnt.X64.PopCount(*(ulong*)(curr + 16));
                 ulong v03 = Popcnt.X64.PopCount(*(ulong*)(curr + 24));
-#else
-                ulong v00 = popc(*(ulong*)(curr));
-                ulong v01 = popc(*(ulong*)(curr + 8));
-                ulong v02 = popc(*(ulong*)(curr + 16));
-                ulong v03 = popc(*(ulong*)(curr + 24));
-#endif
+
                 v00 = v00 + v01;
                 v02 = v02 + v03;
                 count += v00 + v02;
@@ -116,11 +82,7 @@ namespace Bitmap
             vend = curr + (len - (len & tail));
             while (curr < vend)
             {
-#if NET5_0_OR_GREATER                
                 count += Popcnt.X64.PopCount(*(ulong*)(curr));
-#else
-                count += popc(*(ulong*)(curr));
-#endif
                 curr += batchSize;
             }
 
@@ -132,11 +94,8 @@ namespace Bitmap
             if (tail >= 3) tt |= (ulong)(((ulong)curr[2]) << 16);
             if (tail >= 2) tt |= (ulong)(((ulong)curr[1]) << 8);
             if (tail >= 1) tt |= (ulong)(((ulong)curr[0]));
-#if NET5_0_OR_GREATER   
+
             count += Popcnt.X64.PopCount(tt);
-#else
-            count += popc(tt);
-#endif
             #endregion
 
             return (long)count;
