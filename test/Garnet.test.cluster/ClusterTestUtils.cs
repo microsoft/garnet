@@ -115,7 +115,7 @@ namespace Garnet.test.cluster
         public RedisResult Execute(IPEndPoint endPoint, string cmd, ICollection<object> args, bool skipLogging = false, ILogger logger = null)
         {
             if (!skipLogging)
-                logger?.LogInformation("({address}:{port}) > {cmd} {args}", endPoint.Address, endPoint.Port, cmd, String.Join(' ', args));
+                logger?.LogInformation("({address}:{port}) > {cmd} {args}", endPoint.Address, endPoint.Port, cmd, string.Join(' ', args));
             try
             {
                 var server = GetServer(endPoint);
@@ -124,7 +124,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error occurred {cmd} {msg}", cmd, ex.Message);
+                logger?.LogError(ex, "An error occured {cmd} {msg}", cmd, ex.Message);
                 return RedisResult.Create((RedisValue)ex.Message);
             }
         }
@@ -134,14 +134,14 @@ namespace Garnet.test.cluster
 
         public string NodesMyself(IPEndPoint endPoint, ClusterInfoTag tag, ILogger logger)
         {
-            var nodeConfigInfo = String.Empty;
+            var nodeConfigInfo = string.Empty;
             var nodeConfigStr = (string)NodesV2(endPoint, logger);
             if (nodeConfigStr != null)
             {
                 var lines = nodeConfigStr.ToString().Split('\n');
                 var properties = lines[0].ToString().Split(' ');
                 int index = (int)tag;
-                nodeConfigInfo = index < properties.Length ? properties[index].Trim() : String.Empty;
+                nodeConfigInfo = index < properties.Length ? properties[index].Trim() : string.Empty;
             }
             return nodeConfigInfo;
         }
@@ -161,7 +161,7 @@ namespace Garnet.test.cluster
                 {
                     var tag = tags[i];
                     int index = (int)tag;
-                    nodeConfigInfo[i] = index < properties.Length ? properties[index].Trim() : String.Empty;
+                    nodeConfigInfo[i] = index < properties.Length ? properties[index].Trim() : string.Empty;
                 }
             }
             return nodeConfigInfo;
@@ -174,18 +174,18 @@ namespace Garnet.test.cluster
             if (nodeConfigStr != null)
             {
                 var lines = nodeConfigStr.ToString().Split('\n');
-                for (int i = 0; i < lines.Length; i++)
+                for (var i = 0; i < lines.Length; i++)
                 {
                     var properties = lines[i].ToString().Split(' ');
                     if (nodeid != null && !nodeid.Equals(properties[0].Trim()))
                         continue;
 
                     nodeConfigInfo.Add(new string[tags.Length]);
-                    for (int j = 0; j < tags.Length; j++)
+                    for (var j = 0; j < tags.Length; j++)
                     {
                         var tag = tags[j];
-                        int index = (int)tag;
-                        nodeConfigInfo[^1][j] = index < properties.Length ? properties[index].Trim() : String.Empty;
+                        var index = (int)tag;
+                        nodeConfigInfo[^1][j] = index < properties.Length ? properties[index].Trim() : string.Empty;
                     }
                 }
             }
@@ -229,7 +229,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred");
+                logger?.LogError(ex, "An error has occured");
                 return null;
             }
         }
@@ -346,7 +346,7 @@ namespace Garnet.test.cluster
             var shards = new List<ShardInfo>();
             var slots = new List<ushort>();
 
-            //Assign slots to primaries
+            // Assign slots to primaries
             for (int i = 0; i < slotRanges.Length; i++)
             {
                 foreach (var slotRange in slotRanges[i])
@@ -436,7 +436,7 @@ namespace Garnet.test.cluster
                     j = (j + 1) % primary_count;
                 }
 
-                //WaitForReplicas to connect
+                // WaitForReplicas to connect
                 j = 0;
                 for (int i = 0; i < primary_count; i++)
                 {
@@ -496,8 +496,8 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     var address = tokens[5].Split(':')[0];
-                    var port = Int32.Parse(tokens[5].Split(':')[1]);
-                    var slot = Int32.Parse(tokens[8]);
+                    var port = int.Parse(tokens[5].Split(':')[1]);
+                    var slot = int.Parse(tokens[8]);
                     var responseState = ResponseState.MOVED;
 
                     return new ClusterResponse(address, port, slot, responseState, RedisResult.Create(ex.Message, ResultType.Error));
@@ -505,8 +505,8 @@ namespace Garnet.test.cluster
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     var address = tokens[1].Split(':')[0];
-                    var port = Int32.Parse(tokens[1].Split(':')[1]);
-                    var slot = Int32.Parse(tokens[4]);
+                    var port = int.Parse(tokens[1].Split(':')[1]);
+                    var slot = int.Parse(tokens[4]);
                     var responseState = ResponseState.ASK;
                     return new ClusterResponse(address, port, slot, responseState, RedisResult.Create(ex.Message, ResultType.Error));
                 }
@@ -969,7 +969,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred");
+                logger?.LogError(ex, "An error has occured");
             }
         }
 
@@ -1000,7 +1000,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred");
+                logger?.LogError(ex, "An error has occured");
                 Assert.Fail(ex.Message);
             }
         }
@@ -1020,7 +1020,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred");
+                logger?.LogError(ex, "An error has occured");
                 Assert.Fail(ex.Message);
             }
         }
@@ -1105,7 +1105,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred");
+                logger?.LogError(ex, "An error has occured");
                 Assert.Fail(ex.Message);
             }
         }
@@ -1123,7 +1123,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred");
+                logger?.LogError(ex, "An error has occured");
                 Assert.Fail(ex.Message);
             }
         }
@@ -1141,7 +1141,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred");
+                logger?.LogError(ex, "An error has occured");
                 Assert.Fail(ex.Message);
                 return null;
             }
@@ -1186,7 +1186,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred");
+                logger?.LogError(ex, "An error has occured");
                 Assert.Fail(ex.Message);
                 return null;
             }
@@ -1324,7 +1324,7 @@ namespace Garnet.test.cluster
                 }
                 return 0;
             }
-            return ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : 0;
+            return ResultType.Integer == result.Type ? int.Parse(result.ToString()) : 0;
         }
 
         public int CountKeysInSlot(int nodeIndex, int slot, ILogger logger = null)
@@ -1398,11 +1398,11 @@ namespace Garnet.test.cluster
                 for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
                     var range = nodeInfo[i].Split('-');
-                    ushort slotStart = UInt16.Parse(range[0]);
+                    ushort slotStart = ushort.Parse(range[0]);
                     ushort slotEnd;
                     if (range.Length > 1)
                     {
-                        slotEnd = UInt16.Parse(range[1]);
+                        slotEnd = ushort.Parse(range[1]);
                         slots.AddRange(Enumerable.Range(slotStart, slotEnd - slotStart + 1));
                     }
                     else
@@ -1435,15 +1435,15 @@ namespace Garnet.test.cluster
                 for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
                     var range = nodeInfo[i].Split('-');
-                    ushort slotStart = UInt16.Parse(range[0]);
+                    ushort slotStart = ushort.Parse(range[0]);
                     ushort slotEnd;
                     if (range.Length > 1)
                     {
-                        slotEnd = UInt16.Parse(range[1]);
+                        slotEnd = ushort.Parse(range[1]);
                         if (slot >= slotStart && slot <= slotEnd)
                         {
                             var portStr = nodeInfo[(int)ClusterInfoTag.ADDRESS].Split('@')[0].Split(':')[1];
-                            return Int32.Parse(portStr);
+                            return int.Parse(portStr);
                         }
                     }
                     else
@@ -1451,7 +1451,7 @@ namespace Garnet.test.cluster
                         if (slot == slotStart)
                         {
                             var portStr = nodeInfo[(int)ClusterInfoTag.ADDRESS].Split('@')[0].Split(':')[1];
-                            return Int32.Parse(portStr);
+                            return int.Parse(portStr);
                         }
                     }
                 }
@@ -1475,14 +1475,14 @@ namespace Garnet.test.cluster
             {
                 var nodeConfig = Nodes(ref connections[j])[0];
                 var nodeInfo = nodeConfig.Split(' ');
-                for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
+                for (var i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
                     var range = nodeInfo[i].Split('-');
-                    ushort slotStart = UInt16.Parse(range[0]);
-                    ushort slotEnd;
+                    var slotStart = ushort.Parse(range[0]);
+                    int slotEnd;
                     if (range.Length > 1)
                     {
-                        slotEnd = UInt16.Parse(range[1]);
+                        slotEnd = ushort.Parse(range[1]);
                         if (slot >= slotStart && slot <= slotEnd)
                         {
                             return j;
@@ -1502,18 +1502,18 @@ namespace Garnet.test.cluster
 
         public int GetSourceNodeIndexFromSlot(ushort slot, ILogger logger)
         {
-            for (int j = 0; j < endpoints.Count; j++)
+            for (var j = 0; j < endpoints.Count; j++)
             {
                 var nodeConfig = Nodes((IPEndPoint)endpoints[j], logger)[0];
                 var nodeInfo = nodeConfig.Split(' ');
-                for (int i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
+                for (var i = (int)ClusterInfoTag.SLOT; i < nodeInfo.Length; i++)
                 {
                     var range = nodeInfo[i].Split('-');
-                    ushort slotStart = UInt16.Parse(range[0]);
+                    var slotStart = ushort.Parse(range[0]);
                     ushort slotEnd;
                     if (range.Length > 1)
                     {
-                        slotEnd = UInt16.Parse(range[1]);
+                        slotEnd = ushort.Parse(range[1]);
                         if (slot >= slotStart && slot <= slotEnd)
                         {
                             return j;
@@ -1535,9 +1535,9 @@ namespace Garnet.test.cluster
         {
             var strResp = Encoding.ASCII.GetString(resp);
             var data = strResp.Split(' ');
-            slot = Int32.Parse(data[1]);
+            slot = int.Parse(data[1]);
             address = data[2].Split(':')[0];
-            port = Int32.Parse(data[2].Split(':')[1].Split('\r')[0]);
+            port = int.Parse(data[2].Split(':')[1].Split('\r')[0]);
         }
 
         public string AddDelSlots(int nodeIndex, List<int> slots, bool addslot, ILogger logger = null)
@@ -1561,7 +1561,7 @@ namespace Garnet.test.cluster
 
         public string AddDelSlotsRange(int nodeIndex, List<(int, int)> ranges, bool addslot, ILogger logger = null)
         {
-            var endPoint = ((IPEndPoint)endpoints[nodeIndex]);
+            var endPoint = (IPEndPoint)endpoints[nodeIndex];
             var server = redis.GetServer(endPoint);
             var objects = ranges.SelectMany(x => new List<object> { (object)x.Item1, (object)x.Item2 }).ToList();
             objects.Insert(0, addslot ? "addslotsrange" : "delslotsrange");
@@ -1682,7 +1682,7 @@ namespace Garnet.test.cluster
             try
             {
                 var result = server.Execute("cluster", "MTASKS");
-                return Int32.Parse((string)result);
+                return int.Parse((string)result);
             }
             catch (Exception ex)
             {
@@ -1775,7 +1775,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; ClusterSlots");
+                logger?.LogError(ex, "An error has occured; ClusterSlots");
                 Assert.Fail(ex.Message);
                 return null;
             }
@@ -1798,7 +1798,7 @@ namespace Garnet.test.cluster
             {
                 if (failEx)
                 {
-                    logger?.LogError(ex, "An error has occurred; ClusterReplicate");
+                    logger?.LogError(ex, "An error has occured; ClusterReplicate");
                     Assert.Fail(ex.Message);
                 }
                 return ex.Message;
@@ -1820,7 +1820,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; ClusterFailover");
+                logger?.LogError(ex, "An error has occured; ClusterFailover");
                 Assert.Fail(ex.Message);
                 return ex.Message;
             }
@@ -1847,7 +1847,7 @@ namespace Garnet.test.cluster
             {
                 if (failEx)
                 {
-                    logger?.LogError("An error has occurred; ReplicaOf {msg}", ex.Message);
+                    logger?.LogError("An error has occured; ReplicaOf {msg}", ex.Message);
                     Assert.Fail(ex.Message);
                 }
                 return ex.Message;
@@ -1873,7 +1873,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; ClusterForget");
+                logger?.LogError(ex, "An error has occured; ClusterForget");
                 Assert.Fail(ex.Message);
                 return ex.Message;
             }
@@ -1899,7 +1899,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; ClusterReset");
+                logger?.LogError(ex, "An error has occured; ClusterReset");
                 Assert.Fail(ex.Message);
                 return ex.Message;
             }
@@ -1917,7 +1917,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; ClusterNodes");
+                logger?.LogError(ex, "An error has occured; ClusterNodes");
                 Assert.Fail();
                 return null;
             }
@@ -2002,7 +2002,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; ClusterShards");
+                logger?.LogError(ex, "An error has occured; ClusterShards");
                 Assert.Fail(ex.Message);
                 return null;
             }
@@ -2039,15 +2039,15 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     address = tokens[5].Split(':')[0];
-                    port = Int32.Parse(tokens[5].Split(':')[1]);
-                    slot = Int32.Parse(tokens[8]);
+                    port = int.Parse(tokens[5].Split(':')[1]);
+                    slot = int.Parse(tokens[8]);
                     return ResponseState.MOVED;
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     address = tokens[1].Split(':')[0];
-                    port = Int32.Parse(tokens[1].Split(':')[1]);
-                    slot = Int32.Parse(tokens[4]);
+                    port = int.Parse(tokens[1].Split(':')[1]);
+                    slot = int.Parse(tokens[4]);
                     return ResponseState.ASK;
                 }
                 else if (e.Message.StartsWith("CLUSTERDOWN"))
@@ -2098,24 +2098,24 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     address = tokens[5].Split(':')[0];
-                    port = Int32.Parse(tokens[5].Split(':')[1]);
-                    slot = Int32.Parse(tokens[8]);
+                    port = int.Parse(tokens[5].Split(':')[1]);
+                    slot = int.Parse(tokens[8]);
                     responseState = ResponseState.MOVED;
                     return "MOVED";
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     address = tokens[1].Split(':')[0];
-                    port = Int32.Parse(tokens[1].Split(':')[1]);
-                    slot = Int32.Parse(tokens[4]);
+                    port = int.Parse(tokens[1].Split(':')[1]);
+                    slot = int.Parse(tokens[4]);
                     responseState = ResponseState.ASK;
                     return "ASK";
                 }
                 else if (tokens[0].Equals("ASK"))
                 {
                     address = tokens[2].Split(':')[0];
-                    port = Int32.Parse(tokens[2].Split(':')[1]);
-                    slot = Int32.Parse(tokens[1]);
+                    port = int.Parse(tokens[2].Split(':')[1]);
+                    slot = int.Parse(tokens[1]);
                     responseState = ResponseState.ASK;
                     return "ASK";
                 }
@@ -2138,7 +2138,7 @@ namespace Garnet.test.cluster
             var server = GetServer(nodeIndex);
 
             ICollection<object> args = new List<object>();
-            for (int i = 0; i < keys.Count; i++)
+            for (var i = 0; i < keys.Count; i++)
             {
                 args.Add(keys[i]);
                 args.Add(values[i]);
@@ -2154,15 +2154,15 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     address = tokens[5].Split(':')[0];
-                    port = Int32.Parse(tokens[5].Split(':')[1]);
-                    slot = Int32.Parse(tokens[8]);
+                    port = int.Parse(tokens[5].Split(':')[1]);
+                    slot = int.Parse(tokens[8]);
                     return "MOVED";
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     address = tokens[1].Split(':')[0];
-                    port = Int32.Parse(tokens[1].Split(':')[1]);
-                    slot = Int32.Parse(tokens[4]);
+                    port = int.Parse(tokens[1].Split(':')[1]);
+                    slot = int.Parse(tokens[4]);
                     return "ASK";
                 }
 
@@ -2201,15 +2201,15 @@ namespace Garnet.test.cluster
                 if (tokens.Length > 10 && tokens[2].Equals("MOVED"))
                 {
                     address = tokens[5].Split(':')[0];
-                    port = Int32.Parse(tokens[5].Split(':')[1]);
-                    slot = Int32.Parse(tokens[8]);
+                    port = int.Parse(tokens[5].Split(':')[1]);
+                    slot = int.Parse(tokens[8]);
                     return "MOVED";
                 }
                 else if (tokens.Length > 10 && tokens[0].Equals("Endpoint"))
                 {
                     address = tokens[1].Split(':')[0];
-                    port = Int32.Parse(tokens[1].Split(':')[1]);
-                    slot = Int32.Parse(tokens[4]);
+                    port = int.Parse(tokens[1].Split(':')[1]);
+                    slot = int.Parse(tokens[4]);
                     return "ASK";
                 }
 
@@ -2327,7 +2327,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; GetStoreRecoveredAofAddress");
+                logger?.LogError(ex, "An error has occured; GetStoreRecoveredAofAddress");
                 Assert.Fail(ex.Message);
                 return 0;
             }
@@ -2345,7 +2345,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; GetObjectStoreCurrentAofAddress");
+                logger?.LogError(ex, "An error has occured; GetObjectStoreCurrentAofAddress");
                 Assert.Fail(ex.Message);
                 return 0;
             }
@@ -2363,7 +2363,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; GetObjectStoreRecoveredAofAddress");
+                logger?.LogError(ex, "An error has occured; GetObjectStoreRecoveredAofAddress");
                 Assert.Fail(ex.Message);
                 return 0;
             }
@@ -2381,7 +2381,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; GetReplicationOffset");
+                logger?.LogError(ex, "An error has occured; GetReplicationOffset");
                 Assert.Fail(ex.Message);
                 return 0;
             }
@@ -2398,7 +2398,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; GetReplicationRole");
+                logger?.LogError(ex, "An error has occured; GetReplicationRole");
                 Assert.Fail(ex.Message);
                 return null;
             }
@@ -2416,7 +2416,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; GetReplicationOffset");
+                logger?.LogError(ex, "An error has occured; GetReplicationOffset");
                 Assert.Fail(ex.Message);
                 return 0;
             }
@@ -2472,7 +2472,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; GetReplicationInfo");
+                logger?.LogError(ex, "An error has occured; GetReplicationInfo");
                 Assert.Fail(ex.Message);
             }
             return null;
@@ -2623,7 +2623,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; StoreWrapper.Checkpoint");
+                logger?.LogError(ex, "An error has occured; StoreWrapper.Checkpoint");
                 Assert.Fail();
             }
         }
@@ -2640,7 +2640,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; WaitCheckpoint");
+                logger?.LogError(ex, "An error has occured; WaitCheckpoint");
                 Assert.Fail();
             }
         }
@@ -2657,7 +2657,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; IncrBy");
+                logger?.LogError(ex, "An error has occured; IncrBy");
                 Assert.Fail();
             }
             return -1;
@@ -2720,7 +2720,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occurred; AclLoad");
+                logger?.LogError(ex, "An error has occured; AclLoad");
                 Assert.Fail();
             }
         }

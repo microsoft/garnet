@@ -13,24 +13,6 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal enum ClusterOp : byte
-    {
-        MIGRATION,
-    }
-
-    internal class WorkerComparer : IEqualityComparer<Worker>
-    {
-        public bool Equals(Worker a, Worker b)
-        {
-            return a.nodeid.Equals(b.nodeid);
-        }
-
-        public int GetHashCode(Worker key)
-        {
-            return key.nodeid.GetHashCode();
-        }
-    }
-
     /// <summary>
     /// Cluster manager
     /// </summary>
@@ -78,9 +60,9 @@ namespace Garnet.cluster
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
-            string address = opts.Address ?? StoreWrapper.GetIp();
+            var address = opts.Address ?? StoreWrapper.GetIp();
             logger = loggerFactory?.CreateLogger($"ClusterManager-{address}:{opts.Port}");
-            bool recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !opts.CleanClusterConfig;
+            var recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !opts.CleanClusterConfig;
 
             tlsOptions = opts.TlsOptions;
             if (!opts.CleanClusterConfig)
@@ -91,9 +73,9 @@ namespace Garnet.cluster
             if (recoverConfig)
             {
                 logger?.LogTrace("Recover cluster config from disk");
-                byte[] config = ClusterUtils.ReadDevice(clusterConfigDevice, pool, logger);
+                var config = ClusterUtils.ReadDevice(clusterConfigDevice, pool, logger);
                 currentConfig = ClusterConfig.FromByteArray(config);
-                //Used to update endpoint if it change when running inside a container.
+                // Used to update endpoint if it change when running inside a container.
                 if (address != currentConfig.GetLocalNodeIp() || opts.Port != currentConfig.GetLocalNodePort())
                 {
                     logger?.LogInformation(
@@ -117,7 +99,7 @@ namespace Garnet.cluster
             gossipDelay = TimeSpan.FromSeconds(opts.GossipDelay);
             clusterTimeout = opts.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(opts.ClusterTimeout);
             numActiveTasks = 0;
-            this.GossipSamplePercent = opts.GossipSamplePercent;
+            GossipSamplePercent = opts.GossipSamplePercent;
         }
 
         /// <summary>
@@ -198,7 +180,7 @@ namespace Garnet.cluster
         public string GetInfo()
         {
             var current = CurrentConfig;
-            string ClusterInfo = $"" +
+            var ClusterInfo = $"" +
                 $"cluster_state:ok\r\n" +
                 $"cluster_slots_assigned:{current.GetSlotCountForState(SlotState.STABLE)}\r\n" +
                 $"cluster_slots_ok:{current.GetSlotCountForState(SlotState.STABLE)}\r\n" +
@@ -215,10 +197,10 @@ namespace Garnet.cluster
 
         private static string GetRange(List<int> slots)
         {
-            string range = "> ";
-            int start = slots[0];
-            int end = slots[0];
-            for (int i = 1; i < slots.Count + 1; i++)
+            var range = "> ";
+            var start = slots[0];
+            var end = slots[0];
+            for (var i = 1; i < slots.Count + 1; i++)
             {
                 if (i < slots.Count && slots[i] == end + 1)
                     end = slots[i];
@@ -276,21 +258,10 @@ namespace Garnet.cluster
             return true;
         }
 
-        public long TryBumpCurrentClusterEpoch()
-        {
-            long currentEpoch = 0;
-            while (true)
-            {
-                var current = currentConfig;
-                var newConfig = current.BumpLocalNodeCurrentConfigEpoch();
-                currentEpoch = newConfig.GetLocalNodeCurrentConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
-                    break;
-            }
-            FlushConfig();
-            return currentEpoch;
-        }
-
+        /// <summary>
+        /// Set local node role
+        /// </summary>
+        /// <param name="role">Role type</param>
         public void TrySetLocalNodeRole(NodeRole role)
         {
             while (true)
@@ -303,6 +274,9 @@ namespace Garnet.cluster
             FlushConfig();
         }
 
+        /// <summary>
+        /// Reset node to primary.
+        /// </summary>
         public void TryResetReplica()
         {
             while (true)
@@ -315,6 +289,10 @@ namespace Garnet.cluster
             FlushConfig();
         }
 
+        /// <summary>
+        /// Force this node to be a replica of given node-id
+        /// </summary>
+        /// <param name="replicaId">Node-id to replicate</param>
         public void TryStopWrites(string replicaId)
         {
             while (true)
@@ -327,6 +305,9 @@ namespace Garnet.cluster
             FlushConfig();
         }
 
+        /// <summary>
+        /// Takeover as new primary but forcefully claiming ownernship of old primary's slots.
+        /// </summary>
         public void TryTakeOverForPrimary()
         {
             while (true)
