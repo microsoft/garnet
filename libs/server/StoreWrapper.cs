@@ -709,6 +709,19 @@ namespace Garnet.server
                 appendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);
                 appendOnlyFile?.Commit();
             }
+
+            using (var iter1 = objectStore.Log.Scan(objectStore.Log.ReadOnlyAddress, objectStore.Log.TailAddress))
+            {
+                while (iter1.GetNext(out var recordInfo, out var key, out var value))
+                {
+                    GarnetObjectBase garnetObjectBase = (GarnetObjectBase)value;
+                    if (garnetObjectBase.serialized != null)
+                    {
+                        garnetObjectBase.serialized = null;
+                    }
+                }
+            }
+
             logger?.LogInformation("Completed checkpoint");
         }
     }

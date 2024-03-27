@@ -16,7 +16,7 @@ namespace Garnet.server
     public abstract class GarnetObjectBase : IGarnetObject
     {
         int serializationState;
-        byte[] serialized;
+        public byte[] serialized;
 
         /// <inheritdoc />
         public abstract byte Type { get; }
@@ -61,7 +61,7 @@ namespace Garnet.server
                         // We can safely delete the serialized image now, as there is
                         // guaranteed to be a new v+1 image of the object in memory.
                         // Because "serialized" was created during PostCopyUpdater
-                        serialized = null;
+                        //serialized = null;
                     }
                     else
                     {
