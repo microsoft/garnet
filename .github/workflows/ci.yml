@@ -44,6 +44,7 @@ jobs:
     needs: changes
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net6.0', 'net8.0' ]
@@ -58,6 +59,8 @@ jobs:
           dotnet-version: 8.0.x
       - name: Install dependencies
         run: dotnet restore
+      - name: Format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
       - name: Test Garnet
@@ -75,6 +78,7 @@ jobs:
     needs: changes
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net6.0', 'net8.0' ]
@@ -104,6 +108,8 @@ jobs:
           azurite &
       - name: Install dependencies
         run: dotnet restore
+      - name: Format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Tsavorite
         run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
       - name: Test Tsavorite
