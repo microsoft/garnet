@@ -9,7 +9,7 @@ Below is the full list of API commands and their implementation status in Garnet
 Note that this list is subject to change as we continue to expand our API command support with the help of our growing community.
 
 ### Command Categories
-1. [BITMAP](#bitmap)
+1. [BITMAP](/docs/commands/api-compatibility#bitmap)
 2. [CLUSTER](#cluster)
 3. [CONNECTION](#connection)
 4. [FUNCTIONS](#functions)
@@ -32,7 +32,7 @@ Note that this list is subject to change as we continue to expand our API comman
 
 | Category | Command | Implemented in Garnet | Notes |
 | ------------- | ------------- | ------------- | ------------- | 
-| <span class="anchor" id="bitmap">**BITMAP**</span> | [BITCOUNT](analytics.md#bitcount) | ➕ |  |
+| <span id="bitmap">**BITMAP**</span> | [BITCOUNT](analytics.md#bitcount) | ➕ |  |
 |  | [BITFIELD](analytics.md#bitfield) | ➕ |  |
 |  | BITFIELD_RO | ➖ |  |
 |  | [BITOP AND](analytics.md#bitop-and) | ➕ |  |
