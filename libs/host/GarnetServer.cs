@@ -45,6 +45,11 @@ namespace Garnet
         readonly string version = "1.0.1";
 
         /// <summary>
+        /// Resp protocol version
+        /// </summary>
+        readonly string redisProtocolVersion = "6.2.11";
+
+        /// <summary>
         /// Metrics API
         /// </summary>
         public MetricsApi Metrics;
@@ -269,7 +274,7 @@ namespace Garnet
                 server = new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, logger);
             }
 
-            storeWrapper = new StoreWrapper(version, server, store, objectStore, objectStoreSizeTracker, customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
+            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker, customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, kvBroker, broker);

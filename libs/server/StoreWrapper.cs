@@ -22,6 +22,7 @@ namespace Garnet.server
     public sealed class StoreWrapper
     {
         internal readonly string version;
+        internal readonly string redisProtocolVersion;
         readonly IGarnetServer server;
         internal readonly long startupTime;
 
@@ -96,6 +97,7 @@ namespace Garnet.server
         /// </summary>
         public StoreWrapper(
             string version,
+            string redisProtocolVersion,
             IGarnetServer server,
             TsavoriteKV<SpanByte, SpanByte> store,
             TsavoriteKV<byte[], IGarnetObject> objectStore,
@@ -109,6 +111,7 @@ namespace Garnet.server
             )
         {
             this.version = version;
+            this.redisProtocolVersion = redisProtocolVersion;
             this.server = server;
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
             this.store = store;

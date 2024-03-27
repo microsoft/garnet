@@ -85,15 +85,15 @@ namespace BDN.benchmark.Resp
 
         // All multiples of 10 from 10^-10 to 10^10
         public static int[] SignedInt32MultiplesOfTen => [
-            ..UnsignedInt32MultiplesOfTen.Select(n => n * -1),
-            ..UnsignedInt32MultiplesOfTen
+            .. UnsignedInt32MultiplesOfTen.Select(n => n * -1),
+            .. UnsignedInt32MultiplesOfTen
         ];
         public static int[] UnsignedInt32MultiplesOfTen => Enumerable.Range(0, 10).Select(n => (int)Math.Pow(10, n)).ToArray();
 
         // All multiples of 10 from 10^-19 to 10^19
         public static long[] SignedInt64MultiplesOfTen => [
-            ..UnsignedInt64MultiplesOfTen.Select(n => n * -1),
-            ..UnsignedInt64MultiplesOfTen
+            .. UnsignedInt64MultiplesOfTen.Select(n => n * -1),
+            .. UnsignedInt64MultiplesOfTen
         ];
         public static long[] UnsignedInt64MultiplesOfTen => Enumerable.Range(0, 19).Select(n => (long)Math.Pow(10, n)).ToArray();
 
