@@ -112,7 +112,7 @@ Integer reply: the number of keys that exist from those specified as arguments.
 
 ---
 
-### EXPIRE {#expire}
+### EXPIRE
 
 #### Syntax
 
@@ -272,7 +272,7 @@ Array reply: specifically, an array with two elements.
 
 ---
 
-### TTL {#ttl}
+### TTL
 
 #### Syntax
 

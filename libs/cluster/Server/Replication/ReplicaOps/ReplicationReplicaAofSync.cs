@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.IO;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 

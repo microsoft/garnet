@@ -430,7 +430,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var hashkey = "testWhenAlways";
 
-            db.KeyDelete(hashkey, CommandFlags.FireAndForget);
+            await db.KeyDeleteAsync(hashkey);
 
             var result1 = await db.HashSetAsync(hashkey, "foo", "bar", When.Always, CommandFlags.None);
             var result2 = await db.HashSetAsync(hashkey, "foo2", "bar", When.Always, CommandFlags.None);
