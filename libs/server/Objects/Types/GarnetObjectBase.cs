@@ -76,11 +76,20 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void CopyUpdate(ref IGarnetObject newValue)
+        public void CopyUpdate(ref IGarnetObject oldValue, ref IGarnetObject newValue, bool isInNewVersion)
         {
             newValue = Clone();
             newValue.Expiration = Expiration;
 
+            // If we are not currently taking a checkpoint, we can delete the old version
+            // since the new version of the object is already created.
+            if (!isInNewVersion)
+            {
+                oldValue = null;
+                return;
+            }
+
+            // Create a serialized version for checkpoint version (v)
             while (true)
             {
                 if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))

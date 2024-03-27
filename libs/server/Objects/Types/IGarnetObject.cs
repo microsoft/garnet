@@ -45,7 +45,7 @@ namespace Garnet.server
         /// <summary>
         /// Copy update
         /// </summary>
-        void CopyUpdate(ref IGarnetObject newValue);
+        void CopyUpdate(ref IGarnetObject oldValue, ref IGarnetObject newValue, bool isInNewVersion);
 
         /// <summary>
         /// Scan the items of the collection

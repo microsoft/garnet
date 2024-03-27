@@ -133,7 +133,7 @@ namespace Garnet.test
 
             public override bool CopyUpdater(ref byte[] key, ref IGarnetObject input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref IGarnetObject output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
-                oldValue.CopyUpdate(ref newValue);
+                oldValue.CopyUpdate(ref oldValue, ref newValue, false);
                 return true;
             }
         }
