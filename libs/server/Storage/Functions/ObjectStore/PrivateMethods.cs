@@ -23,7 +23,7 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             var header = (RespInputHeader*)input.ToPointer();
             header->flags |= RespInputFlags.Deterministic;
-            var valueBytes = functionsState.storeWrapper.SerializeGarnetObject(value);
+            var valueBytes = functionsState.garnetObjectSerializer.Serialize(value);
             fixed (byte* ptr = key)
             {
                 fixed (byte* valPtr = valueBytes)
