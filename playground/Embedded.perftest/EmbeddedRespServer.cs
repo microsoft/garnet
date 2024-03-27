@@ -32,6 +32,7 @@ namespace Embedded.perftest
             var tempStoreWrapper =
                 new StoreWrapper(
                     storeWrapper.version,
+                    storeWrapper.redisProtocolVersion,
                     null,
                     storeWrapper.store,
                     storeWrapper.objectStore,
