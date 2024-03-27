@@ -1218,6 +1218,15 @@ namespace Garnet.server
         GarnetStatus HashLength(ArgSlice key, out int count);
 
         /// <summary>
+        ///Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus HashStrLength(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+
+        /// <summary>
         /// Returns the number of fields contained in the hash Key.
         /// </summary>
         /// <param name="key"></param>
