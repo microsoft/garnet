@@ -713,15 +713,14 @@ namespace Garnet.server
                 appendOnlyFile?.Commit();
             }
 
-            using (var iter1 = objectStore.Log.Scan(objectStore.Log.ReadOnlyAddress, objectStore.Log.TailAddress))
+            if (objectStore != null)
             {
-                while (iter1.GetNext(out var recordInfo, out var key, out var value))
+                // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
+                // We can now safely remove these serialized versions as they are no longer needed.
+                using (var iter1 = objectStore.Log.Scan(objectStore.Log.ReadOnlyAddress, objectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering))
                 {
-                    GarnetObjectBase garnetObjectBase = (GarnetObjectBase)value;
-                    if (garnetObjectBase.serialized != null)
-                    {
-                        garnetObjectBase.serialized = null;
-                    }
+                    while (iter1.GetNext(out _, out _, out var value))
+                        ((GarnetObjectBase)value).serialized = null;
                 }
             }
 
