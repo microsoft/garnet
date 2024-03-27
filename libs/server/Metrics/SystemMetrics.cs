@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
-    internal class SystemMetrics
+    internal sealed class SystemMetrics
     {
         [DllImport("psapi.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
