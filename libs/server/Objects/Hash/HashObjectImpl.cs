@@ -148,6 +148,22 @@ namespace Garnet.server
             ((ObjectOutputHeader*)output)->countDone = hash.Count;
         }
 
+        private void HashStrLength(byte* input, int length, byte* output)
+        {
+            var _output = (ObjectOutputHeader*)output;
+
+            byte* startptr = input + sizeof(ObjectInputHeader);
+            byte* ptr = startptr;
+
+            *_output = default;
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, input + length))
+                return;
+
+            _output->opsDone = 1;
+            _output->countDone = hash.TryGetValue(key, out var _value) ? _value.Length : 0;
+            _output->bytesDone = (int)(ptr - startptr);
+        }
+
         private void HashExists(byte* input, int length, byte* output)
         {
             var _input = (ObjectInputHeader*)input;

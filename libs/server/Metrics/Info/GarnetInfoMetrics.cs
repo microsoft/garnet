@@ -177,6 +177,7 @@ namespace Garnet.server
                 var tmp = new MetricsItem[statsInfo.Length + gossipStats.Length];
                 Array.Copy(statsInfo, 0, tmp, 0, statsInfo.Length);
                 Array.Copy(gossipStats, 0, tmp, statsInfo.Length, gossipStats.Length);
+                statsInfo = tmp;
             }
         }
 

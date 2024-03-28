@@ -9,7 +9,7 @@ namespace Garnet.server
     public enum GarnetObjectType : byte
     {
         /// <summary>
-        /// Null type (placeholder)
+        /// Null type
         /// </summary>
         Null = 0,
         /// <summary>
@@ -30,7 +30,7 @@ namespace Garnet.server
         Set,
 
         /// <summary>
-        /// Special type indicating PERSIT command
+        /// Special type indicating PERSIST command
         /// </summary>
         Persist = 0xfd,
 

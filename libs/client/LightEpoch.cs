@@ -37,15 +37,9 @@ namespace Garnet.client
         /// </summary>
         Entry[] tableRaw;
         Entry* tableAligned;
-#if !NET5_0_OR_GREATER
-        GCHandle tableHandle;
-#endif
 
         static readonly Entry[] threadIndex;
         static readonly Entry* threadIndexAligned;
-#if !NET5_0_OR_GREATER
-        static GCHandle threadIndexHandle;
-#endif
 
         /// <summary>
         /// List of action, epoch pairs containing actions to performed 
@@ -96,17 +90,10 @@ namespace Garnet.client
         /// </summary>
         static LightEpoch()
         {
-            long p;
-
             // Over-allocate to do cache-line alignment
-#if NET5_0_OR_GREATER
             threadIndex = GC.AllocateArray<Entry>(kTableSize + 2, true);
-            p = (long)Unsafe.AsPointer(ref threadIndex[0]);
-#else
-            threadIndex = new Entry[kTableSize + 2];
-            threadIndexHandle = GCHandle.Alloc(threadIndex, GCHandleType.Pinned);
-            p = (long)threadIndexHandle.AddrOfPinnedObject();
-#endif
+            long p = (long)Unsafe.AsPointer(ref threadIndex[0]);
+
             // Force the pointer to align to 64-byte boundaries
             long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
             threadIndexAligned = (Entry*)p2;
@@ -117,17 +104,9 @@ namespace Garnet.client
         /// </summary>
         public LightEpoch()
         {
-            long p;
-
-#if NET5_0_OR_GREATER
             tableRaw = GC.AllocateArray<Entry>(kTableSize + 2, true);
-            p = (long)Unsafe.AsPointer(ref tableRaw[0]);
-#else
-            // Over-allocate to do cache-line alignment
-            tableRaw = new Entry[kTableSize + 2];
-            tableHandle = GCHandle.Alloc(tableRaw, GCHandleType.Pinned);
-            p = (long)tableHandle.AddrOfPinnedObject();
-#endif
+            long p = (long)Unsafe.AsPointer(ref tableRaw[0]);
+
             // Force the pointer to align to 64-byte boundaries
             long p2 = (p + (kCacheLineBytes - 1)) & ~(kCacheLineBytes - 1);
             tableAligned = (Entry*)p2;
@@ -145,9 +124,6 @@ namespace Garnet.client
         /// </summary>
         public void Dispose()
         {
-#if !NET5_0_OR_GREATER
-            tableHandle.Free();
-#endif
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
         }

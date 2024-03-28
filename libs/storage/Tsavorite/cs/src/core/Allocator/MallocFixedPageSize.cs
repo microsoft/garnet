@@ -9,7 +9,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -60,12 +59,10 @@ namespace Tsavorite.core
     /// Memory allocator for objects
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public class MallocFixedPageSize<T> : IDisposable
+    public sealed class MallocFixedPageSize<T> : IDisposable
     {
-        private const bool ForceUnpinnedAllocation = false;
-
         // We will never get an index of 0 from (Bulk)Allocate
-        internal const long kInvalidAllocationIndex = 0;
+        private const long InvalidAllocationIndex = 0;
 
         private const int PageSizeBits = 16;
         private const int PageSize = 1 << PageSizeBits;
@@ -76,21 +73,17 @@ namespace Tsavorite.core
         private readonly T[][] values = new T[LevelSize][];
         private readonly IntPtr[] pointers = new IntPtr[LevelSize];
 
-        private readonly int RecordSize;
-
         private volatile int writeCacheLevel;
 
         private volatile int count;
 
-        internal bool IsPinned => isPinned;
-        private readonly bool isPinned;
-
-        private const bool ReturnPhysicalAddress = false;
+        internal static int RecordSize => Unsafe.SizeOf<T>();
+        internal static bool IsBlittable => Utility.IsBlittable<T>();
 
         private int checkpointCallbackCount;
         private SemaphoreSlim checkpointSemaphore;
 
-        private ConcurrentQueue<long> freeList;
+        private readonly ConcurrentQueue<long> freeList;
 
         readonly ILogger logger;
 
@@ -99,7 +92,7 @@ namespace Tsavorite.core
         private AllocationMode allocationMode;
 #endif
 
-        const int sector_size = 512;
+        const int SectorSize = 512;
 
         private int initialAllocation = 0;
 
@@ -113,17 +106,11 @@ namespace Tsavorite.core
         {
             this.logger = logger;
             freeList = new ConcurrentQueue<long>();
-            if (ForceUnpinnedAllocation)
-                isPinned = false;
-            else
-                isPinned = Utility.IsBlittable<T>();
-            Debug.Assert(isPinned || !ReturnPhysicalAddress, "ReturnPhysicalAddress requires pinning");
 
-            values[0] = GC.AllocateArray<T>(PageSize + sector_size, isPinned);
-            if (isPinned)
+            values[0] = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
+            if (IsBlittable)
             {
-                pointers[0] = (IntPtr)(((long)Unsafe.AsPointer(ref values[0][0]) + (sector_size - 1)) & ~(sector_size - 1));
-                RecordSize = Marshal.SizeOf(values[0][0]);
+                pointers[0] = (IntPtr)(((long)Unsafe.AsPointer(ref values[0][0]) + (SectorSize - 1)) & ~(SectorSize - 1));
             }
 
 #if !(CALLOC)
@@ -136,24 +123,22 @@ namespace Tsavorite.core
             // Allocate one block so we never return a null pointer; this allocation is never freed.
             // Use BulkAllocate so the caller can still do either BulkAllocate or single Allocate().
             BulkAllocate();
-            initialAllocation = kAllocateChunkSize;
+            initialAllocation = AllocateChunkSize;
 #if DEBUG
             // Clear this for the next allocation.
-            this.allocationMode = AllocationMode.None;
+            allocationMode = AllocationMode.None;
 #endif
         }
 
         /// <summary>
-        /// Get physical address -- for Pinned only
+        /// Get physical address -- for blittable objects only
         /// </summary>
         /// <param name="logicalAddress">The logicalAddress of the allocation. For BulkAllocate, this may be an address within the chunk size, to reference that particular record.</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPhysicalAddress(long logicalAddress)
         {
-            Debug.Assert(isPinned, "GetPhysicalAddress requires pinning");
-            if (ReturnPhysicalAddress)
-                return logicalAddress;
+            Debug.Assert(IsBlittable, "GetPhysicalAddress requires the values to be blittable");
             return (long)pointers[logicalAddress >> PageSizeBits] + (logicalAddress & PageSizeMask) * RecordSize;
         }
 
@@ -165,10 +150,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe ref T Get(long index)
         {
-            if (ReturnPhysicalAddress)
-                throw new TsavoriteException("Physical pointer returned by allocator: de-reference pointer to get records instead of calling Get");
-            Debug.Assert(index != kInvalidAllocationIndex, "Invalid allocation index");
-            if (isPinned)
+            Debug.Assert(index != InvalidAllocationIndex, "Invalid allocation index");
+            if (IsBlittable)
                 return ref Unsafe.AsRef<T>((byte*)(pointers[index >> PageSizeBits]) + (index & PageSizeMask) * RecordSize);
             else
                 return ref values[index >> PageSizeBits][index & PageSizeMask];
@@ -182,10 +165,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void Set(long index, ref T value)
         {
-            if (ReturnPhysicalAddress)
-                throw new TsavoriteException("Physical pointer returned by allocator: de-reference pointer to set records instead of calling Set (otherwise, set ForceUnpinnedAllocation to true)");
-            Debug.Assert(index != kInvalidAllocationIndex, "Invalid allocation index");
-            if (isPinned)
+            Debug.Assert(index != InvalidAllocationIndex, "Invalid allocation index");
+            if (IsBlittable)
                 Unsafe.AsRef<T>((byte*)(pointers[index >> PageSizeBits]) + (index & PageSizeMask) * RecordSize) = value;
             else
                 values[index >> PageSizeBits][index & PageSizeMask] = value;
@@ -198,14 +179,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Free(long pointer)
         {
-            if (!ReturnPhysicalAddress)
-                Get(pointer) = default;
             freeList.Enqueue(pointer);
         }
 
         internal int FreeListCount => freeList.Count;   // For test
 
-        internal const int kAllocateChunkSize = 16;     // internal for test
+        internal const int AllocateChunkSize = 16;     // internal for test
 
         /// <summary>
         /// Allocate a block of size RecordSize * kAllocateChunkSize. 
@@ -217,10 +196,10 @@ namespace Tsavorite.core
         public unsafe long BulkAllocate()
         {
 #if DEBUG
-            Debug.Assert(this.allocationMode != AllocationMode.Single, "Cannot mix Single and Bulk allocation modes");
-            this.allocationMode = AllocationMode.Bulk;
+            Debug.Assert(allocationMode != AllocationMode.Single, "Cannot mix Single and Bulk allocation modes");
+            allocationMode = AllocationMode.Bulk;
 #endif
-            return InternalAllocate(kAllocateChunkSize);
+            return InternalAllocate(AllocateChunkSize);
         }
 
         /// <summary>
@@ -231,8 +210,8 @@ namespace Tsavorite.core
         public unsafe long Allocate()
         {
 #if DEBUG
-            Debug.Assert(this.allocationMode != AllocationMode.Bulk, "Cannot mix Single and Bulk allocation modes");
-            this.allocationMode = AllocationMode.Single;
+            Debug.Assert(allocationMode != AllocationMode.Bulk, "Cannot mix Single and Bulk allocation modes");
+            allocationMode = AllocationMode.Single;
 #endif
             return InternalAllocate(1);
         }
@@ -253,9 +232,9 @@ namespace Tsavorite.core
                 // If index 0, then allocate space for next level.
                 if (index == 0)
                 {
-                    var tmp = GC.AllocateArray<T>(PageSize + sector_size, isPinned);
-                    if (isPinned)
-                        pointers[1] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (sector_size - 1)) & ~(sector_size - 1));
+                    var tmp = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
+                    if (IsBlittable)
+                        pointers[1] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
 #if !(CALLOC)
                     Array.Clear(tmp, 0, PageSize);
@@ -265,10 +244,7 @@ namespace Tsavorite.core
                 }
 
                 // Return location.
-                if (ReturnPhysicalAddress)
-                    return ((long)pointers[0]) + index * RecordSize;
-                else
-                    return index;
+                return index;
             }
 
             // See if write cache contains corresponding array.
@@ -281,15 +257,9 @@ namespace Tsavorite.core
                 if (cache == baseAddr)
                 {
                     // Return location.
-                    if (ReturnPhysicalAddress)
-                        return ((long)pointers[baseAddr]) + (long)offset * RecordSize;
-                    else
-                        return index;
+                    return index;
                 }
             }
-
-            // Write cache did not work, so get level information from index.
-            // int level = GetLevelFromIndex(index);
 
             // Spin-wait until level has an allocated array.
             var spinner = new SpinWait();
@@ -313,9 +283,9 @@ namespace Tsavorite.core
                 // Allocate for next page
                 int newBaseAddr = baseAddr + 1;
 
-                var tmp = GC.AllocateArray<T>(PageSize + sector_size, isPinned);
-                if (isPinned)
-                    pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (sector_size - 1)) & ~(sector_size - 1));
+                var tmp = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
+                if (IsBlittable)
+                    pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
 #if !(CALLOC)
                 Array.Clear(tmp, 0, PageSize);
@@ -326,19 +296,13 @@ namespace Tsavorite.core
             }
 
             // Return location.
-            if (ReturnPhysicalAddress)
-                return ((long)pointers[baseAddr]) + (long)offset * RecordSize;
-            else
-                return index;
+            return index;
         }
 
         /// <summary>
         /// Dispose
         /// </summary>
-        public void Dispose()
-        {
-            count = 0;
-        }
+        public void Dispose() => count = 0;
 
 
         #region Checkpoint
@@ -347,10 +311,7 @@ namespace Tsavorite.core
         /// Is checkpoint complete
         /// </summary>
         /// <returns></returns>
-        public bool IsCheckpointCompleted()
-        {
-            return checkpointCallbackCount == 0;
-        }
+        public bool IsCheckpointCompleted() => checkpointCallbackCount == 0;
 
         /// <summary>
         /// Is checkpoint completed
@@ -416,7 +377,7 @@ namespace Tsavorite.core
 
                     Buffer.MemoryCopy((void*)pointers[i], result.mem.aligned_pointer, writeSize, writeSize);
                     int j = 0;
-                    if (i == 0) j += kAllocateChunkSize * RecordSize;
+                    if (i == 0) j += AllocateChunkSize * RecordSize;
                     for (; j < writeSize; j += sizeof(HashBucket))
                     {
                         skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
@@ -450,19 +411,13 @@ namespace Tsavorite.core
         /// Max valid address
         /// </summary>
         /// <returns></returns>
-        public int GetMaxValidAddress()
-        {
-            return count;
-        }
+        public int GetMaxValidAddress() => count;
 
         /// <summary>
         /// Get page size
         /// </summary>
         /// <returns></returns>
-        public int GetPageSize()
-        {
-            return PageSize;
-        }
+        public int GetPageSize() => PageSize;
         #endregion
 
         #region Recover

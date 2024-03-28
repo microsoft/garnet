@@ -634,6 +634,9 @@ namespace Garnet.server
                         return (RespCommand.Hash, (byte)HashOperation.HRANDFIELD);
                     if (*(long*)ptr == 4702694004776318244L && *(ushort*)(ptr + 8) == 3406 && *(ptr + 10) == 10)
                         return (RespCommand.Hash, (byte)HashOperation.HSCAN);
+                    //[$7|HSTRLEN|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
+                    if (*(long*)ptr == 5932458178025174820L && *(ushort*)(ptr + 8) == 17740 && *(ptr + 12) == 10)
+                        return (RespCommand.Hash, (byte)HashOperation.HSTRLEN);
                     #endregion
 
                     #region Set Operations
