@@ -107,6 +107,7 @@ namespace Garnet.server
                 (byte)SortedSetOperation.ZCARD => SingleKey(1, true, LockType.Shared),
                 (byte)SortedSetOperation.ZPOPMAX => SingleKey(1, true, LockType.Exclusive),
                 (byte)SortedSetOperation.ZSCORE => SingleKey(1, true, LockType.Shared),
+                (byte)SortedSetOperation.ZMSCORE => SingleKey(1, true, LockType.Shared),
                 (byte)SortedSetOperation.ZCOUNT => SingleKey(1, true, LockType.Shared),
                 (byte)SortedSetOperation.ZINCRBY => SingleKey(1, true, LockType.Exclusive),
                 (byte)SortedSetOperation.ZRANK => SingleKey(1, true, LockType.Exclusive),
