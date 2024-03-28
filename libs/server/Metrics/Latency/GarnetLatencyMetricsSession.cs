@@ -11,7 +11,7 @@ namespace Garnet.server
     /// <summary>
     /// Latency metrics emitted from RespServerSession
     /// </summary>
-    internal class GarnetLatencyMetricsSession
+    internal sealed class GarnetLatencyMetricsSession
     {
         readonly GarnetServerMonitor monitor;
         static readonly LatencyMetricsType[] defaultLatencyTypes =

@@ -37,7 +37,7 @@ namespace Garnet.server.Custom
     /// <summary>
     /// Custom transaction registration arguments
     /// </summary>
-    internal class RegisterTxnArgs : RegisterArgsBase
+    internal sealed class RegisterTxnArgs : RegisterArgsBase
     {
     }
 
@@ -163,7 +163,7 @@ namespace Garnet.server.Custom
     /// <summary>
     /// RawStringFunction registration provider
     /// </summary>
-    internal class RegisterRawStringFunctionProvider : RegisterCustomCmdProvider<CustomRawStringFunctions>
+    internal sealed class RegisterRawStringFunctionProvider : RegisterCustomCmdProvider<CustomRawStringFunctions>
     {
         public RegisterRawStringFunctionProvider(CustomRawStringFunctions instance, RegisterCmdArgs args) : base(instance, args)
         {
@@ -178,7 +178,7 @@ namespace Garnet.server.Custom
     /// <summary>
     /// CustomObjectFactory registration provider
     /// </summary>
-    internal class RegisterCustomObjectFactoryProvider : RegisterCustomCmdProvider<CustomObjectFactory>
+    internal sealed class RegisterCustomObjectFactoryProvider : RegisterCustomCmdProvider<CustomObjectFactory>
     {
         public RegisterCustomObjectFactoryProvider(CustomObjectFactory instance, RegisterCmdArgs args) : base(instance, args)
         {
@@ -193,7 +193,7 @@ namespace Garnet.server.Custom
     /// <summary>
     /// TransactionProcedureProvider registration provider
     /// </summary>
-    internal class RegisterCustomTransactionProcedureProvider : RegisterCustomTxnProvider<CustomTransactionProcedure>
+    internal sealed class RegisterCustomTransactionProcedureProvider : RegisterCustomTxnProvider<CustomTransactionProcedure>
     {
         public RegisterCustomTransactionProcedureProvider(CustomTransactionProcedure instance, RegisterTxnArgs args) : base(instance, args)
         {

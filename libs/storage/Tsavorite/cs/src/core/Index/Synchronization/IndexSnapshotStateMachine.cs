@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <summary>
     /// This task performs an index checkpoint.
     /// </summary>
-    internal class IndexSnapshotTask : ISynchronizationTask
+    internal sealed class IndexSnapshotTask : ISynchronizationTask
     {
         /// <inheritdoc />
         public void GlobalBeforeEnteringState<Key, Value>(
