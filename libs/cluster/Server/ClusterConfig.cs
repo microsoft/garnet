@@ -1014,7 +1014,7 @@ namespace Garnet.cluster
         public ClusterConfig TakeOverFromPrimary()
         {
             var ourNodeId = GetLocalNodeId();
-            var ourReplicaOf = GetLocalNodePrimaryId();;
+            var ourReplicaOf = GetLocalNodePrimaryId();
 
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
@@ -1027,11 +1027,12 @@ namespace Garnet.cluster
                 {
                     worker.role = NodeRole.REPLICA;
                     worker.replicaOfNodeId = newWorkers[1].nodeid;
-                } 
-                else if (worker.role == NodeRole.REPLICA && worker.replicaOfNodeId == ourReplicaOf) {
+                }
+                else if (worker.role == NodeRole.REPLICA && worker.replicaOfNodeId == ourReplicaOf)
+                {
                     worker.replicaOfNodeId = newWorkers[1].nodeid;
                 }
-            
+
                 newWorkers[i] = worker;
             }
 
