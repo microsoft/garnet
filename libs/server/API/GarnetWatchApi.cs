@@ -129,6 +129,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetScores(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.SortedSetScores(key, input, ref outputFooter);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, out ObjectOutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);

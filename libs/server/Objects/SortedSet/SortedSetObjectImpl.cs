@@ -164,6 +164,59 @@ namespace Garnet.server
             }
         }
 
+        private void SortedSetScores(byte* input, int length, ref SpanByteAndMemory output)
+        {
+            //ZMSCORE key member
+            var _input = (ObjectInputHeader*)input;
+            ObjectOutputHeader _output = default;
+
+            int count = _input->count;
+
+            bool isMemory = false;
+            MemoryHandle ptrHandle = default;
+
+            byte* ptr = output.SpanByte.ToPointer();
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            byte* input_startptr = input + sizeof(ObjectInputHeader);
+            byte* input_currptr = input_startptr;
+            byte* input_endptr = input + length;
+
+            try
+            {
+                while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                for (int c = 0; c < count; c++)
+                {
+                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var scoreKey, ref input_currptr, input_endptr))
+                        return;
+                    if (!sortedSetDict.TryGetValue(scoreKey, out var score))
+                    {
+                        while (!RespWriteUtils.WriteNull(ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(score.ToString()), ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
+                }
+                _output.bytesDone = (int)(input_currptr - input_startptr);
+                _output.countDone = count;
+                _output.opsDone = count;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
         private void SortedSetCount(byte* input, int length, byte* output)
         {
             var _input = (ObjectInputHeader*)input;
@@ -287,7 +340,7 @@ namespace Garnet.server
         private void SortedSetRange(byte* input, int length, ref SpanByteAndMemory output)
         {
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
-            //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count] 
+            //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
             var _input = (ObjectInputHeader*)input;
             int count = _input->count;
 
@@ -747,7 +800,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Gets the rank of a member of the sorted set 
+        /// Gets the rank of a member of the sorted set
         /// in ascending or descending order
         /// </summary>
         /// <param name="input"></param>
