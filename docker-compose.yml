@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   garnet:
     image: 'ghcr.io/microsoft/garnet'
