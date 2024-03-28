@@ -18,7 +18,7 @@ WORKDIR /app
 COPY --from=build /app .
 
 # For inter-container communication.
-EXPOSE 3278
+EXPOSE 6379
 
 # Run GarnetServer with an index size of 128MB
-ENTRYPOINT ["/app/GarnetServer", "-i", "128m", "--port", "3278"]
+ENTRYPOINT ["/app/GarnetServer", "-i", "128m", "--port", "6379"]
