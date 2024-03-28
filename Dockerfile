@@ -21,4 +21,4 @@ COPY --from=build /app .
 EXPOSE 6379
 
 # Run GarnetServer with an index size of 128MB
-ENTRYPOINT ["/app/GarnetServer", "-i", "128m", "--port", "6379", "--bind", "0.0.0.0"]
+ENTRYPOINT ["/app/GarnetServer", "-i", "128m", "--port", "6379"]
