@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal class MigrateSessionTaskStore
+    internal sealed class MigrateSessionTaskStore
     {
         MigrateSession[] sessions;
         int numSessions;

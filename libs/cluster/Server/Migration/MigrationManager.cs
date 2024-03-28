@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal class MigrationManager
+    internal sealed class MigrationManager
     {
         readonly ClusterProvider clusterProvider;
         readonly MigrateSessionTaskStore migrationTaskStore;

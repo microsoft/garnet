@@ -14,7 +14,7 @@ namespace Garnet.cluster
     /// <summary>
     /// Storage provider for AOF tasks
     /// </summary>
-    internal class AofTaskStore : IDisposable
+    internal sealed class AofTaskStore : IDisposable
     {
         readonly ClusterProvider clusterProvider;
         readonly ILogger logger;

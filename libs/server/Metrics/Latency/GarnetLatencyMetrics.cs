@@ -13,7 +13,7 @@ namespace Garnet.server
     /// <summary>
     /// Latency metrics emitted from RespServerSession
     /// </summary>
-    internal class GarnetLatencyMetrics
+    internal sealed class GarnetLatencyMetrics
     {
         public static readonly LatencyMetricsType[] defaultLatencyTypes =
             Enum.GetValues(typeof(LatencyMetricsType)).Cast<LatencyMetricsType>().ToArray();

@@ -6,7 +6,7 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    internal class TxnKeyEntryComparer : IComparer<TxnKeyEntry>
+    internal sealed class TxnKeyEntryComparer : IComparer<TxnKeyEntry>
     {
         public LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> lockableContext;
         public LockableContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreLockableContext;

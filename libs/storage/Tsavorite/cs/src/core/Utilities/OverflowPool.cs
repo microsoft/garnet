@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// Fixed size pool of overflow objects
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    internal class OverflowPool<T> : IDisposable
+    internal sealed class OverflowPool<T> : IDisposable
     {
         readonly int size;
         readonly ConcurrentQueue<T> itemQueue;

@@ -51,7 +51,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Shared flush completion tracker, when bulk-flushing many pages
     /// </summary>
-    internal class FlushCompletionTracker
+    internal sealed class FlushCompletionTracker
     {
         /// <summary>
         /// Semaphore to set on flush completion

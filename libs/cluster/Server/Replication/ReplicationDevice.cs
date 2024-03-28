@@ -7,7 +7,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal class ReplicationDevice : IDevice
+    internal sealed class ReplicationDevice : IDevice
     {
         public uint SectorSize => localDevice.SectorSize;
 
