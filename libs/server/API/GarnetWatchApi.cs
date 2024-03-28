@@ -312,6 +312,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus HashStrLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.HashStrLength(key, input, out output);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus HashExists(byte[] key, ArgSlice input, out ObjectOutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);

@@ -23,9 +23,9 @@ namespace Garnet.cluster
         /// <summary>
         /// Add slots to local worker
         /// </summary>
-        /// <param name="slots"></param>
-        /// <param name="slotAssigned"></param>
-        /// <returns></returns>
+        /// <param name="slots">Slot list</param>
+        /// <param name="slotAssigned">Slot number of already assigned slot</param>
+        /// <returns>True on success, false otherwise</returns>
         public bool TryAddSlots(List<int> slots, out int slotAssigned)
         {
             slotAssigned = -1;
@@ -51,9 +51,9 @@ namespace Garnet.cluster
         /// <summary>
         /// Remove ownernship of slots. Slot state transition to OFFLINE.
         /// </summary>
-        /// <param name="slots"></param>
-        /// <param name="notLocalSlot"></param>
-        /// <returns></returns>
+        /// <param name="slots">Slot list</param>
+        /// <param name="notLocalSlot">Slot number of slot that is not local</param>
+        /// <returns>True on success, false otherwise</returns>
         public bool TryRemoveSlots(List<int> slots, out int notLocalSlot)
         {
             notLocalSlot = -1;
@@ -74,23 +74,23 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("REMOVE SLOTS {slots}", String.Join(",", slots));
+            logger?.LogTrace("REMOVE SLOTS {slots}", string.Join(",", slots));
             return true;
         }
 
         /// <summary>
         /// Prepare node for migration of slot to node with specified node Id.
         /// </summary>
-        /// <param name="slot"></param>
-        /// <param name="nodeid"></param>
-        /// <param name="resp"></param>
-        /// <returns></returns>
+        /// <param name="slot">Slot to change state</param>
+        /// <param name="nodeid">Migration target node-id</param>
+        /// <param name="resp">Error message</param>
+        /// <returns>True on success, false otherwise</returns>
         public bool PrepareSlotForMigration(int slot, string nodeid, out ReadOnlySpan<byte> resp)
         {
             while (true)
             {
                 var current = currentConfig;
-                int migratingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
+                var migratingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
 
                 if (migratingWorkerId == 0)
                 {
@@ -100,7 +100,7 @@ namespace Garnet.cluster
 
                 if (current.GetLocalNodeId().Equals(nodeid))
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Can't MIGRATE to myself\r\n"));
+                    resp = CmdStrings.RESP_MIGRATE_TO_MYSELF_ERROR;
                     return false;
                 }
 
@@ -130,7 +130,7 @@ namespace Garnet.cluster
                 var newConfig = current.UpdateSlotState(slot, migratingWorkerId, SlotState.MIGRATING);
                 if (newConfig == null)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot already in that state.\r\n"));
+                    resp = CmdStrings.RESP_SLOTSTATE_TRANSITION_ERROR;
                     return false;
                 }
 
@@ -147,16 +147,16 @@ namespace Garnet.cluster
         /// <summary>
         /// Change list of slots to migrating state
         /// </summary>
-        /// <param name="slots"></param>
-        /// <param name="nodeid"></param>
-        /// <param name="resp"></param>
-        /// <returns></returns>
+        /// <param name="slots">Slot list</param>
+        /// <param name="nodeid">Migration target node-id</param>
+        /// <param name="resp">Error message</param>
+        /// <returns>True on success, false otherwise</returns>
         public bool PrepareSlotsForMigration(HashSet<int> slots, string nodeid, out ReadOnlySpan<byte> resp)
         {
             while (true)
             {
                 var current = currentConfig;
-                int migratingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
+                var migratingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
 
                 //Check migrating worker is a known valid worker
                 if (migratingWorkerId == 0)
@@ -168,7 +168,7 @@ namespace Garnet.cluster
                 //Check if nodeid is different from local node
                 if (current.GetLocalNodeId().Equals(nodeid))
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Can't MIGRATE to myself\r\n"));
+                    resp = CmdStrings.RESP_MIGRATE_TO_MYSELF_ERROR;
                     return false;
                 }
 
@@ -207,7 +207,7 @@ namespace Garnet.cluster
             }
             FlushConfig();
 
-            logger?.LogInformation("MIGRATE {slot} TO {migrating node}", String.Join(' ', slots), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogInformation("MIGRATE {slot} TO {migrating node}", string.Join(' ', slots), currentConfig.GetWorkerAddressFromNodeId(nodeid));
             resp = CmdStrings.RESP_OK;
             return true;
         }
@@ -215,16 +215,16 @@ namespace Garnet.cluster
         /// <summary>
         /// Prepare node for import of slot from node with specified nodeid.
         /// </summary>
-        /// <param name="slot"></param>
-        /// <param name="nodeid"></param>
-        /// <param name="resp"></param>
-        /// <returns></returns>       
+        /// <param name="slot">Slot list</param>
+        /// <param name="nodeid">Importing source node-id</param>
+        /// <param name="resp">Error message</param>
+        /// <returns>True on success, false otherwise</returns>       
         public bool PrepareSlotForImport(int slot, string nodeid, out ReadOnlySpan<byte> resp)
         {
             while (true)
             {
                 var current = currentConfig;
-                int importingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
+                var importingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
                 if (importingWorkerId == 0)
                 {
                     resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n"));
@@ -270,50 +270,50 @@ namespace Garnet.cluster
         /// <summary>
         /// Prepare node for import of slots from node with specified nodeid.
         /// </summary>
-        /// <param name="slots"></param>
-        /// <param name="nodeid"></param>
-        /// <param name="resp"></param>
-        /// <returns></returns>
+        /// <param name="slots">Slot list</param>
+        /// <param name="nodeid">Migration target node-id</param>
+        /// <param name="resp">Error message</param>
+        /// <returns>True on success, false otherwise</returns>
         public bool PrepareSlotsForImport(HashSet<int> slots, string nodeid, out ReadOnlySpan<byte> resp)
         {
             resp = CmdStrings.RESP_OK;
             while (true)
             {
                 var current = currentConfig;
-                int importingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
-                //Check importing nodeId is valid
+                var importingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
+                // Check importing nodeId is valid
                 if (importingWorkerId == 0)
                 {
                     resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n"));
                     return false;
                 }
 
-                //Check local node is a primary
+                // Check local node is a primary
                 if (current.GetLocalNodeRole() != NodeRole.PRIMARY)
                 {
                     resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Importing node {current.GetLocalNodeRole()} is not a master node.\r\n"));
                     return false;
                 }
 
-                //Check validity of slots
+                // Check validity of slots
                 foreach (var slot in slots)
                 {
-                    //can only import remote slots
+                    // Can only import remote slots
                     if (current.IsLocal((ushort)slot, readCommand: false))
                     {
                         resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR This is a local hash slot {slot} and is already imported\r\n"));
                         return false;
                     }
 
-                    //check if node is owned by node
-                    string sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
+                    // Check if node is owned by node
+                    var sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
                     if (sourceNodeId == null || !sourceNodeId.Equals(nodeid))
                     {
                         resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slot} is not owned by {nodeid}\r\n"));
                         return false;
                     }
 
-                    //check if slot is in stable state
+                    // Check if slot is in stable state
                     if (current.GetState((ushort)slot) != SlotState.STABLE)
                     {
                         resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot already scheduled for import from {nodeid}\r\n"));
@@ -326,7 +326,7 @@ namespace Garnet.cluster
                     break;
             }
 
-            logger?.LogInformation("IMPORT {slot} FROM {importingNode}", String.Join(' ', slots), currentConfig.GetWorkerAddressFromNodeId(nodeid));
+            logger?.LogInformation("IMPORT {slot} FROM {importingNode}", string.Join(' ', slots), currentConfig.GetWorkerAddressFromNodeId(nodeid));
             resp = CmdStrings.RESP_OK;
             return true;
         }
@@ -334,22 +334,22 @@ namespace Garnet.cluster
         /// <summary>
         /// Change ownership of slot to node.
         /// </summary>
-        /// <param name="slot"></param>
-        /// <param name="nodeid"></param>
-        /// <param name="resp"></param>
-        /// <returns></returns>
+        /// <param name="slot">Slot list</param>
+        /// <param name="nodeid">Importing source node-id</param>
+        /// <param name="resp">Error message</param>
+        /// <returns>True on success, false otherwise</returns>
         public bool PrepareSlotForOwnershipChange(int slot, string nodeid, out ReadOnlySpan<byte> resp)
         {
             resp = CmdStrings.RESP_OK;
             var current = currentConfig;
-            int workerId = current.GetWorkerIdFromNodeId(nodeid);
+            var workerId = current.GetWorkerIdFromNodeId(nodeid);
             if (workerId == 0)
             {
                 resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n"));
                 return false;
             }
 
-            if (current.GetState((ushort)slot) == SlotState.MIGRATING)
+            if (current.GetState((ushort)slot) is SlotState.MIGRATING)
             {
                 while (true)
                 {
@@ -364,7 +364,7 @@ namespace Garnet.cluster
                 logger?.LogInformation("SLOT {slot} IMPORTED TO {nodeid}", slot, currentConfig.GetWorkerAddressFromNodeId(nodeid));
                 return true;
             }
-            else if (current.GetState((ushort)slot) == SlotState.IMPORTING)
+            else if (current.GetState((ushort)slot) is SlotState.IMPORTING)
             {
                 if (!current.GetLocalNodeId().Equals(nodeid))
                 {
@@ -391,17 +391,17 @@ namespace Garnet.cluster
         /// <summary>
         /// Change ownership of slots to node.
         /// </summary>
-        /// <param name="slots"></param>
-        /// <param name="nodeid"></param>
-        /// <param name="resp"></param>
-        /// <returns></returns>
+        /// <param name="slots">SLot list</param>
+        /// <param name="nodeid">Node-i to make owner of slots</param>
+        /// <param name="resp">Error message</param>
+        /// <returns>True on success, false otherwise</returns>
         public bool PrepareSlotsForOwnershipChange(HashSet<int> slots, string nodeid, out ReadOnlySpan<byte> resp)
         {
             resp = CmdStrings.RESP_OK;
             while (true)
             {
                 var current = currentConfig;
-                int workerId = current.GetWorkerIdFromNodeId(nodeid);
+                var workerId = current.GetWorkerIdFromNodeId(nodeid);
                 if (workerId == 0)
                 {
                     resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n"));
@@ -422,15 +422,15 @@ namespace Garnet.cluster
         /// <summary>
         /// Reset slot state to stable
         /// </summary>
-        /// <param name="slot"></param>       
+        /// <param name="slot">Slot id to reset state</param>       
         /// <param name="resp"></param>
-        /// <returns></returns>
+        /// <returns>True on success, false otherwise</returns>
         public bool ResetSlotState(int slot, out ReadOnlySpan<byte> resp)
         {
             resp = CmdStrings.RESP_OK;
             var current = currentConfig;
             var slotState = current.GetState((ushort)slot);
-            if (slotState == SlotState.MIGRATING || slotState == SlotState.IMPORTING)
+            if (slotState is SlotState.MIGRATING or SlotState.IMPORTING)
             {
                 while (true)
                 {
@@ -449,9 +449,9 @@ namespace Garnet.cluster
         /// <summary>
         /// Reset local slot state to stable
         /// </summary>
-        /// <param name="slots"></param>
-        /// <param name="resp"></param>
-        /// <returns></returns>
+        /// <param name="slots">Slot list</param>
+        /// <param name="resp">Error message</param>
+        /// <returns>True on success, false otherwise</returns>
         public bool ResetSlotsState(HashSet<int> slots, out ReadOnlySpan<byte> resp)
         {
             resp = CmdStrings.RESP_OK;
@@ -464,8 +464,8 @@ namespace Garnet.cluster
         /// <summary>
         /// Check if slot is in importing state.
         /// </summary>
-        /// <param name="slot"></param>
-        /// <returns></returns>
+        /// <param name="slot">Slot to check state</param>
+        /// <returns>True if slot is in Importing state, false otherwise</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool IsImporting(ushort slot) => currentConfig.GetState(slot) == SlotState.IMPORTING;
 
@@ -473,8 +473,8 @@ namespace Garnet.cluster
         /// Methods used to cleanup keys for given slot collection in main store
         /// </summary>
         /// <param name="BasicGarnetApi"></param>
-        /// <param name="slots"></param>
-        public unsafe void DeleteKeysInSlotsFromMainStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
+        /// <param name="slots">Slot list</param>
+        public static unsafe void DeleteKeysInSlotsFromMainStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
         {
             using var iter = BasicGarnetApi.IterateMainStore();
             while (iter.GetNext(out var recordInfo))
@@ -482,7 +482,7 @@ namespace Garnet.cluster
                 ref SpanByte key = ref iter.GetKey();
                 var s = NumUtils.HashSlot(key.ToPointer(), key.Length);
                 if (slots.Contains(s))
-                    BasicGarnetApi.DELETE(ref key, StoreType.Main);
+                    _ = BasicGarnetApi.DELETE(ref key, StoreType.Main);
             }
         }
 
@@ -490,8 +490,8 @@ namespace Garnet.cluster
         /// Methods used to cleanup keys for given slot collection in object store
         /// </summary>
         /// <param name="BasicGarnetApi"></param>
-        /// <param name="slots"></param>
-        public unsafe void DeleteKeysInSlotsFromObjectStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
+        /// <param name="slots">Slot list</param>
+        public static unsafe void DeleteKeysInSlotsFromObjectStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
         {
             using var iterObject = BasicGarnetApi.IterateObjectStore();
             while (iterObject.GetNext(out var recordInfo))
@@ -500,7 +500,7 @@ namespace Garnet.cluster
                 ref var value = ref iterObject.GetValue();
                 var s = NumUtils.HashSlot(key);
                 if (slots.Contains(s))
-                    BasicGarnetApi.DELETE(key, StoreType.Object);
+                    _ = BasicGarnetApi.DELETE(key, StoreType.Object);
             }
         }
     }

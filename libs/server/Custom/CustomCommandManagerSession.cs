@@ -6,7 +6,7 @@ namespace Garnet.server
     /// <summary>
     /// Server session for RESP protocol - basic commands are in this file
     /// </summary>
-    internal class CustomCommandManagerSession
+    internal sealed class CustomCommandManagerSession
     {
         readonly CustomCommandManager customCommandManager;
         public readonly (CustomTransactionProcedure, int)[] sessionTransactionProcMap;

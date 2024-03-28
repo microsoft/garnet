@@ -13,7 +13,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal class ReplicaSyncSession : IDisposable
+    internal sealed class ReplicaSyncSession : IDisposable
     {
         readonly StoreWrapper storeWrapper;
         readonly ClusterProvider clusterProvider;

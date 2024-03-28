@@ -42,7 +42,12 @@ namespace Garnet
         protected StoreWrapper storeWrapper;
 
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.1";
+        readonly string version = "1.0.2";
+
+        /// <summary>
+        /// Resp protocol version
+        /// </summary>
+        readonly string redisProtocolVersion = "6.2.11";
 
         /// <summary>
         /// Metrics API
@@ -269,7 +274,7 @@ namespace Garnet
                 server = new GarnetServerTcp(opts.Address, opts.Port, 0, opts.TlsOptions, opts.NetworkSendThrottleMax, logger);
             }
 
-            storeWrapper = new StoreWrapper(version, server, store, objectStore, objectStoreSizeTracker, customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
+            storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker, customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
             Provider = new GarnetProvider(storeWrapper, kvBroker, broker);

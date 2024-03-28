@@ -44,13 +44,9 @@ namespace Tsavorite.core
         private readonly int ObjectBlockSize = 100 * (1 << 20);
         // Tail offsets per segment, in object log
         public readonly long[] segmentOffsets;
-        // Record sizes
         private readonly SerializerSettings<Key, Value> SerializerSettings;
-        private readonly bool keyBlittable = Utility.IsBlittable<Key>();
-        private readonly bool valueBlittable = Utility.IsBlittable<Value>();
 
-
-        // We do not support variable-length keys in GenericAllocator
+        // Record sizes. We do not support variable-length keys in GenericAllocator
         internal static int KeySize => Unsafe.SizeOf<Key>();
         internal static int ValueSize => Unsafe.SizeOf<Value>();
         internal static int RecordSize => Unsafe.SizeOf<Record<Key, Value>>();
@@ -75,7 +71,7 @@ namespace Tsavorite.core
 
             SerializerSettings = serializerSettings ?? new SerializerSettings<Key, Value>();
 
-            if ((!keyBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
+            if ((!Utility.IsBlittable<Key>()) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.keySerializer == null)))
             {
 #if DEBUG
                 if (typeof(Key) != typeof(byte[]) && typeof(Key) != typeof(string))
@@ -84,7 +80,7 @@ namespace Tsavorite.core
                 SerializerSettings.keySerializer = ObjectSerializer.Get<Key>();
             }
 
-            if ((!valueBlittable) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
+            if ((!Utility.IsBlittable<Value>()) && (settings.LogDevice as NullDevice == null) && ((SerializerSettings == null) || (SerializerSettings.valueSerializer == null)))
             {
 #if DEBUG
                 if (typeof(Value) != typeof(byte[]) && typeof(Value) != typeof(string))
@@ -1138,15 +1134,15 @@ namespace Tsavorite.core
         /// Iterator interface for scanning Tsavorite log
         /// </summary>
         /// <returns></returns>
-        public override ITsavoriteScanIterator<Key, Value> Scan(TsavoriteKV<Key, Value> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode)
-            => new GenericScanIterator<Key, Value>(store, this, beginAddress, endAddress, scanBufferingMode, epoch);
+        public override ITsavoriteScanIterator<Key, Value> Scan(TsavoriteKV<Key, Value> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
+            => new GenericScanIterator<Key, Value>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
         internal override bool Scan<TScanFunctions>(TsavoriteKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            using GenericScanIterator<Key, Value> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, epoch, logger: logger);
+            using GenericScanIterator<Key, Value> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -1155,7 +1151,7 @@ namespace Tsavorite.core
         /// </summary>
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<Key, Value> store, ScanCursorState<Key, Value> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using GenericScanIterator<Key, Value> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, epoch, logger: logger);
+            using GenericScanIterator<Key, Value> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
             return ScanLookup<long, long, TScanFunctions, GenericScanIterator<Key, Value>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
         }
 

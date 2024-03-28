@@ -10,7 +10,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal class ReplicationLogCheckpointManager : DeviceLogCommitCheckpointManager, IDisposable
+    internal sealed class ReplicationLogCheckpointManager : DeviceLogCommitCheckpointManager, IDisposable
     {
         public long CurrentSafeAofAddress;
         public long RecoveredSafeAofAddress;

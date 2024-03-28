@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -22,6 +21,7 @@ namespace Garnet.server
     public sealed class StoreWrapper
     {
         internal readonly string version;
+        internal readonly string redisProtocolVersion;
         readonly IGarnetServer server;
         internal readonly long startupTime;
 
@@ -77,6 +77,8 @@ namespace Garnet.server
 
         internal readonly CacheSizeTracker objectStoreSizeTracker;
 
+        public readonly GarnetObjectSerializer GarnetObjectSerializer;
+
         /// <summary>
         /// The main logger instance associated with this store.
         /// </summary>
@@ -96,6 +98,7 @@ namespace Garnet.server
         /// </summary>
         public StoreWrapper(
             string version,
+            string redisProtocolVersion,
             IGarnetServer server,
             TsavoriteKV<SpanByte, SpanByte> store,
             TsavoriteKV<byte[], IGarnetObject> objectStore,
@@ -109,6 +112,7 @@ namespace Garnet.server
             )
         {
             this.version = version;
+            this.redisProtocolVersion = redisProtocolVersion;
             this.server = server;
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
             this.store = store;
@@ -125,6 +129,7 @@ namespace Garnet.server
             // TODO Change map size to a reasonable number
             this.versionMap = new WatchVersionMap(1 << 16);
             this.accessControlList = accessControlList;
+            this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
 
             if (accessControlList == null)
             {
@@ -166,26 +171,6 @@ namespace Garnet.server
             run_id = Generator.CreateHexId();
         }
 
-        public byte[] SerializeGarnetObject(IGarnetObject garnetObject)
-        {
-            using var ms = new MemoryStream();
-            var serializer = new GarnetObjectSerializer(customCommandManager);
-            serializer.BeginSerialize(ms);
-            serializer.Serialize(ref garnetObject);
-            serializer.EndSerialize();
-            return ms.ToArray();
-        }
-
-        public IGarnetObject DeserializeGarnetObject(byte[] data)
-        {
-            using var ms = new MemoryStream(data);
-            var serializer = new GarnetObjectSerializer(customCommandManager);
-            serializer.BeginDeserialize(ms);
-            serializer.Deserialize(out var obj);
-            serializer.EndDeserialize();
-            return obj;
-        }
-
         /// <summary>
         /// Get IP
         /// </summary>
@@ -203,7 +188,7 @@ namespace Garnet.server
         }
 
         internal FunctionsState CreateFunctionsState()
-            => new(appendOnlyFile, versionMap, customCommandManager.commandMap, customCommandManager.objectCommandMap, null, objectStoreSizeTracker);
+            => new(appendOnlyFile, versionMap, customCommandManager.commandMap, customCommandManager.objectCommandMap, null, objectStoreSizeTracker, GarnetObjectSerializer);
 
         internal void Recover()
         {
@@ -709,6 +694,21 @@ namespace Garnet.server
                 appendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);
                 appendOnlyFile?.Commit();
             }
+
+            if (objectStore != null)
+            {
+                // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
+                // We can now safely remove these serialized versions as they are no longer needed.
+                using (var iter1 = objectStore.Log.Scan(objectStore.Log.ReadOnlyAddress, objectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true))
+                {
+                    while (iter1.GetNext(out _, out _, out var value))
+                    {
+                        if (value != null)
+                            ((GarnetObjectBase)value).serialized = null;
+                    }
+                }
+            }
+
             logger?.LogInformation("Completed checkpoint");
         }
     }

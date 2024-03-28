@@ -192,6 +192,18 @@ Sets field in the hash stored at **key** to value, only if field does not yet ex
 
 ---
 
+### HSTRLEN
+
+#### Syntax
+
+```bash
+    HSTRLEN key field
+```
+
+Returns the string length of the value associated with **field** in the hash stored at **key**. If the **key** or the **field** do not exist, 0 is returned.
+
+---
+
 ### HVALS
 
 #### Syntax
@@ -454,7 +466,7 @@ If **key** does not exist, it is treated as an empty set and this command return
 
 ---
 
-### SSCAN {#sscan}
+### SSCAN
 
 #### Syntax
 
@@ -787,7 +799,7 @@ If member does not exist in the sorted set, or **key** does not exist, nil is re
 
 ## Geospatial indices
 
-### GEOADD {#geoadd}
+### GEOADD
 
 #### Syntax
 
@@ -873,7 +885,7 @@ The command can accept a variable number of arguments so it always returns an ar
 
 ---
 
-### GEOSEARCH {#geosearch}
+### GEOSEARCH
 
 #### Syntax
 

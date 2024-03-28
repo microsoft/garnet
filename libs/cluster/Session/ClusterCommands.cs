@@ -213,8 +213,7 @@ namespace Garnet.cluster
                     }
                     else
                     {
-                        var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Updating the config epoch\r\n"));
-                        while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_CONFIG_UPDATE_ERROR, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -276,10 +275,10 @@ namespace Garnet.cluster
             {
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
-                List<string> clusterCommands = ClusterCommandInfo.GetClusterCommands();
+                var clusterCommands = ClusterCommandInfo.GetClusterCommands();
                 while (!RespWriteUtils.WriteArrayLength(clusterCommands.Count, ref dcurr, dend))
                     SendAndReset();
-                foreach (String command in clusterCommands)
+                foreach (var command in clusterCommands)
                 {
                     while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(command), ref dcurr, dend))
                         SendAndReset();
@@ -301,12 +300,11 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    Debug.WriteLine($"{Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, Math.Min(bytesRead, 128))).Replace("\n", "|").Replace("\r", "")}");
                     var ptr = recvBufferPtr + readHead;
                     if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var ipaddress, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out int port, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.ReadIntWithLengthHeader(out var port, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
@@ -381,8 +379,7 @@ namespace Garnet.cluster
                     readHead = (int)(ptr - recvBufferPtr);
                     if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
                     {
-                        ReadOnlySpan<byte> resp = "-ERR The user can assign a config epoch only when the node does not know any other node.\r\n"u8;
-                        while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_CONFIG_EPOCH_ASSIGNMENT_ERROR, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
@@ -438,8 +435,7 @@ namespace Garnet.cluster
                         // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
                         if (gossipWithMeet || current.IsKnown(other.GetLocalNodeId()))
                         {
-                            var updated = clusterProvider.clusterManager.TryMerge(other);
-                            // logger?.LogTrace("GOSSIP RECV {nodeid} {host}:{port} {update}", other.GetLocalNodeId(), other.GetLocalNodeIp(), other.GetLocalNodePort(), updated);
+                            clusterProvider.clusterManager.TryMerge(other);
                         }
                         else
                             logger?.LogWarning("Received gossip from unknown node: {node-id}", other.GetLocalNodeId());
@@ -470,8 +466,8 @@ namespace Garnet.cluster
                 }
 
                 var ptr = recvBufferPtr + readHead;
-                bool soft = true;
-                int expirySeconds = 60;
+                var soft = true;
+                var expirySeconds = 60;
                 if (count > 2)
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))
@@ -565,7 +561,7 @@ namespace Garnet.cluster
                     }
                     else
                     {
-                        resp = "-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n"u8;
+                        resp = CmdStrings.RESP_REPLICATION_AOF_TURNEDOFF_ERROR;
                     }
                     while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                         SendAndReset();
@@ -637,7 +633,6 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    Debug.WriteLine($"{Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, Math.Min(bytesRead, 128))).Replace("\n", "|").Replace("\r", "")}");
                     var ptr = recvBufferPtr + readHead;
                     if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: false))
                         return false;
@@ -670,7 +665,6 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    Debug.WriteLine($"{Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, Math.Min(bytesRead, 128))).Replace("\n", "|").Replace("\r", "")}");
                     var ptr = recvBufferPtr + readHead;
                     if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: true))
                         return false;
@@ -731,15 +725,14 @@ namespace Garnet.cluster
                     {
                         try
                         {
-                            int keyCount = CountKeysInSlot(slot);
+                            var keyCount = CountKeysInSlot(slot);
                             while (!RespWriteUtils.WriteInteger(keyCount, ref dcurr, dend))
                                 SendAndReset();
                         }
                         catch (Exception ex)
                         {
                             logger?.LogError(ex, "Critical error in count keys");
-                            int keyCount = -1;
-                            while (!RespWriteUtils.WriteInteger(keyCount, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_N1, ref dcurr, dend))
                                 SendAndReset();
                         }
                     }
@@ -783,7 +776,7 @@ namespace Garnet.cluster
                     return success;
                 }
 
-                //CLUSTER ADDSLOTSRANGE [start-slot end-slot] // 2 + [2] even number of arguments
+                // CLUSTER ADDSLOTSRANGE [start-slot end-slot] // 2 + [2] even number of arguments
                 if (count < 4 || (count & 0x1) == 0x1)
                 {
                     if (!DrainCommands(bufSpan, count - 2))
@@ -830,9 +823,9 @@ namespace Garnet.cluster
                     readHead = (int)(ptr - recvBufferPtr);
 
                     var slots = new HashSet<int>() { slot };
-                    clusterProvider.clusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
+                    ClusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
                     if (!clusterProvider.serverOptions.DisableObjects)
-                        clusterProvider.clusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
+                        ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
 
                     while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
@@ -855,16 +848,16 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    //Parse slot ranges
+                    // Parse slot ranges
                     if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: true))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
                     {
-                        clusterProvider.clusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
+                        ClusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
                         if (!clusterProvider.serverOptions.DisableObjects)
-                            clusterProvider.clusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
+                            ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
                     }
 
                     while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -952,16 +945,10 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    //CLUSTER SETSLOT <slot> IMPORTING <node-id>
-                    //CLUSTER SETSLOT <slot> MIGRATING <node-id>
-                    //CLUSTER SETSLOT <slot> NODE <node-id>
-                    //CLUSTER SETSLOT <slot> STABLE
                     var ptr = recvBufferPtr + readHead;
-                    //<slot>
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out int slot, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.ReadIntWithLengthHeader(out var slot, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    //subcommand
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var subcommand, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
@@ -983,16 +970,16 @@ namespace Garnet.cluster
                         switch (slotState)
                         {
                             case SlotState.STABLE:
-                                clusterProvider.clusterManager.ResetSlotState(slot, out resp);
+                                _ = clusterProvider.clusterManager.ResetSlotState(slot, out resp);
                                 break;
                             case SlotState.IMPORTING:
-                                clusterProvider.clusterManager.PrepareSlotForImport(slot, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.PrepareSlotForImport(slot, nodeid, out resp);
                                 break;
                             case SlotState.MIGRATING:
-                                clusterProvider.clusterManager.PrepareSlotForMigration(slot, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.PrepareSlotForMigration(slot, nodeid, out resp);
                                 break;
                             case SlotState.NODE:
-                                clusterProvider.clusterManager.PrepareSlotForOwnershipChange(slot, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.PrepareSlotForOwnershipChange(slot, nodeid, out resp);
                                 break;
                             default:
                                 resp = Encoding.ASCII.GetBytes($"-ERR Slot state {subcommand} not supported.\r\n");
@@ -1037,7 +1024,7 @@ namespace Garnet.cluster
 
                     SlotState slotState;
                     string nodeid = default;
-                    int _count = count - 3;
+                    var _count = count - 3;
                     var ptr = recvBufferPtr + readHead;
                     // Extract subcommand
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var subcommand, ref ptr, recvBufferPtr + bytesRead))
@@ -1075,16 +1062,16 @@ namespace Garnet.cluster
                         switch (slotState)
                         {
                             case SlotState.STABLE:
-                                clusterProvider.clusterManager.ResetSlotsState(slots, out resp);
+                                _ = clusterProvider.clusterManager.ResetSlotsState(slots, out resp);
                                 break;
                             case SlotState.IMPORTING:
-                                clusterProvider.clusterManager.PrepareSlotsForImport(slots, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.PrepareSlotsForImport(slots, nodeid, out resp);
                                 break;
                             case SlotState.MIGRATING:
-                                clusterProvider.clusterManager.PrepareSlotsForMigration(slots, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.PrepareSlotsForMigration(slots, nodeid, out resp);
                                 break;
                             case SlotState.NODE:
-                                clusterProvider.clusterManager.PrepareSlotsForOwnershipChange(slots, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.PrepareSlotsForOwnershipChange(slots, nodeid, out resp);
                                 break;
                             default:
                                 resp = Encoding.ASCII.GetBytes($"-ERR Slot state {subcommand} not supported.\r\n");
@@ -1109,7 +1096,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.SLOTSTATE) || param.SequenceEqual(CmdStrings.slotstate))
             {
-                //CLUSTER SLOTSTATE <slot>
+                // CLUSTER SLOTSTATE <slot>
                 if (count < 3)
                 {
                     if (!DrainCommands(bufSpan, count - 2))
@@ -1120,8 +1107,7 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    //<slot>
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out int slot, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.ReadIntWithLengthHeader(out var slot, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
@@ -1157,7 +1143,7 @@ namespace Garnet.cluster
                     return success;
                 }
 
-                //CLUSTER MIGRATE <node-id> <slot> <number-of-keys-in-slot> <serialized-data>
+                // CLUSTER MIGRATE <node-id> <slot> <number-of-keys-in-slot> <serialized-data>
                 if (count != 5)
                 {
                     if (!DrainCommands(bufSpan, count - 2))
@@ -1177,13 +1163,13 @@ namespace Garnet.cluster
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var storeType, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    bool replaceOption = _replace.Equals("T");
+                    var replaceOption = _replace.Equals("T");
 
                     // Check if payload size has been received
                     if (ptr + 4 > recvBufferPtr + bytesRead)
                         return false;
 
-                    int headerLength = *(int*)ptr;
+                    var headerLength = *(int*)ptr;
                     ptr += 4;
                     // Check if payload has been received
                     if (ptr + headerLength > recvBufferPtr + bytesRead)
@@ -1256,7 +1242,7 @@ namespace Garnet.cluster
 
                             migrateSetCount++;
 
-                            var value = clusterProvider.storeWrapper.DeserializeGarnetObject(data);
+                            var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
                             value.Expiration = expiration;
 
                             // Set if key replace flag is set or key does not exist
@@ -1320,7 +1306,7 @@ namespace Garnet.cluster
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeid, ref ptr, recvBufferPtr + bytesRead))
                     return false;
                 readHead = (int)(ptr - recvBufferPtr);
-                List<string> replicas = clusterProvider.clusterManager.ListReplicas(nodeid);
+                var replicas = clusterProvider.clusterManager.ListReplicas(nodeid);
 
                 while (!RespWriteUtils.WriteArrayLength(replicas.Count, ref dcurr, dend))
                     SendAndReset();
@@ -1393,7 +1379,7 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes("-ERR Primary AOF is switched off. Replication unavailable. Please restart replica with --aof option..\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_REPLICATION_AOF_TURNEDOFF_ERROR, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -1443,19 +1429,19 @@ namespace Garnet.cluster
             else if (param.SequenceEqual(CmdStrings.initiate_replica_sync))
             {
                 var ptr = recvBufferPtr + readHead;
-                if (!RespReadUtils.ReadStringWithLengthHeader(out string nodeId, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeId, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                if (!RespReadUtils.ReadStringWithLengthHeader(out string primary_replid, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.ReadStringWithLengthHeader(out var primary_replid, ref ptr, recvBufferPtr + bytesRead))
                     return false;
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var cEntryByteArray, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                if (!RespReadUtils.ReadLongWithLengthHeader(out long replicaAofBeginAddress, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.ReadLongWithLengthHeader(out var replicaAofBeginAddress, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                if (!RespReadUtils.ReadLongWithLengthHeader(out long replicaAofTailAddress, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.ReadLongWithLengthHeader(out var replicaAofTailAddress, ref ptr, recvBufferPtr + bytesRead))
                     return false;
                 readHead = (int)(ptr - recvBufferPtr);
 
-                CheckpointEntry remoteEntry = CheckpointEntry.FromByteArray(cEntryByteArray);
+                var remoteEntry = CheckpointEntry.FromByteArray(cEntryByteArray);
                 var resp = clusterProvider.replicationManager.BeginReplicaSyncSession(nodeId, primary_replid, remoteEntry, replicaAofBeginAddress, replicaAofTailAddress);
                 while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                     SendAndReset();
@@ -1471,8 +1457,8 @@ namespace Garnet.cluster
                     return false;
                 readHead = (int)(ptr - recvBufferPtr);
 
-                Guid fileToken = new Guid(fileTokenBytes);
-                CheckpointFileType fileType = (CheckpointFileType)fileTypeInt;
+                var fileToken = new Guid(fileTokenBytes);
+                var fileType = (CheckpointFileType)fileTypeInt;
                 clusterProvider.replicationManager.ProcessCheckpointMetadata(fileToken, fileType, checkpointMetadata);
                 while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
@@ -1494,7 +1480,7 @@ namespace Garnet.cluster
 
                 readHead = (int)(ptr - recvBufferPtr);
                 var fileToken = new Guid(fileTokenBytes);
-                CheckpointFileType ckptFileType = (CheckpointFileType)ckptFileTypeInt;
+                var ckptFileType = (CheckpointFileType)ckptFileTypeInt;
 
                 // Commenting due to high verbosity
                 // logger?.LogTrace("send_ckpt_file_segment {fileToken} {ckptFileType} {startAddress} {dataLength}", fileToken, ckptFileType, startAddress, data.Length);
@@ -1522,8 +1508,8 @@ namespace Garnet.cluster
                     return false;
                 readHead = (int)(ptr - recvBufferPtr);
 
-                CheckpointEntry entry = CheckpointEntry.FromByteArray(cEntryByteArray);
-                long replicationOffset = clusterProvider.replicationManager.BeginReplicaRecover(
+                var entry = CheckpointEntry.FromByteArray(cEntryByteArray);
+                var replicationOffset = clusterProvider.replicationManager.BeginReplicaRecover(
                     recoverMainStoreFromToken,
                     recoverObjectStoreFromToken,
                     replayAOF,

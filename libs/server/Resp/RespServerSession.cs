@@ -478,6 +478,7 @@ namespace Garnet.server
                 (RespCommand.Hash, (byte)HashOperation.HGETALL) => HashGet(count, ptr, HashOperation.HGETALL, ref storageApi),
                 (RespCommand.Hash, (byte)HashOperation.HDEL) => HashDelete(count, ptr, ref storageApi),
                 (RespCommand.Hash, (byte)HashOperation.HLEN) => HashLength(count, ptr, ref storageApi),
+                (RespCommand.Hash, (byte)HashOperation.HSTRLEN) => HashStrLength(count, ptr, ref storageApi),
                 (RespCommand.Hash, (byte)HashOperation.HEXISTS) => HashExists(count, ptr, ref storageApi),
                 (RespCommand.Hash, (byte)HashOperation.HKEYS) => HashKeys(count, ptr, HashOperation.HKEYS, ref storageApi),
                 (RespCommand.Hash, (byte)HashOperation.HVALS) => HashKeys(count, ptr, HashOperation.HVALS, ref storageApi),

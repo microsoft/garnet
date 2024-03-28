@@ -62,6 +62,7 @@ namespace Garnet.server
 
             var replayAofStoreWrapper = new StoreWrapper(
                 storeWrapper.version,
+                storeWrapper.redisProtocolVersion,
                 null,
                 storeWrapper.store,
                 storeWrapper.objectStore,
@@ -243,7 +244,7 @@ namespace Garnet.server
                     ObjectStoreRMW(objectStoreSession, entryPtr, bufferPtr, buffer.Length);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    ObjectStoreUpsert(objectStoreSession, entryPtr, bufferPtr, buffer.Length, storeWrapper);
+                    ObjectStoreUpsert(objectStoreSession, storeWrapper.GarnetObjectSerializer, entryPtr, bufferPtr, buffer.Length);
                     break;
                 case AofEntryType.ObjectStoreDelete:
                     ObjectStoreDelete(objectStoreSession, entryPtr);
@@ -288,14 +289,14 @@ namespace Garnet.server
             session.Delete(ref key);
         }
 
-        static unsafe void ObjectStoreUpsert(ClientSession<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> session, byte* ptr, byte* outputPtr, int outputLength, StoreWrapper storeWrapper)
+        static unsafe void ObjectStoreUpsert(ClientSession<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> session, GarnetObjectSerializer garnetObjectSerializer, byte* ptr, byte* outputPtr, int outputLength)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             var keyB = key.ToByteArray();
             ref var input = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
             ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize + input.TotalSize);
 
-            var valB = storeWrapper.DeserializeGarnetObject(value.ToByteArray());
+            var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
             var output = new GarnetObjectStoreOutput { spanByteAndMemory = new(outputPtr, outputLength) };
             session.Upsert(ref keyB, ref valB);

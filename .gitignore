@@ -213,3 +213,6 @@ test/tmp/
 # IDE files
 .vscode/
 .idea/
+
+# BenchmarkDotNet Results
+BenchmarkDotNet.Artifacts/

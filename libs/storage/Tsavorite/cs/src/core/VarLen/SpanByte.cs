@@ -515,7 +515,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             var bytes = AsSpan();
-            var len = Math.Min(Length, 8);
+            var len = Math.Min(Length, bytes.Length);
             StringBuilder sb = new($"len: {Length}, mdLen: {MetadataSize}, isSer {Serialized}, ");
             for (var ii = 0; ii < len; ++ii)
                 sb.Append(bytes[ii].ToString("x2"));

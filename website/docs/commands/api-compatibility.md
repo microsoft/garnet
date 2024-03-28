@@ -91,18 +91,18 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | SORT | ➖ |  |
 |  | SORT_RO | ➖ |  |
 |  | TOUCH | ➖ |  |
-|  | [TTL](generic-commands.md#ttl-ttl) | ➕ |  |
+|  | [TTL](generic-commands.md#ttl) | ➕ |  |
 |  | [TYPE](generic-commands.md#type) | ➕ |  |
 |  | [UNLINK](generic-commands.md#unlink) | ➕ |  |
 |  | WAIT | ➖ |  |
-| <span id="geo">**GEO**</span> | [GEOADD](data-structures.md#geoadd-geoadd) | ➕ |  |
+| <span id="geo">**GEO**</span> | [GEOADD](data-structures.md#geoadd) | ➕ |  |
 |  | [GEODIST](data-structures.md#geodist) | ➕ |  |
 |  | [GEOHASH](data-structures.md#geohash) | ➕ |  |
 |  | [GEOPOS](data-structures.md#geopos) | ➕ |  |
 |  | GEORADIUS | ➖ |  |
 |  | GEORADIUS_RO | ➖ |  |
 |  | GEORADIUSBYMEMBER | ➖ |  |
-|  | [GEOSEARCH](data-structures.md#geosearch-geosearch) | ➕ | Partially Implemented |
+|  | [GEOSEARCH](data-structures.md#geosearch) | ➕ | Partially Implemented |
 |  | GEOSEARCHSTORE | ➖ |  |
 | <span id="hash">**HASH**</span> | [HDEL](data-structures.md#hdel) | ➕ |  |
 |  | [HEXISTS](data-structures.md#hexists) | ➕ |  |
@@ -118,7 +118,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [HSCAN](data-structures.md#hscan) | ➕ |  |
 |  | [HSET](data-structures.md#hset) | ➕ |  |
 |  | [HSETNX](data-structures.md#hsetnx) | ➕ |  |
-|  | HSTRLEN | ➖ |  |
+|  | [HSTRLEN](data-structures.md#hstrlen) | ➕ |  |
 |  | [HVALS](data-structures.md#hvals) | ➕ |  |
 | <span id="hyperloglog">**HYPERLOGLOG**</span> | [PFADD](analytics.md#pfadd) | ➕ |  |
 |  | [PFCOUNT](analytics.md#pfcount) | ➕ |  |
@@ -129,7 +129,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [DEL](generic-commands.md#del)  | ➕ |  |
 |  | DUMP | ➖ |  |
 |  | [EXISTS](generic-commands.md#exists) | ➕ |  |
-|  | [EXPIRE](generic-commands.md#expire-expire) | ➕ |  |
+|  | [EXPIRE](generic-commands.md#expire) | ➕ |  |
 |  | EXPIREAT | ➖ |  |
 |  | EXPIRETIME | ➖ |  |
 |  | [KEYS](generic-commands.md#keys) | ➕ |  |
@@ -225,7 +225,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SPOP](data-structures.md#spop) | ➕ |  |
 |  | SRANDMEMBER | ➖ |  |
 |  | [SREM](data-structures.md#srem) | ➕ |  |
-|  | [SSCAN](data-structures.md#sscan-sscan) | ➕ |  |
+|  | [SSCAN](data-structures.md#sscan) | ➕ |  |
 |  | SUNION | ➖ |  |
 |  | SUNIONSTORE | ➖ |  |
 | <span id="sorted-set">**SORTED SET**</span> | BZPOP | ➖ |  |
