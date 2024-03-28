@@ -1,11 +1,15 @@
-version: '3.4'
-
+version: '3.8'
 services:
   garnet:
-    restart: always
-    image: garnet
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: 'ghcr.io/microsoft/garnet'
+    ulimits:
+      memlock: -1
     ports:
       - "6379:6379"
+    # To avoid docker NAT, consider `host` mode.
+    # https://docs.docker.com/compose/compose-file/compose-file-v3/#network_mode
+    # network_mode: "host"
+    volumes:
+      - garnetdata:/data
+volumes:
+  garnetdata:
