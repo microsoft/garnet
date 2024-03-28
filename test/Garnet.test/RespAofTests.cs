@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -359,6 +360,96 @@ namespace Garnet.test
 
                 score = db.SortedSetScore(key + 1, "x");
                 Assert.False(score.HasValue);
+            }
+        }
+
+        [Test]
+        public void AofUpsertObjectStoreRecoverTest()
+        {
+            var origList = new RedisValue[] { "a", "b", "c", "d" };
+            var key1 = "lkey1";
+            var key2 = "lkey2";
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                var count = db.ListRightPush(key1, origList);
+                Assert.AreEqual(4, count);
+
+                var result = db.ListRange(key1);
+                Assert.AreEqual(origList, result);
+
+                var rb = db.KeyRename(key1, key2);
+                Assert.IsTrue(rb);
+                result = db.ListRange(key1);
+                Assert.AreEqual(Array.Empty<RedisValue>(), result);
+
+                result = db.ListRange(key2);
+                Assert.AreEqual(origList, result);
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                var result = db.ListRange(key2);
+                Assert.AreEqual(origList, result);
+            }
+        }
+
+        [Test]
+        public void AofUpsertCustomObjectRecoverTest()
+        {
+            void RegisterCustomCommand(GarnetServer gServer)
+            {
+                var factory = new MyDictFactory();
+                gServer.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
+                gServer.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            RegisterCustomCommand(server);
+            server.Start();
+
+            var mainKey1 = "key1";
+            var subKey = "subKey";
+            var subKeyValue = "subKeyValue";
+            var mainKey2 = "key2";
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                db.Execute("MYDICTSET", mainKey1, subKey, subKeyValue);
+                var retValue = db.Execute("MYDICTGET", mainKey1, subKey);
+                Assert.AreEqual(subKeyValue, (string)retValue);
+
+                var rb = db.KeyRename(mainKey1, mainKey2);
+                Assert.IsTrue(rb);
+                retValue = db.Execute("MYDICTGET", mainKey1, subKey);
+                Assert.IsTrue(retValue.IsNull);
+
+                retValue = db.Execute("MYDICTGET", mainKey2, subKey);
+                Assert.AreEqual(subKeyValue, (string)retValue);
+            }
+
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            RegisterCustomCommand(server);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                var retValue = db.Execute("MYDICTGET", mainKey2, subKey);
+                Assert.AreEqual(subKeyValue, (string)retValue);
             }
         }
 
