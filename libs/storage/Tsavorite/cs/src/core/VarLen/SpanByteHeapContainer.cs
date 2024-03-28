@@ -8,7 +8,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Heap container for SpanByte structs
     /// </summary>
-    internal class SpanByteHeapContainer : IHeapContainer<SpanByte>
+    internal sealed class SpanByteHeapContainer : IHeapContainer<SpanByte>
     {
         readonly SectorAlignedMemory mem;
 

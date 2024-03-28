@@ -90,7 +90,7 @@ Specify your subject name via the cert-subject-name command line argument, if ap
     /// This is required in order to determine order of precedence when setting options from multiple sources
     /// </summary>
     /// <typeparam name="T">The underlying type of the option</typeparam>
-    internal class Option<T>
+    internal sealed class Option<T>
     {
         public T Value { get; set; }
     }
@@ -99,7 +99,7 @@ Specify your subject name via the cert-subject-name command line argument, if ap
     /// Attribute defining a RedisOption, must decorate each property in RedisOptions that is deserialized from a redis.conf file
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
-    internal class RedisOptionAttribute : Attribute
+    internal sealed class RedisOptionAttribute : Attribute
     {
         /// <summary>
         /// Redis key

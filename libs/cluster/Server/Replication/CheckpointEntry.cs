@@ -8,7 +8,7 @@ using Garnet.common;
 
 namespace Garnet.cluster
 {
-    class CheckpointEntry
+    sealed class CheckpointEntry
     {
         public long storeVersion;
         public Guid storeHlogToken;

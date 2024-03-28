@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal class ReplicaSyncSessionTaskStore
+    internal sealed class ReplicaSyncSessionTaskStore
     {
         readonly StoreWrapper storeWrapper;
         readonly ClusterProvider clusterProvider;

@@ -41,7 +41,7 @@ namespace Garnet.server
         }
     }
 
-    internal class TxnKeyEntries
+    internal sealed class TxnKeyEntries
     {
         // Basic keys
         int keyCount;

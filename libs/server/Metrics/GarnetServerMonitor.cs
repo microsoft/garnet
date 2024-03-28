@@ -18,7 +18,7 @@ namespace Garnet.server
         STATS
     }
 
-    internal class GarnetServerMonitor
+    internal sealed class GarnetServerMonitor
     {
         public readonly Dictionary<InfoMetricsType, bool>
             resetEventFlags = GarnetInfoMetrics.defaultInfo.ToDictionary(x => x, y => false);

@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal class GarnetServerNode
+    internal sealed class GarnetServerNode
     {
         readonly ClusterManager clusterManager;
         readonly ReplicationManager replicationManager;
