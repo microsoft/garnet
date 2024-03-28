@@ -32,8 +32,10 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{854CCB4B-1639-43FF-B482-2BF051667E25}"
 	ProjectSection(SolutionItems) = preProject
 		.editorconfig = .editorconfig
+		.github\workflows\ci.yml = .github\workflows\ci.yml
 		Directory.Build.props = Directory.Build.props
 		docker-compose.yml = docker-compose.yml
+		.github\workflows\docker.yml = .github\workflows\docker.yml
 		Dockerfile = Dockerfile
 		Dockerfile.nanoserver-x64 = Dockerfile.nanoserver-x64
 		Dockerfile.ubuntu-x64 = Dockerfile.ubuntu-x64
