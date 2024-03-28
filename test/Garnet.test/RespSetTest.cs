@@ -66,6 +66,9 @@ namespace Garnet.test
 
             var nonExistingMemberExists = db.SetContains(key, "NonExistingMember");
             Assert.IsFalse(nonExistingMemberExists);
+
+            var setDoesNotExist = db.SetContains("NonExistingSet", "AnyMember");
+            Assert.IsFalse(setDoesNotExist);
         }
 
 

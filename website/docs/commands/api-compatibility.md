@@ -218,7 +218,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | SINTER | ➖ |  |
 |  | SINTERCARD | ➖ |  |
 |  | SINTERSTORE | ➖ |  |
-|  | SISMEMBER | ➖ |  |
+|  | SISMEMBER | ➕ |  |
 |  | [SMEMBERS](data-structures.md#smembers) | ➕ |  |
 |  | SMISMEMBER | ➖ |  |
 |  | SMOVE | ➖ |  |
