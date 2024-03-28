@@ -40,6 +40,8 @@
 	<ItemGroup>
 		<Compile Include="..\..\test\Garnet.test\LightClientRequest.cs" Link="LightClientRequest.cs" />
 		<Compile Include="..\..\test\Garnet.test\TestUtils.cs" Link="TestUtils.cs" />
+		<Compile Include="..\..\test\Garnet.test\CredentialManager.cs" Link="CredentialManager.cs" />
+		<Compile Include="..\..\test\Garnet.test\ServerCredential.cs" Link="ServerCredential.cs" />
 		<Compile Include="..\..\test\Garnet.test\NUnitLoggerProvider.cs" Link="NUnitLoggerProvider.cs" />
 	</ItemGroup>
 

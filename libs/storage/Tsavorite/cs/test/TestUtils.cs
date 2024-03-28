@@ -138,9 +138,7 @@ namespace Tsavorite.test
                 case DeviceType.LSD:
                     bool useIoCompletionPort = false;
                     bool disableFileBuffering = true;
-#if NETSTANDARD || NET
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))    // avoids CA1416 // Validate platform compatibility
-#endif
                         device = new LocalStorageDevice(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
                     break;
 #endif

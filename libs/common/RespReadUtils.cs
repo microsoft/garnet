@@ -294,11 +294,7 @@ namespace Garnet.common
             Debug.Assert(*(ptr - 2) == '\r');
             Debug.Assert(*(ptr - 1) == '\n');
 
-#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
             result = Encoding.UTF8.GetString(new Span<byte>(keyPtr, ksize));
-#else
-            result = Encoding.UTF8.GetString(new Span<byte>(keyPtr, ksize).ToArray());
-#endif
             return true;
         }
 
@@ -691,11 +687,7 @@ namespace Garnet.common
             {
                 if (*ptr == (byte)'\r' && *(ptr + 1) == (byte)'\n')
                 {
-#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
                     result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(start, (int)(ptr - start)));
-#else
-                    result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(start, (int)(ptr - start)).ToArray());
-#endif
                     ptr += 2;
                     return true;
                 }
