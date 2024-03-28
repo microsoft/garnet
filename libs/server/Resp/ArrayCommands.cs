@@ -717,6 +717,10 @@ namespace Garnet.server
               where TGarnetApi : IGarnetApi
         {
             ptr += 10;
+
+            if (count < 2) 
+                return AbortWithWrongNumberOfArguments("SCAN", count);
+
             // Scan cursor [MATCH pattern] [COUNT count] [TYPE type]
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var cursorParameterByte, ref ptr, recvBufferPtr + bytesRead))
                 return false;
@@ -801,10 +805,13 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkTYPE<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkTYPE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
             ptr += 10;
+            
+            if (count != 2) 
+                return AbortWithWrongNumberOfArguments("TYPE", count);
 
             // TYPE key
             byte* keyPtr = null;
@@ -820,15 +827,18 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(typeName), ref dcurr, dend))
                     SendAndReset();
             }
-
+    
             readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 
-        private bool NetworkMODULE<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkMODULE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             ptr += 12;
+
+            if (count == 1) 
+                return AbortWithWrongNumberOfArguments("MODULE", count);
 
             // MODULE nameofmodule
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var nameofmodule, ref ptr, recvBufferPtr + bytesRead))
