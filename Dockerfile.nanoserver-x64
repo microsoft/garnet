@@ -15,5 +15,8 @@ FROM mcr.microsoft.com/dotnet/runtime:8.0-nanoserver-ltsc2022 AS runtime
 WORKDIR /app
 COPY --from=build /app .
 
+# For inter-container communication.
+EXPOSE 3278
+
 # Run GarnetServer with an index size of 128MB
-ENTRYPOINT ["/app/GarnetServer.exe", "-i", "128m"]
+ENTRYPOINT ["/app/GarnetServer.exe", "-i", "128m", "--port", "3278"]
