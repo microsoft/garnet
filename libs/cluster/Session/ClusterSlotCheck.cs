@@ -34,7 +34,7 @@ namespace Garnet.cluster
             if (port != 0)
                 resp = Encoding.ASCII.GetBytes($"-MOVED {slot} {address}:{port}\r\n");
             else
-                resp = "-CLUSTERDOWN Hash slot not served\r\n"u8;
+                resp = CmdStrings.RESP_CLUSTERDOWN_ERROR;
 
             logger?.LogDebug("SEND: {msg}", Encoding.ASCII.GetString(resp).Replace("\n", "!").Replace("\r", "|"));
             while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
@@ -55,17 +55,17 @@ namespace Garnet.cluster
                     resp = Encoding.ASCII.GetBytes($"-MOVED {slot} {address}:{port}\r\n");
                     break;
                 case SlotVerifiedState.MIGRATING:
-                    resp = "-MIGRATING.\r\n"u8;
+                    resp = CmdStrings.RESP_MIGRATING_ERROR;
                     break;
                 case SlotVerifiedState.CLUSTERDOWN:
-                    resp = "-CLUSTERDOWN Hash slot not served\r\n"u8;
+                    resp = CmdStrings.RESP_CLUSTERDOWN_ERROR;
                     break;
                 case SlotVerifiedState.ASK:
                     (address, port) = config.AskEndpointFromSlot(slot);
                     resp = Encoding.ASCII.GetBytes($"-ASK {slot} {address}:{port}\r\n");
                     break;
                 case SlotVerifiedState.CROSSLOT:
-                    resp = "-CROSSSLOT Keys in request don't hash to the same slot\r\n"u8;
+                    resp = CmdStrings.RESP_CROSSLOT_ERROR;
                     break;
                 default:
                     throw new Exception($"Unknown SlotVerifiedState {state}");

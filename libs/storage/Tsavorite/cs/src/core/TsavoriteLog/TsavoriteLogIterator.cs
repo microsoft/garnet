@@ -53,7 +53,7 @@ namespace Tsavorite.core
         /// <param name="scanUncommitted"></param>
         /// <param name="logger"></param>
         internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, epoch, hlog.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;
             allocator = hlog;

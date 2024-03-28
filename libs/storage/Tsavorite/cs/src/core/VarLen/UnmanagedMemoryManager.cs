@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Runtime.InteropServices;
 
 namespace Tsavorite.core
 {
@@ -16,25 +15,6 @@ namespace Tsavorite.core
     {
         private T* _pointer;
         private int _length;
-
-        /// <summary>
-        /// 
-        /// </summary>
-        public UnmanagedMemoryManager()
-        { }
-
-        /// <summary>
-        /// Create a new UnmanagedMemoryManager instance at the given pointer and size
-        /// </summary>
-        /// <remarks>It is assumed that the span provided is already unmanaged or externally pinned</remarks>
-        public UnmanagedMemoryManager(Span<T> span)
-        {
-            fixed (T* ptr = &MemoryMarshal.GetReference(span))
-            {
-                _pointer = ptr;
-                _length = span.Length;
-            }
-        }
 
         /// <summary>
         /// Create a new UnmanagedMemoryManager instance at the given pointer and size
