@@ -950,6 +950,10 @@ namespace Garnet.server
                                         {
                                             return (RespCommand.SortedSet, (byte)SortedSetOperation.ZINCRBY);
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZMSCORE\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZMSCORE);
+                                        }
                                         break;
                                 }
                                 break;
