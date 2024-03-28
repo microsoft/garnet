@@ -161,11 +161,13 @@ namespace Garnet.server
             {
                 if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("PING"u8) & (*(ushort*)ptr) == MemoryMarshal.Read<ushort>("\r\n"u8))
                 {
+                    readHead += 6;
                     return RespCommand.PING;
                 }
 
                 if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("QUIT"u8) & (*(ushort*)ptr) == MemoryMarshal.Read<ushort>("\r\n"u8))
                 {
+                    readHead += 6;
                     return RespCommand.QUIT;
                 }
             }
