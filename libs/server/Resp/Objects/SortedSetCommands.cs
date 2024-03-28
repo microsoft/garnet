@@ -256,7 +256,7 @@ namespace Garnet.server
         private unsafe bool SortedSetRange<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-                //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
+            //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
 
             // Get the key for the Sorted Set
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key,

@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -363,7 +362,7 @@ namespace Garnet.server
                 RespCommand.SET => NetworkSET(ptr, ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(ptr, false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(ptr, true, ref storageApi),
-                RespCommand.SETEXNX => NetworkSETEXNX(ptr, count-2, ref storageApi),
+                RespCommand.SETEXNX => NetworkSETEXNX(ptr, count - 2, ref storageApi),
                 RespCommand.DEL => NetworkDEL(count, ptr, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ptr, ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(count, ptr, ref storageApi),
@@ -400,7 +399,7 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
 
                 _ => ProcessArrayCommands(cmd, subcmd, count, ref storageApi)
-            
+
             };
             return success;
         }
@@ -522,7 +521,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> bufSpan = new(recvBufferPtr, bytesRead);
 
             if (!_authenticator.IsAuthenticated) return ProcessAdminCommands(command, bufSpan, count, ref storageApi);
-            
+
             if (command == RespCommand.CLIENT)
             {
                 for (int i = 0; i < count; i++)

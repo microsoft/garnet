@@ -218,7 +218,7 @@ namespace Garnet.server
                     // Only check against commands with the correct count and length.
                     // Note: Cases are encoded as 0x{count}{length} for readability.
                     byte hash = (byte)((count << 4) | length);
-                    switch(hash)
+                    switch (hash)
                     {
                         case 0x04:
                             if (lastWord == MemoryMarshal.Read<ulong>("\r\nPING\r\n"u8))
@@ -1252,12 +1252,12 @@ namespace Garnet.server
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
             // Drain the commands to advance the read head to the end of the command.
-            if(!DrainCommands(bufSpan, count))
+            if (!DrainCommands(bufSpan, count))
             {
                 success = false;
             }
 
-            return (RespCommand.INVALID, (byte) RespCommand.INVALID);
+            return (RespCommand.INVALID, (byte)RespCommand.INVALID);
         }
 
         /// <summary>
@@ -1274,7 +1274,7 @@ namespace Garnet.server
             byte subCmd = 0;
 
             // Initialize count as -1 (i.e., read-head has not been advanced)
-            count = -1;            
+            count = -1;
             success = true;
 
             // Attempt parsing using fast pass for most common operations
@@ -1287,7 +1287,7 @@ namespace Garnet.server
                 {
                     cmd = FastParseCommand(out count);
                 }
-                
+
                 // If we have not found a command, continue parsing for array commands
                 if (cmd == RespCommand.NONE)
                 {
@@ -1326,7 +1326,7 @@ namespace Garnet.server
                     // Try parsing the most important variable-length commands
                     (cmd, subCmd) = FastParseArrayCommand(ref count);
 
-                    if(cmd == RespCommand.NONE)
+                    if (cmd == RespCommand.NONE)
                     {
                         (cmd, subCmd) = SlowParseCommand(ref count, out success);
                     }

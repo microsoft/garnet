@@ -119,7 +119,7 @@ namespace Garnet.server
                         if (!success2) return false;
 
                         while (!RespWriteUtils.WriteResponse(CmdStrings.GetConfig(key), ref dcurr, dend))
-                                SendAndReset();
+                            SendAndReset();
                     }
                 }
                 else if (param.SequenceEqual(CmdStrings.REWRITE) || param.SequenceEqual(CmdStrings.rewrite))
@@ -136,7 +136,7 @@ namespace Garnet.server
                     string clusterPassword = null;
                     bool unknownOption = false;
                     string unknownKey = "";
-                    if (count == 1 || count % 2 != 1 )
+                    if (count == 1 || count % 2 != 1)
                     {
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;

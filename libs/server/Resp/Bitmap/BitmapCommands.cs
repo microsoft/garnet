@@ -356,7 +356,7 @@ namespace Garnet.server
             int startOffset = 0; // default is at the start of bitmap array
             int endOffset = -1; // default is at the end of the bitmap array (negative values indicate offset starting from end)
             byte bitOffsetType = 0x0; // treat offsets as byte or bit offsets
-            
+
             if (count > 2)//Start offset exists
             {
                 if (!RespReadUtils.ReadIntWithLengthHeader(out startOffset, ref ptr, recvBufferPtr + bytesRead))

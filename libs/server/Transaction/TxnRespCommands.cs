@@ -115,10 +115,10 @@ namespace Garnet.server
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
             bool invalidNumArgs = commandInfo.arity > 0 ? count != (commandInfo.arity) : count < -commandInfo.arity;
-           
+
             // Watch not allowed during TXN
             bool isWatch = (commandInfo.command == RespCommand.WATCH || commandInfo.command == RespCommand.WATCHMS || commandInfo.command == RespCommand.WATCHOS);
-            
+
             if (invalidNumArgs || isWatch)
             {
                 if (isWatch)
@@ -197,7 +197,7 @@ namespace Garnet.server
         /// Watch
         /// </summary>
         private bool NetworkWATCH(int count, StoreType type = StoreType.All)
-            {
+        {
             bool success;
 
             if (count > 1)

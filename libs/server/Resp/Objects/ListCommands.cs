@@ -89,8 +89,8 @@ namespace Garnet.server
             //if lpushx or rpushx and not found forward left tokens
             if ((lop == ListOperation.LPUSHX || lop == ListOperation.RPUSHX) && status == GarnetStatus.NOTFOUND)
             {
-               var tokens = ReadLeftToken(count - 1, ref ptr);
-               if (tokens < count - 1)
+                var tokens = ReadLeftToken(count - 1, ref ptr);
+                if (tokens < count - 1)
                     return false;
             }
 
