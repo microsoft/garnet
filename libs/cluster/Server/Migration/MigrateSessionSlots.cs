@@ -59,10 +59,10 @@ namespace Garnet.cluster
             if (!_copyOption)
                 return;
 
-            clusterProvider.clusterManager.DeleteKeysInSlotsFromMainStore(localServerSession.BasicGarnetApi, _sslots);
+            ClusterManager.DeleteKeysInSlotsFromMainStore(localServerSession.BasicGarnetApi, _sslots);
 
             if (!clusterProvider.serverOptions.DisableObjects)
-                clusterProvider.clusterManager.DeleteKeysInSlotsFromObjectStore(localServerSession.BasicGarnetApi, _sslots);
+                ClusterManager.DeleteKeysInSlotsFromObjectStore(localServerSession.BasicGarnetApi, _sslots);
         }
     }
 }

@@ -241,19 +241,22 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public void GetGossipInfo(MetricsItem[] statsInfo, int startOffset, bool metricsDisabled)
+        public MetricsItem[] GetGossipStats(bool metricsDisabled)
         {
             var gossipStats = clusterManager.gossipStats;
-            statsInfo[startOffset] = (new("meet_requests_recv", metricsDisabled ? "0" : gossipStats.meet_requests_recv.ToString()));
-            statsInfo[startOffset + 1] = (new("meet_requests_succeed", metricsDisabled ? "0" : gossipStats.meet_requests_succeed.ToString()));
-            statsInfo[startOffset + 2] = (new("meet_requests_failed", metricsDisabled ? "0" : gossipStats.meet_requests_failed.ToString()));
-            statsInfo[startOffset + 3] = (new("gossip_success_count", metricsDisabled ? "0" : gossipStats.gossip_success_count.ToString()));
-            statsInfo[startOffset + 4] = (new("gossip_failed_count", metricsDisabled ? "0" : gossipStats.gossip_failed_count.ToString()));
-            statsInfo[startOffset + 5] = (new("gossip_timeout_count", metricsDisabled ? "0" : gossipStats.gossip_timeout_count.ToString()));
-            statsInfo[startOffset + 6] = (new("gossip_full_send", metricsDisabled ? "0" : gossipStats.gossip_full_send.ToString()));
-            statsInfo[startOffset + 7] = (new("gossip_empty_send", metricsDisabled ? "0" : gossipStats.gossip_empty_send.ToString()));
-            statsInfo[startOffset + 8] = (new("gossip_bytes_send", metricsDisabled ? "0" : gossipStats.gossip_bytes_send.ToString()));
-            statsInfo[startOffset + 9] = (new("gossip_bytes_recv", metricsDisabled ? "0" : gossipStats.gossip_bytes_recv.ToString()));
+            return
+                [
+                    new("meet_requests_recv", metricsDisabled ? "0" : gossipStats.meet_requests_recv.ToString()),
+                    new("meet_requests_succeed", metricsDisabled ? "0" : gossipStats.meet_requests_succeed.ToString()),
+                    new("meet_requests_failed", metricsDisabled ? "0" : gossipStats.meet_requests_failed.ToString()),
+                    new("gossip_success_count", metricsDisabled ? "0" : gossipStats.gossip_success_count.ToString()),
+                    new("gossip_failed_count", metricsDisabled ? "0" : gossipStats.gossip_failed_count.ToString()),
+                    new("gossip_timeout_count", metricsDisabled ? "0" : gossipStats.gossip_timeout_count.ToString()),
+                    new("gossip_full_send", metricsDisabled ? "0" : gossipStats.gossip_full_send.ToString()),
+                    new("gossip_empty_send", metricsDisabled ? "0" : gossipStats.gossip_empty_send.ToString()),
+                    new("gossip_bytes_send", metricsDisabled ? "0" : gossipStats.gossip_bytes_send.ToString()),
+                    new("gossip_bytes_recv", metricsDisabled ? "0" : gossipStats.gossip_bytes_recv.ToString())
+                ];
         }
 
         /// <inheritdoc />

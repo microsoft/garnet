@@ -200,7 +200,7 @@ namespace Tsavorite.core
         public abstract void AfterEnteringState(VersionSchemeState state);
     }
 
-    internal class SimpleVersionSchemeStateMachine : VersionSchemeStateMachine
+    internal sealed class SimpleVersionSchemeStateMachine : VersionSchemeStateMachine
     {
         private Action<long, long> criticalSection;
 

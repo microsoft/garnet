@@ -38,9 +38,9 @@ namespace Garnet.server
         {
             ptr += hop == HashOperation.HSET ? 10 : (hop == HashOperation.HSETNX ? 12 : 11);
 
-            if (((hop == HashOperation.HSET || hop == HashOperation.HMSET) 
+            if (((hop == HashOperation.HSET || hop == HashOperation.HMSET)
                   && (count < 3 || count % 2 != 0)) ||
-                (hop == HashOperation.HSETNX && count != 4)) 
+                (hop == HashOperation.HSETNX && count != 4))
             {
                 return AbortWithWrongNumberOfArguments(hop.ToString(), count);
             }
@@ -101,7 +101,7 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-            
+
             hashItemsDoneCount = hashOpsCount = 0;
             return true;
         }
@@ -282,6 +282,80 @@ namespace Garnet.server
             }
 
             // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        /// <summary>
+        /// Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
+        /// </summary>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <returns></returns>
+        private unsafe bool HashStrLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            ptr += 13;
+
+            if (count != 3)
+            {
+                hashItemsDoneCount = hashOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("HSTRLEN", count);
+            }
+            else
+            {
+                // Get the key for Hash
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                if (NetworkSingleKeySlotVerify(key, true))
+                {
+                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                    if (!DrainCommands(bufSpan, count))
+                        return false;
+                    return true;
+                }
+
+                // Prepare input
+                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+                // Save old values on buffer for possible revert
+                var save = *inputPtr;
+
+                // Prepare length of header in input buffer
+                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                // Prepare header in input buffer
+                inputPtr->header.type = GarnetObjectType.Hash;
+                inputPtr->header.HashOp = HashOperation.HSTRLEN;
+                inputPtr->count = 1;
+                inputPtr->done = 0;
+
+                var status = storageApi.HashStrLength(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
+
+                // Restore input buffer
+                *inputPtr = save;
+
+                switch (status)
+                {
+                    case GarnetStatus.OK:
+                        // Process output
+                        while (!RespWriteUtils.WriteInteger(output.countDone, ref dcurr, dend))
+                            SendAndReset();
+                        ptr += output.bytesDone;
+                        break;
+                    case GarnetStatus.NOTFOUND:
+                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                            SendAndReset();
+                        ReadLeftToken(count - 2, ref ptr);
+                        break;
+                }
+            }
+
+            // Reset session counters
+            hashItemsDoneCount = hashOpsCount = 0;
             readHead = (int)(ptr - recvBufferPtr);
             return true;
         }

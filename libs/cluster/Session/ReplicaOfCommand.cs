@@ -30,7 +30,7 @@ namespace Garnet.cluster
             }
             else
             {
-                int port = -1;
+                var port = -1;
                 try
                 {
                     port = int.Parse(portStr);
@@ -43,27 +43,17 @@ namespace Garnet.cluster
                     return true;
                 }
 
-                //TODO: Delete data and make this node a replica of the node listening at endpoint
-                if (clusterProvider.serverOptions.EnableCluster)
+                var primaryId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(address, port);
+                if (primaryId == null)
                 {
-                    var primaryId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(address, port);
-                    if (primaryId == null)
-                    {
-                        while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"-ERR I don't know about node {address}:{port}.\r\n"), ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-                    else
-                    {
-                        var resp = clusterProvider.replicationManager.BeginReplicate(this, primaryId, background: false, force: true);
-                        while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
+                    while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"-ERR I don't know about node {address}:{port}.\r\n"), ref dcurr, dend))
+                        SendAndReset();
+                    return true;
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"-ERR REPLICAOF available only when cluster enabled.\r\n"), ref dcurr, dend))
+                    var resp = clusterProvider.replicationManager.BeginReplicate(this, primaryId, background: false, force: true);
+                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
