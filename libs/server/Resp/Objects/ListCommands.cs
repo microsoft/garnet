@@ -36,6 +36,11 @@ namespace Garnet.server
         {
             ptr += (lop == ListOperation.LPUSH || lop == ListOperation.RPUSH) ? 11 : 12;
 
+            if (count < 3)
+            {
+                return AbortWithWrongNumberOfArguments(lop.ToString(), count);
+            }
+
             // Get the key for List
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var sskey, ref ptr, recvBufferPtr + bytesRead))
                 return false;
@@ -121,6 +126,11 @@ namespace Garnet.server
                             where TGarnetApi : IGarnetApi
         {
             ptr += 10;
+
+            if (count < 2)
+            {
+                return AbortWithWrongNumberOfArguments(lop.ToString(), count);
+            }
 
             // Get the key for List
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))

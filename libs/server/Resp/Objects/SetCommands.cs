@@ -344,6 +344,12 @@ namespace Garnet.server
         {
             ptr += 10;
 
+            if (count < 2)
+            {
+                setItemsDoneCount = setOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("SPOP", count);
+            }
+
             // Get the key
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;
