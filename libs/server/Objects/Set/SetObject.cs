@@ -23,6 +23,7 @@ namespace Garnet.server
         SMEMBERS,
         SCARD,
         SSCAN,
+        SUNION
     }
 
 
@@ -188,5 +189,7 @@ namespace Garnet.server
             if (cursor == set.Count)
                 cursor = 0;
         }
+        
+        public HashSet<byte[]> Set => set;
     }
 }

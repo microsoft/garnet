@@ -238,9 +238,9 @@ namespace Garnet.server
 
         private void ProcessMessages()
         {
-            // #if DEBUG
-            // logger?.LogTrace("RECV: [{recv}]", Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", ""));
-            // #endif
+            #if DEBUG
+            logger?.LogTrace("RECV: [{recv}]", Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", ""));
+            #endif
 
             dcurr = networkSender.GetResponseObjectHead();
             dend = networkSender.GetResponseObjectTail();
@@ -495,6 +495,7 @@ namespace Garnet.server
                 (RespCommand.Set, (byte)SetOperation.SCARD) => SetLength(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SPOP) => SetPop(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SSCAN) => ObjectScan(count, ptr, GarnetObjectType.Set, ref storageApi),
+                (RespCommand.Set, (byte)SetOperation.SUNION) => SetUnion(count, ptr, ref storageApi),
                 _ => ProcessOtherCommands(count, ref storageApi),
             };
             return success;
@@ -765,9 +766,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
         {
-            // #if DEBUG
-            // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
-            // #endif
+            #if DEBUG
+            logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
+            #endif
 
             if ((int)(dcurr - d) > 0)
             {

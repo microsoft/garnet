@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -360,6 +361,33 @@ namespace Garnet.server
             return status;
 
         }
+
+        /// <summary>
+        /// Returns the members of the set resulting from the union of all the given sets.
+        /// Keys that do not exist are considered to be empty sets.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="output"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <returns></returns>
+        public GarnetStatus SetUnion<TObjectContext>(ArgSlice[] keys, out HashSet<byte[]> output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            output = new HashSet<byte[]>(new ByteArrayComparer());
+            
+            foreach (var key in keys)
+            {
+                if (GET(key.Bytes, out var currObject, ref objectStoreContext) == GarnetStatus.OK)
+                {
+                    var currSet = ((SetObject)currObject.garnetObject).Set;
+                    output.UnionWith(currSet);
+                }
+            }
+            
+            return GarnetStatus.OK;
+        }
+
 
         /// <summary>
         ///  Adds the specified members to the set at key.
