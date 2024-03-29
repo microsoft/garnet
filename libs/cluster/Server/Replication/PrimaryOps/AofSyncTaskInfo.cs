@@ -10,7 +10,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal class AofSyncTaskInfo : IBulkLogEntryConsumer, IDisposable
+    internal sealed class AofSyncTaskInfo : IBulkLogEntryConsumer, IDisposable
     {
         readonly ClusterProvider clusterProvider;
         readonly AofTaskStore aofTaskStore;

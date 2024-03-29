@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal class FailoverManager : IDisposable
+    internal sealed class FailoverManager : IDisposable
     {
         FailoverSession currentFailoverSession = null;
         readonly ClusterProvider clusterProvider;

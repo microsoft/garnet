@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
+using System.IO;
+using System.Text;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -23,31 +26,64 @@ namespace Garnet.server
         /// <inheritdoc />
         public override void Deserialize(out IGarnetObject obj)
         {
-            var type = (GarnetObjectType)reader.ReadByte();
-            obj = type switch
-            {
-                GarnetObjectType.Null => null,
-                GarnetObjectType.SortedSet => new SortedSetObject(reader),
-                GarnetObjectType.List => new ListObject(reader),
-                GarnetObjectType.Hash => new HashObject(reader),
-                GarnetObjectType.Set => new SetObject(reader),
-                _ => CustomDeserialize((byte)type),
-            };
+            obj = DeserializeInternal(base.reader);
         }
 
-        private IGarnetObject CustomDeserialize(byte type)
+        /// <summary>Thread-safe version of Deserialize</summary>
+        /// <param name="data"></param>
+        /// <returns></returns>
+        public IGarnetObject Deserialize(byte[] data)
+        {
+            Debug.Assert(data != null);
+
+            using var ms = new MemoryStream(data);
+            using var binaryReader = new BinaryReader(ms, new UTF8Encoding());
+            return DeserializeInternal(binaryReader);
+        }
+
+        private IGarnetObject DeserializeInternal(BinaryReader binaryReader)
+        {
+            var type = (GarnetObjectType)binaryReader.ReadByte();
+            var obj = type switch
+            {
+                GarnetObjectType.Null => null,
+                GarnetObjectType.SortedSet => new SortedSetObject(binaryReader),
+                GarnetObjectType.List => new ListObject(binaryReader),
+                GarnetObjectType.Hash => new HashObject(binaryReader),
+                GarnetObjectType.Set => new SetObject(binaryReader),
+                _ => CustomDeserialize((byte)type, binaryReader),
+            };
+            return obj;
+        }
+
+        private IGarnetObject CustomDeserialize(byte type, BinaryReader binaryReader)
         {
             if (type < CustomCommandManager.StartOffset) return null;
-            return customCommands[type - CustomCommandManager.StartOffset].factory.Deserialize(type, reader);
+            return customCommands[type - CustomCommandManager.StartOffset].factory.Deserialize(type, binaryReader);
         }
 
         /// <inheritdoc />
-        public override void Serialize(ref IGarnetObject obj)
+        public override void Serialize(ref IGarnetObject obj) => SerializeInternal(base.writer, obj);
+
+        /// <summary>Thread safe version of Serialize.</summary>
+        /// <param name="obj"></param>
+        /// <returns></returns>
+        public byte[] Serialize(IGarnetObject obj)
+        {
+            Debug.Assert(obj != null);
+
+            using var ms = new MemoryStream();
+            using var binaryWriter = new BinaryWriter(ms, new UTF8Encoding());
+            SerializeInternal(binaryWriter, obj);
+            return ms.ToArray();
+        }
+
+        private void SerializeInternal(BinaryWriter binaryWriter, IGarnetObject obj)
         {
             if (obj == null)
-                writer.Write((byte)GarnetObjectType.Null);
+                binaryWriter.Write((byte)GarnetObjectType.Null);
             else
-                obj.Serialize(writer);
+                obj.Serialize(binaryWriter);
         }
     }
 }
