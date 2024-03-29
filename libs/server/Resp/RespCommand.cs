@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -146,8 +147,8 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// Fast-parses command type for inline RESP commands, starting at the current read-head in the receive buffer
-        /// and advances read-head.
+        /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
+        /// and advances read head.
         /// </summary>
         /// <param name="count">Outputs the number of arguments stored with the command.</param>
         /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
@@ -176,8 +177,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Fast-parses for command type, starting at the current read-head in the receive buffer
-        /// and advances the read-head to the position after the parsed command.
+        /// Fast-parses for command type, starting at the current read head in the receive buffer
+        /// and advances the read head to the position after the parsed command.
         /// </summary>
         /// <param name="count">Outputs the number of arguments stored with the command</param>
         /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
@@ -207,7 +208,7 @@ namespace Garnet.server
                 // 10 bytes = "*_\r\n$_\r\n" (8 bytes) + "\r\n" (2 bytes) at end of command name
                 if (remainingBytes >= length + 10)
                 {
-                    // Optimistically advance read-head to the end of the command name
+                    // Optimistically advance read head to the end of the command name
                     readHead += length + 10;
 
                     // Last 8 byte word of the command name, for quick comparison
@@ -460,8 +461,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Fast parsing function for common command names, starting at the beginning of command string.
-        /// Parses the receive buffer starting from the current read-head and advances it to the end of
+        /// Fast parsing function for common command names.
+        /// Parses the receive buffer starting from the current read head and advances it to the end of
         /// the parsed command/subcommand name.
         /// </summary>
         /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
@@ -634,7 +635,7 @@ namespace Garnet.server
                                                 {
                                                     if (*(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("$3\r\n"u8))
                                                     {
-                                                        // Optimistically adjust read-head and count
+                                                        // Optimistically adjust read head and count
                                                         readHead += 9;
                                                         count -= 1;
 
@@ -651,7 +652,7 @@ namespace Garnet.server
                                                             return (RespCommand.BITOP, (byte)BitmapOperation.NOT);
                                                         }
 
-                                                        // Reset read-head and count if we didn't match operator.
+                                                        // Reset read head and count if we didn't match operator.
                                                         readHead -= 9;
                                                         count += 1;
                                                     }
@@ -1000,6 +1001,7 @@ namespace Garnet.server
                         readHead = oldReadHead;
                     }
                 }
+                // Check if this is a string with a double-digit length ("$__\r" -> _ omitted)
                 else if ((*(uint*)ptr & 0xFF0000FF) == MemoryMarshal.Read<uint>("$\0\0\r"u8))
                 {
                     // Extract length from string header
@@ -1011,10 +1013,12 @@ namespace Garnet.server
                     // 7 bytes = "$__\r\n" (5 bytes) + "\r\n" (2 bytes) at end of command name
                     if (remainingBytes >= length + 7)
                     {
-                        // Optimistically increase read-head and decrease the number of remaining elements
+                        // Optimistically increase read head and decrease the number of remaining elements
                         readHead += length + 7;
                         count -= 1;
 
+                        // Match remaining character by length
+                        // NOTE: Check should include the remaining array length terminator '\n'
                         switch (length)
                         {
                             case 10:
@@ -1100,7 +1104,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Parses the receive buffer, starting from the current read-head, for all command names that are
+        /// Parses the receive buffer, starting from the current read head, for all command names that are
         /// not covered by FastParseArrayCommand() and advances the read head to the end of the command name.
         /// 
         /// NOTE: Assumes the input command names have already been converted to upper-case.
@@ -1119,7 +1123,7 @@ namespace Garnet.server
                 return (RespCommand.INVALID, (byte)RespCommand.INVALID);
             }
 
-            // Account for the command name being taken off the read-head
+            // Account for the command name being taken off the read head
             count -= 1;
 
             if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
@@ -1275,16 +1279,16 @@ namespace Garnet.server
             RespCommand cmd = RespCommand.INVALID;
             byte subCmd = 0;
 
-            // Initialize count as -1 (i.e., read-head has not been advanced)
+            // Initialize count as -1 (i.e., read head has not been advanced)
             count = -1;
             success = true;
 
-            // Attempt parsing using fast pass for most common operations
+            // Attempt parsing using fast parse pass for most common operations
             cmd = FastParseCommand(out count);
 
             if (cmd == RespCommand.NONE)
             {
-                // See if input command is all upper-case. If not, convert and try fast pass again.
+                // See if input command is all upper-case. If not, convert and try fast parse pass again.
                 if (MakeUpperCase(ptr))
                 {
                     cmd = FastParseCommand(out count);
@@ -1293,26 +1297,28 @@ namespace Garnet.server
                 // If we have not found a command, continue parsing for array commands
                 if (cmd == RespCommand.NONE)
                 {
+                    // Ensure we are attempting to read a RESP array header
                     if (*(recvBufferPtr + readHead) != '*')
                     {
-                        // TODO: Error Handling should be done outside of parsing function.
-                        if (bytesRead - readHead < 2)
-                        {
-                            success = false;
-                            return (RespCommand.INVALID, subCmd);
-                        }
+                        // We might have received an inline command package. Try to find the end of the string.
+                        logger?.LogWarning("Received malformed input message. Trying to skip string.");
 
-                        if (*(ushort*)(recvBufferPtr + bytesRead - 2) != 2573)
+                        for (int stringEnd = readHead; stringEnd < bytesRead-1; stringEnd++)
                         {
-                            success = false;
-                            return (RespCommand.INVALID, subCmd);
+                            if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n') ;
+                            {
+                                    // Skip to the end of the string
+                                    readHead = stringEnd + 2;
+                                    return (RespCommand.INVALID, subCmd);                               
+                            }
                         }
-                        readHead = bytesRead;
-
+                        
+                        // We received an incomplete string. Wait for more input and retry.
+                        success = false;
                         return (RespCommand.INVALID, subCmd);
                     }
 
-                    // ... and read the array length; Move the read-head
+                    // ... and read the array length; Move the read head
                     var tmp = recvBufferPtr + readHead;
                     if (!RespReadUtils.ReadArrayLength(out count, ref tmp, recvBufferPtr + bytesRead))
                     {
