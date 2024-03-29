@@ -13,7 +13,7 @@ RUN dotnet build -a $TARGETARCH -c Release
 RUN dotnet publish -a $TARGETARCH -c Release -o /app --self-contained false -f net8.0
 
 # Final stage/image
-FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/runtime:8.0
 WORKDIR /app
 COPY --from=build /app .
 
