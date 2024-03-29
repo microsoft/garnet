@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
-using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
