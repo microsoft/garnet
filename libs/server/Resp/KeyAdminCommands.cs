@@ -209,11 +209,13 @@ namespace Garnet.server
         /// Set a timeout on a key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+
+        /// <param name="command">Indicates which command to use, expire or pexpire</param>
+        /// <param name="count">Number of arguments sent with this command.</param>
         /// <param name="ptr"></param>
-        /// <param name="command">indicates which command to use, expire or pexpire</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkEXPIRE<TGarnetApi>(byte* ptr, RespCommand command, int count, ref TGarnetApi storageApi)
+        private bool NetworkEXPIRE<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null;

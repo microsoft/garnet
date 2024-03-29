@@ -246,10 +246,10 @@ namespace Garnet.server
         private bool NetworkRUNTXPFast(byte* ptr)
         {
             int count = *(ptr - 16 + 1) - '0';
-            return NetworkRUNTXP(ptr, count);
+            return NetworkRUNTXP(count, ptr);
         }
 
-        private bool NetworkRUNTXP(byte* ptr, int count)
+        private bool NetworkRUNTXP(int count, byte* ptr)
         {
             if (!RespReadUtils.ReadIntWithLengthHeader(out int txid, ref ptr, recvBufferPtr + bytesRead))
                 return false;

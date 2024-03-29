@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -90,19 +91,16 @@ namespace Garnet.server
 
         /// <summary>
         /// Current custom transaction to be executed in the session.
-        /// NOTE: This is temporary until the parser contains a proper parsing context.
         /// </summary>
         CustomTransaction currentCustomTransaction = null;
 
         /// <summary>
         /// Current custom command to be executed in the session.
-        /// NOTE: This is temporary until the parser contains a proper parsing context.
         /// </summary>
         CustomCommand currentCustomCommand = null;
 
         /// <summary>
         /// Current custom object command to be executed in the session.
-        /// NOTE: This is temporary until the parser contains a proper parsing context.
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
 
@@ -362,12 +360,12 @@ namespace Garnet.server
                 RespCommand.SET => NetworkSET(ptr, ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(ptr, false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(ptr, true, ref storageApi),
-                RespCommand.SETEXNX => NetworkSETEXNX(ptr, count - 2, ref storageApi),
+                RespCommand.SETEXNX => NetworkSETEXNX(count - 2, ptr, ref storageApi),
                 RespCommand.DEL => NetworkDEL(count, ptr, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ptr, ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(count, ptr, ref storageApi),
-                RespCommand.EXPIRE => NetworkEXPIRE(ptr, RespCommand.EXPIRE, count, ref storageApi),
-                RespCommand.PEXPIRE => NetworkEXPIRE(ptr, RespCommand.PEXPIRE, count, ref storageApi),
+                RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, count, ptr, ref storageApi),
+                RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, count, ptr, ref storageApi),
                 RespCommand.PERSIST => NetworkPERSIST(ptr, ref storageApi),
                 RespCommand.GETRANGE => NetworkGetRange(ptr, ref storageApi),
                 RespCommand.TTL => NetworkTTL(ptr, RespCommand.TTL, ref storageApi),
@@ -375,17 +373,14 @@ namespace Garnet.server
                 RespCommand.SETRANGE => NetworkSetRange(ptr, ref storageApi),
                 RespCommand.GETDEL => NetworkGETDEL(ptr, ref storageApi),
                 RespCommand.APPEND => NetworkAppend(ptr, ref storageApi),
-
                 RespCommand.INCR => NetworkIncrement(ptr, RespCommand.INCR, ref storageApi),
                 RespCommand.INCRBY => NetworkIncrement(ptr, RespCommand.INCRBY, ref storageApi),
                 RespCommand.DECR => NetworkIncrement(ptr, RespCommand.DECR, ref storageApi),
                 RespCommand.DECRBY => NetworkIncrement(ptr, RespCommand.DECRBY, ref storageApi),
-
                 RespCommand.SETBIT => StringSetBit(ptr, ref storageApi),
                 RespCommand.GETBIT => StringGetBit(ptr, ref storageApi),
                 RespCommand.BITCOUNT => StringBitCount(ptr, count, ref storageApi),
                 RespCommand.BITPOS => StringBitPosition(ptr, count, ref storageApi),
-
                 RespCommand.PUBLISH => NetworkPUBLISH(ptr),
                 RespCommand.PING => count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, subcmd, count, ref storageApi),
                 RespCommand.ASKING => NetworkASKING(),
@@ -394,7 +389,7 @@ namespace Garnet.server
                 RespCommand.UNWATCH => NetworkUNWATCH(),
                 RespCommand.DISCARD => NetworkDISCARD(),
                 RespCommand.QUIT => NetworkQUIT(),
-                RespCommand.RUNTXP => NetworkRUNTXP(ptr, count),
+                RespCommand.RUNTXP => NetworkRUNTXP(count, ptr),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
 
@@ -546,7 +541,7 @@ namespace Garnet.server
             else if (command == RespCommand.RUNTXP)
             {
                 byte* ptr = recvBufferPtr + readHead;
-                return NetworkRUNTXP(ptr, count);
+                return NetworkRUNTXP(count, ptr);
             }
             else if (command == RespCommand.CustomTxn)
             {

@@ -416,7 +416,7 @@ namespace Garnet.server
         /// <summary>
         /// SET EX NX
         /// </summary>
-        private bool NetworkSETEXNX<TGarnetApi>(byte* ptr, int count, ref TGarnetApi storageApi)
+        private bool NetworkSETEXNX<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var _ptr = ptr;
