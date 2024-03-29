@@ -242,7 +242,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | ZINTERSTORE | ➖ |  |
 |  | [ZLEXCOUNT](data-structures.md#zlexcount) | ➕ |  |
 |  | ZMPOP | ➖ |  |
-|  | ZMSCORE | ➖ |  |
+|  | [ZMSCORE](data-structures.md#zmscore) | ➕ |  |
 |  | [ZPOPMAX](data-structures.md#zpopmax) | ➕ |  |
 |  | [ZPOPMIN](data-structures.md#zpopmin) | ➕ |  |
 |  | [ZRANDMEMBER](data-structures.md#zrandmember) | ➕ |  |
