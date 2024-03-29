@@ -2,6 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Garnet.common
@@ -58,9 +61,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)'$';
-            *curr++ = (byte)'-';
-            *curr++ = (byte)'1';
-            WriteNewline(ref curr);
+            WriteBytes<uint>(ref curr, "-1\r\n"u8);
             return true;
         }
 
@@ -73,9 +74,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)'*';
-            *curr++ = (byte)'-';
-            *curr++ = (byte)'1';
-            WriteNewline(ref curr);
+            WriteBytes<uint>(ref curr, "-1\r\n"u8);
             return true;
         }
 
@@ -332,11 +331,9 @@ namespace Garnet.common
 
             *curr++ = (byte)'$';
             NumUtils.IntToBytes(integerLen + sign, integerLenSize, ref curr);
-            *curr++ = (byte)'\r';
-            *curr++ = (byte)'\n';
+            WriteNewline(ref curr);
             NumUtils.IntToBytes(integer, integerLen, ref curr);
-            *curr++ = (byte)'\r';
-            *curr++ = (byte)'\n';
+            WriteNewline(ref curr);
             return true;
         }
 
@@ -357,11 +354,9 @@ namespace Garnet.common
 
             *curr++ = (byte)'$';
             NumUtils.IntToBytes(integerLen + sign, integerLenSize, ref curr);
-            *curr++ = (byte)'\r';
-            *curr++ = (byte)'\n';
+            WriteNewline(ref curr);
             NumUtils.LongToBytes(integer, integerLen, ref curr);
-            *curr++ = (byte)'\r';
-            *curr++ = (byte)'\n';
+            WriteNewline(ref curr);
             return true;
         }
 
@@ -421,19 +416,8 @@ namespace Garnet.common
             if (4 > (int)(end - curr))
                 return false;
 
-            *curr++ = (byte)'*';
-            *curr++ = (byte)'0';
-            WriteNewline(ref curr);
+            WriteBytes<uint>(ref curr, "*0\r\n"u8);
             return true;
-        }
-
-        /// <summary>
-        /// Write newline
-        /// </summary>
-        public static void WriteNewline(ref byte* curr)
-        {
-            *curr++ = (byte)'\r';
-            *curr++ = (byte)'\n';
         }
 
         /// <summary>
@@ -456,6 +440,24 @@ namespace Garnet.common
                 WriteNull(ref curr, end);
             }
             return true;
+        }
+
+        /// <summary>
+        /// Write newline (\r\n) to <paramref name="curr"/>
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void WriteNewline(ref byte* curr) => WriteBytes<ushort>(ref curr, "\r\n"u8);
+
+        /// <summary>
+        /// Writes two bytes to <paramref name="curr"/>
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void WriteBytes<T>(ref byte* curr, ReadOnlySpan<byte> bytes)
+            where T : unmanaged
+        {
+            Debug.Assert(bytes.Length == sizeof(T));
+            Unsafe.WriteUnaligned(curr, MemoryMarshal.Read<T>(bytes));
+            curr += sizeof(T);
         }
     }
 }
