@@ -96,6 +96,53 @@ namespace Garnet.server
             return true;
         }
 
+        private unsafe bool SetUnion<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            ptr += 12;
+
+            if (count < 3)
+            {
+                setItemsDoneCount = setOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("SUNION", count);
+            }
+            else
+            {
+                // number of keys
+                if (!RespReadUtils.ReadIntWithLengthHeader(out var nKeys, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                ArgSlice key = default;
+
+                // Read first key
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref key.ptr, ref key.length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                // Read all the keys
+                ArgSlice[] keys = new ArgSlice[nKeys];
+                keys[0] = key;
+
+                var i = nKeys - 1;
+                do
+                {
+                    keys[i] = default;
+                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr,
+                            recvBufferPtr + bytesRead))
+                        return false;
+                    --i;
+                } while (i > 0);
+
+                if (NetworkKeyArraySlotVerify(ref keys, true))
+                {
+                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                    if (!DrainCommands(bufSpan, count)) return false;
+                    return true;
+                }
+
+                storageApi.SetUnion(keys, out )
+            }
+        }
+
         /// <summary>
         /// Returns the members of the set resulting from the union of all the given sets.
         /// Keys that do not exist are considered to be empty sets.

@@ -362,6 +362,30 @@ namespace Garnet.server
 
         }
 
+        public unsafe GarnetStatus SetUnion<TObjectContext>(ArgSlice[] keys, out Dictionary<byte[], byte[]> items, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            items = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var statusOp = GET(keys[0].Bytes, out var firstSet, ref objectStoreContext);
+            if (statusOp == GarnetStatus.OK)
+            {
+                // read the rest of the keys
+                for (int item = 1; item < keys.Length; item++)
+                {
+                    statusOp = GET(keys[item].Bytes, out var nextSet, ref objectStoreContext);
+                    if (statusOp != GarnetStatus.OK)
+                        continue;
+                }
+            }
+
+            return GarnetStatus.OK;
+        }
+
+
         /// <summary>
         /// Returns the members of the set resulting from the union of all the given sets.
         /// Keys that do not exist are considered to be empty sets.
