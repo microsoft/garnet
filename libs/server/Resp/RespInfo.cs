@@ -26,7 +26,7 @@ namespace Garnet.server
                 // Checkpointing
                 "SAVE", "LASTSAVE", "BGSAVE", "BGREWRITEAOF",
                 // Sorted Set
-                "ZADD", "ZCARD", "ZPOPMAX", "ZSCORE", "ZREM", "ZCOUNT", "ZINCRBY", "ZRANK", "ZRANGE", "ZRANGEBYSCORE", "ZREVRANGE", "ZREVRANK", "ZREMRANGEBYLEX", "ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZLEXCOUNT", "ZPOPMIN", "ZRANDMEMBER", "ZDIFF", "ZSCAN",
+                "ZADD", "ZCARD", "ZPOPMAX", "ZSCORE", "ZREM", "ZCOUNT", "ZINCRBY", "ZRANK", "ZRANGE", "ZRANGEBYSCORE", "ZREVRANGE", "ZREVRANK", "ZREMRANGEBYLEX", "ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZLEXCOUNT", "ZPOPMIN", "ZRANDMEMBER", "ZDIFF", "ZSCAN", "ZMSCORE",
                 // List
                 "LPOP", "LPUSH", "RPOP", "RPUSH", "LLEN", "LTRIM", "LRANGE", "LINDEX", "LINSERT", "LREM", "RPOPLPUSH", "LMOVE", "LPUSHX", "RPUSHX",
                 // Hash

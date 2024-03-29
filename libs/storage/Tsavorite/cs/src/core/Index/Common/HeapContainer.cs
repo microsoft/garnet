@@ -21,7 +21,7 @@ namespace Tsavorite.core
     /// Heap container for standard C# objects (non-variable-length)
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    internal class StandardHeapContainer<T> : IHeapContainer<T>
+    internal sealed class StandardHeapContainer<T> : IHeapContainer<T>
     {
         private T obj;
 

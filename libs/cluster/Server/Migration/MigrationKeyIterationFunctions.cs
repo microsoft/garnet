@@ -11,7 +11,7 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        internal class MigrationKeyIterationFunctions
+        internal sealed class MigrationKeyIterationFunctions
         {
             internal struct MainStoreMigrateSlots : IScanIteratorFunctions<SpanByte, SpanByte>
             {
@@ -58,7 +58,7 @@ namespace Garnet.cluster
 
                     if (slots.Contains(slot) && !ClusterSession.Expired(ref value))
                     {
-                        byte[] objectData = session.clusterProvider.storeWrapper.SerializeGarnetObject(value);
+                        byte[] objectData = session.clusterProvider.storeWrapper.GarnetObjectSerializer.Serialize(value);
                         if (!session.WriteOrSendObjectStoreKeyValuePair(key, objectData, value.Expiration))
                             return false;
                     }

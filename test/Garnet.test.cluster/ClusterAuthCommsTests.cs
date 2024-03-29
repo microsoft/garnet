@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -16,10 +15,7 @@ namespace Garnet.test.cluster
     {
         ClusterTestContext context;
 
-        readonly HashSet<string> monitorTests = new()
-        {
-            //Add test names here to change logger verbosity
-        };
+        readonly HashSet<string> monitorTests = [];
 
         [SetUp]
         public void Setup()
@@ -38,7 +34,7 @@ namespace Garnet.test.cluster
         [Category("CLUSTER-AUTH"), Timeout(60000)]
         public void ClusterBasicACLTest([Values] bool useDefaultUserForInterNodeComms)
         {
-            int nodes = 6;
+            var nodes = 6;
 
             // Generate default ACL file
             context.GenerateCredentials();
@@ -70,7 +66,7 @@ namespace Garnet.test.cluster
         [Category("CLUSTER-AUTH"), Timeout(60000)]
         public void ClusterStartupWithoutAuthCreds([Values] bool useDefaultUserForInterNodeComms)
         {
-            int shards = 3;
+            var shards = 3;
 
             // Generate default ACL file
             context.GenerateCredentials();
@@ -86,18 +82,18 @@ namespace Garnet.test.cluster
                 context.credManager.GetUserCredentials("admin");
 
             // Update cluster credential before setting up cluster
-            for (int i = 0; i < shards; i++)
+            for (var i = 0; i < shards; i++)
             {
                 context.clusterTestUtils.ConfigSet(i, "cluster-username", cred.user);
                 context.clusterTestUtils.ConfigSet(i, "cluster-password", cred.password);
             }
 
             // Setup cluster
-            context.clusterTestUtils.SimpleSetupCluster();
+            _ = context.clusterTestUtils.SimpleSetupCluster();
 
             // Validate convergence
             Dictionary<string, SlotRange> slots = new();
-            for (int i = 0; i < shards; i++)
+            for (var i = 0; i < shards; i++)
             {
                 var nodes = context.clusterTestUtils.ClusterNodes(0).Nodes;
 
@@ -116,7 +112,7 @@ namespace Garnet.test.cluster
         [Category("CLUSTER-AUTH"), Timeout(60000)]
         public void ClusterReplicationAuth()
         {
-            int shards = 3;
+            var shards = 3;
             // Generate default ACL file
             context.GenerateCredentials();
 
@@ -127,11 +123,11 @@ namespace Garnet.test.cluster
             context.CreateConnection(clientCreds: context.credManager.GetUserCredentials("admin"));
 
             // Assign slots
-            context.clusterTestUtils.AddSlotsRange(0, new List<(int, int)> { (0, 16383) }, logger: context.logger);
+            _ = context.clusterTestUtils.AddSlotsRange(0, new List<(int, int)> { (0, 16383) }, logger: context.logger);
 
             // Retrieve credentials
             var cred = context.credManager.GetUserCredentials("admin");
-            for (int i = 0; i < shards; i++)
+            for (var i = 0; i < shards; i++)
             {
                 // Set config epoch
                 context.clusterTestUtils.SetConfigEpoch(i, i + 1, logger: context.logger);
@@ -156,7 +152,7 @@ namespace Garnet.test.cluster
             var primaryId = context.clusterTestUtils.GetNodeIdFromNode(nodeIndex: 0, logger: context.logger);
 
             // Try attach replicas
-            for (int i = 1; i < shards; i++)
+            for (var i = 1; i < shards; i++)
             {
                 context.clusterTestUtils.ClusterReplicate(
                     sourceNodeIndex: i,
@@ -167,7 +163,7 @@ namespace Garnet.test.cluster
             }
 
             // Wait for sync and validate key/values pairs
-            for (int i = 1; i < shards; i++)
+            for (var i = 1; i < shards; i++)
             {
                 context.clusterTestUtils.WaitForReplicaAofSync(
                     primaryIndex: 0,
@@ -202,9 +198,9 @@ namespace Garnet.test.cluster
         {
             ClusterStartupWithoutAuthCreds(useDefaultUserForInterNodeComms: true);
 
-            ServerCredentials[] cc = [
-                new ServerCredentials("admin", "adminplaceholder", IsAdmin: true, IsClearText: false),
-                new ServerCredentials("default", "defaultplaceholder2", IsAdmin: false, IsClearText: true),
+            ServerCredential[] cc = [
+                new ServerCredential("admin", "adminplaceholder", IsAdmin: true, IsClearText: false),
+                new ServerCredential("default", "defaultplaceholder2", IsAdmin: false, IsClearText: true),
             ];
 
             // Wait for all nodes to converge
@@ -225,29 +221,29 @@ namespace Garnet.test.cluster
 
             // Since credential have changed for admin user both nodes will fail their gossip
             // Bump epoch on one node
-            for (int i = 0; i < 10; i++)
+            for (var i = 0; i < 10; i++)
                 context.clusterTestUtils.BumpEpoch(nodeIndex: 0, logger: context.logger);
 
             // Update cluster credential
-            for (int i = 0; i < context.nodes.Length; i++)
+            for (var i = 0; i < context.nodes.Length; i++)
             {
                 context.clusterTestUtils.ConfigSet(i, "cluster-username", cc[1].user);
                 context.clusterTestUtils.ConfigSet(i, "cluster-password", cc[1].password);
             }
 
-            // get epoch value and port for node 0
+            // Get epoch value and port for node 0
             var epoch0 = context.clusterTestUtils.GetConfigEpoch(0, logger: context.logger);
             var port0 = context.clusterTestUtils.GetEndPoint(0).Port;
 
             // Wait until convergence after updating passwords
-            for (int i = 1; i < context.nodes.Length;)
+            for (var i = 1; i < context.nodes.Length;)
             {
                 var config = context.clusterTestUtils.ClusterNodes(i, logger: context.logger);
 
                 foreach (var node in config.Nodes)
                 {
                     var port = ((IPEndPoint)node.EndPoint).Port;
-                    var epoch = Int32.Parse(node.Raw.Split(" ")[6]);
+                    var epoch = int.Parse(node.Raw.Split(" ")[6]);
                     if (port == port0 && epoch == epoch0)
                     {
                         i++;

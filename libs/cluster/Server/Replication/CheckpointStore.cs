@@ -11,7 +11,7 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal class CheckpointStore
+    internal sealed class CheckpointStore
     {
         readonly StoreWrapper storeWrapper;
         readonly ClusterProvider clusterProvider;

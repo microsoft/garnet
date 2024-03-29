@@ -14,7 +14,7 @@ namespace Tsavorite.core
     internal enum ReadStatus { Pending, Done, Error };
     internal enum FlushStatus { Pending, Done, Error };
 
-    internal class RecoveryStatus
+    internal sealed class RecoveryStatus
     {
         public long endPage;
         public long snapshotEndPage;

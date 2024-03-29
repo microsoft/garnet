@@ -149,7 +149,7 @@ namespace Garnet
     /// Validation logic for multiple paths of type string representing local directories
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
-    internal class DirectoryPathsValidationAttribute : OptionValidationAttribute
+    internal sealed class DirectoryPathsValidationAttribute : OptionValidationAttribute
     {
         /// <summary>
         /// Determines if all directories must exist
@@ -281,7 +281,7 @@ namespace Garnet
     /// Validation logic for a string representing an IP address (either IPv4 or IPv6)
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
-    internal class IpAddressValidationAttribute : OptionValidationAttribute
+    internal sealed class IpAddressValidationAttribute : OptionValidationAttribute
     {
         private const string Localhost = "localhost";
 
@@ -313,7 +313,7 @@ namespace Garnet
     /// Validation logic for a string representing a memory size (1k, 1kb, 5M, 5Mb, 10g, 10GB etc.)
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
-    internal class MemorySizeValidationAttribute : OptionValidationAttribute
+    internal sealed class MemorySizeValidationAttribute : OptionValidationAttribute
     {
         private const string MemorySizePattern = @"^\d+([K|k|M|m|G|g][B|b]{0,1})?$";
 
@@ -345,7 +345,7 @@ namespace Garnet
     /// Validation logic for an integer representing a percentage (range between 0 and 100)
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
-    internal class PercentageValidationAttribute : RangeValidationAttribute
+    internal sealed class PercentageValidationAttribute : RangeValidationAttribute
     {
         internal PercentageValidationAttribute(bool isRequired = true) : base(typeof(int), 0, 100, true, true, isRequired)
         {
@@ -425,7 +425,7 @@ namespace Garnet
     /// Validation logic for an integer, checks if integer is contained in a specified range
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
-    internal class IntRangeValidationAttribute : RangeValidationAttribute
+    internal sealed class IntRangeValidationAttribute : RangeValidationAttribute
     {
         internal IntRangeValidationAttribute(int min, int max, bool includeMin = true, bool includeMax = true,
             bool isRequired = true) : base(typeof(int), min, max, includeMin, includeMax, isRequired)
@@ -437,7 +437,7 @@ namespace Garnet
     /// Validation logic for an double, checks if double is contained in a specified range
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
-    internal class DoubleRangeValidationAttribute : RangeValidationAttribute
+    internal sealed class DoubleRangeValidationAttribute : RangeValidationAttribute
     {
         internal DoubleRangeValidationAttribute(double min, double max, bool includeMin = true, bool includeMax = true,
             bool isRequired = true) : base(typeof(double), min, max, includeMin, includeMax, isRequired)
@@ -476,7 +476,7 @@ namespace Garnet
     /// Validation logic for Checkpoint Directory
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
-    internal class CheckpointDirValidationAttribute : DirectoryPathValidationAttribute
+    internal sealed class CheckpointDirValidationAttribute : DirectoryPathValidationAttribute
     {
         internal CheckpointDirValidationAttribute(bool mustExist, bool isRequired) : base(mustExist, isRequired)
         {
@@ -504,7 +504,7 @@ namespace Garnet
     /// Validation logic for CertFileName
     /// </summary>
     [AttributeUsage(AttributeTargets.Property)]
-    internal class CertFileValidationAttribute : FilePathValidationAttribute
+    internal sealed class CertFileValidationAttribute : FilePathValidationAttribute
     {
         internal CertFileValidationAttribute(bool fileMustExist, bool directoryMustExist, bool isRequired) : base(
             fileMustExist, directoryMustExist, isRequired, new[] { ".pfx" })
