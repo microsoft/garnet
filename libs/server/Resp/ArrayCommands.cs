@@ -718,7 +718,7 @@ namespace Garnet.server
         {
             ptr += 10;
 
-            if (count < 2) 
+            if (count < 2)
                 return AbortWithWrongNumberOfArguments("SCAN", count);
 
             // Scan cursor [MATCH pattern] [COUNT count] [TYPE type]
@@ -809,8 +809,8 @@ namespace Garnet.server
               where TGarnetApi : IGarnetApi
         {
             ptr += 10;
-            
-            if (count != 2) 
+
+            if (count != 2)
                 return AbortWithWrongNumberOfArguments("TYPE", count);
 
             // TYPE key
@@ -827,7 +827,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(typeName), ref dcurr, dend))
                     SendAndReset();
             }
-    
+
             readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
@@ -837,7 +837,7 @@ namespace Garnet.server
         {
             ptr += 12;
 
-            if (count == 1) 
+            if (count == 1)
                 return AbortWithWrongNumberOfArguments("MODULE", count);
 
             // MODULE nameofmodule
