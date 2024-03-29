@@ -84,15 +84,12 @@ namespace Garnet.server
             if (output.countDone == Int32.MinValue && listOpsCount < inputCount)
                 return false;
 
-            ptr += output.bytesDone;
+            // FIXME: Need to use ptr += output.bytesDone; instead of ReadLeftToken
 
-            //if lpushx or rpushx and not found forward left tokens
-            if ((lop == ListOperation.LPUSHX || lop == ListOperation.RPUSHX) && status == GarnetStatus.NOTFOUND)
-            {
-                var tokens = ReadLeftToken(count - 1, ref ptr);
-                if (tokens < count - 1)
-                    return false;
-            }
+            // Skip the element tokens on the input buffer
+            var tokens = ReadLeftToken(count - 1, ref ptr);
+            if (tokens < count - 1)
+                return false;
 
             //write result to output
             while (!RespWriteUtils.WriteInteger(listItemsDoneCount, ref dcurr, dend))
