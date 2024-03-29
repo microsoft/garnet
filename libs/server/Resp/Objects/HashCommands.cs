@@ -494,7 +494,7 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
-                        ReadLeftToken(count - 2, ref ptr);
+                        ReadLeftToken(count - 1, ref ptr);
                         break;
                 }
             }

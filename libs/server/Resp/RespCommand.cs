@@ -246,7 +246,7 @@ namespace Garnet.server
                             break;
 
                         case 0x07:
-                            if (lastWord == MemoryMarshal.Read<ulong>("DISCARD\r\n"u8) && ptr[8] == 'D')
+                            if (lastWord == MemoryMarshal.Read<ulong>("ISCARD\r\n"u8) && ptr[8] == 'D')
                             {
                                 return RespCommand.DISCARD;
                             }
@@ -1312,9 +1312,6 @@ namespace Garnet.server
                             return (RespCommand.INVALID, subCmd);
                         }
                         readHead = bytesRead;
-
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref dcurr, dend))
-                            SendAndReset();
 
                         return (RespCommand.INVALID, subCmd);
                     }
