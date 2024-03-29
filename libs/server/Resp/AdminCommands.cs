@@ -340,10 +340,6 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-            else if (command == RespCommand.RESET)
-            {
-                // XXX: Not Implemented?
-            }
             else if (command == RespCommand.QUIT)
             {
                 if (!DrainCommands(bufSpan, count))

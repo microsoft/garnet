@@ -1178,10 +1178,6 @@ namespace Garnet.server
             {
                 return (RespCommand.TIME, 0);
             }
-            else if (command.SequenceEqual(CmdStrings.RESET))
-            {
-                return (RespCommand.RESET, 0);
-            }
             else if (command.SequenceEqual(CmdStrings.QUIT))
             {
                 return (RespCommand.QUIT, 0);
