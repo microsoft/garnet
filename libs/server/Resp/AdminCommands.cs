@@ -276,10 +276,20 @@ namespace Garnet.server
             {
                 if (count != 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 1))
-                        return false;
-                    errorFlag = true;
-                    errorCmd = "command";
+                    var param = GetCommand(bufSpan, out var success);
+                    if (!success) return false;
+                    if (Encoding.ASCII.GetString(param) == "COUNT")
+                    {
+                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($":{RespInfo.GetCommandsCount()}\r\n"), ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        if (!DrainCommands(bufSpan, count - 1))
+                            return false;
+                        errorFlag = true;
+                        errorCmd = "command";
+                    }
                 }
                 else
                 {

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -128,6 +129,15 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand("TIME HELLO");
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CommandCountCommandTest()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var expectedResponse = $":{RespInfo.GetCommandsCount()}\r\n";
+            var response = lightClientRequest.SendCommand("COMMAND COUNT");
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
         }
 
         #endregion
@@ -373,6 +383,16 @@ namespace Garnet.test
             Assert.IsTrue(_value.IsNull);
         }
 
+        [Test]
+        public async Task SeCommandCountTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var expectedResponse = RespInfo.GetCommandsCount() + "";
+            var actualValue = (await db.ExecuteAsync("COMMAND", "COUNT")).ToString();
+
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
         #endregion
     }
 }

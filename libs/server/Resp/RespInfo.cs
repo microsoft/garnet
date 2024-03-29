@@ -10,6 +10,12 @@ namespace Garnet.server
     /// </summary>
     public static class RespInfo
     {
+        private static readonly ushort _commandsCount;
+        static RespInfo()
+        {
+            _commandsCount = (ushort)GetCommands().Count;
+        }
+
         /// <summary>
         /// Get set of RESP commands supported by Garnet server
         /// </summary>
@@ -46,6 +52,15 @@ namespace Garnet.server
                 // Transactions: TODO
                 "WATCH", "UNWATCH", "MULTI", "EXEC", "DISCARD",
             };
+        }
+
+        /// <summary>
+        /// Get RESP commands count supported by Garnet server
+        /// </summary>
+        /// <returns></returns>
+        public static ushort GetCommandsCount()
+        {
+            return _commandsCount;
         }
     }
 }
