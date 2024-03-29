@@ -429,7 +429,7 @@ namespace Garnet.server
         public GarnetStatus SetIsMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
-        
+
         /// <summary>
         /// Removes and returns one or more random members from the set at key.
         /// </summary>
