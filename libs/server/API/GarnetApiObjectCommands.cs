@@ -65,6 +65,10 @@ namespace Garnet.server
             => storageSession.SortedSetScore(key, input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetScores(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetScores(key, input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.SortedSetPop(key, input, ref outputFooter, ref objectContext);
 
