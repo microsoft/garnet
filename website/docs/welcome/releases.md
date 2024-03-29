@@ -32,9 +32,70 @@ catch (Exception ex)
 
 ## Docker
 
-We have very basic Dockerfiles available on GitHub so you can host them yourself. We would appreciate contributions 
-to help make our Docker support more comprehensive. Official Docker builds are on our radar for the future.
+On Linux
+
+```console
+docker run --network=host --ulimit memlock=-1 ghcr.io/microsoft/garnet
+```
+
+On MacOS
+
+```console
+docker run -p 6379:6379 --ulimit memlock=-1 ghcr.io/microsoft/garnet
+```
+You can then use `redis-cli` to connect to `127.0.0.1:6379`.
+
+```console
+redis-cli
+127.0.0.1:6379> set key value
+OK
+127.0.0.1:6379> get key
+"value"
+127.0.0.1:6379>
+```
+Dockerfile links:
 * [Dockerfile](https://github.com/microsoft/garnet/blob/main/Dockerfile)
 * [Dockerfile.ubuntu-x64](https://github.com/microsoft/garnet/blob/main/Dockerfile.ubuntu-x64)
 * [Dockerfile.nanoserver-x64](https://github.com/microsoft/garnet/blob/main/Dockerfile.nanoserver-x64)
 
+## Docker Compose
+
+Make sure you have installed [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/).
+
+### Download Garnet Docker Compose File
+
+```console
+wget https://raw.githubusercontent.com/microsoft/garnet/main/docker-compose.yml
+```
+
+### Launch Garnet
+
+```console
+docker compose up -d
+```
+
+### Confirm image is up
+
+```console
+docker ps | grep garnet
+# 249b468dcda1   ghcr.io/microsoft/garnet   "/app/GarnetServer -…"   21 seconds ago   Up 20 seconds   0.0.0.0:6379->6379/tcp, :::6379->6379/tcp   garnet-garnet-1
+```
+
+### Log follow
+
+```console
+docker logs -f garnet-garnet-1
+```
+
+### Connect clients
+
+As before, you can then use `redis-cli` or any client library in your application to connect to `127.0.0.1:6379`.
+
+```console
+redis-cli
+127.0.0.1:6379> set key value
+OK
+127.0.0.1:6379> get key
+"value"
+127.0.0.1:6379>
+```

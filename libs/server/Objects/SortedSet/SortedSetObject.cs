@@ -43,6 +43,7 @@ namespace Garnet.server
         ZRANDMEMBER,
         ZDIFF,
         ZSCAN,
+        ZMSCORE
     }
 
     /// <summary>
@@ -203,6 +204,9 @@ namespace Garnet.server
                         break;
                     case SortedSetOperation.ZSCORE:
                         SortedSetScore(_input, ref output);
+                        break;
+                    case SortedSetOperation.ZMSCORE:
+                        SortedSetScores(_input, input.Length, ref output);
                         break;
                     case SortedSetOperation.ZCOUNT:
                         SortedSetCount(_input, input.Length, _output);
@@ -381,7 +385,7 @@ namespace Garnet.server
 
         private void UpdateSize(byte[] item, bool add = true)
         {
-            // item's length + overhead to store item + value of type double added to sorted set and dictionary + overhead for those datastructures 
+            // item's length + overhead to store item + value of type double added to sorted set and dictionary + overhead for those datastructures
             var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + (2 * sizeof(double))
                 + MemoryUtils.SortedSetEntryOverhead + MemoryUtils.DictionaryEntryOverhead;
             this.Size += add ? size : -size;
