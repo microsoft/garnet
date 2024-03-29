@@ -396,9 +396,9 @@ namespace Garnet.test
             CreateLongSet();
 
             using var lightClientRequest = TestUtils.CreateRequest();
-            
+
             var response = lightClientRequest.SendCommand("SPOP myset 5", 4);
-            var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);  
+            var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
             Assert.AreEqual(5, Int32.Parse(strLen));
         }
 
