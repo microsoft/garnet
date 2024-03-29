@@ -11,8 +11,6 @@ on:
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
-  ACTIONS_RUNNER_DEBUG: true
-  ACTIONS_STEP_DEBUG: true
 
 jobs:
   changes:
@@ -51,6 +49,7 @@ jobs:
         os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net6.0', 'net8.0' ]
         configuration: [ 'Debug', 'Release' ]
+        test: [ 'Garnet.test', 'Garnet.test.cluster' ]
     if: needs.changes.outputs.garnet == 'true'
     steps:
       - name: Check out code
@@ -61,27 +60,18 @@ jobs:
           dotnet-version: 8.0.x
       - name: Install dependencies
         run: dotnet restore
-      - name: Format
+      - name: Check style format
         run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
-      - name: Test Garnet
-        run: dotnet test -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-
-      - name: DEBUG - List test result files and their sizes
-        run: dir "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-      - name: DEBUG - System Hard Drive space
-        run: wmic LogicalDisk where DriveType="3" get DeviceID,Size,FreeSpace
-        if: runner.os == 'Windows'
-      - name: DEBUG - System Available Memory
-        run: systeminfo | find "Available Physical Memory"
-        if: runner.os == 'Windows'
-
+      - name: Run tests ${{ matrix.test }}
+        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
+        timeout-minutes: 30 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
-          name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-          path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
         if: ${{ always() }}
 
   # Job to build and test Tsavorite code (only if there were changes to it)
@@ -124,8 +114,9 @@ jobs:
         run: dotnet format --verify-no-changes --verbosity diagnostic
       - name: Build Tsavorite
         run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
-      - name: Test Tsavorite
+      - name: Run Tsavorite tests
         run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+        timeout-minutes: 30 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
