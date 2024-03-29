@@ -379,7 +379,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// 
+        ///
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
@@ -733,7 +733,21 @@ namespace Garnet.server
             => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
 
         /// <summary>
-        /// Removes and returns the first element from the sorted set stored at key, 
+        /// Returns the scores of members in the sorted set at key.
+        /// For every member that does not exist in the sorted set, or if the key does not exist, nil is returned.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <returns></returns>
+        public GarnetStatus SortedSetScores<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+
+        /// <summary>
+        /// Removes and returns the first element from the sorted set stored at key,
         /// with the scores ordered from low to high (min) or high to low (max).
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -775,7 +789,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Returns the number of elements in the sorted set with a value between min and max.
-        /// When all the elements in a sorted set have the same score, 
+        /// When all the elements in a sorted set have the same score,
         /// this command forces lexicographical ordering.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -789,7 +803,7 @@ namespace Garnet.server
             => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
 
         /// <summary>
-        /// Increments the score of member in the sorted set stored at key by increment. 
+        /// Increments the score of member in the sorted set stored at key by increment.
         /// If member does not exist in the sorted set, it is added with increment as its score (as if its previous score was 0.0).
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
