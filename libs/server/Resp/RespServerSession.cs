@@ -359,7 +359,7 @@ namespace Garnet.server
                 RespCommand.SET => NetworkSET(ptr, ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(ptr, false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(ptr, true, ref storageApi),
-                RespCommand.SETEXNX => NetworkSETEXNX(count - 2, ptr, ref storageApi),
+                RespCommand.SETEXNX => NetworkSETEXNX(count, ptr, ref storageApi),
                 RespCommand.DEL => NetworkDEL(count, ptr, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ptr, ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(count, ptr, ref storageApi),

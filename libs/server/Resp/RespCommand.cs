@@ -1267,6 +1267,29 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Attempts to skip to the end of the line ("\r\n") under the current read head.
+        /// </summary>
+        /// <returns>True if string terminator was found and readHead was changed, otherwise false. </returns>
+        private bool AttemptSkipLine()
+        {
+            // We might have received an inline command package.Try to find the end of the line.
+            logger?.LogWarning("Received malformed input message. Trying to skip line.");
+
+            for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
+            {
+                if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n') ;
+                {
+                    // Skip to the end of the string
+                    readHead = stringEnd + 2;
+                    return true;
+                }
+            }
+
+            // We received an incomplete string and require more input.
+            return false;
+        }
+
+        /// <summary>
         /// Parses the command and subcommand from the given input buffer.
         /// </summary>
         /// <param name="ptr">Pointer to the beginning of the input buffer.</param>
@@ -1298,24 +1321,12 @@ namespace Garnet.server
                 if (cmd == RespCommand.NONE)
                 {
                     // Ensure we are attempting to read a RESP array header
-                    if (*(recvBufferPtr + readHead) != '*')
+                    if (recvBufferPtr[readHead] != '*')
                     {
-                        // We might have received an inline command package. Try to find the end of the string.
-                        logger?.LogWarning("Received malformed input message. Trying to skip string.");
+                        // We might have received an inline command package. Skip until the end of the line in the input package.
+                        success = AttemptSkipLine();
 
-                        for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
-                        {
-                            if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n') ;
-                            {
-                                // Skip to the end of the string
-                                readHead = stringEnd + 2;
-                                return (RespCommand.INVALID, subCmd);
-                            }
-                        }
-
-                        // We received an incomplete string. Wait for more input and retry.
-                        success = false;
-                        return (RespCommand.INVALID, subCmd);
+                        return (RespCommand.INVALID, 0);
                     }
 
                     // ... and read the array length; Move the read head

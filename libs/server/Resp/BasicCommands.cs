@@ -430,9 +430,10 @@ namespace Garnet.server
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
+            count -= 2;
+
             if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
             {
-                readHead = (int)(ptr - recvBufferPtr);
                 return true;
             }
 
