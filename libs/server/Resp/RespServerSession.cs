@@ -238,9 +238,9 @@ namespace Garnet.server
 
         private void ProcessMessages()
         {
-            // #if DEBUG
-            // logger?.LogTrace("RECV: [{recv}]", Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", ""));
-            // #endif
+            #if DEBUG
+            logger?.LogTrace("RECV: [{recv}]", Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", ""));
+            #endif
 
             dcurr = networkSender.GetResponseObjectHead();
             dend = networkSender.GetResponseObjectTail();
@@ -765,9 +765,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
         {
-            // #if DEBUG
-            // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
-            // #endif
+            #if DEBUG
+            logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
+            #endif
 
             if ((int)(dcurr - d) > 0)
             {

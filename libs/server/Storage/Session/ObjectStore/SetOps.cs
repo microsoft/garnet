@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -360,6 +361,30 @@ namespace Garnet.server
             return status;
 
         }
+
+        public unsafe GarnetStatus SetUnion<TObjectContext>(ArgSlice[] keys, out Dictionary<byte[], byte[]> items, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            items = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var statusOp = GET(keys[0].Bytes, out var firstSet, ref objectStoreContext);
+            if (statusOp == GarnetStatus.OK)
+            {
+                // read the rest of the keys
+                for (int item = 1; item < keys.Length; item++)
+                {
+                    statusOp = GET(keys[item].Bytes, out var nextSet, ref objectStoreContext);
+                    if (statusOp != GarnetStatus.OK)
+                        continue;
+                }
+            }
+
+            return GarnetStatus.OK;
+        }
+
 
         /// <summary>
         ///  Adds the specified members to the set at key.

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -660,8 +661,11 @@ namespace Garnet.server
                     if (*(long*)ptr == 5786932363775521828L && *(ushort*)(ptr + 8) == 2573 && *(ptr + 9) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SPOP);
                     //[$5|SSCAN|] = 14 bytes = 8 (long) + 2 (ushort)
-                    if (*(long*)ptr == 4702694052020958500L && *(ushort*)(ptr + 8) == 3406 && *(ptr + 10) == 10)
+                    if (*(long*)ptr == 4702694052020958500L && *(uint*)(ptr + 8) == 3406 && *(ptr + 10) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SSCAN);
+                    //[$6|SUNION|] = 12 bytes = 8 (long) + 4 (uint)
+                    if (*(long*)ptr == 5282253228091455012L && *(uint*)(ptr + 8) == 168644175)
+                        return (RespCommand.Set, (byte)SetOperation.SUNION);
                     #endregion
                 }
 

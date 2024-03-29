@@ -23,6 +23,7 @@ namespace Garnet.server
         SMEMBERS,
         SCARD,
         SSCAN,
+        SUNION
     }
 
 
