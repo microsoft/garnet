@@ -581,6 +581,25 @@ The min and max arguments have the same meaning as described for [ZRANGEBYLEX](#
 
 ---
 
+### ZMSCORE
+
+#### Syntax
+
+```bash
+    ZMSCORE key member [member ...]
+```
+
+Returns the scores associated with the specified **members** in the sorted set stored at **key**.
+
+For every **member** that does not exist in the sorted set, a nil value is returned.
+
+Returns one of the following:
+
+_Nil reply:_ if the member does not exist in the sorted set.\
+_Array reply:_ a list of string **member** scores as double-precision floating point numbers.
+
+---
+
 ### ZPOPMAX
 
 #### Syntax

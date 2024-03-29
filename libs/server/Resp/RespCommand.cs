@@ -515,6 +515,10 @@ namespace Garnet.server
                     if (*(long*)ptr == 4702694082085729572L && *(ushort*)(ptr + 8) == 3406 && *(ptr + 10) == 10)
                         return (RespCommand.SortedSet, (byte)SortedSetOperation.ZSCAN);
 
+                    //[$7|ZMSCORE|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
+                    if (*(long*)ptr == 4851306272719189796L && *(int*)(ptr + 8) == 222646863 && *(ptr + 12) == 10)
+                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZMSCORE);
+
                     #region SortedSet Operations with Geo Commands
                     //[$6|GEOADD|] = 12 bytes = 8 (long) + 2 (ushort) + 2 bytes
                     if (*(long*)ptr == 4706056307039090212L && *(ushort*)(ptr + 8) == 17476 && *(ptr + 11) == 10)
@@ -655,7 +659,7 @@ namespace Garnet.server
                     //[$5|SCARD|] = 11 bytes = 8 (long) + 2 (ushort) + 1 byte
                     if (*(long*)ptr == 5927092608526267684L && *(ushort*)(ptr + 8) == 3396 && *(ptr + 10) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SCARD);
-                    //[$4|SPOP|] = 10 bytes = 8 (long) + 2 (ushort) 
+                    //[$4|SPOP|] = 10 bytes = 8 (long) + 2 (ushort)
                     if (*(long*)ptr == 5786932363775521828L && *(ushort*)(ptr + 8) == 2573 && *(ptr + 9) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SPOP);
                     //[$5|SSCAN|] = 14 bytes = 8 (long) + 2 (ushort)

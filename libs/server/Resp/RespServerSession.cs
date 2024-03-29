@@ -162,7 +162,7 @@ namespace Garnet.server
         /// <returns>True if the session has been authenticated successfully, false if the user could not be authenticated.</returns>
         bool AuthenticateUser(ReadOnlySpan<byte> username, ReadOnlySpan<byte> password = default(ReadOnlySpan<byte>))
         {
-            // Authenticate user or change to default user if no authentication is supported 
+            // Authenticate user or change to default user if no authentication is supported
             bool success = _authenticator.CanAuthenticate ? _authenticator.Authenticate(password, username) : true;
 
             if (success)
@@ -425,6 +425,7 @@ namespace Garnet.server
                 (RespCommand.SortedSet, (byte)SortedSetOperation.ZCARD) => SortedSetLength(count, ptr, ref storageApi),
                 (RespCommand.SortedSet, (byte)SortedSetOperation.ZPOPMAX) => SortedSetPop(count, ptr, SortedSetOperation.ZPOPMAX, ref storageApi),
                 (RespCommand.SortedSet, (byte)SortedSetOperation.ZSCORE) => SortedSetScore(count, ptr, ref storageApi),
+                (RespCommand.SortedSet, (byte)SortedSetOperation.ZMSCORE) => SortedSetScores(count, ptr, ref storageApi),
                 (RespCommand.SortedSet, (byte)SortedSetOperation.ZCOUNT) => SortedSetCount(count, ptr, ref storageApi),
                 (RespCommand.SortedSet, (byte)SortedSetOperation.ZINCRBY) => SortedSetIncrement(count, ptr, ref storageApi),
                 (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANK) => SortedSetRank(count, ptr, SortedSetOperation.ZRANK, ref storageApi),
