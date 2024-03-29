@@ -1303,16 +1303,16 @@ namespace Garnet.server
                         // We might have received an inline command package. Try to find the end of the string.
                         logger?.LogWarning("Received malformed input message. Trying to skip string.");
 
-                        for (int stringEnd = readHead; stringEnd < bytesRead-1; stringEnd++)
+                        for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
                         {
                             if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n') ;
                             {
-                                    // Skip to the end of the string
-                                    readHead = stringEnd + 2;
-                                    return (RespCommand.INVALID, subCmd);                               
+                                // Skip to the end of the string
+                                readHead = stringEnd + 2;
+                                return (RespCommand.INVALID, subCmd);
                             }
                         }
-                        
+
                         // We received an incomplete string. Wait for more input and retry.
                         success = false;
                         return (RespCommand.INVALID, subCmd);
