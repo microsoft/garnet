@@ -65,6 +65,8 @@ const config = {
     ],
   ],
 
+  plugins: ["docusaurus-plugin-clarity"],
+
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
@@ -153,6 +155,9 @@ const config = {
         defaultMode: 'light',
         disableSwitch: false,
         respectPrefersColorScheme: false,
+      },
+      clarity: {
+        ID: "loh6v65ww5",
       },
     }),
 
