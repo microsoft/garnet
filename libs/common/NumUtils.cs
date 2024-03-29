@@ -403,7 +403,7 @@ namespace Garnet.common
         /// <summary>
         /// This table is based on the CRC-16-CCITT polynomial (0x1021)
         /// </summary>
-#pragma warning disable IDE0300 // Simplify collection initialization
+#pragma warning disable IDE0300 // Simplify collection initialization. Ignored to avoid dotnet-format bug, see https://github.com/dotnet/sdk/issues/39898
         private static ReadOnlySpan<ushort> Crc16Table => new ushort[256]
         {
             0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
