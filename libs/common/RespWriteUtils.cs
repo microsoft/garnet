@@ -449,7 +449,7 @@ namespace Garnet.common
         internal static void WriteNewline(ref byte* curr) => WriteBytes<ushort>(ref curr, "\r\n"u8);
 
         /// <summary>
-        /// Writes two bytes to <paramref name="curr"/>
+        /// Write <paramref name="bytes"/> to <paramref name="curr"/> as type <typeparamref name="T"/> sized value.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void WriteBytes<T>(ref byte* curr, ReadOnlySpan<byte> bytes)
