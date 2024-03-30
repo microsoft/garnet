@@ -76,34 +76,33 @@ namespace Garnet.server
                 }
             }
 
-            fixed (byte* patternPtr = patternB.ToArray())
+            byte* patternPtr = patternB.ptr;
+
+            mainStoreDbScanFuncs ??= new();
+            mainStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length);
+            objStoreDbScanFuncs ??= new();
+            objStoreDbScanFuncs.Initialize(objStoreKeys, allKeys ? null : patternPtr, patternB.Length, matchType);
+
+            storeCursor = cursor;
+            long remainingCount = count;
+
+            // Cursor is zero or not an object store address
+            // Scan main store only for string or default key type
+            if ((cursor & IsObjectStoreCursor) == 0 && (typeObject == default || typeObject.SequenceEqual(CmdStrings.STRING) || typeObject.SequenceEqual(CmdStrings.stringt)))
             {
-                mainStoreDbScanFuncs ??= new();
-                mainStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length);
-                objStoreDbScanFuncs ??= new();
-                objStoreDbScanFuncs.Initialize(objStoreKeys, allKeys ? null : patternPtr, patternB.Length, matchType);
+                session.ScanCursor(ref storeCursor, count, mainStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+                remainingCount -= Keys.Count;
+            }
 
-                storeCursor = cursor;
-                long remainingCount = count;
-
-                // Cursor is zero or not an object store address
-                // Scan main store only for string or default key type
-                if ((cursor & IsObjectStoreCursor) == 0 && (typeObject == default || typeObject.SequenceEqual(CmdStrings.STRING) || typeObject.SequenceEqual(CmdStrings.stringt)))
-                {
-                    session.ScanCursor(ref storeCursor, count, mainStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
-                    remainingCount -= Keys.Count;
-                }
-
-                // Scan object store with the type parameter
-                // Check the cursor value corresponds to the object store
-                if (objectStoreSession != null && remainingCount > 0 && (typeObject == default || (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))))
-                {
-                    var validateCursor = storeCursor != 0 && storeCursor != lastScanCursor;
-                    storeCursor &= ~IsObjectStoreCursor;
-                    objectStoreSession.ScanCursor(ref storeCursor, remainingCount, objStoreDbScanFuncs, validateCursor: validateCursor);
-                    if (storeCursor != 0) storeCursor = storeCursor | IsObjectStoreCursor;
-                    Keys.AddRange(objStoreKeys);
-                }
+            // Scan object store with the type parameter
+            // Check the cursor value corresponds to the object store
+            if (objectStoreSession != null && remainingCount > 0 && (typeObject == default || (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))))
+            {
+                var validateCursor = storeCursor != 0 && storeCursor != lastScanCursor;
+                storeCursor &= ~IsObjectStoreCursor;
+                objectStoreSession.ScanCursor(ref storeCursor, remainingCount, objStoreDbScanFuncs, validateCursor: validateCursor);
+                if (storeCursor != 0) storeCursor = storeCursor | IsObjectStoreCursor;
+                Keys.AddRange(objStoreKeys);
             }
 
             lastScanCursor = storeCursor;
