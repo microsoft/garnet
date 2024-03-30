@@ -432,11 +432,6 @@ namespace Garnet.server
 
             count -= 2;
 
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
-            {
-                return true;
-            }
-
             int expiry = 0;
             bool error = false;
             ReadOnlySpan<byte> errorMessage = default;
@@ -557,6 +552,11 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
                     SendAndReset();
+                return true;
+            }
+
+            if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
+            {
                 return true;
             }
 
