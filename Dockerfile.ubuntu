@@ -14,7 +14,7 @@ RUN dotnet restore -a ${ARCH}
 RUN dotnet build -a ${ARCH} -c Release
 
 # Copy and publish app and libraries
-RUN dotnet publish -a ${ARCH} -c Release -o /app -r linux-x64 --self-contained false -f net8.0
+RUN dotnet publish -a ${ARCH} -c Release -o /app --self-contained false -f net8.0
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0
