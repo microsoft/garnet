@@ -432,6 +432,14 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
 
+        /// <summary>
+        /// Returns the members of the set resulting from the difference between the first set at key and all the successive sets at keys.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="keys"></param>
+        /// <param name="members"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
         public GarnetStatus SetDiff<TObjectContext>(ArgSlice[] keys,out HashSet<byte[]> members, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
