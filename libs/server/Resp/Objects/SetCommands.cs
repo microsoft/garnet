@@ -115,7 +115,7 @@ namespace Garnet.server
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SUNION", count);
             }
-            
+
             // Read all the keys
             ArgSlice[] keys = new ArgSlice[count - 1];
 
@@ -135,12 +135,12 @@ namespace Garnet.server
             }
 
             storageApi.SetUnion(keys, out var result);
-                
+
             // write the size of result
             var resultCount = result?.Count ?? 0;
             while (!RespWriteUtils.WriteArrayLength(resultCount, ref dcurr, dend))
                 SendAndReset();
-                
+
             if (result != null)
             {
                 foreach (var item in result)

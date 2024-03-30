@@ -1177,7 +1177,6 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
 
-        
         /// <summary>
         /// Returns the members of the set resulting from the union of all the given sets.
         /// Keys that do not exist are considered to be empty sets.
@@ -1186,7 +1185,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output);
-        
+
         #endregion
 
         #region Hash Methods

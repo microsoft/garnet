@@ -262,24 +262,24 @@ namespace Garnet.test
 
             result = db.SetAdd(new RedisKey("key3"), new RedisValue[] { "item-a", "item-c", "item-e" });
             Assert.AreEqual(3, result);
-            
+
             var members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2", "key3" });
-            RedisValue[] entries = new RedisValue[] { "item-a", "item-b", "item-c", "item-d", "item-e"};
+            RedisValue[] entries = new RedisValue[] { "item-a", "item-b", "item-c", "item-d", "item-e" };
             Assert.AreEqual(5, members.Length);
             // assert two arrays are equal ignoring order
             Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(entries.OrderBy(x => x)));
-            
+
             members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2", "key3", "_not_exists" });
             Assert.AreEqual(5, members.Length);
             Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(entries.OrderBy(x => x)));
-            
+
             members = db.SetCombine(SetOperation.Union, new RedisKey[] { "_not_exists_1", "_not_exists_2", "_not_exists_3" });
             Assert.IsEmpty(members);
-            
+
             members = db.SetCombine(SetOperation.Union, new RedisKey[] { "_not_exists_1", "key1", "_not_exists_2", "_not_exists_3" });
             Assert.AreEqual(4, members.Length);
             Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
-            
+
             members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2" });
             Assert.AreEqual(4, members.Length);
             Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
@@ -449,7 +449,7 @@ namespace Garnet.test
             expectedResponse = "*1\r\n$7\r\nItemOne\r\n";
             Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
-        
+
         [Test]
         public void CanDoSetUnionLC()
         {
@@ -469,12 +469,12 @@ namespace Garnet.test
             expectedResponse = "*7\r\n";
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
-            
+
             response = lightClientRequest.SendCommand("SUNION myset no_exist_set", 5);
             expectedResponse = "*4\r\n";
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
-            
+
             response = lightClientRequest.SendCommand("SUNION no_exist_set myset no_exist_set another_set", 8);
             expectedResponse = "*7\r\n";
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);

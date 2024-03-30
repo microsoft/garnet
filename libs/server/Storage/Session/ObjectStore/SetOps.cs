@@ -399,7 +399,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             output = new HashSet<byte[]>(new ByteArrayComparer());
-            
+
             foreach (var key in keys)
             {
                 if (GET(key.Bytes, out var currObject, ref objectStoreContext) == GarnetStatus.OK)
@@ -408,7 +408,7 @@ namespace Garnet.server
                     output.UnionWith(currSet);
                 }
             }
-            
+
             return GarnetStatus.OK;
         }
 

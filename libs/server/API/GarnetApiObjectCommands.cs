@@ -299,7 +299,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)
             => storageSession.SetUnion(keys, out output, ref objectContext);
-        
+
         #endregion
 
         #region Hash Methods
