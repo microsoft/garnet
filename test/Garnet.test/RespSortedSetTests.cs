@@ -374,7 +374,7 @@ namespace Garnet.test
             lightClientRequest.SendCommands("ZADD zmscore 0 a 1 b", "PING");
 
             var response = lightClientRequest.SendCommands("ZMSCORE zmscore", "PING");
-            var expectedResponse = "-ERR wrong number of arguments for ZMSCORE command.\r\n+PONG\r\n";
+            var expectedResponse = "-ERR wrong number of arguments for 'ZMSCORE' command\r\n+PONG\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 

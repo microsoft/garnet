@@ -86,7 +86,7 @@ namespace Garnet.server
             {RespCommand.SETEXNX,   new RespCommandsInfo("SETEXNX", RespCommand.SETEXNX,    -4, null)},
             {RespCommand.SETEXXX,   new RespCommandsInfo("SETEXXX", RespCommand.SETEXXX,    -4, null)},
             {RespCommand.DEL,       new RespCommandsInfo("DEL", RespCommand.DEL,            -2, null)},
-            {RespCommand.EXISTS,    new RespCommandsInfo("EXISTS", RespCommand.EXISTS,       2, null)},
+            {RespCommand.EXISTS,    new RespCommandsInfo("EXISTS", RespCommand.EXISTS,       -2, null)},
             {RespCommand.RENAME,    new RespCommandsInfo("RENAME", RespCommand.RENAME,       3, null)},
             {RespCommand.INCR,      new RespCommandsInfo("INCR", RespCommand.INCR,           2, null)},
             {RespCommand.INCRBY,    new RespCommandsInfo("INCRBY", RespCommand.INCRBY,       3, null)},
