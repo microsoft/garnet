@@ -1277,7 +1277,7 @@ namespace Garnet.server
 
             for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
             {
-                if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n') ;
+                if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n')
                 {
                     // Skip to the end of the string
                     readHead = stringEnd + 2;
