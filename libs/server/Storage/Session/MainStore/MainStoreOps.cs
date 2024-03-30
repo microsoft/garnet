@@ -636,7 +636,7 @@ namespace Garnet.server
 
             if ((storeType == StoreType.Object || storeType == StoreType.All) && objectStoreSession != null)
             {
-                status = GET(key.Bytes, out _, ref objectContext);
+                status = GET(key.ToArray(), out _, ref objectContext);
             }
 
             return status;
@@ -710,7 +710,7 @@ namespace Garnet.server
                 *input.ToPointer() = (byte)GarnetObjectType.Expire;
 
                 var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
-                var keyBA = key.Bytes;
+                var keyBA = key.ToArray();
                 var status = objectStoreContext.RMW(ref keyBA, ref input, ref objO);
 
                 if (status.IsPending)
@@ -762,7 +762,7 @@ namespace Garnet.server
                 (*(RespInputHeader*)pcurr).type = GarnetObjectType.Persist;
 
                 var objO = new GarnetObjectStoreOutput { spanByteAndMemory = o };
-                var _key = key.Bytes;
+                var _key = key.ToArray();
                 var _status = objectStoreContext.RMW(ref _key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref objO);
 
                 if (_status.IsPending)
@@ -865,7 +865,7 @@ namespace Garnet.server
             // If key was not found in the main store then it is an object
             if (status != GarnetStatus.OK && objectStoreSession != null)
             {
-                status = GET(key.Bytes, out GarnetObjectStoreOutput output, ref objectContext);
+                status = GET(key.ToArray(), out GarnetObjectStoreOutput output, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
                     if ((output.garnetObject as SortedSetObject) != null)
@@ -900,7 +900,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.NOTFOUND)
             {
-                status = GET(key.Bytes, out GarnetObjectStoreOutput objectValue, ref objectContext);
+                status = GET(key.ToArray(), out GarnetObjectStoreOutput objectValue, ref objectContext);
                 if (status != GarnetStatus.NOTFOUND)
                 {
                     memoryUsage = RecordInfo.GetLength() + (2 * IntPtr.Size) + // Log record length

@@ -62,7 +62,7 @@ namespace Garnet.server
         /// <summary>
         /// Get slice as byte array
         /// </summary>
-        public byte[] Bytes => ReadOnlySpan.ToArray();
+        public byte[] ToArray() => ReadOnlySpan.ToArray();
 
         /// <summary>
         /// Interpret ArgSlice as a long number expressed in (decimal) digits
