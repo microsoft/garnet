@@ -78,7 +78,7 @@ namespace Garnet.server
             if (ptr < end && RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, end))
             {
                 offset = (int)(ptr - input.ptr);
-                return new ArgSlice { ptr = result, length = len };
+                return new ArgSlice(result, len);
             }
             return default;
         }
