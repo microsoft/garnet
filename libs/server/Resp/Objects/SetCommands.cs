@@ -443,7 +443,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// 
+        /// Returns the members of the set resulting from the difference between the first set and all the successive sets.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
@@ -481,7 +481,7 @@ namespace Garnet.server
             {
                 if (output == null || output.Count == 0)
                 {
-                    while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                    while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                         SendAndReset();
                 }
                 else

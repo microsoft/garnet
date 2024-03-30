@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using Garnet.common;
@@ -433,24 +432,29 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
 
-        public GarnetStatus SetDiff<TObjectContext>(ArgSlice[] keys,out HashSet<byte[]> output, ref TObjectContext objectContext)
+        public GarnetStatus SetDiff<TObjectContext>(ArgSlice[] keys,out HashSet<byte[]> members, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
-            output = default;
+            members = default;
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
-            output = [];
-            var comparer = new BytesComparer();
-            foreach (var key in keys)
+            members = [];
+
+            var status = GET(keys[0].Bytes, out var first, ref objectContext);
+            if (status == GarnetStatus.OK)
             {
-                var status = GET(key.Bytes, out var obj, ref objectContext);
+                members.UnionWith(((SetObject)first.garnetObject).Set);
+            }
+
+            var comparer = new BytesComparer();
+            for (var i = 1; i < keys.Length; i++)
+            {
+                status = GET(keys[i].Bytes, out var next, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
-                    var next = ((SetObject)obj.garnetObject).Set;
-                    var exceptItems = output.Intersect(next, comparer).ToHashSet();
-                    output.UnionWith(next.Except(exceptItems, comparer).ToHashSet());
-                    output.ExceptWith(exceptItems);
+                    var interItems = members.Intersect(((SetObject)next.garnetObject).Set, comparer).ToArray();
+                    members.ExceptWith(interItems);
                 }
             }
 

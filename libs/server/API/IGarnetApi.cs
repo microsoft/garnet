@@ -1178,12 +1178,12 @@ namespace Garnet.server
         GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
 
         /// <summary>
-        /// 
+        /// Returns the members of the set resulting from the difference between the first set and all the successive sets.
         /// </summary>
         /// <param name="keys"></param>
-        /// <param name="output"></param>
+        /// <param name="members"></param>
         /// <returns></returns>
-        GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> output);
+        GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members);
         #endregion
 
         #region Hash Methods

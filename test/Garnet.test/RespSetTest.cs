@@ -255,18 +255,36 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var key1 = "key1";
-            var key1Value = new RedisValue[] { "a", "b", "c" };
+            var key1Value = new RedisValue[] { "a", "b", "c", "d" };
 
             var key2 = "kye2";
-            var key2Value = new RedisValue[] { "a", "c" };
+            var key2Value = new RedisValue[] { "c" };
 
             db.SetAdd(key1, key1Value);
             db.SetAdd(key2, key2Value);
 
             var result = (RedisResult[])db.Execute("SDIFF", key1, key2);
-            Assert.AreEqual(1, result.Length);
+            Assert.AreEqual(3, result.Length);
+
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("a")));
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("b")));
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("d")));
+
+            Assert.IsFalse(Array.Exists(result, t => t.ToString().Equals("c")));
+
+            var key3 = "key3";
+            var key3Value = new RedisValue[] { "a", "c", "e" };
+
+            db.SetAdd(key3, key3Value);
+
+            result = (RedisResult[])db.Execute("SDIFF", key1, key2, key3);
+            Assert.AreEqual(2, result.Length);
 
             Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("b")));
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("d")));
+
+            Assert.IsFalse(Array.Exists(result, t => t.ToString().Equals("c")));
+            Assert.IsFalse(Array.Exists(result, t => t.ToString().Equals("e")));
         }
 
         #endregion
@@ -433,6 +451,17 @@ namespace Garnet.test
             Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
 
+        [Test]
+        public void CanDoSdiffLC()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SADD key1 a b c d");
+            lightClientRequest.SendCommand("SADD key2 c");
+            lightClientRequest.SendCommand("SADD key3 a c e");
+            var response = lightClientRequest.SendCommand("SDIFF key1 key2 key3");
+            var expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
+            Assert.AreEqual(response.AsSpan().Slice(0,expectedResponse.Length).ToArray(), expectedResponse);
+        }
         #endregion
 
 
@@ -468,6 +497,15 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, strResponse);
         }
 
+        [Test]
+        public void CanDoSdiffWhenKeyDoesNotExisting()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SDIFF foo");
+            var expectedResponse = "*0\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
         #endregion
 
 
