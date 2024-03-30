@@ -2,6 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -429,5 +432,57 @@ namespace Garnet.server
         public GarnetStatus SetPop<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+
+        public GarnetStatus SetDiff<TObjectContext>(ArgSlice[] keys,out HashSet<byte[]> output, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            output = default;
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            output = [];
+            var comparer = new BytesComparer();
+            foreach (var key in keys)
+            {
+                var status = GET(key.Bytes, out var obj, ref objectContext);
+                if (status == GarnetStatus.OK)
+                {
+                    var next = ((SetObject)obj.garnetObject).Set;
+                    var exceptItems = output.Intersect(next, comparer).ToHashSet();
+                    output.UnionWith(next.Except(exceptItems, comparer).ToHashSet());
+                    output.ExceptWith(exceptItems);
+                }
+            }
+
+            return GarnetStatus.OK;
+        }
+    }
+
+    class BytesComparer : IEqualityComparer<byte[]>
+    {
+        public bool Equals(byte[] x, byte[] y) {
+            if (x.Length != y.Length)
+            {
+                return false;
+            }
+            for (var i = 0; i < x.Length; i++)
+            {
+                if (x[i] != y[i])
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        public int GetHashCode(byte[] obj) {
+            if (Object.ReferenceEquals(obj, null)) return 0;
+            if (obj.Length == 0) return 0;
+            var code = 1;
+            foreach (var b in obj)
+            {
+                code += b.GetHashCode();
+            }
+            return code;
+        }
     }
 }

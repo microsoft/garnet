@@ -248,7 +248,26 @@ namespace Garnet.test
             Assert.AreEqual(l, $"value:{setEntries.Length - 1}");
         }
 
+        [Test]
+        public void CanDoSdiff()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
 
+            var key1 = "key1";
+            var key1Value = new RedisValue[] { "a", "b", "c" };
+
+            var key2 = "kye2";
+            var key2Value = new RedisValue[] { "a", "c" };
+
+            db.SetAdd(key1, key1Value);
+            db.SetAdd(key2, key2Value);
+
+            var result = (RedisResult[])db.Execute("SDIFF", key1, key2);
+            Assert.AreEqual(1, result.Length);
+
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("b")));
+        }
 
         #endregion
 

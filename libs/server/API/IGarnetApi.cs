@@ -1177,6 +1177,13 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> output);
         #endregion
 
         #region Hash Methods
