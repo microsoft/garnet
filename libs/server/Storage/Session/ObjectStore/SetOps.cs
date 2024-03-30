@@ -447,46 +447,18 @@ namespace Garnet.server
                 members.UnionWith(((SetObject)first.garnetObject).Set);
             }
 
-            var comparer = new BytesComparer();
             for (var i = 1; i < keys.Length; i++)
             {
                 status = GET(keys[i].Bytes, out var next, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
-                    var interItems = members.Intersect(((SetObject)next.garnetObject).Set, comparer).ToArray();
+                    var nextSet = ((SetObject)next.garnetObject).Set;
+                    var interItems = members.Intersect(nextSet, nextSet.Comparer);
                     members.ExceptWith(interItems);
                 }
             }
 
             return GarnetStatus.OK;
-        }
-    }
-
-    class BytesComparer : IEqualityComparer<byte[]>
-    {
-        public bool Equals(byte[] x, byte[] y) {
-            if (x.Length != y.Length)
-            {
-                return false;
-            }
-            for (var i = 0; i < x.Length; i++)
-            {
-                if (x[i] != y[i])
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-        public int GetHashCode(byte[] obj) {
-            if (Object.ReferenceEquals(obj, null)) return 0;
-            if (obj.Length == 0) return 0;
-            var code = 1;
-            foreach (var b in obj)
-            {
-                code += b.GetHashCode();
-            }
-            return code;
         }
     }
 }
