@@ -42,35 +42,35 @@ namespace Garnet.server
         /// <summary>
         /// Get length of ArgSlice
         /// </summary>
-        public int Length => length;
+        public readonly int Length => length;
 
         /// <summary>
         /// Get slice as ReadOnlySpan
         /// </summary>
-        public ReadOnlySpan<byte> ReadOnlySpan => new(ptr, length);
+        public readonly ReadOnlySpan<byte> ReadOnlySpan => new(ptr, length);
 
         /// <summary>
         /// Get slice as Span
         /// </summary>
-        public Span<byte> Span => new(ptr, length);
+        public readonly Span<byte> Span => new(ptr, length);
 
         /// <summary>
         /// Get slice as SpanByte
         /// </summary>
-        public SpanByte SpanByte => SpanByte.FromPointer(ptr, length);
+        public readonly SpanByte SpanByte => SpanByte.FromPointer(ptr, length);
 
         /// <summary>
         /// Get slice as byte array
         /// </summary>
-        public byte[] ToArray() => ReadOnlySpan.ToArray();
+        public readonly byte[] ToArray() => ReadOnlySpan.ToArray();
 
         /// <summary>
         /// Interpret ArgSlice as a long number expressed in (decimal) digits
         /// </summary>
-        public long AsLongDigits => NumUtils.BytesToLong(length, ptr);
+        public readonly long AsLongDigits => NumUtils.BytesToLong(length, ptr);
 
         /// <inheritdoc />
-        public override string ToString()
+        public override readonly string ToString()
             => Encoding.ASCII.GetString(ReadOnlySpan);
     }
 }
