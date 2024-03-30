@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
 using System.Text;
 using Garnet.common;
@@ -65,13 +66,13 @@ namespace Garnet
                     {
                         //HGET
                         api.HashGet(myHash, pairs[0].field, out var value);
-                        if (!value.ToArray().SequenceEqual(pairs[0].value.ToArray()))
+                        if (!value.ReadOnlySpan.SequenceEqual(pairs[0].value.ReadOnlySpan))
                             result = false;
                         if (result)
                         {
                             //HGETALL
                             api.HashGetAll(myHash, out var values);
-                            if (!values[3].ToArray().SequenceEqual(pairs[1].value.ToArray()))
+                            if (!values[3].ReadOnlySpan.SequenceEqual(pairs[1].value.ReadOnlySpan))
                                 result = false;
                             api.HashGet(myHash, fields[0..2], out values);
                             if (values.Length != 2)
@@ -93,7 +94,7 @@ namespace Garnet
                             if (count != 1)
                                 result = false;
                             api.HashScan(myHash, 0, "age", 5, out var items);
-                            if (items.Length != 3 || !Encoding.ASCII.GetString(items[1].ToArray()).StartsWith("age"))
+                            if (items.Length != 3 || !items[1].ReadOnlySpan.StartsWith("age"u8))
                                 result = false;
                         }
                     }
