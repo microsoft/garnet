@@ -83,7 +83,7 @@ namespace Garnet
                             if (!exists)
                                 result = false;
                             api.HashRandomField(myHash, out var field);
-                            if (field.ToArray().Length == 0)
+                            if (field.Length == 0)
                                 result = false;
                             api.HashRandomField(myHash, 2, true, out var randFields);
                             if (randFields.Length != 4)

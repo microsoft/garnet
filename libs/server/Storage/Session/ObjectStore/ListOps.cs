@@ -27,7 +27,7 @@ namespace Garnet.server
         {
             itemsDoneCount = 0;
 
-            if (key.ToArray().Length == 0 || elements.Length == 0)
+            if (key.Length == 0 || elements.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare header in buffer
@@ -155,7 +155,7 @@ namespace Garnet.server
         {
             count = 0;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);

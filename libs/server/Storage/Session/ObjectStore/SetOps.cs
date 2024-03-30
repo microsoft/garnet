@@ -29,7 +29,7 @@ namespace Garnet.server
         {
             saddCount = 0;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
@@ -63,7 +63,7 @@ namespace Garnet.server
         {
             saddCount = 0;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare header in buffer
@@ -104,7 +104,7 @@ namespace Garnet.server
         {
             sremCount = 0;
 
-            if (key.Length == 0 || member.ToArray().Length == 0)
+            if (key.Length == 0 || member.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
@@ -177,7 +177,7 @@ namespace Garnet.server
         {
             count = 0;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
@@ -207,7 +207,7 @@ namespace Garnet.server
         {
             members = default;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
@@ -261,7 +261,7 @@ namespace Garnet.server
         {
             elements = default;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             // Construct input for operation
@@ -302,7 +302,7 @@ namespace Garnet.server
         {
             items = default;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             if (String.IsNullOrEmpty(match))

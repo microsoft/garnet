@@ -79,9 +79,9 @@ namespace Garnet.server
             fixed (byte* patternPtr = patternB.ToArray())
             {
                 mainStoreDbScanFuncs ??= new();
-                mainStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.ToArray().Length);
+                mainStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length);
                 objStoreDbScanFuncs ??= new();
-                objStoreDbScanFuncs.Initialize(objStoreKeys, allKeys ? null : patternPtr, patternB.ToArray().Length, matchType);
+                objStoreDbScanFuncs.Initialize(objStoreKeys, allKeys ? null : patternPtr, patternB.Length, matchType);
 
                 storeCursor = cursor;
                 long remainingCount = count;
@@ -154,16 +154,16 @@ namespace Garnet.server
             Keys ??= new();
             Keys.Clear();
 
-            var allKeys = *pattern.ptr == '*' && pattern.ToArray().Length == 1;
+            var allKeys = *pattern.ptr == '*' && pattern.Length == 1;
 
             mainStoreDbKeysFuncs ??= new();
-            mainStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.ToArray().Length);
+            mainStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.Length);
             session.Iterate(ref mainStoreDbKeysFuncs);
 
             if (objectStoreSession != null)
             {
                 objStoreDbKeysFuncs ??= new();
-                objStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.ToArray().Length, matchType: null);
+                objStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.Length, matchType: null);
                 objectStoreSession.Iterate(ref objStoreDbKeysFuncs);
             }
 

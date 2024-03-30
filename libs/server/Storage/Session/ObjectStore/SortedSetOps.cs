@@ -27,7 +27,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             zaddCount = 0;
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, score, member);
@@ -60,7 +60,7 @@ namespace Garnet.server
         {
             zaddCount = 0;
 
-            if (inputs.Length == 0 || key.ToArray().Length == 0)
+            if (inputs.Length == 0 || key.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare header in buffer
@@ -391,7 +391,7 @@ namespace Garnet.server
         {
             zcardCount = 0;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
@@ -432,7 +432,7 @@ namespace Garnet.server
             error = default;
 
             //min and max are required
-            if (min.ToArray().Length == 0 || max.ToArray().Length == 0)
+            if (min.Length == 0 || max.Length == 0)
             {
                 //error in arguments
                 error = "Missins required min and max parameters";
@@ -603,7 +603,7 @@ namespace Garnet.server
         {
             items = default;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             if (String.IsNullOrEmpty(match))

@@ -33,7 +33,7 @@ namespace Garnet.server
         {
             itemsDoneCount = 0;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, field, value);
@@ -67,7 +67,7 @@ namespace Garnet.server
         {
             itemsDoneCount = 0;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare header in buffer
@@ -121,7 +121,7 @@ namespace Garnet.server
         {
             itemsDoneCount = 0;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare header in buffer
@@ -191,7 +191,7 @@ namespace Garnet.server
         {
             values = default;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare header in input buffer
@@ -239,7 +239,7 @@ namespace Garnet.server
         {
             items = 0;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
@@ -270,7 +270,7 @@ namespace Garnet.server
          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             exists = false;
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
@@ -302,7 +302,7 @@ namespace Garnet.server
         {
             field = default;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare header in input buffer
@@ -344,7 +344,7 @@ namespace Garnet.server
         {
             fields = default;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare header in input buffer
@@ -406,7 +406,7 @@ namespace Garnet.server
         {
             items = default;
 
-            if (key.ToArray().Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             if (String.IsNullOrEmpty(match))
