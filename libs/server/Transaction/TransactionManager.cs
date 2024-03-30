@@ -234,7 +234,7 @@ namespace Garnet.server
             if (type == StoreType.Main || type == StoreType.All)
                 session.ResetModified(key.SpanByte);
             if (type == StoreType.Object || type == StoreType.All)
-                objectStoreSession?.ResetModified(key.Span.ToArray());
+                objectStoreSession?.ResetModified(key.ToArray());
         }
 
         void UpdateTransactionStoreType(StoreType type)

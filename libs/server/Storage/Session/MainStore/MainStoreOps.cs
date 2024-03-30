@@ -577,8 +577,8 @@ namespace Garnet.server
 
                 try
                 {
-                    byte[] oldKeyArray = oldKeySlice.ReadOnlySpan.ToArray();
-                    byte[] newKeyArray = newKeySlice.ReadOnlySpan.ToArray();
+                    byte[] oldKeyArray = oldKeySlice.ToArray();
+                    byte[] newKeyArray = newKeySlice.ToArray();
 
                     var status = GET(oldKeyArray, out var value, ref objectContext);
 
@@ -791,7 +791,6 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {
             var sbKey = key.SpanByte;
-            var spanValue = value.Span;
             SpanByteAndMemory sbmOut = new(output.SpanByte);
 
             // Total size + Offset size + New value size + Address of new value
@@ -806,7 +805,7 @@ namespace Garnet.server
             pcurr += RespInputHeader.Size;
             *(int*)(pcurr) = offset;
             pcurr += sizeof(int);
-            *(int*)pcurr = spanValue.Length;
+            *(int*)pcurr = value.Length;
             pcurr += sizeof(int);
             *(long*)pcurr = (long)(value.ptr);
 

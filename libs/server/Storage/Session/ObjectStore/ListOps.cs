@@ -237,7 +237,7 @@ namespace Garnet.server
                     if (!sameKey)
                     {
                         // read destination key
-                        var _destinationKey = destinationKey.ReadOnlySpan.ToArray();
+                        var _destinationKey = destinationKey.ToArray();
                         statusOp = GET(_destinationKey, out var destinationList, ref objectStoreLockableContext);
 
                         if (statusOp == GarnetStatus.NOTFOUND)
