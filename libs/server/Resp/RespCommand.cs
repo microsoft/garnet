@@ -160,16 +160,23 @@ namespace Garnet.server
 
             if (bytesRead - readHead >= 6)
             {
-                if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("PING"u8) & (*(ushort*)ptr) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                if ((*(ushort*)(ptr + 4) == MemoryMarshal.Read<ushort>("\r\n"u8)))
                 {
+                    // Optimistically increase read head
                     readHead += 6;
-                    return RespCommand.PING;
-                }
 
-                if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("QUIT"u8) & (*(ushort*)ptr) == MemoryMarshal.Read<ushort>("\r\n"u8))
-                {
-                    readHead += 6;
-                    return RespCommand.QUIT;
+                    if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("PING"u8))
+                    {
+                        return RespCommand.PING;
+                    }
+
+                    if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("QUIT"u8))
+                    {
+                        return RespCommand.QUIT;
+                    }
+
+                    // Decrease read head, if no match was found
+                    readHead -= 6;
                 }
             }
 
