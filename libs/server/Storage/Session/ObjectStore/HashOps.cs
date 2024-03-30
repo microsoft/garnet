@@ -82,7 +82,7 @@ namespace Garnet.server
             foreach (var pair in elements)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, pair.field, pair.value);
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
@@ -136,7 +136,7 @@ namespace Garnet.server
             foreach (var field in fields)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, field);
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
@@ -209,7 +209,7 @@ namespace Garnet.server
                 foreach (var field in fields)
                 {
                     var tmp = scratchBufferManager.FormatScratchAsResp(0, field);
-                    inputLength += tmp.length;
+                    inputLength += tmp.Length;
                 }
             }
 
@@ -367,7 +367,7 @@ namespace Garnet.server
                 countArgSlice = new ArgSlice(countPtr, countBytes.Length);
             }
             var tmp = scratchBufferManager.FormatScratchAsResp(0, countArgSlice);
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             //write withvalues
             ReadOnlySpan<byte> withValuesBytes = "WITHVALUES"u8;
@@ -376,7 +376,7 @@ namespace Garnet.server
                 withValuesArgSlice = new ArgSlice(withValuesPtr, withValuesBytes.Length);
             }
             tmp = scratchBufferManager.FormatScratchAsResp(0, withValuesArgSlice);
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
@@ -438,7 +438,7 @@ namespace Garnet.server
                 tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(matchKeywordPtr, matchKeywordBytes.Length),
                             new ArgSlice(matchPatterPtr, matchPatternValue.Length));
             }
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             // Write count
             var countKeywordBytes = CmdStrings.COUNT;
@@ -448,7 +448,7 @@ namespace Garnet.server
                 tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(countPtr, countKeywordBytes.Length),
                           new ArgSlice(countValuePtr, countBytes.Length));
             }
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 

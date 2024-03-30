@@ -74,7 +74,7 @@ namespace Garnet.server
             foreach (var (score, member) in inputs)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, score, member);
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
@@ -146,7 +146,7 @@ namespace Garnet.server
             foreach (var member in members)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, member);
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
@@ -469,7 +469,7 @@ namespace Garnet.server
 
             // min and max parameters
             var tmp = scratchBufferManager.FormatScratchAsResp(0, min, max);
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             //operation order
             if (operation != default)
@@ -478,7 +478,7 @@ namespace Garnet.server
                 {
                     tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, operation.Length));
                 }
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
 
             //reverse
@@ -489,7 +489,7 @@ namespace Garnet.server
                 {
                     tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, reverseBytes.Length));
                 }
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
 
             //limit parameter
@@ -500,14 +500,14 @@ namespace Garnet.server
                 {
                     tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, limitBytes.Length));
                 }
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
 
                 //offset
                 var limitOffset = Encoding.ASCII.GetBytes(limit.Item1);
                 fixed (byte* ptrOp = limitOffset)
                 {
                     tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, limitOffset.Length));
-                    inputLength += tmp.length;
+                    inputLength += tmp.Length;
                 }
 
                 //count
@@ -518,7 +518,7 @@ namespace Garnet.server
                     byte* ptr = (byte*)ptrCount;
                     NumUtils.IntToBytes(limit.Item2, limitCountLength, ref ptr);
                     tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrCount, limitCountLength));
-                    inputLength += tmp.length;
+                    inputLength += tmp.Length;
                 }
             }
 
@@ -633,7 +633,7 @@ namespace Garnet.server
                 tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length),
                             new ArgSlice(matchPatterPtr, matchPatternValue.Length));
             }
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             // Write count
             int lengthCountNumber = NumUtils.NumDigits(count);
@@ -647,7 +647,7 @@ namespace Garnet.server
                 tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(countPtr, CmdStrings.COUNT.Length),
                           new ArgSlice(countValuePtr, countBytes.Length));
             }
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 

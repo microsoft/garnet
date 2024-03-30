@@ -211,7 +211,7 @@ namespace Garnet.server
         internal void Log(byte id, ArgSlice input)
         {
             Debug.Assert(functionsState.StoredProcMode);
-            SpanByte sb = new SpanByte(input.length, (nint)input.ptr);
+            SpanByte sb = new SpanByte(input.Length, (nint)input.ptr);
             appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = session.Version, sessionID = session.ID }, ref sb, out _);
         }
 

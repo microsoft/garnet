@@ -47,17 +47,17 @@ namespace Garnet.server
         /// <summary>
         /// Get slice as ReadOnlySpan
         /// </summary>
-        public readonly ReadOnlySpan<byte> ReadOnlySpan => new(ptr, length);
+        public readonly ReadOnlySpan<byte> ReadOnlySpan => new(ptr, Length);
 
         /// <summary>
         /// Get slice as Span
         /// </summary>
-        public readonly Span<byte> Span => new(ptr, length);
+        public readonly Span<byte> Span => new(ptr, Length);
 
         /// <summary>
         /// Get slice as SpanByte
         /// </summary>
-        public readonly SpanByte SpanByte => SpanByte.FromPointer(ptr, length);
+        public readonly SpanByte SpanByte => SpanByte.FromPointer(ptr, Length);
 
         /// <summary>
         /// Get slice as byte array
@@ -67,7 +67,7 @@ namespace Garnet.server
         /// <summary>
         /// Interpret ArgSlice as a long number expressed in (decimal) digits
         /// </summary>
-        public readonly long AsLongDigits => NumUtils.BytesToLong(length, ptr);
+        public readonly long AsLongDigits => NumUtils.BytesToLong(Length, ptr);
 
         /// <inheritdoc />
         public override readonly string ToString()

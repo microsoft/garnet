@@ -42,7 +42,7 @@ namespace Garnet.server
             foreach (var item in elements)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, item);
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);

@@ -74,7 +74,7 @@ namespace Garnet.server
             int len = 0;
 
             byte* ptr = input.ptr + offset;
-            byte* end = input.ptr + input.length;
+            byte* end = input.ptr + input.Length;
             if (ptr < end && RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, end))
             {
                 offset = (int)(ptr - input.ptr);

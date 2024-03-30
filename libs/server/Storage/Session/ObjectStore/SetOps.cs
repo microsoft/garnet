@@ -78,7 +78,7 @@ namespace Garnet.server
             foreach (var member in members)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, member);
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
@@ -153,7 +153,7 @@ namespace Garnet.server
             foreach (var member in members)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, member);
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
@@ -332,7 +332,7 @@ namespace Garnet.server
                 tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length),
                             new ArgSlice(matchPatterPtr, matchPatternValue.Length));
             }
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             // Write count
             int lengthCountNumber = NumUtils.NumDigits(count);
@@ -346,7 +346,7 @@ namespace Garnet.server
                 tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(countPtr, CmdStrings.COUNT.Length),
                           new ArgSlice(countValuePtr, countBytes.Length));
             }
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
