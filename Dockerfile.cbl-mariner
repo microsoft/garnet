@@ -1,8 +1,5 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License. See LICENSE in the project root for license information.
-
-FROM mcr.microsoft.com/dotnet/sdk:8.0-cbl-mariner2.0 AS build
-ARG ARCH=amd64
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:8.0-cbl-mariner2.0 AS build
+ARG TARGETARCH
 
 WORKDIR /source
 
@@ -10,13 +7,13 @@ WORKDIR /source
 COPY . .
 WORKDIR /source/main/GarnetServer
 
-RUN dotnet restore -a ${ARCH}
-RUN dotnet build -a ${ARCH} -c Release
+RUN dotnet restore -a $TARGETARCH
+RUN dotnet build -a $TARGETARCH -c Release
 
-# copy and publish app and libraries
-RUN dotnet publish -a ${ARCH} -c Release -o /app --self-contained false --no-restore -f net8.0
+# Copy and publish app and libraries
+RUN dotnet publish -a $TARGETARCH -c Release -o /app --self-contained false --no-restore -f net8.0
 
-# final stage/image
+# Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-cbl-mariner2.0 AS runtime
 
 WORKDIR /app
