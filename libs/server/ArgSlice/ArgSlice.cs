@@ -4,14 +4,16 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
     /// <summary>
-    /// Slice of Key
+    /// Represents contiguous region of arbitrary _pinned_ memory.
     /// </summary>
+    /// <remarks>
+    /// This type is used represents arguments that are assumed to point to pinned memory.
+    /// </remarks>
     [StructLayout(LayoutKind.Explicit, Size = 12)]
     public unsafe struct ArgSlice
     {
@@ -60,16 +62,14 @@ namespace Garnet.server
         public readonly SpanByte SpanByte => SpanByte.FromPointer(ptr, length);
 
         /// <summary>
-        /// Get slice as byte array
+        /// Copies the contents of this slice into a new array.
         /// </summary>
         public readonly byte[] ToArray() => ReadOnlySpan.ToArray();
 
         /// <summary>
-        /// Interpret ArgSlice as a long number expressed in (decimal) digits
+        /// Decodes the contents of this slice as ASCII into a new string.
         /// </summary>
-        public readonly long AsLongDigits => NumUtils.BytesToLong(length, ptr);
-
-        /// <inheritdoc />
+        /// <returns>A string ASCII decoded string from the slice.</returns>
         public override readonly string ToString()
             => Encoding.ASCII.GetString(ReadOnlySpan);
     }
