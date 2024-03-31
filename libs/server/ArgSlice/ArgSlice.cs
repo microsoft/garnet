@@ -12,7 +12,7 @@ namespace Garnet.server
     /// Represents contiguous region of arbitrary _pinned_ memory.
     /// </summary>
     /// <remarks>
-    /// This type is used to represent arguments that are assumed to point to pinned memory.
+    /// SAFETY: This type is used to represent arguments that are assumed to point to pinned memory.
     /// </remarks>
     [StructLayout(LayoutKind.Explicit, Size = 12)]
     public unsafe struct ArgSlice
