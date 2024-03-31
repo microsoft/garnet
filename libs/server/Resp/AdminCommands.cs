@@ -280,7 +280,7 @@ namespace Garnet.server
                     if (!success) return false;
                     if (Encoding.ASCII.GetString(param) == "COUNT")
                     {
-                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($":{RespInfo.GetCommandsCount()}\r\n"), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(RespInfo.GetCommandsCount(), ref dcurr, dend))
                             SendAndReset();
                     }
                     else
