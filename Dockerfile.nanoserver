@@ -1,4 +1,5 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0-nanoserver-ltsc2022 AS build
+ARG TAG=ltsc2022
+FROM mcr.microsoft.com/dotnet/sdk:8.0-nanoserver-$TAG AS build
 
 WORKDIR /source
 
@@ -13,7 +14,7 @@ RUN dotnet build -c Release
 RUN dotnet publish -c Release -o /app -r win-x64 --self-contained false -f net8.0
 
 # Final stage/image
-FROM mcr.microsoft.com/dotnet/runtime:8.0-nanoserver-ltsc2022 AS runtime
+FROM mcr.microsoft.com/dotnet/runtime:8.0-nanoserver-$TAG AS runtime
 WORKDIR /app
 COPY --from=build /app .
 
