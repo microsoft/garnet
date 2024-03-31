@@ -1425,7 +1425,7 @@ namespace Garnet.test
             }
             catch (RedisServerException ex)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERROFFSETOUTOFRANGE.ToArray()).TrimEnd().TrimStart('-'), ex.Message);
+                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERROFFSETOUTOFRANGE).TrimEnd().TrimStart('-'), ex.Message);
             }
 
             // existing key, length 10, offset 0, value length 5 -> 10 ("ABCDE56789")
@@ -1469,7 +1469,7 @@ namespace Garnet.test
             }
             catch (RedisServerException ex)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERROFFSETOUTOFRANGE.ToArray()).TrimEnd().TrimStart('-'), ex.Message);
+                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERROFFSETOUTOFRANGE).Trim().TrimStart('-'), ex.Message);
             }
         }
 

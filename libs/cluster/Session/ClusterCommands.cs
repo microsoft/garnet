@@ -158,7 +158,7 @@ namespace Garnet.cluster
                 {
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
-                    string paramStr = Encoding.ASCII.GetString(param.ToArray());
+                    string paramStr = Encoding.ASCII.GetString(param);
                     while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Unknown subcommand or wrong number of arguments for '" + paramStr + "'. Try CLUSTER HELP.\r\n")), ref dcurr, dend))
                         SendAndReset();
                 }
@@ -198,7 +198,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -230,7 +230,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -260,7 +260,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -296,7 +296,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -350,7 +350,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -368,7 +368,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -405,7 +405,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -510,7 +510,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -629,7 +629,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -661,7 +661,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -703,7 +703,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -750,7 +750,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -782,7 +782,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -813,7 +813,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -843,7 +843,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -872,7 +872,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -913,7 +913,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -941,7 +941,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -1013,7 +1013,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -1039,7 +1039,7 @@ namespace Garnet.cluster
                         if (!DrainCommands(bufSpan, count - 3))
                             return false;
                         errorFlag = true;
-                        errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                        errorCmd = Encoding.ASCII.GetString(param);
                         return true;
                     }
 
@@ -1102,7 +1102,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -1149,7 +1149,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -1276,7 +1276,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {

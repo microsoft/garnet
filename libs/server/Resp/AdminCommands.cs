@@ -134,7 +134,7 @@ namespace Garnet.server
                         if (!DrainCommands(bufSpan, count - 2))
                             return false;
                         errorFlag = true;
-                        errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                        errorCmd = Encoding.ASCII.GetString(param);
                     }
                     else
                     {
@@ -177,13 +177,13 @@ namespace Garnet.server
                             if (!success3) return false;
 
                             if (key.SequenceEqual(CmdStrings.CertFileName))
-                                certFileName = Encoding.ASCII.GetString(value.ToArray());
+                                certFileName = Encoding.ASCII.GetString(value);
                             else if (key.SequenceEqual(CmdStrings.CertPassword))
-                                certPassword = Encoding.ASCII.GetString(value.ToArray());
+                                certPassword = Encoding.ASCII.GetString(value);
                             else if (key.SequenceEqual(CmdStrings.ClusterUsername))
-                                clusterUsername = Encoding.ASCII.GetString(value.ToArray());
+                                clusterUsername = Encoding.ASCII.GetString(value);
                             else if (key.SequenceEqual(CmdStrings.ClusterPassword))
-                                clusterPassword = Encoding.ASCII.GetString(value.ToArray());
+                                clusterPassword = Encoding.ASCII.GetString(value);
                             else
                             {
                                 if (!unknownOption)
@@ -246,7 +246,7 @@ namespace Garnet.server
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(command.ToArray()) + " " + Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(command) + " " + Encoding.ASCII.GetString(param);
                 }
             }
             else if (command.SequenceEqual(CmdStrings.ECHO))
@@ -264,7 +264,7 @@ namespace Garnet.server
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
                     var length = readHead - oldReadHead;
-                    while (!RespWriteUtils.WriteDirect(bufSpan.Slice(oldReadHead, length).ToArray(), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(bufSpan.Slice(oldReadHead, length), ref dcurr, dend))
                         SendAndReset();
                 }
             }

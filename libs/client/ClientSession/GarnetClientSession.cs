@@ -325,7 +325,7 @@ namespace Garnet.client
 
         private int ProcessReplies(byte* recvBufferPtr, int bytesRead)
         {
-            // Debug.WriteLine("RECV: [" + Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead).ToArray()).Replace("\n", "|").Replace("\r", "") + "]");
+            // Debug.WriteLine("RECV: [" + Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", "") + "]");
 
             string result = null;
             string[] resultArray = null;
@@ -366,7 +366,7 @@ namespace Garnet.client
                         break;
 
                     default:
-                        throw new Exception("Unexpected response: " + Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead).ToArray()).Replace("\n", "|").Replace("\r", "") + "]");
+                        throw new Exception("Unexpected response: " + Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", "") + "]");
                 }
 
                 if (!success) return readHead;
