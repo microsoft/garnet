@@ -665,6 +665,9 @@ namespace Garnet.server
                     //[$5|SDIFF|] = 14 bytes = 8 (long) + 2 (ushort)
                     if (*(long*)ptr == 5064654379396445476L && *(ushort*)(ptr + 8) == 3398 && *(ptr + 10) == 10)
                         return (RespCommand.Set, (byte)SetOperation.SDIFF);
+                    //[$10|SDIFFSTORE|] = 
+                    if (*(long*)ptr == 5279435965821104420L && *(ushort*)(ptr + 8) == 17990 && *(ptr + 16) == 10)
+                        return (RespCommand.Set, (byte)SetOperation.SDIFFSTORE);
                     #endregion
                 }
 

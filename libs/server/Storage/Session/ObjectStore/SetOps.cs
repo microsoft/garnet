@@ -440,7 +440,7 @@ namespace Garnet.server
         /// <param name="members"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SetDiff<TObjectContext>(ArgSlice[] keys,out HashSet<byte[]> members, ref TObjectContext objectContext)
+        public GarnetStatus SetDiff<TObjectContext>(ArgSlice[] keys, out HashSet<byte[]> members, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             members = default;
@@ -467,6 +467,63 @@ namespace Garnet.server
             }
 
             return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// Diff result store.
+        /// Returns the number of result set.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key">destination</param>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public GarnetStatus SetDiffStore<TObjectContext>(byte[] key, ArgSlice[] keys,out int count, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            count = default;
+
+            if (key.Length == 0 || keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var diffSet = _setDiff(keys, ref objectContext);
+            
+            var asKey = scratchBufferManager.CreateArgSlice(key);
+            var asMembers = new ArgSlice[diffSet.Count];
+            for (var i = 0; i < diffSet.Count; i++)
+            {
+                asMembers[i] = scratchBufferManager.CreateArgSlice(diffSet.ElementAt(i));
+            }
+
+            var status = SetAdd(asKey, [.. asMembers], out var saddCount, ref objectContext);
+            count = saddCount;
+            return status;
+        }
+
+        private HashSet<byte[]> _setDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            var result = new HashSet<byte[]>();
+
+            var status = GET(keys[0].Bytes, out var first, ref objectContext);
+            if (status == GarnetStatus.OK)
+            {
+                result.UnionWith(((SetObject)first.garnetObject).Set);
+            }
+
+            for (var i = 1; i < keys.Length; i++)
+            {
+                status = GET(keys[i].Bytes, out var next, ref objectContext);
+                if (status == GarnetStatus.OK)
+                {
+                    var nextSet = ((SetObject)next.garnetObject).Set;
+                    var interItems = result.Intersect(nextSet, nextSet.Comparer);
+                    result.ExceptWith(interItems);
+                }
+            }
+
+            return result;
         }
     }
 }

@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Text;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -260,8 +261,8 @@ namespace Garnet.test
             var key2 = "kye2";
             var key2Value = new RedisValue[] { "c" };
 
-            db.SetAdd(key1, key1Value);
-            db.SetAdd(key2, key2Value);
+            _ = db.SetAdd(key1, key1Value);
+            _ = db.SetAdd(key2, key2Value);
 
             var result = (RedisResult[])db.Execute("SDIFF", key1, key2);
             Assert.AreEqual(3, result.Length);
@@ -275,7 +276,7 @@ namespace Garnet.test
             var key3 = "key3";
             var key3Value = new RedisValue[] { "a", "c", "e" };
 
-            db.SetAdd(key3, key3Value);
+            _ = db.SetAdd(key3, key3Value);
 
             result = (RedisResult[])db.Execute("SDIFF", key1, key2, key3);
             Assert.AreEqual(2, result.Length);
@@ -286,7 +287,6 @@ namespace Garnet.test
             Assert.IsFalse(Array.Exists(result, t => t.ToString().Equals("c")));
             Assert.IsFalse(Array.Exists(result, t => t.ToString().Equals("e")));
         }
-
         #endregion
 
 
@@ -460,7 +460,23 @@ namespace Garnet.test
             lightClientRequest.SendCommand("SADD key3 a c e");
             var response = lightClientRequest.SendCommand("SDIFF key1 key2 key3");
             var expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
-            Assert.AreEqual(response.AsSpan().Slice(0,expectedResponse.Length).ToArray(), expectedResponse);
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0,expectedResponse.Length).ToArray());
+        }
+
+        [Test]
+        public void CanDoSdiffStoreLC()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SADD key1 a b c d");
+            lightClientRequest.SendCommand("SADD key2 c");
+            lightClientRequest.SendCommand("SADD key3 a c e");
+            var response = lightClientRequest.SendCommand("SDIFFSTORE key key1 key2 key3");
+            var expectedResponse = ":2\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
+            Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
         #endregion
 
@@ -504,6 +520,21 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand("SDIFF foo");
             var expectedResponse = "*0\r\n";
             var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
+
+        [Test]
+        public void CanDoSdiffStoreWhenMemberKeysNotExisting()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SDIFFSTORE key key1 key2 key3");
+            var expectedResponse = ":0\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*0\r\n";
+            strResponse = Encoding.ASCII.GetString(membersResponse).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
         }
         #endregion

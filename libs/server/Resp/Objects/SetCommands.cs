@@ -501,5 +501,56 @@ namespace Garnet.server
 
             return true;
         }
+
+        private unsafe bool SetDiffStore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            ptr += 17;
+
+            if (count < 3)
+            {
+                return AbortWithWrongNumberOfArguments("SDIFFSTORE", count);
+            }
+
+            // Get the key
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, false))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+                return true;
+            }
+
+            var keys = new ArgSlice[count - 2];
+            for (var i = 0; i < count - 2; i++)
+            {
+                keys[i] = default;
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+
+            if (NetworkKeyArraySlotVerify(ref keys, true))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count)) return false;
+                return true;
+            }
+
+            var status = storageApi.SetDiffStore(key, keys, out var output);
+
+            if (status == GarnetStatus.OK)
+            {
+                while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+
+            return true;
+        }
     }
 }

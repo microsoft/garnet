@@ -24,6 +24,7 @@ namespace Garnet.server
         SCARD,
         SSCAN,
         SDIFF,
+        SDIFFSTORE,
     }
 
 

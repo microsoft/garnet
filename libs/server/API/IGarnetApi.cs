@@ -521,6 +521,15 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus SetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// Diff result store.
+        /// Returns the number of result set.
+        /// </summary>
+        /// <param name="key">destination</param>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys, out int count);
         #endregion
 
         #region List Methods

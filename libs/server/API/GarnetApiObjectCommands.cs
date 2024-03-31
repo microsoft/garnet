@@ -299,6 +299,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)
             => storageSession.SetDiff(keys, out members, ref objectContext);
+
+        public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys, out int count)
+            => storageSession.SetDiffStore(key, keys, out count, ref objectContext);
         #endregion
 
         #region Hash Methods
