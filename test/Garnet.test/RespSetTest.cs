@@ -286,6 +286,48 @@ namespace Garnet.test
             Assert.IsFalse(Array.Exists(result, t => t.ToString().Equals("c")));
             Assert.IsFalse(Array.Exists(result, t => t.ToString().Equals("e")));
         }
+
+        [Test]
+        public void CanDoSdiffStoreOverwrittenKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "key";
+
+            var key1 = "key1";
+            var key1Value = new RedisValue[] { "a", "b", "c", "d" };
+
+            var key2 = "kye2";
+            var key2Value = new RedisValue[] { "c" };
+
+            _ = db.SetAdd(key1, key1Value);
+            _ = db.SetAdd(key2, key2Value);
+
+            var result = db.Execute("SDIFFSTORE", key, key1, key2);
+            Assert.AreEqual(3, int.Parse(result.ToString()));
+
+            var membersResult = db.SetMembers("key");
+            Assert.AreEqual(3, membersResult.Count());
+            Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("a")));
+            Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("b")));
+            Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("d")));
+
+            Assert.IsFalse(Array.Exists(membersResult, t => t.ToString().Equals("c")));
+
+            var key3 = "key3";
+            var key3Value = new RedisValue[] { "a", "b", "c" };
+            var key4 = "key4";
+            var key4Value = new RedisValue[] { "a", "b" };
+
+            _ = db.SetAdd(key3, key3Value);
+            _ = db.SetAdd(key4, key4Value);
+
+            result = db.Execute("SDIFFSTORE", key, key3, key4);
+            membersResult = db.SetMembers("key");
+            Assert.AreEqual(1, membersResult.Count());
+            Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("c")));
+        }
         #endregion
 
 
@@ -476,37 +518,6 @@ namespace Garnet.test
             var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
             expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
             Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
-        }
-
-        [Test]
-        public void CanDoSdiffStoreOverwrittenLC()
-        {
-            var lightClientRequest = TestUtils.CreateRequest();
-
-            // diffstore set example 1
-            lightClientRequest.SendCommand("SADD key1 a b c d");
-            lightClientRequest.SendCommand("SADD key2 c");
-            var response = lightClientRequest.SendCommand("SDIFFSTORE key key1 key2");  // key = a b d
-            var expectedResponse = ":3\r\n";
-            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
-
-            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
-            expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nd\r\n";
-            Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
-
-            // diffstore set example 2
-            //lightClientRequest.SendCommand("SADD key3 a c b");
-            //lightClientRequest.SendCommand("SADD key4 a b");
-            //response = lightClientRequest.SendCommand("SDIFFSTORE key key3 key4");  // key overwritten = c
-
-            // TODO why response 
-
-            //expectedResponse = ":1\r\n";
-            //// Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
-
-            //membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
-            //expectedResponse = "*1\r\n$1\r\nc\r\n";
-            //Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
         #endregion
 
