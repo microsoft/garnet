@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using Garnet.common;
@@ -435,35 +436,36 @@ namespace Garnet.server
         /// <summary>
         /// Returns the members of the set resulting from the difference between the first set at key and all the successive sets at keys.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="keys"></param>
         /// <param name="members"></param>
-        /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SetDiff<TObjectContext>(ArgSlice[] keys, out HashSet<byte[]> members, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)
         {
             members = default;
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
-            members = [];
+            var createTransaction = false;
 
-            var status = GET(keys[0].Bytes, out var first, ref objectContext);
-            if (status == GarnetStatus.OK)
+            if (txnManager.state != TxnState.Running)
             {
-                members.UnionWith(((SetObject)first.garnetObject).Set);
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
             }
 
-            for (var i = 1; i < keys.Length; i++)
+            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
             {
-                status = GET(keys[i].Bytes, out var next, ref objectContext);
-                if (status == GarnetStatus.OK)
-                {
-                    var nextSet = ((SetObject)next.garnetObject).Set;
-                    var interItems = members.Intersect(nextSet, nextSet.Comparer);
-                    members.ExceptWith(interItems);
-                }
+                members = _setDiff(keys, ref objectStoreLockableContext);
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
             }
 
             return GarnetStatus.OK;
@@ -473,32 +475,59 @@ namespace Garnet.server
         /// Diff result store.
         /// Returns the number of result set.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key">destination</param>
         /// <param name="keys"></param>
         /// <param name="count"></param>
-        /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus SetDiffStore<TObjectContext>(byte[] key, ArgSlice[] keys,out int count, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys,out int count)
         {
             count = default;
 
             if (key.Length == 0 || keys.Length == 0)
                 return GarnetStatus.OK;
 
-            var diffSet = _setDiff(keys, ref objectContext);
-            
             var asKey = scratchBufferManager.CreateArgSlice(key);
-            var asMembers = new ArgSlice[diffSet.Count];
-            for (var i = 0; i < diffSet.Count; i++)
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
             {
-                asMembers[i] = scratchBufferManager.CreateArgSlice(diffSet.ElementAt(i));
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
             }
 
-            var status = SetAdd(asKey, [.. asMembers], out var saddCount, ref objectContext);
-            count = saddCount;
-            return status;
+            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var diffSet = _setDiff(keys, ref objectStoreLockableContext);
+
+                var asMembers = new ArgSlice[diffSet.Count];
+                for (var i = 0; i < diffSet.Count; i++)
+                {
+                    asMembers[i] = scratchBufferManager.CreateArgSlice(diffSet.ElementAt(i));
+                }
+
+                var newSetObject = new SetObject();
+                foreach (var item in diffSet)
+                {
+                    newSetObject.Set.Add(item);
+                    newSetObject.UpdateSize(item);
+                }
+                _ = SET(key, newSetObject, ref objectStoreLockableContext);
+                count = diffSet.Count;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+           
+            return GarnetStatus.OK;
         }
 
         private HashSet<byte[]> _setDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)

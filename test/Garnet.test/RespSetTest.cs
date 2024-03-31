@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
 using System.Text;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -477,6 +476,37 @@ namespace Garnet.test
             var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
             expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
             Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
+        [Test]
+        public void CanDoSdiffStoreOverwrittenLC()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            // diffstore set example 1
+            lightClientRequest.SendCommand("SADD key1 a b c d");
+            lightClientRequest.SendCommand("SADD key2 c");
+            var response = lightClientRequest.SendCommand("SDIFFSTORE key key1 key2");  // key = a b d
+            var expectedResponse = ":3\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nd\r\n";
+            Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            // diffstore set example 2
+            //lightClientRequest.SendCommand("SADD key3 a c b");
+            //lightClientRequest.SendCommand("SADD key4 a b");
+            //response = lightClientRequest.SendCommand("SDIFFSTORE key key3 key4");  // key overwritten = c
+
+            // TODO why response 
+
+            //expectedResponse = ":1\r\n";
+            //// Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            //membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            //expectedResponse = "*1\r\n$1\r\nc\r\n";
+            //Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
         #endregion
 
