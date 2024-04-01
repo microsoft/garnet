@@ -486,7 +486,7 @@ namespace Garnet.server
             if (key.Length == 0 || keys.Length == 0)
                 return GarnetStatus.OK;
 
-            var asKey = scratchBufferManager.CreateArgSlice(key);
+            var destination = scratchBufferManager.CreateArgSlice(key);
 
             var createTransaction = false;
 
@@ -494,7 +494,7 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(destination, true, LockType.Exclusive);
                 foreach (var item in keys)
                     txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
                 _ = txnManager.Run(true);
