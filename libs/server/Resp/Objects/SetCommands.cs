@@ -263,7 +263,7 @@ namespace Garnet.server
         {
             ptr += 14;
 
-            if (count < 1 || count > 2)
+            if (count != 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SMEMBERS", count);

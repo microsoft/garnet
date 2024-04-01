@@ -406,12 +406,12 @@ namespace Garnet.server
                 (RespCommand.WATCHOS, 0) => NetworkWATCH(count, ptr, StoreType.Object),
                 (RespCommand.STRLEN, 0) => NetworkSTRLEN(ptr, ref storageApi),
                 (RespCommand.EXISTS, 0) => NetworkEXISTS(count, ptr, ref storageApi),
-                (RespCommand.MODULE, 0) => NetworkMODULE(ptr, ref storageApi),
+                (RespCommand.MODULE, 0) => NetworkMODULE(count, ptr, ref storageApi),
                 //General key commands
                 (RespCommand.DBSIZE, 0) => NetworkDBSIZE(ptr, ref storageApi),
                 (RespCommand.KEYS, 0) => NetworkKEYS(count, ptr, ref storageApi),
                 (RespCommand.SCAN, 0) => NetworkSCAN(count, ptr, ref storageApi),
-                (RespCommand.TYPE, 0) => NetworkTYPE(ptr, ref storageApi),
+                (RespCommand.TYPE, 0) => NetworkTYPE(count, ptr, ref storageApi),
                 // Pub/sub commands
                 (RespCommand.SUBSCRIBE, 0) => NetworkSUBSCRIBE(count, ptr, dend),
                 (RespCommand.PSUBSCRIBE, 0) => NetworkPSUBSCRIBE(count, ptr, dend),
