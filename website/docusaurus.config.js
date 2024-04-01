@@ -65,6 +65,8 @@ const config = {
     ],
   ],
 
+  plugins: ["docusaurus-plugin-clarity"],
+
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
@@ -135,6 +137,9 @@ const config = {
           https://go.microsoft.com/fwlink/?LinkId=521839"
           style="color: white;">Privacy &amp; Cookies</a> |
           <a href="
+          https://go.microsoft.com/fwlink/?LinkID=2259814"
+          style="color: white;">Consumer Health Privacy</a> |
+          <a href="
           https://go.microsoft.com/fwlink/?LinkID=206977"
           style="color: white;">Terms of Use</a> |
           <a href="
@@ -150,6 +155,9 @@ const config = {
         defaultMode: 'light',
         disableSwitch: false,
         respectPrefersColorScheme: false,
+      },
+      clarity: {
+        ID: "loh6v65ww5",
       },
     }),
 
