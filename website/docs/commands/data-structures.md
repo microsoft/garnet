@@ -480,6 +480,34 @@ The **match** parameter allows to apply a filter to elements after they have bee
 
 ---
 
+### SDIFF
+
+#### Syntax
+
+```bash
+    SDIFF key [key ...]
+```
+
+Returns the members of the set resulting from the difference between the **first** set and all the successive sets. 
+
+**Keys** that do not exist are considered to be empty sets.
+
+---
+
+### SDIFFSTORE
+
+#### Syntax
+
+```bash
+    SDIFFSTORE destination key [key ...]
+```
+
+This command is equal to [SDIFF](#SDIFF), but instead of returning the resulting set, it is stored in **destination**. 
+
+If **destination** already exists, it is overwritten.
+
+---
+
 ## Sorted Set
 
 ### ZADD
