@@ -172,7 +172,7 @@ ClusterRedirectTests.TestFlags testFlags)
 
             //6. EXISTS
             new ("EXISTS", ["SET <key#0> <s#0>"], "EXISTS <key#0>", ["DEL <key#0>"], "1", null, (TestFlags.READONLY | TestFlags.SINGLEKEY | TestFlags.KEY_EXISTS)),
-            new ("EXISTS", ["SET <key#0> <s#0>"], "EXISTS <key#0>", ["DEL <key#0>"], "1", null, (TestFlags.READONLY | TestFlags.SINGLEKEY | TestFlags.KEY_EXISTS | TestFlags.ASKING)),            
+            new ("EXISTS", ["SET <key#0> <s#0>"], "EXISTS <key#0>", ["DEL <key#0>"], "1", null, (TestFlags.READONLY | TestFlags.SINGLEKEY | TestFlags.KEY_EXISTS | TestFlags.ASKING)),
 
             //7. INCR
             new ("INCR", ["SET <key#0> 100"], "INCR <key#0>", ["DEL <key#0>"], "101", null, (TestFlags.SINGLEKEY | TestFlags.READ_WRITE)),
@@ -443,6 +443,10 @@ ClusterRedirectTests.TestFlags testFlags)
             //2. MGET
             new ("MGET", ["MSET <key#0> <s#0> <key#1> <s#1> <key#2> <s#2>"],"MGET <key#0> <key#1> <key#2>", ["DEL <key#0>", "DEL <key#1>", "DEL <key#2>"], null, ["<s#0>", "<s#1>", "<s#2>"], (TestFlags.READONLY | TestFlags.MULTIKEY | TestFlags.KEY_EXISTS)),
             new ("MGET", ["MSET <key#0> <s#0> <key#1> <s#1> <key#2> <s#2>"],"MGET <key#0> <key#1> <key#2>", ["DEL <key#0>", "DEL <key#1>", "DEL <key#2>"], null, ["<s#0>", "<s#1>", "<s#2>"], (TestFlags.READONLY | TestFlags.MULTIKEY | TestFlags.KEY_EXISTS | TestFlags.ASKING)),
+
+            //3. EXISTS
+            new ("EXISTS", ["MSET <key#0> <s#0> <key#1> <s#1> <key#2> <s#2>"],"EXISTS <key#0> <key#1> <key#2>", ["DEL <key#0>", "DEL <key#1>", "DEL <key#2>"], "3", ["<s#0>", "<s#1>", "<s#2>"], (TestFlags.READONLY | TestFlags.MULTIKEY | TestFlags.KEY_EXISTS)),
+            new ("EXISTS", ["MSET <key#0> <s#0> <key#1> <s#1> <key#2> <s#2>"],"EXISTS <key#0> <key#1> <key#2>", ["DEL <key#0>", "DEL <key#1>", "DEL <key#2>"], "3", ["<s#0>", "<s#1>", "<s#2>"], (TestFlags.READONLY | TestFlags.MULTIKEY | TestFlags.KEY_EXISTS | TestFlags.ASKING)),
             #endregion
 
             #region hllCommands
