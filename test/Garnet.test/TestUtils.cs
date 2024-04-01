@@ -293,7 +293,11 @@ namespace Garnet.test
                 Assert.IsNotNull(opts);
                 int iter = 0;
                 while (!IsPortAvailable(opts.Port))
+                {
+                    Assert.Less(30, iter, "Failed to connect within 30 seconds");
                     TestContext.Progress.WriteLine($"Waiting for Port {opts.Port} to become available for {TestContext.CurrentContext.WorkerId}:{iter++}");
+                    Thread.Sleep(1);
+                }
                 nodes[i] = new GarnetServer(opts, loggerFactory);
             }
             return nodes;
