@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -680,7 +681,7 @@ namespace Garnet.test
 
             //missing paramenters
             response = lightClientRequest.SendCommand("HEXISTS foo");
-            expectedResponse = "-ERR wrong number of arguments for HEXISTS command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HEXISTS");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -714,13 +715,13 @@ namespace Garnet.test
 
             //missing paramenters
             response = lightClientRequest.SendCommand("HSTRLEN foo");
-            expectedResponse = "-ERR wrong number of arguments for HSTRLEN command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HSTRLEN");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
             //too many paramenters
             response = lightClientRequest.SendCommand("HSTRLEN foo field0 field1");
-            expectedResponse = "-ERR wrong number of arguments for HSTRLEN command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HSTRLEN");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -815,7 +816,7 @@ namespace Garnet.test
 
             // Check correct error message when incorrect number of parameters
             response = lightClientRequest.SendCommand("HRANDFIELD");
-            expectedResponse = "-ERR wrong number of arguments for HRANDFIELD command.";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HRANDFIELD");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -970,7 +971,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HINCRBY foo", "PING HELLO", 1, 1);
-            var expectedResponse = "-ERR wrong number of arguments for HINCRBY command.\r\n$5\r\nHELLO\r\n";
+            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "HINCRBY")}$5\r\nHELLO\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -980,7 +981,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HINCRBYFLOAT foo", "PING HELLO", 1, 1);
-            var expectedResponse = "-ERR wrong number of arguments for HINCRBYFLOAT command.\r\n$5\r\nHELLO\r\n";
+            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "HINCRBYFLOAT")}$5\r\nHELLO\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
