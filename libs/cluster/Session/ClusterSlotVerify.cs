@@ -23,8 +23,8 @@ namespace Garnet.cluster
         ClusterSlotVerificationResult SingleKeyReadSlotVerify(ClusterConfig config, ArgSlice keySlice, byte SessionAsking, int slot = -1)
         {
             var _slot = slot == -1 ? ArgSliceUtils.HashSlot(keySlice) : (ushort)slot;
-            bool IsLocal = config.IsLocal(_slot);
-            SlotState state = config.GetState(_slot);
+            var IsLocal = config.IsLocal(_slot);
+            var state = config.GetState(_slot);
 
             // If local, then slot in not stable state
             if (IsLocal)
@@ -42,7 +42,7 @@ namespace Garnet.cluster
                 if (state == SlotState.STABLE)
                     return new(SlotVerifiedState.OK, _slot);
 
-                //if key migrating and it exists serve read request
+                // If key migrating and it exists serve read request
                 if (state == SlotState.MIGRATING)
                     if (CheckIfKeyExists(keySlice))
                         return new(SlotVerifiedState.OK, _slot);
@@ -53,19 +53,19 @@ namespace Garnet.cluster
             }
             else
             {
-                //if stable state and not local redirect to PRIMARY node
+                // If stable state and not local redirect to PRIMARY node
                 if (state == SlotState.STABLE)
                     return new(SlotVerifiedState.MOVED, _slot);
                 else if (state == SlotState.IMPORTING)
                 {
-                    //if importing state respond to query only if preceded by asking
+                    // If importing state respond to query only if preceded by asking
                     if (SessionAsking > 0)
                         return new(SlotVerifiedState.OK, _slot);
-                    // if importing state and not asking redirect to source node
+                    // If importing state and not asking redirect to source node
                     else
                         return new(SlotVerifiedState.MOVED, _slot);
                 }
-                //if offline respond with clusterdown
+                // If offline respond with clusterdown
                 else
                     return new(SlotVerifiedState.CLUSTERDOWN, _slot);
             }
@@ -74,10 +74,10 @@ namespace Garnet.cluster
         ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ClusterConfig config, ArgSlice keySlice, byte SessionAsking, int slot = -1)
         {
             var _slot = slot == -1 ? ArgSliceUtils.HashSlot(keySlice) : (ushort)slot;
-            bool IsLocal = config.IsLocal(_slot, readCommand: readWriteSession);
-            SlotState state = config.GetState(_slot);
+            var IsLocal = config.IsLocal(_slot, readCommand: readWriteSession);
+            var state = config.GetState(_slot);
 
-            //Redirect r/w requests towards primary
+            // Redirect r/w requests towards primary
             if (config.GetLocalNodeRole() == NodeRole.REPLICA)
                 return new(SlotVerifiedState.MOVED, _slot);
 
@@ -86,10 +86,10 @@ namespace Garnet.cluster
             if (IsLocal)
             {
                 if (state == SlotState.MIGRATING)
-                    //if key migrating and it exists cannot server write request
+                    // If key migrating and it exists cannot server write request
                     if (CheckIfKeyExists(keySlice))
                         return new(SlotVerifiedState.MIGRATING, _slot);
-                    //if key migrating can redirect with ask to target node
+                    // If key migrating can redirect with ask to target node
                     else
                         return new(SlotVerifiedState.ASK, _slot);
                 else
@@ -97,19 +97,19 @@ namespace Garnet.cluster
             }
             else
             {
-                //if stable state and not local redirect to PRIMARY node
+                // If stable state and not local redirect to PRIMARY node
                 if (state == SlotState.STABLE)
                     return new(SlotVerifiedState.MOVED, _slot);
                 else if (state == SlotState.IMPORTING)
                 {
-                    //if importing state respond to query only if preceeded by asking
+                    // If importing state respond to query only if preceeded by asking
                     if (SessionAsking > 0)
                         return new(SlotVerifiedState.OK, _slot);
-                    // if importing state and not asking redirect to source node
+                    // If importing state and not asking redirect to source node
                     else
                         return new(SlotVerifiedState.MOVED, _slot);
                 }
-                //if offline respond with clusterdown
+                // If offline respond with clusterdown
                 else
                     return new(SlotVerifiedState.CLUSTERDOWN, _slot);
             }
@@ -118,24 +118,24 @@ namespace Garnet.cluster
         ClusterSlotVerificationResult ArrayCrosslotVerify(int keyCount, ref byte* ptr, byte* endPtr, bool interleavedKeys, out bool retVal, out byte* keyPtr, out int ksize)
         {
             retVal = false;
-            bool crossSlot = false;
+            var crossSlot = false;
             keyPtr = null;
             ksize = 0;
 
             byte* valPtr = null;
-            int vsize = 0;
+            var vsize = 0;
 
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, endPtr))
                 return new(SlotVerifiedState.OK, 0);
 
-            //skip value if key values are interleaved
+            // Skip value if key values are interleaved
             if (interleavedKeys)
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, endPtr))
                     return new(SlotVerifiedState.OK, 0);
 
             var slot = NumUtils.HashSlot(keyPtr, ksize);
 
-            for (int c = 1; c < keyCount; c++)
+            for (var c = 1; c < keyCount; c++)
             {
                 keyPtr = null;
                 ksize = 0;
@@ -143,7 +143,7 @@ namespace Garnet.cluster
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, endPtr))
                     return new(SlotVerifiedState.OK, slot);
 
-                //skip value if key values are interleaved
+                // Skip value if key values are interleaved
                 if (interleavedKeys)
                     if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, endPtr))
                         return new(SlotVerifiedState.OK, 0);
@@ -153,10 +153,7 @@ namespace Garnet.cluster
             }
 
             retVal = true;
-            if (crossSlot)
-                return new(SlotVerifiedState.CROSSLOT, slot);
-            else
-                return new(SlotVerifiedState.OK, slot);
+            return crossSlot ? new(SlotVerifiedState.CROSSLOT, slot) : new(SlotVerifiedState.OK, slot);
         }
 
         ClusterSlotVerificationResult KeyArraySlotVerify(ClusterConfig config, int keyCount, ref byte* ptr, byte* endPtr, bool readOnly, bool interleavedKeys, byte SessionAsking, out bool retVal)
@@ -167,10 +164,11 @@ namespace Garnet.cluster
             if (vres.state == SlotVerifiedState.CROSSLOT)
                 return vres;
             else
-                if (readOnly)
-                return SingleKeyReadSlotVerify(config, new ArgSlice(keyPtr, ksize), SessionAsking, vres.slot);
-            else
-                return SingleKeyReadWriteSlotVerify(config, new ArgSlice(keyPtr, ksize), SessionAsking, vres.slot);
+            {
+                return readOnly
+                    ? SingleKeyReadSlotVerify(config, new ArgSlice(keyPtr, ksize), SessionAsking, vres.slot)
+                    : SingleKeyReadWriteSlotVerify(config, new ArgSlice(keyPtr, ksize), SessionAsking, vres.slot);
+            }
         }
 
         ClusterSlotVerificationResult ArrayCrossSlotVerify(ref ArgSlice[] keys, int count)
@@ -179,8 +177,8 @@ namespace Garnet.cluster
             var _end = count < 0 ? keys.Length : count;
 
             var slot = ArgSliceUtils.HashSlot(keys[_offset]);
-            bool crossSlot = false;
-            for (int i = _offset; i < _end; i++)
+            var crossSlot = false;
+            for (var i = _offset; i < _end; i++)
             {
                 var _slot = ArgSliceUtils.HashSlot(keys[i]);
 
@@ -191,10 +189,9 @@ namespace Garnet.cluster
                 }
             }
 
-            if (crossSlot)
-                return new(SlotVerifiedState.CROSSLOT, slot);
-            else
-                return new(SlotVerifiedState.OK, slot);
+            return crossSlot
+                ? new(SlotVerifiedState.CROSSLOT, slot)
+                : new(SlotVerifiedState.OK, slot);
         }
 
         ClusterSlotVerificationResult KeyArraySlotVerify(ClusterConfig config, ref ArgSlice[] keys, bool readOnly, byte SessionAsking, int count)
@@ -204,10 +201,9 @@ namespace Garnet.cluster
                 return vres;
             else
             {
-                if (readOnly)
-                    return SingleKeyReadSlotVerify(config, keys[0], SessionAsking, vres.slot);
-                else
-                    return SingleKeyReadWriteSlotVerify(config, keys[0], SessionAsking, vres.slot);
+                return readOnly
+                    ? SingleKeyReadSlotVerify(config, keys[0], SessionAsking, vres.slot)
+                    : SingleKeyReadWriteSlotVerify(config, keys[0], SessionAsking, vres.slot);
             }
         }
     }
