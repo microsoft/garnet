@@ -344,7 +344,7 @@ namespace Garnet.server
         {
             ptr += 10;
 
-            if (count < 2)
+            if (count < 2 || count > 3)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SPOP", count);
