@@ -479,7 +479,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys,out int count)
+        public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys, out int count)
         {
             count = default;
 
@@ -526,7 +526,7 @@ namespace Garnet.server
                 if (createTransaction)
                     txnManager.Commit(true);
             }
-           
+
             return GarnetStatus.OK;
         }
 

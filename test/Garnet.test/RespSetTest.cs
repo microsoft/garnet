@@ -501,7 +501,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("SADD key3 a c e");
             var response = lightClientRequest.SendCommand("SDIFF key1 key2 key3");
             var expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
-            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0,expectedResponse.Length).ToArray());
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 
         [Test]
