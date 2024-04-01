@@ -422,6 +422,30 @@ namespace Garnet.test
             Assert.AreEqual("abc", result["foo"]);
             Assert.AreEqual("def", result["bar"]);
         }
+        [Test]
+        public async Task CanDoHMSETMultipleTimes()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var hashKey = "testCanDoHMSET";
+            var hashMapKey = "TestKey";
+
+            await db.KeyDeleteAsync(hashKey);
+
+            var val0 = await db.HashGetAsync(hashKey, hashMapKey);
+            await db.HashSetAsync(hashKey, [new HashEntry(hashMapKey, "TestValue1")]);
+
+            var val1 = await db.HashGetAsync(hashKey, hashMapKey);
+            await db.HashSetAsync(hashKey, [new HashEntry(hashMapKey, "TestValue2")]);
+
+            var val2 = await db.HashGetAsync(hashKey, hashMapKey);
+
+#nullable enable
+            Assert.Null((string?)val0);
+            Assert.AreEqual("TestValue1", (string?)val1);
+            Assert.AreEqual("TestValue2", (string?)val2);
+#nullable disable
+        }
 
         [Test]
         public async Task CanDoHSETWhenAlwaysAsync()

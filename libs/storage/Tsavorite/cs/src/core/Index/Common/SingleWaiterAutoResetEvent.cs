@@ -8,7 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
 
-namespace FASTER.core
+namespace Tsavorite.core
 {
     /// <summary>
     /// Represents a synchronization event that, when signaled, resets automatically after releasing a single waiter.
