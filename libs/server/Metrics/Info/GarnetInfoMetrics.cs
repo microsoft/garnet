@@ -42,6 +42,10 @@ namespace Garnet.server
         private void PopulateServerInfo(StoreWrapper storeWrapper)
         {
             var uptime = TimeSpan.FromTicks(DateTimeOffset.UtcNow.Ticks - storeWrapper.startupTime);
+            var integerFormat = string.Format("{0}{1}", "F", "0");
+            var uptime_in_seconds = uptime.TotalSeconds.ToString(integerFormat);
+            var uptime_in_days = uptime.TotalDays.ToString(integerFormat);
+
             serverInfo =
             [
                 new("garnet_version", storeWrapper.version),
@@ -49,8 +53,8 @@ namespace Garnet.server
                 new("os", Environment.OSVersion.ToString()),
                 new("processor_count", Environment.ProcessorCount.ToString()),
                 new("arch_bits", Environment.Is64BitProcess ? "64" : "32"),
-                new("uptime_in_seconds", uptime.TotalSeconds.ToString()),
-                new("uptime_in_days", uptime.TotalDays.ToString()),
+                new("uptime_in_seconds", uptime_in_seconds),
+                new("uptime_in_days", uptime_in_days),
                 new("monitor_task", storeWrapper.serverOptions.MetricsSamplingFrequency > 0 ? "enabled" : "disabled"),
                 new("monitor_freq", storeWrapper.serverOptions.MetricsSamplingFrequency.ToString()),
                 new("latency_monitor", storeWrapper.serverOptions.LatencyMonitor ? "enabled" : "disabled"),
