@@ -866,6 +866,7 @@ namespace Garnet.server
             if (status != GarnetStatus.OK && objectStoreSession != null)
             {
                 status = GET(key.Bytes, out GarnetObjectStoreOutput output, ref objectContext);
+
                 if (status == GarnetStatus.OK)
                 {
                     if ((output.garnetObject as SortedSetObject) != null)
@@ -884,6 +885,11 @@ namespace Garnet.server
                     {
                         keyType = "hash";
                     }
+                }
+                else
+                {
+                    keyType = "none";
+                    status = GarnetStatus.NOTFOUND;
                 }
             }
             return status;
