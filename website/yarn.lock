@@ -3962,6 +3962,11 @@ dns-packet@^5.2.2:
   dependencies:
     "@leichtgewicht/ip-codec" "^2.0.1"
 
+docusaurus-plugin-clarity@^2.1.0:
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/docusaurus-plugin-clarity/-/docusaurus-plugin-clarity-2.1.0.tgz#f9e30b51f15b0f973f4f7d7d66d94be33a4dc937"
+  integrity sha512-8BHjDC+69m3yQTqBHJ1xFhijHqbCjJJs19bEVySX8DpnGWlPBDbGiujEqEAyIba0sSjYaJNfg/4n61k1NOm0lw==
+
 dom-converter@^0.2.0:
   version "0.2.0"
   resolved "https://registry.yarnpkg.com/dom-converter/-/dom-converter-0.2.0.tgz#6721a9daee2e293682955b6afe416771627bb768"
