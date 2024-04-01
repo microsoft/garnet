@@ -144,6 +144,9 @@ namespace Garnet.server
         {
             int exists = 0;
 
+            if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: true, out bool retVal))
+                return retVal;
+
             for (int i = 0; i < count; i++)
             {
                 byte* keyPtr = null;
@@ -151,9 +154,6 @@ namespace Garnet.server
 
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-
-                if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
-                    return true;
 
                 ArgSlice key = new(keyPtr, ksize);
                 var status = storageApi.EXISTS(key);
@@ -210,7 +210,7 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
 
-        /// <param name="command">Indicates which command to use, expire or pexpire</param>
+        /// <param name="command">Indicates which command to use, expire or pexpire.</param>
         /// <param name="count">Number of arguments sent with this command.</param>
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
