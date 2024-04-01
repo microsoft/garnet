@@ -151,6 +151,10 @@ namespace Garnet.server
             ptr += 12;
             int exists = 0;
 
+            // TODO: change to count when parser PR merges
+            if (NetworkArraySlotVerify(count - 1, ptr, interleavedKeys: false, readOnly: true, out bool retVal))
+                return retVal;
+
             for (int i = 0; i < count - 1; i++)
             {
                 byte* keyPtr = null;
@@ -158,9 +162,6 @@ namespace Garnet.server
 
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-
-                if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
-                    return true;
 
                 ArgSlice key = new(keyPtr, ksize);
                 var status = storageApi.EXISTS(key);

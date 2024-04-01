@@ -43,9 +43,9 @@ namespace Garnet.cluster
 
         private void WriteClusterSlotVerificationMessage(ClusterConfig config, ClusterSlotVerificationResult vres, ref byte* dcurr, ref byte* dend)
         {
-            ReadOnlySpan<byte> resp = default;
-            SlotVerifiedState state = vres.state;
-            ushort slot = vres.slot;
+            ReadOnlySpan<byte> resp;
+            var state = vres.state;
+            var slot = vres.slot;
             string address;
             int port;
             switch (state)
@@ -97,7 +97,7 @@ namespace Garnet.cluster
         /// <returns>True if redirect, False if can serve</returns>
         public bool NetworkSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend)
         {
-            //If cluster is not enabled or a transaction is running skip slot check
+            // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
@@ -126,7 +126,7 @@ namespace Garnet.cluster
         public bool NetworkArraySlotVerify(int keyCount, ref byte* ptr, byte* endPtr, bool interleavedKeys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, out bool retVal)
         {
             retVal = false;
-            //If cluster is not enabled or a transaction is running skip slot check
+            // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
@@ -153,7 +153,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
         {
-            //If cluster is not enabled or a transaction is running skip slot check
+            // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
