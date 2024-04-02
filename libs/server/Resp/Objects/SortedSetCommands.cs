@@ -38,6 +38,18 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
 
+            if (count < 3)
+            {
+                return AbortWithWrongNumberOfArguments("ZADD", count);
+            }
+
+            if (count % 2 != 1)
+            {
+                zaddDoneCount = zaddAddCount = 0;
+
+                return AbortWithErrorMessage(count, CmdStrings.RESP_SYNTAX_ERROR);
+            }
+
             // Get the key for SortedSet
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;

@@ -34,6 +34,11 @@ namespace Garnet.server
         private unsafe bool ListPush<TGarnetApi>(int count, byte* ptr, ListOperation lop, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
+            if (count < 2)
+            {
+                return AbortWithWrongNumberOfArguments(lop.ToString(), count);
+            }
+
             // Get the key for List
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var sskey, ref ptr, recvBufferPtr + bytesRead))
                 return false;
@@ -115,6 +120,11 @@ namespace Garnet.server
         private unsafe bool ListPop<TGarnetApi>(int count, byte* ptr, ListOperation lop, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
+            if (count < 1)
+            {
+                return AbortWithWrongNumberOfArguments(lop.ToString(), count);
+            }
+
             // Get the key for List
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;

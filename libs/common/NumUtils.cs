@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Garnet.common
@@ -399,7 +400,11 @@ namespace Garnet.common
             return -1;
         }
 
-        static readonly ushort[] CRC_TABLE = new ushort[256]
+        /// <summary>
+        /// This table is based on the CRC-16-CCITT polynomial (0x1021)
+        /// </summary>
+#pragma warning disable IDE0300 // Simplify collection initialization. Ignored to avoid dotnet-format bug, see https://github.com/dotnet/sdk/issues/39898
+        private static ReadOnlySpan<ushort> Crc16Table => new ushort[256]
         {
             0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
             0x8108, 0x9129, 0xA14A, 0xB16B, 0xC18C, 0xD1AD, 0xE1CE, 0xF1EF,
@@ -434,37 +439,17 @@ namespace Garnet.common
             0xEF1F, 0xFF3E, 0xCF5D, 0xDF7C, 0xAF9B, 0xBFBA, 0x8FD9, 0x9FF8,
             0x6E17, 0x7E36, 0x4E55, 0x5E74, 0x2E93, 0x3EB2, 0x0ED1, 0x1EF0
         };
+#pragma warning restore IDE0300 // Simplify collection initialization
 
-        // No need to free or track until end of process
-        static readonly ushort* crc_table_ptr = (ushort*)GCHandle.Alloc(CRC_TABLE, GCHandleType.Pinned).AddrOfPinnedObject();
-
-        /// <summary>
-        /// Compute CRC of given data
-        /// </summary>
-        /// <param name="data"></param>
-        /// <param name="len"></param>
-        /// <returns></returns>
         public static unsafe ushort CRC16(byte* data, int len)
         {
             ushort result = 0;
             byte* end = data + len;
             while (data < end)
-                result = (ushort)(*(crc_table_ptr + (((result >> 8) ^ *data++) & 0xff)) ^ (result << 8));
-            return result;
-        }
-
-        /// <summary>
-        /// Compute CRC16 of given data (via array access)
-        /// </summary>
-        /// <param name="data"></param>
-        /// <param name="len"></param>
-        /// <returns></returns>
-        public static unsafe ushort CRC16v2(byte* data, int len)
-        {
-            ushort result = 0;
-            byte* end = data + len;
-            while (data < end)
-                result = (ushort)(CRC_TABLE[((result >> 8) ^ *data++) & 0xff] ^ (result << 8));
+            {
+                nuint index = (nuint)(uint)((result >> 8) ^ *data++) & 0xff;
+                result = (ushort)(Unsafe.Add(ref MemoryMarshal.GetReference(Crc16Table), index) ^ (result << 8));
+            }
             return result;
         }
 

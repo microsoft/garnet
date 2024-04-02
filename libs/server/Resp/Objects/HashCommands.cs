@@ -517,6 +517,12 @@ namespace Garnet.server
         private unsafe bool HashKeys<TGarnetApi>(int count, byte* ptr, HashOperation op, ref TGarnetApi storageApi)
           where TGarnetApi : IGarnetApi
         {
+            if (count != 1)
+            {
+                hashItemsDoneCount = hashOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("HKEYS", count);
+            }
+
             // Get the key for Hash
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;

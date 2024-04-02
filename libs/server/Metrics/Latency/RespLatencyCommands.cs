@@ -159,7 +159,7 @@ namespace Garnet.server
 
             if (errorFlag && !string.IsNullOrWhiteSpace(errorCmd))
             {
-                var errorMsg = string.Format(CmdStrings.ErrMissingParam, errorCmd);
+                var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, errorCmd);
                 var bresp_ERRMISSINGPARAM = Encoding.ASCII.GetBytes(errorMsg);
                 bresp_ERRMISSINGPARAM.CopyTo(new Span<byte>(dcurr, bresp_ERRMISSINGPARAM.Length));
                 dcurr += bresp_ERRMISSINGPARAM.Length;

@@ -32,7 +32,7 @@ namespace Garnet.server
                     if (!DrainCommands(bufSpan, count))
                         return false;
                     errorCmd = "auth";
-                    var errorMsg = string.Format(CmdStrings.ErrMissingParam, errorCmd);
+                    var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, errorCmd);
                     var bresp_ERRMISSINGPARAM = Encoding.ASCII.GetBytes(errorMsg);
                     bresp_ERRMISSINGPARAM.CopyTo(new Span<byte>(dcurr, bresp_ERRMISSINGPARAM.Length));
                     dcurr += bresp_ERRMISSINGPARAM.Length;
@@ -509,7 +509,7 @@ namespace Garnet.server
 
             if (errorFlag && !string.IsNullOrWhiteSpace(errorCmd))
             {
-                var errorMsg = string.Format(CmdStrings.ErrMissingParam, errorCmd);
+                var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, errorCmd);
                 while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(errorMsg), ref dcurr, dend))
                     SendAndReset();
             }

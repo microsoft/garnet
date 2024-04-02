@@ -255,7 +255,7 @@ namespace Garnet.server
         private unsafe bool SetMembers<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (count < 0 || count > 1)
+            if (count != 1)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SMEMBERS", count);
@@ -332,8 +332,14 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetPop<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+                 where TGarnetApi : IGarnetApi
         {
+           if (count < 1 || count > 2)
+            {
+                setItemsDoneCount = setOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("SPOP", count);
+            }
+
             // Get the key
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;
