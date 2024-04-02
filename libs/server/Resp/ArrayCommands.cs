@@ -656,7 +656,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.WriteAsciiDirect("-ERR invalid database index.\r\n", ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect("-ERR invalid database index.\r\n"u8, ref dcurr, dend))
                     SendAndReset();
             }
             return true;

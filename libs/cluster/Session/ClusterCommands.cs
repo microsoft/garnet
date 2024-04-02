@@ -1259,7 +1259,7 @@ namespace Garnet.cluster
 
                     var resp = CmdStrings.RESP_OK;
                     if (migrateState == 1)
-                        resp = Encoding.ASCII.GetBytes($"-ERR Node not in IMPORTING state.\r\n");
+                        resp = "-ERR Node not in IMPORTING state.\r\n"u8;
 
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
@@ -1350,7 +1350,7 @@ namespace Garnet.cluster
 
                 if (!clusterProvider.serverOptions.EnableAOF)
                 {
-                    while (!RespWriteUtils.WriteAsciiDirect("-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect("-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n"u8, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -1410,7 +1410,7 @@ namespace Garnet.cluster
                 if (localRole != NodeRole.REPLICA)
                 {
                     // TODO: handle this
-                    //while (!RespWriteUtils.WriteAsciiDirect("-ERR aofsync node not a replica\r\n", ref dcurr, dend))
+                    //while (!RespWriteUtils.WriteDirect("-ERR aofsync node not a replica\r\n"u8, ref dcurr, dend))
                     //    SendAndReset();
                 }
                 else if (!primaryId.Equals(nodeId))

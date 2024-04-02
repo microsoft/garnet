@@ -315,8 +315,7 @@ namespace Garnet.cluster
                 out var mSession))
             {
                 // Migration task could not be added due to possible conflicting migration tasks
-                var resp = Encoding.ASCII.GetBytes("-IOERR Migrate keys failed.\r\n");
-                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect("-IOERR Migrate keys failed.\r\n"u8, ref dcurr, dend))
                     SendAndReset();
             }
             else

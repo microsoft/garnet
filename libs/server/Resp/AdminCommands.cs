@@ -79,7 +79,7 @@ namespace Garnet.server
                     // NOTE: Some authenticators cannot accept username/password pairs
                     if (!_authenticator.CanAuthenticate)
                     {
-                        while (!RespWriteUtils.WriteAsciiDirect("-ERR Client sent AUTH, but configured authenticator does not accept passwords\r\n", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect("-ERR Client sent AUTH, but configured authenticator does not accept passwords\r\n"u8, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -95,12 +95,12 @@ namespace Garnet.server
                         {
                             if (username.IsEmpty)
                             {
-                                while (!RespWriteUtils.WriteAsciiDirect("-WRONGPASS Invalid password\r\n", ref dcurr, dend))
+                                while (!RespWriteUtils.WriteDirect("-WRONGPASS Invalid password\r\n"u8, ref dcurr, dend))
                                     SendAndReset();
                             }
                             else
                             {
-                                while (!RespWriteUtils.WriteAsciiDirect("-WRONGPASS Invalid username/password combination\r\n", ref dcurr, dend))
+                                while (!RespWriteUtils.WriteDirect("-WRONGPASS Invalid username/password combination\r\n"u8, ref dcurr, dend))
                                     SendAndReset();
                             }
                         }
@@ -237,7 +237,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteAsciiDirect("-ERR " + errorMsg + "\r\n", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteAsciiDirect($"-ERR {errorMsg}\r\n", ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -385,7 +385,7 @@ namespace Garnet.server
 
                 var resp = CmdStrings.RESP_OK;
                 if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
-                    resp = Encoding.ASCII.GetBytes("-ERR checkpoint already in progress\r\n");
+                    resp = "-ERR checkpoint already in progress\r\n"u8;
                 while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
@@ -417,13 +417,12 @@ namespace Garnet.server
                 success = storeWrapper.TakeCheckpoint(true, StoreType.All, logger);
                 if (success)
                 {
-                    while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes("Background saving started"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteSimpleString("Background saving started"u8, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    var resp = Encoding.ASCII.GetBytes("-ERR checkpoint already in progress\r\n");
-                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect("-ERR checkpoint already in progress\r\n"u8, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -433,7 +432,7 @@ namespace Garnet.server
                     return false;
 
                 CommitAof();
-                while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes("AOF file committed"), ref dcurr, dend))
+                while (!RespWriteUtils.WriteSimpleString("AOF file committed"u8, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command.SequenceEqual(CmdStrings.FLUSHDB))
@@ -478,7 +477,7 @@ namespace Garnet.server
 
                     if (generation < 0 || generation > GC.MaxGeneration)
                     {
-                        while (!RespWriteUtils.WriteAsciiDirect("-ERR Invalid GC generation.\r\n", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect("-ERR Invalid GC generation.\r\n"u8, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
