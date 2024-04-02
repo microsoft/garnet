@@ -185,7 +185,7 @@ namespace Garnet.server
                         ptr += objOutputHeader.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(responseWhenNotFound, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(responseWhenNotFound, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }

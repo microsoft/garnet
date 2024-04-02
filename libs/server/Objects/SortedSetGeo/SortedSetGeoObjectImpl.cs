@@ -463,7 +463,7 @@ namespace Garnet.server
                 if (!((opts.FromMember || opts.FromLonLat) && (opts.ByRadius || opts.ByBox)))
                 {
                     var errorMessage = Encoding.ASCII.GetBytes($"-ERR required parameters are missing.\r\n");
-                    while (!RespWriteUtils.WriteResponse(errorMessage, ref curr, end))
+                    while (!RespWriteUtils.WriteDirect(errorMessage, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _input->count = 0;
                     count = 0;
@@ -478,7 +478,7 @@ namespace Garnet.server
                     if (opts.ByRadius)
                     {
                         // Not supported in Garnet: ByRadius
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref curr, end))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -539,7 +539,7 @@ namespace Garnet.server
                 // Not supported options in Garnet: FROMLONLAT BYBOX BYRADIUS 
                 if (opts.FromLonLat)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref curr, end))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 // Write bytes parsed from input and count done, into output footer

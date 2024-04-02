@@ -71,7 +71,7 @@ namespace Garnet.cluster
             if (clusterProvider.clusterManager.CurrentConfig.GetLocalNodeRole() != NodeRole.PRIMARY)
             {
                 var resp = CmdStrings.RESP_CANNOT_FAILOVER_FROM_NON_MASTER;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -83,7 +83,7 @@ namespace Garnet.cluster
                 if (replicaNodeId == null)
                 {
                     var resp = CmdStrings.RESP_UNKNOWN_ENDPOINT_ERROR;
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -92,7 +92,7 @@ namespace Garnet.cluster
                 if (worker.role != NodeRole.REPLICA)
                 {
                     var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Node @{replicaAddress}:{replicaPort} is not a replica.\r\n"));
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -100,7 +100,7 @@ namespace Garnet.cluster
                 if (worker.replicaOfNodeId != clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId())
                 {
                     var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Node @{replicaAddress}:{replicaPort} is not my replica.\r\n"));
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -118,7 +118,7 @@ namespace Garnet.cluster
                 _ = clusterProvider.failoverManager.TryStartPrimaryFailover(replicaAddress, replicaPort, force ? FailoverOption.FORCE : FailoverOption.DEFAULT, timeoutTimeSpan);
             }
 
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }

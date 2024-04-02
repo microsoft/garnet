@@ -123,7 +123,7 @@ namespace Garnet.server
                             }
                             response = CmdStrings.RESP_OK;
                         }
-                        while (!RespWriteUtils.WriteResponse(response, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(response, ref dcurr, dend))
                             SendAndReset();
 
                         readHead = (int)(ptr - recvBufferPtr);
@@ -147,7 +147,7 @@ namespace Garnet.server
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     string paramStr = Encoding.ASCII.GetString(param);
-                    while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Unknown subcommand. Try LATENCY HELP.\r\n")), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Unknown subcommand. Try LATENCY HELP.\r\n")), ref dcurr, dend))
                         SendAndReset();
                 }
             }

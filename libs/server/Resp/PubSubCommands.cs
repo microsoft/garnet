@@ -94,7 +94,7 @@ namespace Garnet.server
             if (subscribeBroker == null)
             {
                 ReadOnlySpan<byte> resp = "-ERR PUBLISH is disabled, enable it with --pubsub option.\r\n"u8;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;
@@ -152,7 +152,7 @@ namespace Garnet.server
             if (disabledBroker)
             {
                 ReadOnlySpan<byte> resp = "-ERR SUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;
@@ -204,7 +204,7 @@ namespace Garnet.server
             if (disabledBroker)
             {
                 ReadOnlySpan<byte> resp = "-ERR SUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;
@@ -226,7 +226,7 @@ namespace Garnet.server
                 if (subscribeBroker == null)
                 {
                     ReadOnlySpan<byte> resp = "-ERR UNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -307,7 +307,7 @@ namespace Garnet.server
             if (subscribeBroker == null)
             {
                 ReadOnlySpan<byte> resp = "-ERR UNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -325,7 +325,7 @@ namespace Garnet.server
                 if (subscribeBroker == null)
                 {
                     ReadOnlySpan<byte> resp = "-ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -394,7 +394,7 @@ namespace Garnet.server
             if (subscribeBroker == null)
             {
                 ReadOnlySpan<byte> resp = "-ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
             return true;

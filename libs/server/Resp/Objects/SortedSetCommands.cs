@@ -175,7 +175,7 @@ namespace Garnet.server
                         // Otherwise it needs to return false
                         if (ReadLeftToken(count - 2, ref ptr) < count - 2)
                             return false;
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -248,7 +248,7 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -450,7 +450,7 @@ namespace Garnet.server
                         ptr += objOutputHeader.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -690,7 +690,7 @@ namespace Garnet.server
                         {
                             // Error in arguments
                             ReadOnlySpan<byte> errorMessage = "-ERR max or min value is not a float value.\r\n"u8;
-                            while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
                                 SendAndReset();
                         }
                         else if (output.countDone == Int32.MinValue)  // command partially executed
@@ -704,7 +704,7 @@ namespace Garnet.server
                         var tokens = ReadLeftToken(count - 2, ref ptr);
                         if (tokens < count - 2)
                             return false;
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -785,7 +785,7 @@ namespace Garnet.server
                         {
                             // Error in arguments
                             ReadOnlySpan<byte> errorMessage = "-ERR max or min value not in a valid range.\r\n"u8;
-                            while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
                                 SendAndReset();
                         }
                         else if (output.countDone == Int32.MinValue)  // command partially executed
@@ -799,7 +799,7 @@ namespace Garnet.server
                         var tokens = ReadLeftToken(count - 2, ref ptr);
                         if (tokens < count - 2)
                             return false;
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -891,14 +891,14 @@ namespace Garnet.server
                         }
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
 
                 if (errorMessage != default)
                 {
-                    while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -974,11 +974,11 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteInteger(output.opsDone, ref dcurr, dend))
                                 SendAndReset();
                         else
-                            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                                 SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -1051,7 +1051,7 @@ namespace Garnet.server
                         if (output.countDone == Int32.MaxValue)
                         {
                             // Error in arguments
-                            while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
                                 SendAndReset();
                         }
                         else if (output.countDone == Int32.MinValue)  // command partially executed
@@ -1065,7 +1065,7 @@ namespace Garnet.server
                         var tokens = ReadLeftToken(count - 2, ref ptr);
                         if (tokens < count - 2)
                             return false;
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -1165,7 +1165,7 @@ namespace Garnet.server
                         break;
                     case GarnetStatus.NOTFOUND:
                         var respBytes = includedCount ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
-                        while (!RespWriteUtils.WriteResponse(respBytes, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(respBytes, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }

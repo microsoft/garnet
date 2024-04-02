@@ -38,7 +38,7 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogWarning("TryREPLICAOF {msg}", ex.Message);
-                    while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"-ERR REPLICAOF {ex.Message}"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR REPLICAOF {ex.Message}"), ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -46,20 +46,20 @@ namespace Garnet.cluster
                 var primaryId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(address, port);
                 if (primaryId == null)
                 {
-                    while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"-ERR I don't know about node {address}:{port}.\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR I don't know about node {address}:{port}.\r\n"), ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
                 else
                 {
                     var resp = clusterProvider.replicationManager.BeginReplicate(this, primaryId, background: false, force: true);
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
             }
 
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;

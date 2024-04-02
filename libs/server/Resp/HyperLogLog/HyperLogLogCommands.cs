@@ -72,7 +72,7 @@ namespace Garnet.server
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -82,12 +82,12 @@ namespace Garnet.server
 
             if (pfaddUpdated > 0)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -141,7 +141,7 @@ namespace Garnet.server
             var status = storageApi.HyperLogLogLength(keys, ref Unsafe.AsRef<SpanByte>(pbCmdInput), out long cardinality, out bool error);
             if (error)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -180,13 +180,13 @@ namespace Garnet.server
             //Invalid Type
             if (error)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
             else if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             return true;

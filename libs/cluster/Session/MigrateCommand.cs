@@ -66,7 +66,7 @@ namespace Garnet.cluster
                     resp = CmdStrings.RESP_PARSING_ERROR;
                     break;
             }
-            while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                 SendAndReset();
             return false;
         }
@@ -290,7 +290,7 @@ namespace Garnet.cluster
             // Check if session is authorized to perform migration.
             if (!CheckACLAdminPermissions())
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_NOAUTH, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_NOAUTH, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -316,14 +316,14 @@ namespace Garnet.cluster
             {
                 // Migration task could not be added due to possible conflicting migration tasks
                 var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-IOERR Migrate keys failed.\r\n"));
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
                 //Start migration task
                 mSession.StartMigrationTask(out var resp);
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
 

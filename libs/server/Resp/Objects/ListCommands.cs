@@ -188,7 +188,7 @@ namespace Garnet.server
                     ptr += objOutputHeader.bytesDone;
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -252,7 +252,7 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.NOTFOUND)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -331,7 +331,7 @@ namespace Garnet.server
 
                 //GarnetStatus.OK or NOTFOUND have same result
                 // no need to process output, just send OK
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             // Move input head, write result to output
@@ -407,7 +407,7 @@ namespace Garnet.server
                         ptr += objOutputHeader.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -490,7 +490,7 @@ namespace Garnet.server
 
                 if (error != default)
                 {
-                    while (!RespWriteUtils.WriteResponse(error, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(error, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -559,7 +559,7 @@ namespace Garnet.server
                         if (output.countDone == 0 && output.countDone == 0 && output.bytesDone == 0)
                         {
                             ReadOnlySpan<byte> errorMessage = "-ERR wrong key type used in LINSERT command.\r\n"u8;
-                            while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
                                 SendAndReset();
                         }
                         //check for partial execution
@@ -574,7 +574,7 @@ namespace Garnet.server
                         var tokens = ReadLeftToken(count - 2, ref ptr);
                         if (tokens < count - 2)
                             return false;
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -654,7 +654,7 @@ namespace Garnet.server
                         var tokens = ReadLeftToken(count - 3, ref ptr);
                         if (tokens < count - 3)
                             return false;
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }

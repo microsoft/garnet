@@ -379,7 +379,7 @@ namespace Garnet.server
                 if (*(ushort*)(recvBufferPtr + bytesRead - 2) != 2573)
                     return false;
                 readHead = bytesRead;
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -516,7 +516,7 @@ namespace Garnet.server
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
                 }
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command.SequenceEqual(CmdStrings.SUBSCRIBE))

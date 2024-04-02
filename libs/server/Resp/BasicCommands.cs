@@ -52,7 +52,7 @@ namespace Garnet.server
                     break;
                 case GarnetStatus.NOTFOUND:
                     Debug.Assert(o.IsSpanByte);
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -128,7 +128,7 @@ namespace Garnet.server
                         if (firstPending == -1)
                         {
                             // Realized not-found without IO, and no earlier pending, so we can add directly to the output
-                            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                                 SendAndReset();
                             o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                         }
@@ -160,7 +160,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -261,7 +261,7 @@ namespace Garnet.server
             *(int*)valPtr = vsize;
 
             var status = storageApi.SET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -299,7 +299,7 @@ namespace Garnet.server
             int offset = NumUtils.BytesToInt(offsetSize, offsetPtr);
             if (offset < 0)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERROFFSETOUTOFRANGE, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERROFFSETOUTOFRANGE, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -366,7 +366,7 @@ namespace Garnet.server
             {
                 sessionMetrics?.incr_total_notfound();
                 Debug.Assert(o.IsSpanByte);
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -408,7 +408,7 @@ namespace Garnet.server
             SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks + (highPrecision ? TimeSpan.FromMilliseconds(expiry).Ticks : TimeSpan.FromSeconds(expiry).Ticks);
 
             var status = storageApi.SET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -567,7 +567,7 @@ namespace Garnet.server
 
             if (error)
             {
-                while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -626,7 +626,7 @@ namespace Garnet.server
                     break;
             }
 
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -649,7 +649,7 @@ namespace Garnet.server
             }
 
             storageApi.SET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
             readHead = (int)(ptr - recvBufferPtr);
@@ -691,7 +691,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     Debug.Assert(o.IsSpanByte);
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -715,12 +715,12 @@ namespace Garnet.server
                     ok = !ok;
                 if (!ok)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -847,7 +847,7 @@ namespace Garnet.server
         {
             var ptr = recvBufferPtr + readHead;
             readHead += *ptr == '*' ? 14 : 6;
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_PONG, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -861,7 +861,7 @@ namespace Garnet.server
             readHead += 16;
             if (storeWrapper.serverOptions.EnableCluster)
                 SessionAsking = 2;
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -872,7 +872,7 @@ namespace Garnet.server
         private bool NetworkQUIT()
         {
             readHead += 6;
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             toDispose = true;
             return true;
@@ -887,7 +887,7 @@ namespace Garnet.server
             //*1\r\n$8\r\nREADONLY\r\n
             readHead += 18;
             clusterSession?.SetReadOnlySession();
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -901,7 +901,7 @@ namespace Garnet.server
             //*1\r\n$9\r\nREADWRITE\r\n
             readHead += 19;
             clusterSession?.SetReadWriteSession();
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }

@@ -419,7 +419,7 @@ namespace Garnet.server
                     if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) | !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
                     {
                         ReadOnlySpan<byte> errorMessage = "-ERR max or min value is not a float value.\r\n"u8;
-                        while (!RespWriteUtils.WriteResponse(errorMessage, ref curr, end))
+                        while (!RespWriteUtils.WriteDirect(errorMessage, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone = _input->count;
                         count = 0;
@@ -452,7 +452,7 @@ namespace Garnet.server
                         if (options.ValidLimit)
                         {
                             ReadOnlySpan<byte> errorMessage = "-ERR syntax error, LIMIT is only supported in BYSCORE or BYLEX.\r\n"u8;
-                            while (!RespWriteUtils.WriteResponse(errorMessage, ref curr, end))
+                            while (!RespWriteUtils.WriteDirect(errorMessage, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             countDone = _input->count;
                             count = 0;
@@ -514,7 +514,7 @@ namespace Garnet.server
                     if (errorCode == int.MaxValue)
                     {
                         ReadOnlySpan<byte> errorMessage = "-ERR max or min value not valid string range.\r\n"u8;
-                        while (!RespWriteUtils.WriteResponse(errorMessage, ref curr, end))
+                        while (!RespWriteUtils.WriteDirect(errorMessage, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone = _input->count;
                         count = 0;

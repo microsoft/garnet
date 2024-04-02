@@ -235,7 +235,7 @@ namespace Garnet.server
             var status = storageApi.StringGetBit(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.NOTFOUND)
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             else
                 dcurr += o.Length;
@@ -331,7 +331,7 @@ namespace Garnet.server
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -442,7 +442,7 @@ namespace Garnet.server
             else if (status == GarnetStatus.NOTFOUND)
             {
                 var resp = bSetVal == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_N1;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -537,7 +537,7 @@ namespace Garnet.server
                     else
                     {
                         var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Overflow type {overflowArg} not supported"));
-                        while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -570,7 +570,7 @@ namespace Garnet.server
                         else
                         {
                             var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Bitfield command {command} not supported"));
-                            while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                                 SendAndReset();
                             return true;
                         }
@@ -735,7 +735,7 @@ namespace Garnet.server
                     else
                     {
                         var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Overflow type {overflowArg} not supported"));
-                        while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -790,7 +790,7 @@ namespace Garnet.server
             if (writeError)
             {
                 var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR BITFIELD_RO only supports the GET subcommand.\r\n"));
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;

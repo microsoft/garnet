@@ -148,16 +148,16 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write byte array directly
+        /// Writes the contents of <paramref name="span"/> as byte array to <paramref name="curr"/>
         /// </summary>
-        public static bool WriteDirect(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
+        /// <returns><see langword="true"/> if the the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
+        public static bool WriteDirect(ReadOnlySpan<byte> span, ref byte* curr, byte* end)
         {
-            int totalLen = item.Length;
-            if (totalLen > (int)(end - curr))
+            if (span.Length > (int)(end - curr))
                 return false;
 
-            item.CopyTo(new Span<byte>(curr, item.Length));
-            curr += item.Length;
+            span.CopyTo(new Span<byte>(curr, span.Length));
+            curr += span.Length;
             return true;
         }
 
@@ -353,18 +353,6 @@ namespace Garnet.common
 
             //$size\r\ninteger\r\n
             return 1 + integerLenSize + 2 + sign + integerLen + 2;
-        }
-
-        /// <summary>
-        /// Write response from ReadOnlySpan of byte
-        /// </summary>
-        public static bool WriteResponse(ReadOnlySpan<byte> response, ref byte* curr, byte* end)
-        {
-            if ((int)(end - curr) < response.Length)
-                return false;
-            response.CopyTo(new Span<byte>(curr, response.Length));
-            curr += response.Length;
-            return true;
         }
 
 

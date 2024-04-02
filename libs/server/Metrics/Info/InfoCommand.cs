@@ -57,7 +57,7 @@ namespace Garnet.server
 
             if (invalid)
             {
-                while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Invalid section {invalidSection}. Try INFO HELP\r\n")), ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Invalid section {invalidSection}. Try INFO HELP\r\n")), ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -70,7 +70,7 @@ namespace Garnet.server
             {
                 if (storeWrapper.monitor != null)
                     storeWrapper.monitor.resetEventFlags[InfoMetricsType.STATS] = true;
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
