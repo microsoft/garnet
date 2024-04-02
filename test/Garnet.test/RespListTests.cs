@@ -520,7 +520,7 @@ namespace Garnet.test
 
             result = db.ListRange(key, 3, 3);
             Assert.AreEqual(1, result.Length);
-            Assert.IsTrue(Array.Exists(result, t=>t.ToString().Equals("d1")));
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("d1")));
 
             result = db.ListRange(key, 4, 4);
             Assert.AreEqual(1, result.Length);
