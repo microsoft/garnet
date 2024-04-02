@@ -295,7 +295,7 @@ namespace Garnet.server
                     if (success)
                     {
                         // Return "Unknown RESP Command" message
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR, ref dcurr, dend))
                             SendAndReset();
                     }
                 }

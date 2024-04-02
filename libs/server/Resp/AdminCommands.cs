@@ -283,7 +283,7 @@ namespace Garnet.server
             {
                 if (count == 0)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_PONG, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
                         SendAndReset();
                 }
                 else if (count == 1)
