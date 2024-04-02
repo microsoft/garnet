@@ -26,7 +26,6 @@ namespace Garnet.cluster
         bool _disposed;
         public bool recovering;
         private long replicationOffset;
-
         public long ReplicationOffset
         {
             get
@@ -126,6 +125,10 @@ namespace Garnet.cluster
             storeWrapper.EnqueueCommit(isMainStore, newVersion);
         }
 
+        public void Reset()
+        {
+            recovering = false;
+        }
         public void Dispose()
         {
             _disposed = true;
