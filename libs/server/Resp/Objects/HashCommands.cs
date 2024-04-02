@@ -529,6 +529,12 @@ namespace Garnet.server
         {
             ptr += 11;
 
+            if (count != 2)
+            {
+                hashItemsDoneCount = hashOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("HKEYS", count);
+            }
+
             // Get the key for Hash
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;
