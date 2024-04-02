@@ -107,7 +107,7 @@ namespace Garnet.cluster
                         continue;
                     if (!slots.Add(slot))
                     {
-                        resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slot} specified multiple times\r\n"));
+                        resp = Encoding.ASCII.GetBytes($"-ERR Slot {slot} specified multiple times\r\n");
                         mRef = true;
                     }
                 }
@@ -642,7 +642,7 @@ namespace Garnet.cluster
                     {
                         clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n"));
+                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n");
                     }
 
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
@@ -674,7 +674,7 @@ namespace Garnet.cluster
                     {
                         clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n"));
+                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n");
                     }
 
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
@@ -762,7 +762,7 @@ namespace Garnet.cluster
                     {
                         clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n"));
+                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n");
                     }
 
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
@@ -794,7 +794,7 @@ namespace Garnet.cluster
                     {
                         clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n"));
+                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n");
                     }
 
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
@@ -1259,7 +1259,7 @@ namespace Garnet.cluster
 
                     var resp = CmdStrings.RESP_OK;
                     if (migrateState == 1)
-                        resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Node not in IMPORTING state.\r\n"));
+                        resp = Encoding.ASCII.GetBytes($"-ERR Node not in IMPORTING state.\r\n");
 
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();

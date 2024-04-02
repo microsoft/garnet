@@ -228,11 +228,11 @@ namespace Garnet.cluster
             {
                 var current = currentConfig;
                 if (current.NumWorkers == 0)
-                    return new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR workers not initialized.\r\n"));
+                    return Encoding.ASCII.GetBytes($"-ERR workers not initialized.\r\n");
 
                 var newConfig = currentConfig.SetLocalWorkerConfigEpoch(configEpoch);
                 if (newConfig == null)
-                    return new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Node config epoch was not set due to invalid epoch specified.\r\n"));
+                    return Encoding.ASCII.GetBytes($"-ERR Node config epoch was not set due to invalid epoch specified.\r\n");
 
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;

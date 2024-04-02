@@ -25,7 +25,7 @@ namespace Garnet.cluster
                     // This executes synchronously and serves the keys variant of resp command
                     if (!MigrateKeys())
                     {
-                        resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-IOERR Migrate keys failed.\r\n"));
+                        resp = Encoding.ASCII.GetBytes("-IOERR Migrate keys failed.\r\n");
                         Status = MigrateState.FAIL;
                         return false;
                     }

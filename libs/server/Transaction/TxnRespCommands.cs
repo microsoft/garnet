@@ -169,7 +169,7 @@ namespace Garnet.server
                 else
                 {
                     string err = string.Format(CmdStrings.ErrWrongNumArgs, commandInfo.nameStr);
-                    while (!RespWriteUtils.WriteDirect(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes(err)), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect(err, ref dcurr, dend))
                         SendAndReset();
                     txnManager.Abort();
                 }

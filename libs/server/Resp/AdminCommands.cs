@@ -385,7 +385,7 @@ namespace Garnet.server
 
                 var resp = CmdStrings.RESP_OK;
                 if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR checkpoint already in progress\r\n"));
+                    resp = Encoding.ASCII.GetBytes("-ERR checkpoint already in progress\r\n");
                 while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
@@ -422,7 +422,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR checkpoint already in progress\r\n"));
+                    var resp = Encoding.ASCII.GetBytes("-ERR checkpoint already in progress\r\n");
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                 }

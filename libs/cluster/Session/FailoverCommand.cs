@@ -91,7 +91,7 @@ namespace Garnet.cluster
                 var worker = clusterProvider.clusterManager.CurrentConfig.GetWorkerFromNodeId(replicaNodeId);
                 if (worker.role != NodeRole.REPLICA)
                 {
-                    var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Node @{replicaAddress}:{replicaPort} is not a replica.\r\n"));
+                    var resp = Encoding.ASCII.GetBytes($"-ERR Node @{replicaAddress}:{replicaPort} is not a replica.\r\n");
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
@@ -99,7 +99,7 @@ namespace Garnet.cluster
 
                 if (worker.replicaOfNodeId != clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId())
                 {
-                    var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Node @{replicaAddress}:{replicaPort} is not my replica.\r\n"));
+                    var resp = Encoding.ASCII.GetBytes($"-ERR Node @{replicaAddress}:{replicaPort} is not my replica.\r\n");
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;

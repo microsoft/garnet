@@ -434,39 +434,39 @@ namespace Resp.benchmark
 
             byte[] pingBufferAllocation = GC.AllocateArray<byte>(14, true);
             byte* pingBuffer = (byte*)Unsafe.AsPointer(ref pingBufferAllocation[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*1\r\n$4\r\nPING\r\n")).CopyTo(new Span<byte>(pingBuffer, 14));
+            "*1\r\n$4\r\nPING\r\n"u8.CopyTo(new Span<byte>(pingBuffer, 14));
 
             byte[] getBufferA = GC.AllocateArray<byte>(13 + RespWriteUtils.GetBulkStringLength(keyLen), true);
             byte* getBuffer = (byte*)Unsafe.AsPointer(ref getBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*2\r\n$3\r\nGET\r\n")).CopyTo(new Span<byte>(getBuffer, 13));
+            "*2\r\n$3\r\nGET\r\n"u8.CopyTo(new Span<byte>(getBuffer, 13));
 
             byte[] setBufferA = GC.AllocateArray<byte>(130 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetBulkStringLength(valueLen), true);
             byte* setBuffer = (byte*)Unsafe.AsPointer(ref setBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*3\r\n$3\r\nSET\r\n")).CopyTo(new Span<byte>(setBuffer, 13));
+            "*3\r\n$3\r\nSET\r\n"u8.CopyTo(new Span<byte>(setBuffer, 13));
 
             byte[] setexBufferA = GC.AllocateArray<byte>(15 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl) + RespWriteUtils.GetBulkStringLength(valueLen), true);
             byte* setexBuffer = (byte*)Unsafe.AsPointer(ref setexBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*4\r\n$5\r\nSETEX\r\n")).CopyTo(new Span<byte>(setexBuffer, 15));
+            "*4\r\n$5\r\nSETEX\r\n"u8.CopyTo(new Span<byte>(setexBuffer, 15));
 
             byte[] delBufferA = GC.AllocateArray<byte>(13 + RespWriteUtils.GetBulkStringLength(keyLen), true);
             byte* delBuffer = (byte*)Unsafe.AsPointer(ref delBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*2\r\n$3\r\nDEL\r\n")).CopyTo(new Span<byte>(delBuffer, 13));
+            "*2\r\n$3\r\nDEL\r\n"u8.CopyTo(new Span<byte>(delBuffer, 13));
 
             byte[] zaddBufferA = GC.AllocateArray<byte>(14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(1) + RespWriteUtils.GetBulkStringLength(keyLen), true);
             byte* zaddBuffer = (byte*)Unsafe.AsPointer(ref zaddBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*4\r\n$4\r\nZADD\r\n")).CopyTo(new Span<byte>(zaddBuffer, 14));
+            "*4\r\n$4\r\nZADD\r\n"u8.CopyTo(new Span<byte>(zaddBuffer, 14));
 
             byte[] zremBufferA = GC.AllocateArray<byte>(14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetBulkStringLength(keyLen), true);
             byte* zremBuffer = (byte*)Unsafe.AsPointer(ref zremBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*3\r\n$4\r\nZREM\r\n")).CopyTo(new Span<byte>(zremBuffer, 14));
+            "*3\r\n$4\r\nZREM\r\n"u8.CopyTo(new Span<byte>(zremBuffer, 14));
 
             byte[] zcardBufferAllocation = GC.AllocateArray<byte>(15 + RespWriteUtils.GetBulkStringLength(sskeyLen), true);
             byte* zcardBuffer = (byte*)Unsafe.AsPointer(ref zcardBufferAllocation[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*2\r\n$4\r\nZCARD\r\n")).CopyTo(new Span<byte>(zcardBuffer, 15));
+            "*2\r\n$4\r\nZCARD\r\n"u8.CopyTo(new Span<byte>(zcardBuffer, 15));
 
             byte[] expireBufferA = GC.AllocateArray<byte>(16 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl), true);
             byte* expireBuffer = (byte*)Unsafe.AsPointer(ref expireBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*3\r\n$6\r\nEXPIRE\r\n")).CopyTo(new Span<byte>(expireBuffer, 16));
+            "*3\r\n$6\r\nEXPIRE\r\n"u8.CopyTo(new Span<byte>(expireBuffer, 16));
 
             byte* getEnd = getBuffer + 13 + RespWriteUtils.GetBulkStringLength(keyLen);
             byte* setEnd = setBuffer + 130 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetBulkStringLength(valueLen);
