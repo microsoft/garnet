@@ -498,6 +498,40 @@ namespace Garnet.test
             Assert.AreEqual(lrange[1], "Value-one");
         }
 
+        [Test]
+        public void CanDoLRANGEStartOffset()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mylist";
+            db.ListRightPush(key, "a1");
+            db.ListRightPush(key, "b1");
+            db.ListRightPush(key, "c1");
+            db.ListRightPush(key, "d1");
+            db.ListRightPush(key, "e1");
+            db.ListRightPush(key, "f1");
+            db.ListRightPush(key, "g1");
+
+            var result = db.ListRange(key, 1, 2);
+            Assert.AreEqual(2, result.Length);
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("b1")));
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("c1")));
+
+            result = db.ListRange(key, 3, 3);
+            Assert.AreEqual(1, result.Length);
+            Assert.IsTrue(Array.Exists(result, t=>t.ToString().Equals("d1")));
+
+            result = db.ListRange(key, 4, 4);
+            Assert.AreEqual(1, result.Length);
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("e1")));
+
+            result = db.ListRange(key, 5, 10);
+            Assert.AreEqual(2, result.Length);
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("f1")));
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("g1")));
+        }
+
         #region GarnetClientTests
 
         [Test]
