@@ -366,7 +366,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Set;
             inputPtr->header.SetOp = SetOperation.SISMEMBER;
-            inputPtr->count = count;
+            inputPtr->count = count - 2;
             inputPtr->done = 0;
 
             // Prepare GarnetObjectStore output

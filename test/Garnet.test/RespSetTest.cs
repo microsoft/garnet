@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -305,6 +306,46 @@ namespace Garnet.test
 
         }
 
+        [Test]
+        public void CanCheckIfMemberExistsInSetLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            
+            var response = lightClientRequest.SendCommand("SADD myset \"Hello\"");
+            var expectedResponse = ":1\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SADD myset \"World\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SISMEMBER myset \"Hello\"");
+            expectedResponse = ":1\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SISMEMBER myset \"NonExistingMember\"");
+            expectedResponse = ":0\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SISMEMBER NonExistingSet \"AnyMember\"");
+            expectedResponse = ":0\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            // Missing arguments
+            response = lightClientRequest.SendCommand("SISMEMBER myset");
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "SISMEMBER");
+            strResponse = Encoding.ASCII.GetString(response);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            // Extra arguments
+            response = lightClientRequest.SendCommand("SISMEMBER myset \"Hello\" \"ExtraArg\"");
+            strResponse = Encoding.ASCII.GetString(response);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
 
         [Test]
         public void CanDoSCARDCommandLC()
