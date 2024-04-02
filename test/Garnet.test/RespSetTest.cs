@@ -394,20 +394,6 @@ namespace Garnet.test
             Assert.AreEqual(2, arrLen);
         }
 
-        // [Test]
-        // public void CanRemoveAllElementsLC()
-        // {
-        //     var myset = new HashSet<string> { "one", "two", "three", "four", "five" };
-
-        //     CreateLongSet();
-
-        //     using var lightClientRequest = TestUtils.CreateRequest();
-
-        //     var response = lightClientRequest.SendCommand("SPOP myset 5", 4);
-        //     var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
-        //     Assert.AreEqual(5, Int32.Parse(strLen));
-        // }
-
         [Test]
         public void MultiWithNonExistingSet()
         {
