@@ -135,7 +135,6 @@ namespace Garnet.common
         /// </summary>
         public static bool WriteError(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {
-            // Simple strings are of the form "+OK\r\n"
             int totalLen = 1 + item.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
@@ -158,6 +157,20 @@ namespace Garnet.common
 
             span.CopyTo(new Span<byte>(curr, span.Length));
             curr += span.Length;
+            return true;
+        }
+
+        /// <summary>
+        /// Encodes the <paramref name="span"/> as ASCII to <paramref name="curr"/>
+        /// </summary>
+        /// <returns><see langword="true"/> if the the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
+        public static bool WriteAsciiDirect(ReadOnlySpan<char> span, ref byte* curr, byte* end)
+        {
+            if (span.Length > (int)(end - curr))
+                return false;
+
+            int bytesWritten = Encoding.ASCII.GetBytes(span, new Span<byte>(curr, span.Length));
+            curr += bytesWritten;
             return true;
         }
 
@@ -206,8 +219,8 @@ namespace Garnet.common
             *curr++ = (byte)'$';
             NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
             WriteNewline(ref curr);
-            Encoding.ASCII.GetBytes(item, new Span<byte>(curr, item.Length));
-            curr += item.Length;
+            int bytesWritten = Encoding.ASCII.GetBytes(item, new Span<byte>(curr, item.Length));
+            curr += bytesWritten;
             WriteNewline(ref curr);
             return true;
         }
