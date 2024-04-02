@@ -267,7 +267,7 @@ namespace Garnet.cluster
                     var ptr = recvBufferPtr + readHead;
                     readHead = (int)(ptr - recvBufferPtr);
                     var clusterInfo = clusterProvider.clusterManager.GetInfo();
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(clusterInfo), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteBulkString(clusterInfo, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -319,7 +319,7 @@ namespace Garnet.cluster
             {
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
-                while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId()), ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString(clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId(), ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.MYPARENTID) || param.SequenceEqual(CmdStrings.myparentid))
@@ -329,7 +329,7 @@ namespace Garnet.cluster
 
                 var current = clusterProvider.clusterManager.CurrentConfig;
                 var parentId = current.GetLocalNodeRole() == NodeRole.PRIMARY ? current.GetLocalNodeId() : current.GetLocalNodePrimaryId();
-                while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(parentId), ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString(parentId, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.ENDPOINT) || param.SequenceEqual(CmdStrings.endpoint))
@@ -340,7 +340,7 @@ namespace Garnet.cluster
                 readHead = (int)(ptr - recvBufferPtr);
                 var current = clusterProvider.clusterManager.CurrentConfig;
                 var (host, port) = current.GetEndpointFromNodeId(nodeid);
-                while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes($"{host}:{port}"), ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString($"{host}:{port}", ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.NODES) || param.SequenceEqual(CmdStrings.nodes))
@@ -357,7 +357,7 @@ namespace Garnet.cluster
                     var ptr = recvBufferPtr + readHead;
                     readHead = (int)(ptr - recvBufferPtr);
                     string nodes = clusterProvider.clusterManager.CurrentConfig.GetClusterInfo();
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(nodes), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteBulkString(nodes, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -691,7 +691,7 @@ namespace Garnet.cluster
                     SendAndReset();
                 foreach (var replica in banlist)
                 {
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(replica), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteBulkString(replica, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -1312,7 +1312,7 @@ namespace Garnet.cluster
                     SendAndReset();
                 foreach (var replica in replicas)
                 {
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(replica), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteBulkString(replica, ref dcurr, dend))
                         SendAndReset();
                 }
             }

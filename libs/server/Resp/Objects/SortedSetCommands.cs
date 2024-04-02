@@ -1262,7 +1262,7 @@ namespace Garnet.server
 
                             if (withscoresInclude)
                             {
-                                while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(item.Value.ToString()), ref dcurr, dend))
+                                while (!RespWriteUtils.WriteBulkString(item.Value.ToString(), ref dcurr, dend))
                                     SendAndReset();
                             }
                         }

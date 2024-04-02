@@ -469,7 +469,7 @@ namespace Garnet.server
                         else
                         {
 
-                            while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(resultIncr.ToString()), ref curr, end))
+                            while (!RespWriteUtils.WriteBulkString(resultIncr.ToString(), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                     }

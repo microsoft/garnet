@@ -206,7 +206,7 @@ namespace Garnet.common
             *curr++ = (byte)'$';
             NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
             WriteNewline(ref curr);
-            Encoding.UTF8.GetBytes(item, new Span<byte>(curr, item.Length));
+            Encoding.ASCII.GetBytes(item, new Span<byte>(curr, item.Length));
             curr += item.Length;
             WriteNewline(ref curr);
             return true;

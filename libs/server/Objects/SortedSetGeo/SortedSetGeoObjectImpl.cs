@@ -248,7 +248,7 @@ namespace Garnet.server
                                         distance :
                                         server.GeoHash.ConvertMetersToUnits(distance, units);
 
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(distanceValue.ToString()), ref curr, end))
+                    while (!RespWriteUtils.WriteBulkString(distanceValue.ToString(), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     countDone = count;
@@ -329,10 +329,10 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(lon.ToString()), ref curr, end))
+                        while (!RespWriteUtils.WriteBulkString(lon.ToString(), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(lat.ToString()), ref curr, end))
+                        while (!RespWriteUtils.WriteBulkString(lat.ToString(), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -519,17 +519,17 @@ namespace Garnet.server
                             var distanceValue = (byBoxUnits.Length == 1 && (byBoxUnits[0] == (int)'M' || byBoxUnits[0] == (int)'m')) ? item.Distance
                                                 : server.GeoHash.ConvertMetersToUnits(item.Distance, byBoxUnits);
 
-                            while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(distanceValue.ToString()), ref curr, end))
+                            while (!RespWriteUtils.WriteBulkString(distanceValue.ToString(), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                             // Write array of 2 values
                             while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(item.Coords.Item2.ToString()), ref curr, end))
+                            while (!RespWriteUtils.WriteBulkString(item.Coords.Item2.ToString(), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(item.Coords.Item1.ToString()), ref curr, end))
+                            while (!RespWriteUtils.WriteBulkString(item.Coords.Item1.ToString(), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
 
