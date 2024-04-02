@@ -310,7 +310,7 @@ namespace Garnet.test
         public void CanCheckIfMemberExistsInSetLC()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            
+
             var response = lightClientRequest.SendCommand("SADD myset \"Hello\"");
             var expectedResponse = ":1\r\n";
             var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
