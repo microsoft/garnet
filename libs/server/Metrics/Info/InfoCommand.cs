@@ -78,7 +78,7 @@ namespace Garnet.server
                 InfoMetricsType[] sectionsArr = sections == null ? GarnetInfoMetrics.defaultInfo : sections.ToArray();
                 GarnetInfoMetrics garnetInfo = new();
                 string info = garnetInfo.GetRespInfo(sectionsArr, storeWrapper);
-                while (!RespWriteUtils.WriteBulkString(info, ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiBulkString(info, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -92,7 +92,7 @@ namespace Garnet.server
                 SendAndReset();
             foreach (var sectionInfo in sectionsHelp)
             {
-                while (!RespWriteUtils.WriteBulkString(sectionInfo, ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiBulkString(sectionInfo, ref dcurr, dend))
                     SendAndReset();
             }
         }

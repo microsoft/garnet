@@ -61,7 +61,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(nodeId, ref curr, end))
+            while (!RespWriteUtils.WriteAsciiBulkString(nodeId, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -69,7 +69,7 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.WriteBulkString(primary_replid, ref curr, end))
+            while (!RespWriteUtils.WriteAsciiBulkString(primary_replid, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -318,7 +318,7 @@ namespace Garnet.client
             offset = curr;
 
             //6
-            while (!RespWriteUtils.WriteBulkString(primary_replid, ref curr, end))
+            while (!RespWriteUtils.WriteAsciiBulkString(primary_replid, ref curr, end))
             {
                 Flush();
                 curr = offset;

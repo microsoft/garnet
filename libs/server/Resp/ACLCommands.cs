@@ -71,7 +71,7 @@ namespace Garnet.server
 
                 foreach (var user in users)
                 {
-                    RespWriteUtils.WriteBulkString(user.Value.DescribeUser(), ref dcurr, dend);
+                    RespWriteUtils.WriteAsciiBulkString(user.Value.DescribeUser(), ref dcurr, dend);
                 }
                 SendAndReset();
             }
@@ -88,7 +88,7 @@ namespace Garnet.server
 
                 foreach (var user in users)
                 {
-                    RespWriteUtils.WriteBulkString(user.Key, ref dcurr, dend);
+                    RespWriteUtils.WriteAsciiBulkString(user.Key, ref dcurr, dend);
                 }
                 SendAndReset();
             }
@@ -100,7 +100,7 @@ namespace Garnet.server
 
                 foreach (var category in categories)
                 {
-                    RespWriteUtils.WriteBulkString(category, ref dcurr, dend);
+                    RespWriteUtils.WriteAsciiBulkString(category, ref dcurr, dend);
                 }
                 SendAndReset();
             }

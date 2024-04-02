@@ -229,7 +229,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            while (!RespWriteUtils.WriteBulkString(nodeId, ref curr, end))
+            while (!RespWriteUtils.WriteAsciiBulkString(nodeId, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -311,7 +311,7 @@ namespace Garnet.client
 
             foreach (var cmd in command)
             {
-                while (!RespWriteUtils.WriteBulkString(cmd, ref curr, end))
+                while (!RespWriteUtils.WriteAsciiBulkString(cmd, ref curr, end))
                 {
                     Flush();
                     curr = offset;

@@ -207,9 +207,9 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write bulk string
+        /// Encodes the <paramref name="item"/> as ASCII bulk string to <paramref name="curr"/>
         /// </summary>
-        public static bool WriteBulkString(ReadOnlySpan<char> item, ref byte* curr, byte* end)
+        public static bool WriteAsciiBulkString(ReadOnlySpan<char> item, ref byte* curr, byte* end)
         {
             var itemDigits = NumUtils.NumDigits(item.Length);
             int totalLen = 1 + itemDigits + 2 + item.Length + 2;

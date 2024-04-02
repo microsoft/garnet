@@ -147,7 +147,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteBulkString(score.ToString(), ref curr, end))
+                    while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 _output.bytesDone = 0;
@@ -199,7 +199,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteBulkString(score.ToString(), ref curr, end))
+                        while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -313,7 +313,7 @@ namespace Garnet.server
                     }
 
                     // write the new score
-                    while (!RespWriteUtils.WriteBulkString(sortedSetDict[memberByteArray].ToString(), ref curr, end))
+                    while (!RespWriteUtils.WriteAsciiBulkString(sortedSetDict[memberByteArray].ToString(), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     countDone = 1;
                 }
@@ -440,7 +440,7 @@ namespace Garnet.server
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             if (options.WithScores)
                             {
-                                while (!RespWriteUtils.WriteBulkString(item.Item1.ToString(), ref curr, end))
+                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(), ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
@@ -497,7 +497,7 @@ namespace Garnet.server
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 if (options.WithScores)
                                 {
-                                    while (!RespWriteUtils.WriteBulkString(item.Item1.ToString(), ref curr, end))
+                                    while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(), ref curr, end))
                                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 }
                             }
@@ -531,7 +531,7 @@ namespace Garnet.server
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             if (options.WithScores)
                             {
-                                while (!RespWriteUtils.WriteBulkString(item.Item1.ToString(), ref curr, end))
+                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(), ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
@@ -745,7 +745,7 @@ namespace Garnet.server
 
                     if (withScores)
                     {
-                        while (!RespWriteUtils.WriteBulkString(element.Value.ToString(), ref curr, end))
+                        while (!RespWriteUtils.WriteAsciiBulkString(element.Value.ToString(), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -1007,7 +1007,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteBulkString(max.Item2, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                    while (!RespWriteUtils.WriteBulkString(max.Item1.ToString(), ref curr, end))
+                    while (!RespWriteUtils.WriteAsciiBulkString(max.Item1.ToString(), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     countDone++;
