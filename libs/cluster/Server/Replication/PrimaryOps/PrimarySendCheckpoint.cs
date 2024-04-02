@@ -27,7 +27,7 @@ namespace Garnet.cluster
             {
                 var message = "-PRIMARY-ERR: failed creating replica sync session task.\r\n";
                 logger?.LogError(message);
-                return Encoding.ASCII.GetBytes(message);
+                return "-PRIMARY-ERR: failed creating replica sync session task.\r\n"u8;
             }
 
             var errorMsg = ReplicaSyncSessionBackgroundTask(remoteNodeId).GetAwaiter().GetResult();

@@ -175,8 +175,8 @@ namespace Garnet.server
 
                     if (sortedSetDict.TryGetValue(member, out var value52Int))
                     {
-                        var geohash = Encoding.ASCII.GetBytes(server.GeoHash.GetGeoHashCode((long)value52Int));
-                        while (!RespWriteUtils.WriteBulkString(geohash, ref curr, end))
+                        var geohash = server.GeoHash.GetGeoHashCode((long)value52Int);
+                        while (!RespWriteUtils.WriteAsciiBulkString(geohash, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -462,8 +462,7 @@ namespace Garnet.server
                 // Check that we have the mandatory options
                 if (!((opts.FromMember || opts.FromLonLat) && (opts.ByRadius || opts.ByBox)))
                 {
-                    var errorMessage = Encoding.ASCII.GetBytes($"-ERR required parameters are missing.\r\n");
-                    while (!RespWriteUtils.WriteDirect(errorMessage, ref curr, end))
+                    while (!RespWriteUtils.WriteDirect("-ERR required parameters are missing.\r\n"u8, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _input->count = 0;
                     count = 0;
