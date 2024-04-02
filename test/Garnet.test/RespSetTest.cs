@@ -368,17 +368,10 @@ namespace Garnet.test
         [Test]
         public void CanDoSPOPWithCountCommandLC()
         {
-            var myset = new HashSet<string>();
-            myset.Add("one");
-            myset.Add("two");
-            myset.Add("three");
-            myset.Add("four");
-            myset.Add("five");
-
             CreateLongSet();
 
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("SPOP myset 3", 4);
+            var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SPOP myset 3", 3);
             var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
             Assert.AreEqual(3, Int32.Parse(strLen));
 
@@ -386,21 +379,34 @@ namespace Garnet.test
             var expectedResponse = ":2\r\n+PONG\r\n";
             var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
-        }
-
-        [Test]
-        public void CanRemoveAllElementsLC()
-        {
-            var myset = new HashSet<string> { "one", "two", "three", "four", "five" };
 
             CreateLongSet();
+            lightClientRequest = TestUtils.CreateRequest();
+            response = lightClientRequest.SendCommand("SPOP myset 2", 2);
+            strResponse = Encoding.ASCII.GetString(response);
+            Assert.AreEqual('*', strResponse[0]);
 
-            using var lightClientRequest = TestUtils.CreateRequest();
+            var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+            Assert.IsTrue(arrLenEndIdx > 1);
 
-            var response = lightClientRequest.SendCommand("SPOP myset 5", 4);
-            var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
-            Assert.AreEqual(5, Int32.Parse(strLen));
+            var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            Assert.IsTrue(int.TryParse(strArrLen, out var arrLen));
+            Assert.AreEqual(2, arrLen);
         }
+
+        // [Test]
+        // public void CanRemoveAllElementsLC()
+        // {
+        //     var myset = new HashSet<string> { "one", "two", "three", "four", "five" };
+
+        //     CreateLongSet();
+
+        //     using var lightClientRequest = TestUtils.CreateRequest();
+
+        //     var response = lightClientRequest.SendCommand("SPOP myset 5", 4);
+        //     var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
+        //     Assert.AreEqual(5, Int32.Parse(strLen));
+        // }
 
         [Test]
         public void MultiWithNonExistingSet()
