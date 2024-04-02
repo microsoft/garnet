@@ -81,7 +81,7 @@ namespace Garnet.common
         /// <summary>
         /// Write simple string
         /// </summary>
-        public static bool WriteSimpleString(byte[] item, ref byte* curr, byte* end)
+        public static bool WriteSimpleString(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {
             // Simple strings are of the form "+OK\r\n"
             int totalLen = 1 + item.Length + 2;
@@ -89,7 +89,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)'+';
-            new ReadOnlySpan<byte>(item).CopyTo(new Span<byte>(curr, item.Length));
+            item.CopyTo(new Span<byte>(curr, item.Length));
             curr += item.Length;
             WriteNewline(ref curr);
             return true;
@@ -133,7 +133,7 @@ namespace Garnet.common
         /// <summary>
         /// Write error
         /// </summary>
-        public static bool WriteError(byte[] item, ref byte* curr, byte* end)
+        public static bool WriteError(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
         {
             // Simple strings are of the form "+OK\r\n"
             int totalLen = 1 + item.Length + 2;
@@ -141,7 +141,7 @@ namespace Garnet.common
                 return false;
 
             *curr++ = (byte)'-';
-            new ReadOnlySpan<byte>(item).CopyTo(new Span<byte>(curr, item.Length));
+            item.CopyTo(new Span<byte>(curr, item.Length));
             curr += item.Length;
             WriteNewline(ref curr);
             return true;
@@ -207,25 +207,6 @@ namespace Garnet.common
             NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
             WriteNewline(ref curr);
             Encoding.UTF8.GetBytes(item, new Span<byte>(curr, item.Length));
-            curr += item.Length;
-            WriteNewline(ref curr);
-            return true;
-        }
-
-        /// <summary>
-        /// Write bulk string
-        /// </summary>
-        public static bool WriteBulkString(Span<byte> item, ref byte* curr, byte* end)
-        {
-            var itemDigits = NumUtils.NumDigits(item.Length);
-            int totalLen = 1 + itemDigits + 2 + item.Length + 2;
-            if (totalLen > (int)(end - curr))
-                return false;
-
-            *curr++ = (byte)'$';
-            NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
-            WriteNewline(ref curr);
-            item.CopyTo(new Span<byte>(curr, item.Length));
             curr += item.Length;
             WriteNewline(ref curr);
             return true;
