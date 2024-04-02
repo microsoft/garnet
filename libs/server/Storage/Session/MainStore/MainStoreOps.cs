@@ -884,6 +884,11 @@ namespace Garnet.server
                         keyType = "hash";
                     }
                 }
+                else
+                {
+                    keyType = "none";
+                    status = GarnetStatus.NOTFOUND;
+                }
             }
             return status;
         }

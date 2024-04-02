@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -374,7 +375,7 @@ namespace Garnet.test
             lightClientRequest.SendCommands("ZADD zmscore 0 a 1 b", "PING");
 
             var response = lightClientRequest.SendCommands("ZMSCORE zmscore", "PING");
-            var expectedResponse = "-ERR wrong number of arguments for ZMSCORE command.\r\n+PONG\r\n";
+            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "ZMSCORE")}+PONG\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -937,24 +938,24 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("ZCOUNT nokey 12 232 4343 5454", "PING");
-            var expectedResponse = "-ERR wrong number of arguments for ZCOUNT command.\r\n+PONG\r\n";
+            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "ZCOUNT")}+PONG\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommandChunks("ZCOUNT nokey 12 232 4343 5454", bytesSent);
-            expectedResponse = "-ERR wrong number of arguments for ZCOUNT command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "ZCOUNT");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
             // no arguments
             response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
-            expectedResponse = "-ERR wrong number of arguments for ZCOUNT command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "ZCOUNT");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
             // not found key
             response = lightClientRequest.SendCommandChunks("ZCOUNT nokey", bytesSent);
-            expectedResponse = "-ERR wrong number of arguments for ZCOUNT command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "ZCOUNT");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -1055,7 +1056,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommandChunks("ZINCRBY board -590", bytesSent);
-            expectedResponse = "-ERR wrong number of arguments for ZINCRBY command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "ZINCRBY");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -1077,7 +1078,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("ZINCRBY nokey", "PING");
-            var expectedResponse = "-ERR wrong number of arguments for ZINCRBY command.\r\n+PONG\r\n";
+            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "ZINCRBY")}+PONG\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -1799,7 +1800,7 @@ namespace Garnet.test
         {
             var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("ZSCORE foo bar foo bar foo");
-            var expectedResponse = $"-ERR wrong number of arguments for ZSCORE command.\r\n";
+            var expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "ZSCORE");
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -1845,7 +1846,7 @@ namespace Garnet.test
         private void SendCommandWithoutKey(string command, LightClientRequest lightClientRequest)
         {
             var result = lightClientRequest.SendCommand(command);
-            var expectedResponse = $"-ERR wrong number of arguments for {command} command.\r\n";
+            var expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, command);
             var actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
