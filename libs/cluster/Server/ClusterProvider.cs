@@ -194,7 +194,7 @@ namespace Garnet.cluster
             int replicaCount = clusterEnabled ? replicaInfo.Count : 0;
             var role = clusterEnabled ? config.GetLocalNodeRole() : NodeRole.PRIMARY;
             int commonInfoCount = 11;
-            int replicaInfoCount = 9;
+            int replicaInfoCount = 10;
             int replicationInfoCount = commonInfoCount + replicaCount;
             replicationInfoCount += role == NodeRole.REPLICA ? replicaInfoCount : 0;
 
@@ -228,6 +228,8 @@ namespace Garnet.cluster
                     replicationInfo[commonInfoCount + 6] = new("slave_priority", "100");
                     replicationInfo[commonInfoCount + 7] = new("slave_read_only", "1");
                     replicationInfo[commonInfoCount + 8] = new("replica_announced", "1");
+                    replicationInfo[commonInfoCount + 9] = new("master_sync_last_io_seconds_ago", replicationManager.LastPrimarySyncSeconds.ToString());
+                    
                 }
                 else
                 {

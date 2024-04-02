@@ -24,6 +24,14 @@ namespace Garnet.cluster
 
         readonly ILogger logger;
         bool _disposed;
+
+        private DateTime primary_sync_last_time;
+
+        internal ulong LastPrimarySyncSeconds => recovering ? (ulong)(DateTime.UtcNow.Subtract(primary_sync_last_time).TotalSeconds) : 0;
+
+        internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_time = DateTime.UtcNow;
+
+
         public bool recovering;
         private long replicationOffset;
         public long ReplicationOffset
