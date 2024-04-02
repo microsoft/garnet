@@ -34,6 +34,7 @@ namespace Garnet
         private MemoryLogger initLogger;
         private ILogger logger;
         private readonly ILoggerFactory loggerFactory;
+        private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
 
         /// <summary>
@@ -127,11 +128,13 @@ namespace Garnet
         /// <param name="opts">Server options</param>
         /// <param name="loggerFactory">Logger factory</param>
         /// <param name="server">The IGarnetServer to use. If none is provided, will use a GarnetServerTcp.</param>
-        public GarnetServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, IGarnetServer server = null)
+        /// <param name="cleanupDir">Whether to clean up data folders on dispose</param>
+        public GarnetServer(GarnetServerOptions opts, ILoggerFactory loggerFactory = null, IGarnetServer server = null, bool cleanupDir = false)
         {
             this.server = server;
             this.opts = opts;
             this.loggerFactory = loggerFactory;
+            this.cleanupDir = cleanupDir;
             this.InitializeServer();
         }
 
@@ -304,15 +307,7 @@ namespace Garnet
         /// </summary>
         public void Dispose()
         {
-            InternalDispose();
-
-            logFactory?.Delete(new FileDescriptor { directoryName = "" });
-            if (opts.CheckpointDir != opts.LogDir && !string.IsNullOrEmpty(opts.CheckpointDir))
-            {
-                var ckptdir = opts.DeviceFactoryCreator();
-                ckptdir.Initialize(opts.CheckpointDir);
-                ckptdir.Delete(new FileDescriptor { directoryName = "" });
-            }
+            Dispose(cleanupDir);
         }
 
         /// <summary>
