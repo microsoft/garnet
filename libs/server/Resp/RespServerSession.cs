@@ -406,12 +406,12 @@ namespace Garnet.server
                 (RespCommand.WATCHOS, 0) => NetworkWATCH(count, ptr, StoreType.Object),
                 (RespCommand.STRLEN, 0) => NetworkSTRLEN(ptr, ref storageApi),
                 (RespCommand.EXISTS, 0) => NetworkEXISTS(count, ptr, ref storageApi),
-                (RespCommand.MODULE, 0) => NetworkMODULE(ptr, ref storageApi),
+                (RespCommand.MODULE, 0) => NetworkMODULE(count, ptr, ref storageApi),
                 //General key commands
                 (RespCommand.DBSIZE, 0) => NetworkDBSIZE(ptr, ref storageApi),
                 (RespCommand.KEYS, 0) => NetworkKEYS(count, ptr, ref storageApi),
                 (RespCommand.SCAN, 0) => NetworkSCAN(count, ptr, ref storageApi),
-                (RespCommand.TYPE, 0) => NetworkTYPE(ptr, ref storageApi),
+                (RespCommand.TYPE, 0) => NetworkTYPE(count, ptr, ref storageApi),
                 // Pub/sub commands
                 (RespCommand.SUBSCRIBE, 0) => NetworkSUBSCRIBE(count, ptr, dend),
                 (RespCommand.PSUBSCRIBE, 0) => NetworkPSUBSCRIBE(count, ptr, dend),
@@ -847,12 +847,36 @@ namespace Garnet.server
             return header;
         }
 
+        /// <summary>
+        /// This method is used to verify slot ownership for provided key.
+        /// On error this method writes to response buffer but does not drain recv buffer (caller is responsible for draining).
+        /// </summary>
+        /// <param name="key">Key bytes</param>
+        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation.</param>
+        /// <returns>True when ownernship is verified, false otherwise</returns>
         bool NetworkSingleKeySlotVerify(byte[] key, bool readOnly)
             => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(key, readOnly, SessionAsking, ref dcurr, ref dend);
 
+        /// <summary>
+        /// This method is used to verify slot ownership for provided key sequence.
+        /// On error this method writes to response buffer but does not drain recv buffer (caller is responsible for draining).
+        /// </summary>
+        /// <param name="keyPtr">Pointer to key bytes</param>
+        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
+        /// <returns>True when ownernship is verified, false otherwise</returns>
         bool NetworkSingleKeySlotVerify(byte* keyPtr, int ksize, bool readOnly)
             => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(new ArgSlice(keyPtr, ksize), readOnly, SessionAsking, ref dcurr, ref dend);
 
+        /// <summary>
+        /// This method is used to verify slot ownership for provided sequence of keys.
+        /// On error this method writes to response buffer and drains recv buffer.
+        /// </summary>
+        /// <param name="keyCount">Number of keys</param>
+        /// <param name="ptr">Starting poistion of RESP formatted key sequence</param>
+        /// <param name="interleavedKeys">Whether the sequence of keys are interleaved (e.g. MSET [key1] [value1] [key2] [value2]...) or non-interleaved (e.g. MGET [key1] [key2] [key3])</param>
+        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
+        /// <param name="retVal">Used to indicate if parsing succeeded or failed due to lack of expected data</param>
+        /// <returns>True when ownernship is verified, false otherwise</returns>
         bool NetworkArraySlotVerify(int keyCount, byte* ptr, bool interleavedKeys, bool readOnly, out bool retVal)
         {
             retVal = false;
@@ -864,6 +888,13 @@ namespace Garnet.server
             return false;
         }
 
+        /// <summary>
+        /// This method is used to verify slot ownership for provided array of key argslices.
+        /// </summary>
+        /// <param name="keys">Array of key ArgSlice</param>
+        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
+        /// <param name="count">Key count if different than keys array length</param>
+        /// <returns>True when ownernship is verified, false otherwise</returns>
         bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, int count = -1)
             => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(ref keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
     }

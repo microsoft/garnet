@@ -46,7 +46,7 @@ namespace Garnet.server
         }
 
         /// <summary>Class to track and update cache size</summary>
-        /// <param name="store">FASTER store instance</param>
+        /// <param name="store">Tsavorite store instance</param>
         /// <param name="logSettings">Hybrid log settings</param>
         /// <param name="targetSize">Total memory size target</param>
         /// <param name="loggerFactory"></param>

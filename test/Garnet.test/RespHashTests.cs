@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -422,6 +423,30 @@ namespace Garnet.test
             Assert.AreEqual("abc", result["foo"]);
             Assert.AreEqual("def", result["bar"]);
         }
+        [Test]
+        public async Task CanDoHMSETMultipleTimes()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var hashKey = "testCanDoHMSET";
+            var hashMapKey = "TestKey";
+
+            await db.KeyDeleteAsync(hashKey);
+
+            var val0 = await db.HashGetAsync(hashKey, hashMapKey);
+            await db.HashSetAsync(hashKey, [new HashEntry(hashMapKey, "TestValue1")]);
+
+            var val1 = await db.HashGetAsync(hashKey, hashMapKey);
+            await db.HashSetAsync(hashKey, [new HashEntry(hashMapKey, "TestValue2")]);
+
+            var val2 = await db.HashGetAsync(hashKey, hashMapKey);
+
+#nullable enable
+            Assert.Null((string?)val0);
+            Assert.AreEqual("TestValue1", (string?)val1);
+            Assert.AreEqual("TestValue2", (string?)val2);
+#nullable disable
+        }
 
         [Test]
         public async Task CanDoHSETWhenAlwaysAsync()
@@ -656,7 +681,7 @@ namespace Garnet.test
 
             //missing paramenters
             response = lightClientRequest.SendCommand("HEXISTS foo");
-            expectedResponse = "-ERR wrong number of arguments for HEXISTS command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HEXISTS");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -690,13 +715,13 @@ namespace Garnet.test
 
             //missing paramenters
             response = lightClientRequest.SendCommand("HSTRLEN foo");
-            expectedResponse = "-ERR wrong number of arguments for HSTRLEN command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HSTRLEN");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
             //too many paramenters
             response = lightClientRequest.SendCommand("HSTRLEN foo field0 field1");
-            expectedResponse = "-ERR wrong number of arguments for HSTRLEN command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HSTRLEN");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -791,7 +816,7 @@ namespace Garnet.test
 
             // Check correct error message when incorrect number of parameters
             response = lightClientRequest.SendCommand("HRANDFIELD");
-            expectedResponse = "-ERR wrong number of arguments for HRANDFIELD command.";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HRANDFIELD");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -946,7 +971,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HINCRBY foo", "PING HELLO", 1, 1);
-            var expectedResponse = "-ERR wrong number of arguments for HINCRBY command.\r\n$5\r\nHELLO\r\n";
+            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "HINCRBY")}$5\r\nHELLO\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -956,7 +981,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HINCRBYFLOAT foo", "PING HELLO", 1, 1);
-            var expectedResponse = "-ERR wrong number of arguments for HINCRBYFLOAT command.\r\n$5\r\nHELLO\r\n";
+            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "HINCRBYFLOAT")}$5\r\nHELLO\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }

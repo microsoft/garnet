@@ -263,7 +263,7 @@ namespace Garnet.server
         {
             ptr += 14;
 
-            if (count < 1 || count > 2)
+            if (count != 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SMEMBERS", count);
@@ -414,6 +414,12 @@ namespace Garnet.server
              where TGarnetApi : IGarnetApi
         {
             ptr += 10;
+
+            if (count < 2 || count > 3)
+            {
+                setItemsDoneCount = setOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("SPOP", count);
+            }
 
             // Get the key
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
