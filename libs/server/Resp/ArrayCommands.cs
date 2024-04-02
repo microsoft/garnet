@@ -824,12 +824,12 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(typeName), ref dcurr, dend))
+                while (!RespWriteUtils.WriteSimpleString(typeName, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(@"none"), ref dcurr, dend))
+                while (!RespWriteUtils.WriteSimpleString("none"u8, ref dcurr, dend))
                     SendAndReset();
             }
 

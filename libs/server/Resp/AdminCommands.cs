@@ -497,7 +497,7 @@ namespace Garnet.server
                 if (!errorFlag)
                 {
                     GC.Collect(generation, GCCollectionMode.Forced, true);
-                    while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes("GC completed"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteSimpleString("GC completed"u8, ref dcurr, dend))
                         SendAndReset();
                 }
             }

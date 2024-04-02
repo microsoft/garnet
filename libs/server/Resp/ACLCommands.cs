@@ -202,7 +202,7 @@ namespace Garnet.server
             {
                 // Return the name of the currently authenticated user.
                 Debug.Assert(aclAuthenticator.GetUser() != null);
-                while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(aclAuthenticator.GetUser().Name), ref dcurr, dend))
+                while (!RespWriteUtils.WriteSimpleString(aclAuthenticator.GetUser().Name, ref dcurr, dend))
                     SendAndReset();
             }
             // Subcommand: LOAD
