@@ -18,11 +18,11 @@ namespace Garnet.server
             bool reset = false;
             bool help = false;
             string invalidSection = null;
-            if (count > 1)
+            if (count > 0)
             {
                 var ptr = recvBufferPtr + readHead;
                 sections = new HashSet<InfoMetricsType>();
-                for (int i = 0; i < count - 1; i++)
+                for (int i = 0; i < count; i++)
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var section, ref ptr, recvBufferPtr + bytesRead))
                         return false;

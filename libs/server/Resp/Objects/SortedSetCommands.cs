@@ -37,14 +37,13 @@ namespace Garnet.server
         private unsafe bool SortedSetAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
 
-            if (count < 4)
+            if (count < 3)
             {
                 return AbortWithWrongNumberOfArguments("ZADD", count);
             }
 
-            if (count % 2 != 0)
+            if (count % 2 != 1)
             {
                 zaddDoneCount = zaddAddCount = 0;
 
@@ -71,7 +70,7 @@ namespace Garnet.server
             // Prepare length of header in input buffer
             var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-            int inputCount = (count - 2) / 2;
+            int inputCount = (count - 1) / 2;
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -113,9 +112,7 @@ namespace Garnet.server
         private unsafe bool SortedSetRemove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count < 3)
+            if (count < 2)
             {
                 zaddDoneCount = zaddAddCount = 0;
                 return AbortWithWrongNumberOfArguments("ZREM", count);
@@ -133,7 +130,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                int inputCount = count - 2;
+                int inputCount = count - 1;
 
                 // Prepare input
                 var rmwInput = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
@@ -173,7 +170,7 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         // This checks if we get the whole request,
                         // Otherwise it needs to return false
-                        if (ReadLeftToken(count - 2, ref ptr) < count - 2)
+                        if (ReadLeftToken(count - 1, ref ptr) < count - 1)
                             return false;
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
@@ -200,9 +197,7 @@ namespace Garnet.server
         private unsafe bool SortedSetLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 11;
-
-            if (count != 2)
+            if (count != 1)
             {
                 zaddDoneCount = zaddAddCount = 0;
                 return AbortWithWrongNumberOfArguments("ZCARD", count);
@@ -273,19 +268,7 @@ namespace Garnet.server
         private unsafe bool SortedSetRange<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            switch (op)
-            {
-                //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
-                case SortedSetOperation.ZRANGE:
-                    ptr += 12;
-                    break;
-                case SortedSetOperation.ZRANGEBYSCORE:
-                    ptr += 20;
-                    break;
-                case SortedSetOperation.ZREVRANGE:
-                    ptr += 15;
-                    break;
-            }
+            //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
 
             // Get the key for the Sorted Set
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key,
@@ -300,12 +283,12 @@ namespace Garnet.server
             }
 
             // at least we need 4 args cmd + params
-            if (count < 4)
+            if (count < 3)
             {
                 //reset counters and fast forward the rest of the input
                 zaddDoneCount = zaddAddCount = 0;
-                var tokens = ReadLeftToken(count - 2, ref ptr);
-                if (tokens < count - 2)
+                var tokens = ReadLeftToken(count - 1, ref ptr);
+                if (tokens < count - 1)
                 {
                     //command partially executed
                     return false;
@@ -330,7 +313,7 @@ namespace Garnet.server
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.SortedSetOp = op;
-                inputPtr->count = count - 2;
+                inputPtr->count = count - 1;
                 inputPtr->done = 0;
 
                 var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -352,7 +335,7 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                             SendAndReset();
-                        ReadLeftToken(count - 2, ref ptr);
+                        ReadLeftToken(count - 1, ref ptr);
                         break;
                 }
             }
@@ -393,10 +376,8 @@ namespace Garnet.server
         private unsafe bool SortedSetScore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 12;
-
             //validation if minimum args
-            if (count != 3)
+            if (count != 2)
             {
                 return AbortWithWrongNumberOfArguments("ZSCORE", count);
             }
@@ -473,10 +454,8 @@ namespace Garnet.server
         private unsafe bool SortedSetScores<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 13;
-
             //validation if minimum args
-            if (count <= 2)
+            if (count < 2)
             {
                 // send error to output
                 return AbortWithWrongNumberOfArguments("ZMSCORE", count);
@@ -502,8 +481,8 @@ namespace Garnet.server
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+                int inputCount = count - 1;
 
-                int inputCount = count - 2;
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZMSCORE;
@@ -556,8 +535,7 @@ namespace Garnet.server
         private unsafe bool SortedSetPop<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 13;
-            if (count < 2 || count > 3)
+            if (count < 1 || count > 2)
             {
                 return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZPOPMAX ? "ZPOPMAX" : "ZPOPMIN", count);
             }
@@ -576,7 +554,7 @@ namespace Garnet.server
 
                 var popCount = 1;
 
-                if (count == 3)
+                if (count == 2)
                 {
                     // Read count
                     if (!RespReadUtils.ReadIntWithLengthHeader(out popCount, ref ptr, recvBufferPtr + bytesRead))
@@ -643,9 +621,7 @@ namespace Garnet.server
         private unsafe bool SortedSetCount<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 12;
-
-            if (count != 4)
+            if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("ZCOUNT", count);
             }
@@ -701,8 +677,8 @@ namespace Garnet.server
                         ptr += output.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        var tokens = ReadLeftToken(count - 2, ref ptr);
-                        if (tokens < count - 2)
+                        var tokens = ReadLeftToken(count - 1, ref ptr);
+                        if (tokens < count - 1)
                             return false;
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
@@ -733,9 +709,7 @@ namespace Garnet.server
         private unsafe bool SortedSetLengthByValue<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += op == SortedSetOperation.ZLEXCOUNT ? 15 : 21;
-
-            if (count != 4)
+            if (count != 3)
             {
                 zaddDoneCount = zaddAddCount = 0;
                 return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZLEXCOUNT ? "ZLEXCOUNT" : "ZREMRANGEBYLEX", count);
@@ -796,8 +770,8 @@ namespace Garnet.server
                         ptr += output.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        var tokens = ReadLeftToken(count - 2, ref ptr);
-                        if (tokens < count - 2)
+                        var tokens = ReadLeftToken(count - 1, ref ptr);
+                        if (tokens < count - 1)
                             return false;
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
@@ -823,10 +797,8 @@ namespace Garnet.server
         private unsafe bool SortedSetIncrement<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 13;
-
             //validation of required args
-            if (count != 4)
+            if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("ZINCRBY", count);
             }
@@ -854,7 +826,7 @@ namespace Garnet.server
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZINCRBY;
-                inputPtr->count = count - 2;
+                inputPtr->count = count - 1;
                 inputPtr->done = 0;
 
                 // Prepare GarnetObjectStore output
@@ -873,8 +845,8 @@ namespace Garnet.server
                         //verifying length of outputFooter
                         if (outputFooter.spanByteAndMemory.Length == 0)
                         {
-                            var tokens = ReadLeftToken(count - 2, ref ptr);
-                            if (tokens < count - 2)
+                            var tokens = ReadLeftToken(count - 1, ref ptr);
+                            if (tokens < count - 1)
                                 return false;
                             errorMessage = "-ERR wrong key type used in ZINCRBY command.\r\n"u8;
                         }
@@ -920,10 +892,8 @@ namespace Garnet.server
         private unsafe bool SortedSetRank<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += op == SortedSetOperation.ZRANK ? 11 : 14;
-
             //validation of required args
-            if (count < 3 || count > 4)
+            if (count < 2 || count > 3)
             {
                 return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZRANK ? "ZRANK" : "ZREVRANK", count);
             }
@@ -1002,9 +972,7 @@ namespace Garnet.server
         private unsafe bool SortedSetRemoveRange<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += op == SortedSetOperation.ZREMRANGEBYRANK ? 22 : 23;
-
-            if (count != 4)
+            if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZREMRANGEBYRANK ? "ZREMRANGEBYRANK" : "ZREMRANGEBYSCORE", count);
             }
@@ -1062,8 +1030,8 @@ namespace Garnet.server
                         ptr += output.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        var tokens = ReadLeftToken(count - 2, ref ptr);
-                        if (tokens < count - 2)
+                        var tokens = ReadLeftToken(count - 1, ref ptr);
+                        if (tokens < count - 1)
                             return false;
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
@@ -1086,9 +1054,7 @@ namespace Garnet.server
         private unsafe bool SortedSetRandomMember<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 18;
-
-            if (count < 2 || count > 4)
+            if (count < 1 || count > 3)
             {
                 return AbortWithWrongNumberOfArguments("ZRANDMEMBER", count);
             }
@@ -1111,7 +1077,7 @@ namespace Garnet.server
 
                 bool includedCount = false;
 
-                if (count >= 3)
+                if (count >= 2)
                 {
                     // Read count
                     if (!RespReadUtils.ReadIntWithLengthHeader(out paramCount, ref ptr, recvBufferPtr + bytesRead))
@@ -1120,7 +1086,7 @@ namespace Garnet.server
                     includedCount = true;
 
                     // Read withscores
-                    if (count == 4)
+                    if (count == 3)
                     {
                         if (!RespReadUtils.ReadByteArrayWithLengthHeader(out includeWithScores, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -1139,7 +1105,7 @@ namespace Garnet.server
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZRANDMEMBER;
-                inputPtr->count = count == 2 ? 1 : paramCount;
+                inputPtr->count = count == 1 ? 1 : paramCount;
                 inputPtr->done = withScoresSpan.SequenceEqual(includeWithScores) ? 1 : 0;
 
                 GarnetStatus status = GarnetStatus.NOTFOUND;
@@ -1188,8 +1154,7 @@ namespace Garnet.server
         private unsafe bool SortedSetDifference<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 11;
-            if (count < 3)
+            if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("ZDIFF", count);
             }
@@ -1209,7 +1174,7 @@ namespace Garnet.server
                 bool withscoresInclude = false;
 
                 // Read all the keys
-                if (count <= 3)
+                if (count <= 2)
                 {
                     //return empty array
                     while (!RespWriteUtils.WriteArrayLength(0, ref dcurr, dend))
@@ -1229,7 +1194,7 @@ namespace Garnet.server
                         --i;
                     } while (i > 0);
 
-                    if (count - 2 > nKeys)
+                    if (count - 1 > nKeys)
                     {
                         ArgSlice withscore = default;
                         if (!RespReadUtils.ReadPtrWithLengthHeader(ref withscore.ptr, ref withscore.length, ref ptr, recvBufferPtr + bytesRead))

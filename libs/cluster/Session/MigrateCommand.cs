@@ -98,7 +98,7 @@ namespace Garnet.cluster
             if (!RespReadUtils.ReadIntWithLengthHeader(out var timeout, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
-            var args = count - 6;
+            var args = count - 5;
             var copyOption = false;
             var replaceOption = false;
             string username = null;

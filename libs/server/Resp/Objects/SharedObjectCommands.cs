@@ -18,18 +18,15 @@ namespace Garnet.server
         /// <param name="ptr">Pointer to the inpu buffer</param>
         /// <param name="objectType">SortedSet, Hash or Set type</param>
         /// <param name="storageApi">The storageAPI object</param>
-        /// <param name="cmdlength">Indicates the length to advance the read pointer based on the command name</param>
         /// <returns></returns>
-        private unsafe bool ObjectScan<TGarnetApi>(int count, byte* ptr, GarnetObjectType objectType, ref TGarnetApi storageApi, int cmdlength = 11)
+        private unsafe bool ObjectScan<TGarnetApi>(int count, byte* ptr, GarnetObjectType objectType, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += cmdlength;
-
             // Check number of required parameters
-            if (count < 3)
+            if (count < 2)
             {
                 // Forward tokens in the input
-                ReadLeftToken(count - 1, ref ptr);
+                ReadLeftToken(count, ref ptr);
             }
             else
             {
@@ -45,7 +42,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRORCURSORVALUE, ref dcurr, dend))
                         SendAndReset();
-                    ReadLeftToken(count - 2, ref ptr);
+                    ReadLeftToken(count - 1, ref ptr);
                     return true;
                 }
 
@@ -89,7 +86,7 @@ namespace Garnet.server
                 }
 
                 // Tokens already processed: 3, command, key and cursor
-                (*(ObjectInputHeader*)(pcurr)).count = count - 3;
+                (*(ObjectInputHeader*)(pcurr)).count = count - 2;
 
                 // Cursor value
                 (*(ObjectInputHeader*)(pcurr)).done = cursorValue;
@@ -126,7 +123,7 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                             SendAndReset();
                         // Fast forward left of the input
-                        ReadLeftToken(count - 3, ref ptr);
+                        ReadLeftToken(count - 2, ref ptr);
                         break;
                 }
 

@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -88,6 +87,21 @@ namespace Garnet.server
         /// Cluster session
         /// </summary>
         public readonly IClusterSession clusterSession;
+
+        /// <summary>
+        /// Current custom transaction to be executed in the session.
+        /// </summary>
+        CustomTransaction currentCustomTransaction = null;
+
+        /// <summary>
+        /// Current custom command to be executed in the session.
+        /// </summary>
+        CustomCommand currentCustomCommand = null;
+
+        /// <summary>
+        /// Current custom object command to be executed in the session.
+        /// </summary>
+        CustomObjectCommand currentCustomObjectCommand = null;
 
         public RespServerSession(
             INetworkSender networkSender,
@@ -249,28 +263,41 @@ namespace Garnet.server
 
             while (bytesRead - readHead >= 4)
             {
-                var ptr = recvBufferPtr + readHead;
-                var cmd = _authenticator.IsAuthenticated ? FastParseCommand(ptr) : RespCommand.NOAUTH;
-                if (cmd == RespCommand.NONE && MakeUpperCase(ptr)) continue;
+                // NOTE: Possible optimization: Don't parse if only parsing AUTH and not authenticated.
+                (RespCommand cmd, byte subcmd) = ParseCommand(out int count, recvBufferPtr + readHead, out bool success);
 
-                bool success;
-                if (txnManager.state != TxnState.None)
+                var ptr = recvBufferPtr + readHead;
+
+                if (cmd != RespCommand.INVALID)
                 {
-                    if (txnManager.state == TxnState.Running)
+                    if (txnManager.state != TxnState.None)
                     {
-                        success = ProcessBasicCommands(ptr, cmd, ref lockableGarnetApi);
+                        if (txnManager.state == TxnState.Running)
+                        {
+                            success = ProcessBasicCommands(cmd, subcmd, count, ptr, ref lockableGarnetApi);
+                        }
+                        else success = cmd switch
+                        {
+                            RespCommand.EXEC => NetworkEXEC(),
+                            RespCommand.MULTI => NetworkMULTI(),
+                            RespCommand.DISCARD => NetworkDISCARD(),
+                            _ => NetworkSKIP(cmd, subcmd, count),
+                        };
                     }
-                    else success = cmd switch
+                    else
                     {
-                        RespCommand.EXEC => NetworkEXEC(),
-                        RespCommand.MULTI => NetworkMULTI(),
-                        RespCommand.DISCARD => NetworkDISCARD(),
-                        _ => NetworkSKIP(cmd),
-                    };
+                        success = ProcessBasicCommands(cmd, subcmd, count, ptr, ref basicGarnetApi);
+                    }
                 }
                 else
                 {
-                    success = ProcessBasicCommands(ptr, cmd, ref basicGarnetApi);
+                    // Parsing for command name was successful, but the command is unknown
+                    if (success)
+                    {
+                        // Return "Unknown RESP Command" message
+                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
                 if (!success) break;
                 if (latencyMetrics != null) opCount++;
@@ -321,7 +348,9 @@ namespace Garnet.server
             return false;
         }
 
-        private bool ProcessBasicCommands<TGarnetApi>(byte* ptr, RespCommand cmd, ref TGarnetApi storageApi)
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, byte subcmd, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             bool success = cmd switch
@@ -330,12 +359,12 @@ namespace Garnet.server
                 RespCommand.SET => NetworkSET(ptr, ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(ptr, false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(ptr, true, ref storageApi),
-                RespCommand.SETEXNX => NetworkSETEXNX(ptr, ref storageApi),
-                RespCommand.DEL => NetworkDEL(ptr, ref storageApi),
+                RespCommand.SETEXNX => NetworkSETEXNX(count, ptr, ref storageApi),
+                RespCommand.DEL => NetworkDEL(count, ptr, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ptr, ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS(ptr, ref storageApi),
-                RespCommand.EXPIRE => NetworkEXPIRE(ptr, RespCommand.EXPIRE, ref storageApi),
-                RespCommand.PEXPIRE => NetworkEXPIRE(ptr, RespCommand.PEXPIRE, ref storageApi),
+                RespCommand.EXISTS => NetworkEXISTS(count, ptr, ref storageApi),
+                RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, count, ptr, ref storageApi),
+                RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, count, ptr, ref storageApi),
                 RespCommand.PERSIST => NetworkPERSIST(ptr, ref storageApi),
                 RespCommand.GETRANGE => NetworkGetRange(ptr, ref storageApi),
                 RespCommand.TTL => NetworkTTL(ptr, RespCommand.TTL, ref storageApi),
@@ -343,69 +372,51 @@ namespace Garnet.server
                 RespCommand.SETRANGE => NetworkSetRange(ptr, ref storageApi),
                 RespCommand.GETDEL => NetworkGETDEL(ptr, ref storageApi),
                 RespCommand.APPEND => NetworkAppend(ptr, ref storageApi),
-
                 RespCommand.INCR => NetworkIncrement(ptr, RespCommand.INCR, ref storageApi),
                 RespCommand.INCRBY => NetworkIncrement(ptr, RespCommand.INCRBY, ref storageApi),
                 RespCommand.DECR => NetworkIncrement(ptr, RespCommand.DECR, ref storageApi),
                 RespCommand.DECRBY => NetworkIncrement(ptr, RespCommand.DECRBY, ref storageApi),
-
                 RespCommand.SETBIT => StringSetBit(ptr, ref storageApi),
                 RespCommand.GETBIT => StringGetBit(ptr, ref storageApi),
-                RespCommand.BITCOUNT => StringBitCount(ptr, ref storageApi),
-                RespCommand.BITPOS => StringBitPosition(ptr, ref storageApi),
-
+                RespCommand.BITCOUNT => StringBitCount(ptr, count, ref storageApi),
+                RespCommand.BITPOS => StringBitPosition(ptr, count, ref storageApi),
                 RespCommand.PUBLISH => NetworkPUBLISH(ptr),
-                RespCommand.PING => NetworkPING(),
+                RespCommand.PING => count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, subcmd, count, ref storageApi),
                 RespCommand.ASKING => NetworkASKING(),
                 RespCommand.MULTI => NetworkMULTI(),
                 RespCommand.EXEC => NetworkEXEC(),
                 RespCommand.UNWATCH => NetworkUNWATCH(),
                 RespCommand.DISCARD => NetworkDISCARD(),
                 RespCommand.QUIT => NetworkQUIT(),
-                RespCommand.RUNTXP => NetworkRUNTXPFast(ptr),
+                RespCommand.RUNTXP => NetworkRUNTXP(count, ptr),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                _ => ProcessArrayCommands(ref storageApi),
+
+                _ => ProcessArrayCommands(cmd, subcmd, count, ref storageApi)
+
             };
             return success;
         }
 
-        private bool ProcessArrayCommands<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool ProcessArrayCommands<TGarnetApi>(RespCommand cmd, byte subcmd, int count, ref TGarnetApi storageApi)
            where TGarnetApi : IGarnetApi
         {
-            if (*(recvBufferPtr + readHead) != '*')
-            {
-                if (bytesRead - readHead < 2) return false;
-                if (*(ushort*)(recvBufferPtr + bytesRead - 2) != 2573)
-                    return false;
-                readHead = bytesRead;
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
+            // Continue reading from the current read head.
+            byte* ptr = recvBufferPtr + readHead;
 
-            var tmp = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadArrayLength(out int count, ref tmp, recvBufferPtr + bytesRead))
-                return false;
-            readHead += (int)(tmp - (recvBufferPtr + readHead));
+            if (!_authenticator.IsAuthenticated) return ProcessOtherCommands(cmd, subcmd, count, ref storageApi);
 
-            if (!_authenticator.IsAuthenticated) return ProcessOtherCommands(count, ref storageApi);
-
-            var ptr = recvBufferPtr + readHead;
-            var cmd = FastParseArrayCommand(count, recvBufferPtr + readHead);
-            var success = cmd switch
+            var success = (cmd, subcmd) switch
             {
                 (RespCommand.MGET, 0) => NetworkMGET(count, ptr, ref storageApi),
                 (RespCommand.MSET, 0) => NetworkMSET(count, ptr, ref storageApi),
                 (RespCommand.MSETNX, 0) => NetworkMSETNX(count, ptr, ref storageApi),
-                (RespCommand.DEL, 0) => NetworkDEL(count, ptr, false, ref storageApi),
-                (RespCommand.UNLINK, 0) => NetworkDEL(count, ptr, true, ref storageApi),
+                (RespCommand.UNLINK, 0) => NetworkDEL(count, ptr, ref storageApi),
                 (RespCommand.SELECT, 0) => NetworkSELECT(ptr),
-                (RespCommand.WATCH, 0) => NetworkWATCH(count, ptr),
-                (RespCommand.WATCHMS, 0) => NetworkWATCH(count, ptr, StoreType.Main),
-                (RespCommand.WATCHOS, 0) => NetworkWATCH(count, ptr, StoreType.Object),
+                (RespCommand.WATCH, 0) => NetworkWATCH(count),
+                (RespCommand.WATCHMS, 0) => NetworkWATCH(count, StoreType.Main),
+                (RespCommand.WATCHOS, 0) => NetworkWATCH(count, StoreType.Object),
                 (RespCommand.STRLEN, 0) => NetworkSTRLEN(ptr, ref storageApi),
-                (RespCommand.EXISTS, 0) => NetworkEXISTS(count, ptr, ref storageApi),
                 (RespCommand.MODULE, 0) => NetworkMODULE(count, ptr, ref storageApi),
                 //General key commands
                 (RespCommand.DBSIZE, 0) => NetworkDBSIZE(ptr, ref storageApi),
@@ -418,7 +429,7 @@ namespace Garnet.server
                 (RespCommand.UNSUBSCRIBE, 0) => NetworkUNSUBSCRIBE(count, ptr, dend),
                 (RespCommand.PUNSUBSCRIBE, 0) => NetworkPUNSUBSCRIBE(count, ptr, dend),
                 // Custom Object Commands
-                (RespCommand.All, (byte)RespCommand.COSCAN) => ObjectScan(count, ptr, GarnetObjectType.All, ref storageApi, cmdlength: 23),
+                (RespCommand.All, (byte)RespCommand.COSCAN) => ObjectScan(count, ptr, GarnetObjectType.All, ref storageApi),
                 // Sorted Set commands
                 (RespCommand.SortedSet, (byte)SortedSetOperation.ZADD) => SortedSetAdd(count, ptr, ref storageApi),
                 (RespCommand.SortedSet, (byte)SortedSetOperation.ZREM) => SortedSetRemove(count, ptr, ref storageApi),
@@ -452,7 +463,7 @@ namespace Garnet.server
                 (RespCommand.PFMERGE, 0) => HyperLogLogMerge(count, ptr, ref storageApi),
                 (RespCommand.PFCOUNT, 0) => HyperLogLogLength(count, ptr, ref storageApi),
                 //Bitmap Commands
-                (RespCommand.BITOP, (byte)BitmapOperation.AND or (byte)BitmapOperation.OR or (byte)BitmapOperation.XOR or (byte)BitmapOperation.NOT) => StringBitOperation(count, ptr, (BitmapOperation)cmd.Item2, ref storageApi),
+                (RespCommand.BITOP, (byte)BitmapOperation.AND or (byte)BitmapOperation.OR or (byte)BitmapOperation.XOR or (byte)BitmapOperation.NOT) => StringBitOperation(count, ptr, (BitmapOperation)subcmd, ref storageApi),
                 (RespCommand.BITFIELD, 0) => StringBitField(count, ptr, ref storageApi),
                 (RespCommand.BITFIELD_RO, 0) => StringBitFieldReadOnly(count, ptr, ref storageApi),
                 // List Commands
@@ -487,7 +498,6 @@ namespace Garnet.server
                 (RespCommand.Hash, (byte)HashOperation.HSETNX) => HashSet(count, ptr, HashOperation.HSETNX, ref storageApi),
                 (RespCommand.Hash, (byte)HashOperation.HRANDFIELD) => HashGet(count, ptr, HashOperation.HRANDFIELD, ref storageApi),
                 (RespCommand.Hash, (byte)HashOperation.HSCAN) => ObjectScan(count, ptr, GarnetObjectType.Hash, ref storageApi),
-
                 // Set Commands
                 (RespCommand.Set, (byte)SetOperation.SADD) => SetAdd(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SMEMBERS) => SetMembers(count, ptr, ref storageApi),
@@ -495,23 +505,21 @@ namespace Garnet.server
                 (RespCommand.Set, (byte)SetOperation.SCARD) => SetLength(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SPOP) => SetPop(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SSCAN) => ObjectScan(count, ptr, GarnetObjectType.Set, ref storageApi),
-                _ => ProcessOtherCommands(count, ref storageApi),
+                _ => ProcessOtherCommands(cmd, subcmd, count, ref storageApi),
             };
             return success;
         }
 
-        private bool ProcessOtherCommands<TGarnetApi>(int count, ref TGarnetApi storageApi)
+        private bool ProcessOtherCommands<TGarnetApi>(RespCommand command, byte subcmd, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             ReadOnlySpan<byte> bufSpan = new(recvBufferPtr, bytesRead);
 
-            var command = GetCommand(bufSpan, out bool success);
-            if (!success) return false;
-
             if (!_authenticator.IsAuthenticated) return ProcessAdminCommands(command, bufSpan, count, ref storageApi);
-            if (command.SequenceEqual(CmdStrings.CLIENT))
+
+            if (command == RespCommand.CLIENT)
             {
-                for (int i = 0; i < count - 1; i++)
+                for (int i = 0; i < count; i++)
                 {
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
@@ -519,9 +527,9 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
-            else if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
+            else if (command == RespCommand.SUBSCRIBE)
             {
-                for (int i = 0; i < count - 1; i++)
+                for (int i = 0; i < count; i++)
                 {
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
@@ -529,74 +537,90 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
                     SendAndReset();
             }
-            else if (command.SequenceEqual(CmdStrings.RUNTXP))
+            else if (command == RespCommand.RUNTXP)
             {
                 byte* ptr = recvBufferPtr + readHead;
-                return NetworkRUNTXP(ptr, count);
+                return NetworkRUNTXP(count, ptr);
             }
-            else if (storeWrapper.customCommandManager.Match(command, out CustomTransaction txn))
+            else if (command == RespCommand.CustomTxn)
             {
                 byte* ptr = recvBufferPtr + readHead;
-                for (int i = 0; i < count - 1; i++)
+                for (int i = 0; i < count; i++)
                 {
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
                 }
 
-                if (count - 1 != txn.NumParams)
+                if (count != currentCustomTransaction.NumParams)
                 {
-                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters to stored proc {txn.nameStr}, expected {txn.NumParams}, actual {count - 1}\r\n", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}\r\n", ref dcurr, dend))
                         SendAndReset();
+
+                    currentCustomTransaction = null;
+
                     return true;
                 }
                 else
                 {
                     // Perform the operation
-                    TryTransactionProc(txn.id, ptr, recvBufferPtr + readHead, customCommandManagerSession.GetCustomTransactionProcedure(txn.id, txnManager, scratchBufferManager).Item1);
+                    TryTransactionProc(currentCustomTransaction.id, ptr, recvBufferPtr + readHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
                 }
+
+                currentCustomTransaction = null;
             }
-            else if (storeWrapper.customCommandManager.Match(command, out CustomCommand cmd))
+            else if (command == RespCommand.CustomCmd)
             {
                 byte* ptr = recvBufferPtr + readHead;
-                for (int i = 0; i < count - 1; i++)
+                for (int i = 0; i < count; i++)
                 {
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
                 }
 
-                if (count - 1 != cmd.NumKeys + cmd.NumParams)
+                if (count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
                 {
-                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters, expected {cmd.NumKeys + cmd.NumParams}, actual {count - 1}\r\n", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}\r\n", ref dcurr, dend))
                         SendAndReset();
+
+                    currentCustomCommand = null;
+
                     return true;
                 }
                 else
                 {
                     // Perform the operation
-                    TryCustomCommand(ptr, recvBufferPtr + readHead, cmd.GetRespCommand(), cmd.expirationTicks, cmd.type, ref storageApi);
+                    TryCustomCommand(ptr, recvBufferPtr + readHead, currentCustomCommand.GetRespCommand(), currentCustomCommand.expirationTicks, currentCustomCommand.type, ref storageApi);
                 }
+
+                currentCustomCommand = null;
             }
-            else if (storeWrapper.customCommandManager.Match(command, out CustomObjectCommand ocmd))
+            else if (command == RespCommand.CustomObjCmd)
             {
                 byte* ptr = recvBufferPtr + readHead;
-                for (int i = 0; i < count - 1; i++)
+                for (int i = 0; i < count; i++)
                 {
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
                 }
 
-                if (count - 1 != ocmd.NumKeys + ocmd.NumParams)
+                if (count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
                 {
-                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters, expected {ocmd.NumKeys + ocmd.NumParams}, actual {count - 1}\r\n", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}\r\n", ref dcurr, dend))
                         SendAndReset();
+
+                    currentCustomObjectCommand = null;
+
                     return true;
                 }
                 else
                 {
                     // Perform the operation
-                    TryCustomObjectCommand(ptr, recvBufferPtr + readHead, ocmd.GetRespCommand(), ocmd.subid, ocmd.type, ref storageApi);
+                    TryCustomObjectCommand(ptr, recvBufferPtr + readHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
                 }
+
+                currentCustomObjectCommand = null;
             }
+
             else
             {
                 return ProcessAdminCommands(command, bufSpan, count, ref storageApi);
