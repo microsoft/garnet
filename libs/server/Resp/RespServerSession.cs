@@ -545,7 +545,7 @@ namespace Garnet.server
 
                 if (count - 1 != txn.NumParams)
                 {
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Invalid number of parameters to stored proc {txn.nameStr}, expected {txn.NumParams}, actual {count - 1}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters to stored proc {txn.nameStr}, expected {txn.NumParams}, actual {count - 1}\r\n", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -566,7 +566,7 @@ namespace Garnet.server
 
                 if (count - 1 != cmd.NumKeys + cmd.NumParams)
                 {
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Invalid number of parameters, expected {cmd.NumKeys + cmd.NumParams}, actual {count - 1}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters, expected {cmd.NumKeys + cmd.NumParams}, actual {count - 1}\r\n", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -587,7 +587,7 @@ namespace Garnet.server
 
                 if (count - 1 != ocmd.NumKeys + ocmd.NumParams)
                 {
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Invalid number of parameters, expected {ocmd.NumKeys + ocmd.NumParams}, actual {count - 1}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters, expected {ocmd.NumKeys + ocmd.NumParams}, actual {count - 1}\r\n", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }

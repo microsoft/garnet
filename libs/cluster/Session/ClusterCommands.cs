@@ -159,7 +159,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 2))
                         return false;
                     string paramStr = Encoding.ASCII.GetString(param);
-                    while (!RespWriteUtils.WriteDirect(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Unknown subcommand or wrong number of arguments for '" + paramStr + "'. Try CLUSTER HELP.\r\n")), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Unknown subcommand or wrong number of arguments for '{paramStr}'. Try CLUSTER HELP.\r\n", ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -280,7 +280,7 @@ namespace Garnet.cluster
                     SendAndReset();
                 foreach (var command in clusterCommands)
                 {
-                    while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(command), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteSimpleString(command, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -395,7 +395,7 @@ namespace Garnet.cluster
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
                 var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo();
-                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(shardsInfo), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiDirect(shardsInfo, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.GOSSIP))
@@ -527,7 +527,7 @@ namespace Garnet.cluster
                         }
                         catch
                         {
-                            while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Failover option ({failoverOptionStr}) not supported\r\n"), ref dcurr, dend))
+                            while (!RespWriteUtils.WriteAsciiDirect($"-ERR Failover option ({failoverOptionStr}) not supported\r\n", ref dcurr, dend))
                                 SendAndReset();
                             failoverOption = FailoverOption.INVALID;
                         }
@@ -1091,7 +1091,7 @@ namespace Garnet.cluster
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
                 var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo();
-                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(slotsInfo), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiDirect(slotsInfo, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.SLOTSTATE) || param.SequenceEqual(CmdStrings.slotstate))
@@ -1123,7 +1123,7 @@ namespace Garnet.cluster
                         SlotState.FAIL => "-",
                         _ => throw new Exception($"Invalid SlotState filetype {state}"),
                     };
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"+{slot} {stateStr} {nodeId}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"+{slot} {stateStr} {nodeId}\r\n", ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -1340,7 +1340,7 @@ namespace Garnet.cluster
                         background = true;
                     else
                     {
-                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Invalid CLUSTER REPLICATE FLAG ({backgroundFlag}) not valid\r\n"), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid CLUSTER REPLICATE FLAG ({backgroundFlag}) not valid\r\n", ref dcurr, dend))
                             SendAndReset();
                         readHead = (int)(ptr - recvBufferPtr);
                         return true;
@@ -1350,7 +1350,7 @@ namespace Garnet.cluster
 
                 if (!clusterProvider.serverOptions.EnableAOF)
                 {
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes("-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect("-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n", ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -1410,19 +1410,19 @@ namespace Garnet.cluster
                 if (localRole != NodeRole.REPLICA)
                 {
                     // TODO: handle this
-                    //while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes("-ERR aofsync node not a replica\r\n"), ref dcurr, dend))
+                    //while (!RespWriteUtils.WriteAsciiDirect("-ERR aofsync node not a replica\r\n", ref dcurr, dend))
                     //    SendAndReset();
                 }
                 else if (!primaryId.Equals(nodeId))
                 {
                     // TODO: handle this
-                    //while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"-ERR aofsync node replicating {primaryId}\r\n"), ref dcurr, dend))
+                    //while (!RespWriteUtils.WriteAsciiDirect($"-ERR aofsync node replicating {primaryId}\r\n", ref dcurr, dend))
                     //    SendAndReset();
                 }
                 else
                 {
                     clusterProvider.replicationManager.ProcessPrimaryStream(record, recordLength, previousAddress, currentAddress, nextAddress);
-                    //while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    //while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     //    SendAndReset();
                 }
             }

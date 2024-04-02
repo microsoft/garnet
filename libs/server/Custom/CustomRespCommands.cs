@@ -42,7 +42,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Transaction failed.\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Transaction failed.\r\n", ref dcurr, dend))
                         SendAndReset();
             }
             latencyMetrics?.Stop(LatencyMetricsType.TX_PROC_LAT);

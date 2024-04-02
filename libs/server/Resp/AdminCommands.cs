@@ -79,7 +79,7 @@ namespace Garnet.server
                     // NOTE: Some authenticators cannot accept username/password pairs
                     if (!_authenticator.CanAuthenticate)
                     {
-                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes("-ERR Client sent AUTH, but configured authenticator does not accept passwords\r\n"), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteAsciiDirect("-ERR Client sent AUTH, but configured authenticator does not accept passwords\r\n", ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -95,12 +95,12 @@ namespace Garnet.server
                         {
                             if (username.IsEmpty)
                             {
-                                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes("-WRONGPASS Invalid password\r\n"), ref dcurr, dend))
+                                while (!RespWriteUtils.WriteAsciiDirect("-WRONGPASS Invalid password\r\n", ref dcurr, dend))
                                     SendAndReset();
                             }
                             else
                             {
-                                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes("-WRONGPASS Invalid username/password combination\r\n"), ref dcurr, dend))
+                                while (!RespWriteUtils.WriteAsciiDirect("-WRONGPASS Invalid username/password combination\r\n", ref dcurr, dend))
                                     SendAndReset();
                             }
                         }
@@ -237,7 +237,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes("-ERR " + errorMsg + "\r\n"), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteAsciiDirect("-ERR " + errorMsg + "\r\n", ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -296,9 +296,9 @@ namespace Garnet.server
                         }
                     }
 
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"*{cnt}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"*{cnt}\r\n", ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(resultStr), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect(resultStr, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -359,7 +359,7 @@ namespace Garnet.server
                     var seconds = utcTime.ToUnixTimeSeconds();
                     var microsecs = utcTime.ToString("ffffff");
                     var response = string.Format("*2\r\n${0}\r\n{1}\r\n${2}\r\n{3}\r\n", seconds.ToString().Length, seconds, microsecs.Length, microsecs);
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(response), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect(response, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -478,7 +478,7 @@ namespace Garnet.server
 
                     if (generation < 0 || generation > GC.MaxGeneration)
                     {
-                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes("-ERR Invalid GC generation.\r\n"), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteAsciiDirect("-ERR Invalid GC generation.\r\n", ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -535,7 +535,7 @@ namespace Garnet.server
             if (errorFlag && !string.IsNullOrWhiteSpace(errorCmd))
             {
                 var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, errorCmd);
-                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(errorMsg), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiDirect(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
