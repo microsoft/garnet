@@ -421,12 +421,12 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("GEOADD Sicily 13.361389 38.115556", "PING");
-            var expectedResponse = "-ERR wrong number of arguments for GEOADD command.\r\n+PONG\r\n";
+            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "GEOADD")}+PONG\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommandChunks("GEOADD Sicily 13.361389 38.115556", bytesSent);
-            expectedResponse = "-ERR wrong number of arguments for GEOADD command.\r\n";
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "GEOADD");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
