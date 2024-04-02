@@ -81,16 +81,17 @@ namespace Garnet.common
         /// <summary>
         /// Write simple string
         /// </summary>
-        public static bool WriteSimpleString(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
+        /// <param name="simpleString">An ASCII encoded simple string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
+        public static bool WriteSimpleString(ReadOnlySpan<byte> simpleString, ref byte* curr, byte* end)
         {
             // Simple strings are of the form "+OK\r\n"
-            int totalLen = 1 + item.Length + 2;
+            int totalLen = 1 + simpleString.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'+';
-            item.CopyTo(new Span<byte>(curr, item.Length));
-            curr += item.Length;
+            simpleString.CopyTo(new Span<byte>(curr, simpleString.Length));
+            curr += simpleString.Length;
             WriteNewline(ref curr);
             return true;
         }
@@ -98,16 +99,17 @@ namespace Garnet.common
         /// <summary>
         /// Write simple string
         /// </summary>
-        public static bool WriteSimpleString(ReadOnlySpan<char> item, int encodedLen, ref byte* curr, byte* end)
+        /// <param name="simpleString">An ASCII simple string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
+        public static bool WriteSimpleString(ReadOnlySpan<char> simpleString, ref byte* curr, byte* end)
         {
             // Simple strings are of the form "+OK\r\n"
-            int totalLen = 1 + encodedLen + 2;
+            int totalLen = 1 + simpleString.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'+';
-            Encoding.ASCII.GetBytes(item, new Span<byte>(curr, encodedLen));
-            curr += encodedLen;
+            int bytesWritten = Encoding.ASCII.GetBytes(simpleString, new Span<byte>(curr, simpleString.Length));
+            curr += bytesWritten;
             WriteNewline(ref curr);
             return true;
         }
@@ -133,15 +135,33 @@ namespace Garnet.common
         /// <summary>
         /// Write error
         /// </summary>
-        public static bool WriteError(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
+        /// <param name="errorString">An ASCII encoded error string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
+        public static bool WriteError(ReadOnlySpan<byte> errorString, ref byte* curr, byte* end)
         {
-            int totalLen = 1 + item.Length + 2;
+            int totalLen = 1 + errorString.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'-';
-            item.CopyTo(new Span<byte>(curr, item.Length));
-            curr += item.Length;
+            errorString.CopyTo(new Span<byte>(curr, errorString.Length));
+            curr += errorString.Length;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write error
+        /// </summary>
+        /// <param name="errorString">An ASCII error string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
+        public static bool WriteError(ReadOnlySpan<char> errorString, ref byte* curr, byte* end)
+        {
+            int totalLen = 1 + errorString.Length + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'-';
+            int bytesWritten = Encoding.ASCII.GetBytes(errorString, new Span<byte>(curr, errorString.Length));
+            curr += bytesWritten;
             WriteNewline(ref curr);
             return true;
         }
