@@ -34,7 +34,7 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
             if (count < 2)
             {
@@ -105,7 +105,7 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetRemove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
             if (count < 2)
             {
@@ -185,7 +185,7 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
             if (count != 1)
             {
@@ -253,7 +253,7 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetMembers<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
             if (count != 1)
             {
@@ -332,9 +332,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetPop<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-                 where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-           if (count < 1 || count > 2)
+            if (count < 1 || count > 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SPOP", count);
