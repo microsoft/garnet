@@ -8,8 +8,6 @@ services:
     # To avoid docker NAT, consider `host` mode.
     # https://docs.docker.com/compose/compose-file/compose-file-v3/#network_mode
     # network_mode: "host"
-    # To enable basic password authentication, consider the following command, replacing {{replace_password_here}} with your own password.
-    # command: GarnetServer --auth Password --password {{replace_password_here}}
     volumes:
       - garnetdata:/data
 volumes:
