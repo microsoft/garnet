@@ -460,7 +460,11 @@ namespace Garnet.server
 
             try
             {
-                members = _setDiff(keys, ref objectStoreLockableContext);
+                (members, var status) = _setDiff(keys, ref objectStoreLockableContext);
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    return status;
+                }
             }
             finally
             {
@@ -504,7 +508,12 @@ namespace Garnet.server
 
             try
             {
-                var diffSet = _setDiff(keys, ref objectStoreLockableContext);
+                (var diffSet, var status) = _setDiff(keys, ref objectStoreLockableContext);
+
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    return status;
+                }
 
                 var asMembers = new ArgSlice[diffSet.Count];
                 for (var i = 0; i < diffSet.Count; i++)
@@ -530,7 +539,7 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        private HashSet<byte[]> _setDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+        private (HashSet<byte[]>, GarnetStatus) _setDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             var result = new HashSet<byte[]>();
@@ -538,7 +547,14 @@ namespace Garnet.server
             var status = GET(keys[0].Bytes, out var first, ref objectContext);
             if (status == GarnetStatus.OK)
             {
-                result.UnionWith(((SetObject)first.garnetObject).Set);
+                if (first.garnetObject is SetObject firstObject)
+                {
+                    result.UnionWith(firstObject.Set);
+                }
+                else
+                {
+                    return (result, GarnetStatus.WRONGTYPE);
+                }
             }
 
             for (var i = 1; i < keys.Length; i++)
@@ -546,13 +562,20 @@ namespace Garnet.server
                 status = GET(keys[i].Bytes, out var next, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
-                    var nextSet = ((SetObject)next.garnetObject).Set;
-                    var interItems = result.Intersect(nextSet, nextSet.Comparer);
-                    result.ExceptWith(interItems);
+                    if (next.garnetObject is SetObject nextObject)
+                    {
+                        var nextSet = nextObject.Set;
+                        var interItems = result.Intersect(nextSet, nextSet.Comparer);
+                        result.ExceptWith(interItems);
+                    }
+                    else
+                    {
+                        return (result, GarnetStatus.WRONGTYPE);
+                    }
                 }
             }
 
-            return result;
+            return (result, GarnetStatus.OK);
         }
     }
 }

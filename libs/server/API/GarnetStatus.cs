@@ -19,6 +19,10 @@ namespace Garnet.server
         /// <summary>
         /// Moved
         /// </summary>
-        MOVED
+        MOVED,
+        /// <summary>
+        /// WRONGTYPE
+        /// </summary>
+        WRONGTYPE
     }
 }
