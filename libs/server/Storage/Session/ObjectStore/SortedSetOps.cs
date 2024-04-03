@@ -175,7 +175,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             var minBytes = Encoding.ASCII.GetBytes(min);
-            var maxBytes = Encoding.ASCII.GetBytes(min);
+            var maxBytes = Encoding.ASCII.GetBytes(max);
 
             fixed (byte* ptr = minBytes)
             {
@@ -219,7 +219,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             var minBytes = Encoding.ASCII.GetBytes(min);
-            var maxBytes = Encoding.ASCII.GetBytes(min);
+            var maxBytes = Encoding.ASCII.GetBytes(max);
 
             fixed (byte* ptr = minBytes)
             {
