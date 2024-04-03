@@ -31,13 +31,12 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkMGET_SG(count, ptr, ref storageApi);
 
-            ptr += 10;
             SpanByte input = default;
 
-            if (NetworkArraySlotVerify(count - 1, ptr, interleavedKeys: false, readOnly: true, out bool retVal))
+            if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: true, out bool retVal))
                 return retVal;
 
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -51,7 +50,7 @@ namespace Garnet.server
 
                 if (opsDone == 0)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(count - 1, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
                         SendAndReset();
                 }
                 opsDone++;
@@ -92,11 +91,10 @@ namespace Garnet.server
         private bool NetworkMGET_SG<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            ptr += 10;
             SpanByte input = default;
             long ctx = default;
 
-            if (NetworkArraySlotVerify(count - 1, ptr, interleavedKeys: false, readOnly: true, out bool retVal))
+            if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: true, out bool retVal))
             {
                 return retVal;
             }
@@ -105,7 +103,7 @@ namespace Garnet.server
             (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
             SpanByteAndMemory o = new(dcurr, (int)(dend - dcurr));
 
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -118,7 +116,7 @@ namespace Garnet.server
 
                 if (opsDone == 0)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(count - 1, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
                         SendAndReset();
                     o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                 }
@@ -140,7 +138,7 @@ namespace Garnet.server
                 {
                     if (firstPending == -1)
                     {
-                        outputArr = new (GarnetStatus, SpanByteAndMemory)[count - 1];
+                        outputArr = new (GarnetStatus, SpanByteAndMemory)[count];
                         firstPending = c;
                     }
                     outputArr[c] = (status, default);
@@ -208,7 +206,7 @@ namespace Garnet.server
                 }
             }
 
-            if (opsDone < count - 1)
+            if (opsDone < count)
                 return false;
 
             opsDone = 0;
@@ -465,14 +463,12 @@ namespace Garnet.server
         private bool NetworkMSET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (NetworkArraySlotVerify((count - 1) / 2, ptr, interleavedKeys: true, readOnly: false, out bool retVal))
+            if (NetworkArraySlotVerify(count / 2, ptr, interleavedKeys: true, readOnly: false, out bool retVal))
             {
                 return retVal;
             }
 
-            for (int c = 0; c < (count - 1) / 2; c++)
+            for (int c = 0; c < count / 2; c++)
             {
                 byte* keyPtr = null, valPtr = null;
                 int ksize = 0, vsize = 0;
@@ -516,9 +512,7 @@ namespace Garnet.server
         private bool NetworkMSETNX<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 12;
-
-            if (NetworkArraySlotVerify((count - 1) / 2, ptr, interleavedKeys: true, readOnly: false, out bool retVal))
+            if (NetworkArraySlotVerify(count / 2, ptr, interleavedKeys: true, readOnly: false, out bool retVal))
             {
                 return retVal;
             }
@@ -526,7 +520,7 @@ namespace Garnet.server
             byte* hPtr = stackalloc byte[RespInputHeader.Size];
 
             bool anyValuesSet = false;
-            for (int c = 0; c < (count - 1) / 2; c++)
+            for (int c = 0; c < count / 2; c++)
             {
                 byte* keyPtr = null, valPtr = null;
                 int ksize = 0, vsize = 0;
@@ -584,17 +578,16 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkDEL<TGarnetApi>(int count, byte* ptr, bool unlink, ref TGarnetApi storageApi)
+        private bool NetworkDEL<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += unlink ? 12 : 9;
 
-            if (NetworkArraySlotVerify(count - 1, ptr, interleavedKeys: false, readOnly: false, out bool retVal))
+            if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: false, out bool retVal))
             {
                 return retVal;
             }
 
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -641,8 +634,6 @@ namespace Garnet.server
         /// <returns></returns>
         private bool NetworkSELECT(byte* ptr)
         {
-            ptr += 12;
-
             // Read index
             if (!RespReadUtils.ReadStringWithLengthHeader(out var result, ref ptr, recvBufferPtr + bytesRead))
                 return false;
@@ -665,8 +656,6 @@ namespace Garnet.server
         private bool NetworkDBSIZE<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            //$6\r\nDBSIZE\r\n
-            ptr += 12;
             readHead = (int)(ptr - recvBufferPtr);
             while (!RespWriteUtils.WriteInteger(storageApi.GetDbSize(), ref dcurr, dend))
                 SendAndReset();
@@ -678,7 +667,6 @@ namespace Garnet.server
         {
             byte* pattern = null;
             int psize = 0;
-            ptr += 10;
 
             // Read pattern for keys filter
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref pattern, ref psize, ref ptr, recvBufferPtr + bytesRead))
@@ -716,16 +704,14 @@ namespace Garnet.server
         private bool NetworkSCAN<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count < 2)
+            if (count < 1)
                 return AbortWithWrongNumberOfArguments("SCAN", count);
 
             // Scan cursor [MATCH pattern] [COUNT count] [TYPE type]
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var cursorParameterByte, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
-            int leftTokens = count - 2;
+            int leftTokens = count - 1;
 
             int psize = 1;
             byte* pattern = stackalloc byte[psize];
@@ -808,9 +794,7 @@ namespace Garnet.server
         private bool NetworkTYPE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count != 2)
+            if (count != 1)
                 return AbortWithWrongNumberOfArguments("TYPE", count);
 
             // TYPE key
@@ -840,9 +824,7 @@ namespace Garnet.server
         private bool NetworkMODULE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 12;
-
-            if (count == 1)
+            if (count != 1)
                 return AbortWithWrongNumberOfArguments("MODULE", count);
 
             // MODULE nameofmodule

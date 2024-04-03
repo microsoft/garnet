@@ -78,8 +78,6 @@ namespace Garnet.server
             Debug.Assert(isSubscriptionSession == false);
             // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n
 
-            ptr += 17;
-
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -115,10 +113,8 @@ namespace Garnet.server
         {
             // SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
 
-            ptr += 15;
-
             bool disabledBroker = subscribeBroker == null;
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -167,10 +163,8 @@ namespace Garnet.server
             // PSUBSCRIBE channel1 channel2.. ==> [$10\r\nPSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => PSubscribe to channel1 and channel2
             Debug.Assert(subscribeBroker != null);
 
-            ptr += 17;
-
             bool disabledBroker = subscribeBroker == null;
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -219,9 +213,7 @@ namespace Garnet.server
             // UNSUBSCRIBE channel1 channel2.. ==> [$11\r\nUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             Debug.Assert(subscribeBroker != null);
 
-            ptr += 18;
-
-            if (count == 1)
+            if (count == 0)
             {
                 if (subscribeBroker == null)
                 {
@@ -274,7 +266,7 @@ namespace Garnet.server
                 return true;
             }
 
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -318,9 +310,7 @@ namespace Garnet.server
             // PUNSUBSCRIBE channel1 channel2.. ==> [$11\r\nPUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             Debug.Assert(subscribeBroker != null);
 
-            ptr += 19;
-
-            if (count == 1)
+            if (count == 0)
             {
                 if (subscribeBroker == null)
                 {
@@ -361,7 +351,7 @@ namespace Garnet.server
                 return true;
             }
 
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;

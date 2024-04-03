@@ -112,9 +112,6 @@ namespace Garnet.server
         private bool StringSetBit<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // *4\r\n$6\r\n | SETBIT\r\n | $3\r\nkey\r\n $4\r\n4444\r\n $1\r\n [1|0]\r\n
-            ptr += 16;
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -188,8 +185,6 @@ namespace Garnet.server
         private bool StringGetBit<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // *3\r\n$6\r\n | GETBIT\r\n | $3\r\nkey\r\n $4\r\n4444\r\n
-            ptr += 16;
 
             byte* keyPtr = null;
             int ksize = 0;
@@ -247,16 +242,9 @@ namespace Garnet.server
         /// Count the number of set bits in a key. 
         /// It can be specified an interval for counting, passing the start and end arguments.
         /// </summary>
-        private bool StringBitCount<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool StringBitCount<TGarnetApi>(byte* ptr, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // *2\r\n$8\r\n | BITCOUNT | \r\n | $3\r\nkey\r\n \\ without [start end] offsets
-            // *3\r\n$8\r\n | BITCOUNT | \r\n | $3\r\nkey\r\n | $4\r\n4444\r\n \\ with start offset only
-            // *4\r\n$8\r\n | BITCOUNT | \r\n | $3\r\nkey\r\n | $4\r\n4444\r\n | $4\r\n8888\r\n \\ with start and end offsets
-            // *5\r\n$8\r\n | BITCOUNT | \r\n | $3\r\nkey\r\n | $4\r\n4444\r\n | $4\r\n8888\r\n | $[3|4]\r\n[BIT|BYTE] \\ with start and end offsets and bit or byte granularity
-            byte type = (byte)(*(ptr + 1) - '0'); // Which type of bitcount with or without offsets
-            ptr += 18;
-
             //<[Get Key]>
             byte* keyPtr = null;
             int ksize = 0;
@@ -268,19 +256,19 @@ namespace Garnet.server
             int startOffset = 0; // default is at the start of bitmap array
             int endOffset = -1; // default is at the end of the bitmap array (negative values indicate offset starting from end)
             byte bitOffsetType = 0x0; // treat offsets as byte or bit offsets
-            if (type > 2)//Start offset exists
+            if (count > 1)//Start offset exists
             {
                 if (!RespReadUtils.ReadIntWithLengthHeader(out startOffset, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                if (type > 3)
+                if (count > 2)
                 {
                     if (!RespReadUtils.ReadIntWithLengthHeader(out endOffset, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                 }
             }
 
-            if (type > 4)
+            if (count > 3)
             {
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var offsetType, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -341,17 +329,9 @@ namespace Garnet.server
         /// <summary>
         /// Returns the position of the first bit set to 1 or 0 in a key.
         /// </summary>
-        private bool StringBitPosition<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool StringBitPosition<TGarnetApi>(byte* ptr, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // *3\r\n$6\r\n | BITPOS\r\n | $3\r\nkey\r\n | $1\r\n[1|0]\r\n
-            // *4\r\n$6\r\n | BITPOS\r\n | $3\r\nkey\r\n | $1\r\n[1|0]\r\n | $4\r\n4444\r\n
-            // *5\r\n$6\r\n | BITPOS\r\n | $3\r\nkey\r\n | $1\r\n[1|0]\r\n | $4\r\n4444\r\n | $4\r\n8888\r\n
-            // *6\r\n$6\r\n | BITPOS\r\n | $3\r\nkey\r\n | $1\r\n[1|0]\r\n | $4\r\n4444\r\n | $4\r\n8888\r\n | $[3|4]\r\n[BIT|BYTE]\r\n
-
-            byte type = (byte)(*(ptr + 1) - '0'); // Which type of bitpos with or without offsets
-
-            ptr += 16;
             //<[Get Key]>
             byte* keyPtr = null;
             int ksize = 0;
@@ -376,19 +356,20 @@ namespace Garnet.server
             int startOffset = 0; // default is at the start of bitmap array
             int endOffset = -1; // default is at the end of the bitmap array (negative values indicate offset starting from end)
             byte bitOffsetType = 0x0; // treat offsets as byte or bit offsets
-            if (type > 3)//Start offset exists
+
+            if (count > 2)//Start offset exists
             {
                 if (!RespReadUtils.ReadIntWithLengthHeader(out startOffset, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                if (type > 4)
+                if (count > 3)
                 {
                     if (!RespReadUtils.ReadIntWithLengthHeader(out endOffset, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                 }
             }
 
-            if (type > 5)
+            if (count > 4)
             {
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var offsetType, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -455,9 +436,7 @@ namespace Garnet.server
         private bool StringBitOperation<TGarnetApi>(int count, byte* ptr, BitmapOperation bitop, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // $5\r\nBITO | P\r\n$ | [2|3]\r\n[AND|OR|XOR|NOT|]\r\n | $4\r\ndest $4\r\nsrc1\r\n $4\r\nsrc2\r\n
-            ptr += (BitmapOperation.OR == bitop) ? 19 : 20;
-            int keyCount = count - 2;
+            var keyCount = count;
             ArgSlice[] keys = new ArgSlice[keyCount];
 
             //Read keys
@@ -494,9 +473,6 @@ namespace Garnet.server
         private bool StringBitField<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // [$8\r\nBITF | IELD | \r\n]
-            ptr += 14;
-
             //BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
             //Extract Key//
             byte* keyPtr = null;
@@ -506,7 +482,7 @@ namespace Garnet.server
                 return false;
 
             int currCount = 0;
-            int endCount = count - 2;
+            int endCount = count - 1;
             int secondaryCmdCount = 0;
             byte overFlowType = (byte)BitFieldOverflow.WRAP;
 
@@ -678,9 +654,6 @@ namespace Garnet.server
         private bool StringBitFieldReadOnly<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // [$11\r\nBIT | FIELD_RO | \r\n]
-            ptr += 18;
-
             //BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
             //Extract Key//
             byte* keyPtr = null;
@@ -691,7 +664,7 @@ namespace Garnet.server
                 return false;
 
             int currCount = 0;
-            int endCount = count - 2;
+            int endCount = count - 1;
             int secondaryCmdCount = 0;
             byte overFlowType = (byte)BitFieldOverflow.WRAP;
 
