@@ -45,9 +45,9 @@ namespace Garnet.server
         /// </summary>
         public bool RewindScratchBuffer(ref ArgSlice slice)
         {
-            if (slice.ptr + slice.length == scratchBufferHead + scratchBufferOffset)
+            if (slice.ptr + slice.Length == scratchBufferHead + scratchBufferOffset)
             {
-                scratchBufferOffset -= slice.length;
+                scratchBufferOffset -= slice.Length;
                 slice = default; // invalidate the given ArgSlice
                 return true;
             }
@@ -128,14 +128,14 @@ namespace Garnet.server
         /// </summary>
         public ArgSlice FormatScratch(int headerSize, ArgSlice arg)
         {
-            int length = headerSize + arg.length;
+            int length = headerSize + arg.Length;
             ExpandScratchBufferIfNeeded(length);
 
             var retVal = new ArgSlice(scratchBufferHead + scratchBufferOffset, length);
             retVal.Span[..headerSize].Clear(); // Clear the header
 
             byte* ptr = scratchBufferHead + scratchBufferOffset + headerSize;
-            arg.ReadOnlySpan.CopyTo(new Span<byte>(ptr, arg.length));
+            arg.ReadOnlySpan.CopyTo(new Span<byte>(ptr, arg.Length));
 
             scratchBufferOffset += length;
             Debug.Assert(scratchBufferOffset <= scratchBuffer.Length);
@@ -193,7 +193,7 @@ namespace Garnet.server
         /// <param name="slice"></param>
         /// <returns></returns>
         static int GetRespFormattedStringLength(ArgSlice slice)
-            => 1 + NumUtils.NumDigits(slice.length) + 2 + slice.length + 2;
+            => 1 + NumUtils.NumDigits(slice.Length) + 2 + slice.Length + 2;
 
         void ExpandScratchBufferIfNeeded(int newLength)
         {

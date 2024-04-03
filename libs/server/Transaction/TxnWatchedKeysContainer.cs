@@ -72,7 +72,7 @@ namespace Garnet.server
                 keySlices = GC.AllocateUninitializedArray<WatchedKeySlice>(sliceBufferSize, true);
                 if (_oldBuffer != null) Array.Copy(_oldBuffer, keySlices, _oldBuffer.Length);
             }
-            if (watchBufferHeadAddress + key.length > watchBufferSize)
+            if (watchBufferHeadAddress + key.Length > watchBufferSize)
             {
                 // Double the watch buffer
                 watchBufferSize = watchBufferSize == 0 ? initialWatchBufferSize : watchBufferSize * 2;
@@ -92,16 +92,16 @@ namespace Garnet.server
                 }
             }
 
-            var slice = new ArgSlice(watchBufferPtr, key.length);
+            var slice = new ArgSlice(watchBufferPtr, key.Length);
             key.ReadOnlySpan.CopyTo(slice.Span);
 
             keySlices[sliceCount].slice = slice;
             keySlices[sliceCount].type = type;
-            keySlices[sliceCount].hash = Utility.HashBytes(slice.ptr, slice.length);
+            keySlices[sliceCount].hash = Utility.HashBytes(slice.ptr, slice.Length);
             keySlices[sliceCount].version = versionMap.ReadVersion(keySlices[sliceCount].hash);
 
-            watchBufferPtr += key.length;
-            watchBufferHeadAddress += key.length;
+            watchBufferPtr += key.Length;
+            watchBufferHeadAddress += key.Length;
             sliceCount++;
         }
 
