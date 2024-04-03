@@ -448,15 +448,13 @@ namespace Garnet.server
         private unsafe bool SetDiff<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 11;
-
-            if (count < 2)
+            if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments("SDIFF", count);
             }
 
-            var keys = new ArgSlice[count - 1];
-            for (var i = 0; i < count - 1; i++)
+            var keys = new ArgSlice[count];
+            for (var i = 0; i < count; i++)
             {
                 keys[i] = default;
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
@@ -506,9 +504,7 @@ namespace Garnet.server
         private unsafe bool SetDiffStore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 17;
-
-            if (count < 3)
+            if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("SDIFFSTORE", count);
             }
@@ -525,8 +521,8 @@ namespace Garnet.server
                 return true;
             }
 
-            var keys = new ArgSlice[count - 2];
-            for (var i = 0; i < count - 2; i++)
+            var keys = new ArgSlice[count - 1];
+            for (var i = 0; i < count - 1; i++)
             {
                 keys[i] = default;
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
