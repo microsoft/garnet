@@ -294,7 +294,7 @@ namespace Garnet.server
                 case RespCommand.INCR:
                     if(!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
                     {
-                        *output.SpanByte.ToPointer() = (byte)0xEE;
+                        *output.SpanByte.ToPointer() = 0xFF;    // -1
                         // skip
                         return true;
                     }
@@ -306,7 +306,7 @@ namespace Garnet.server
                 case RespCommand.DECR:
                     if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
                     {
-                        *output.SpanByte.ToPointer() = (byte)0xEE;
+                        *output.SpanByte.ToPointer() = 0xFF;    // -1
                         // skip
                         return true;
                     }
@@ -318,7 +318,7 @@ namespace Garnet.server
                 case RespCommand.INCRBY:
                     if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
                     {
-                        *output.SpanByte.ToPointer() = (byte)0xEE;
+                        *output.SpanByte.ToPointer() = 0xFF;    // -1
                         // skip
                         return true;
                     }
@@ -330,7 +330,7 @@ namespace Garnet.server
                 case RespCommand.DECRBY:
                     if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
                     {
-                        *output.SpanByte.ToPointer() = (byte)0xEE;
+                        *output.SpanByte.ToPointer() = 0xFF;    // -1
                         // skip
                         return true;
                     }
