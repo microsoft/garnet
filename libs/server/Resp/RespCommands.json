@@ -1,0 +1,116 @@
+﻿[
+  {
+    "Command": "GET",
+    "Name": "GET",
+    "Arity": 2,
+    "Options": "None",
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, String",
+    "SubCommands": null,
+    "Tips": null,
+    "KeySpecifications": {
+      "BeginSearch": {
+        "$type": "index",
+        "Index": 1
+      },
+      "FindKeys": {
+        "$type": "range",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    }
+  },
+  {
+    "Command": "SET",
+    "Name": "SET",
+    "Arity": -3,
+    "Options": "EX, NX, XX, GET, PX, EXAT, PXAT",
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "SubCommands": null,
+    "Tips": null,
+    "KeySpecifications": {
+      "BeginSearch": {
+        "$type": "index",
+        "Index": 1
+      },
+      "FindKeys": {
+        "$type": "range",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": "RW and ACCESS due to the optional \u0060GET\u0060 argument",
+      "Flags": "RW, Access, Update, VariableFlags"
+    }
+  },
+  {
+    "Command": "CONFIG",
+    "Name": "CONFIG",
+    "Arity": 2,
+    "Options": "None",
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow",
+    "SubCommands": [
+      {
+        "Command": "CONFIG",
+        "Name": "CONFIG|GET",
+        "Arity": -3,
+        "Options": "None",
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "SubCommands": null,
+        "Tips": null,
+        "KeySpecifications": null
+      },
+      {
+        "Command": "CONFIG",
+        "Name": "CONFIG|REWRITE",
+        "Arity": 2,
+        "Options": "None",
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "SubCommands": null,
+        "Tips": null,
+        "KeySpecifications": null
+      },
+      {
+        "Command": "CONFIG",
+        "Name": "CONFIG|SET",
+        "Arity": -4,
+        "Options": "None",
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "SubCommands": null,
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ],
+        "KeySpecifications": null
+      }
+    ],
+    "Tips": null,
+    "KeySpecifications": null
+  }
+]

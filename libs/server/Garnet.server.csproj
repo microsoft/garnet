@@ -19,10 +19,14 @@
     <OutputPath>bin\$(Platform)\Debug\</OutputPath>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <Optimize>true</Optimize>
-    <OutputPath>bin\$(Platform)\Release\</OutputPath>
-  </PropertyGroup>
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<Optimize>true</Optimize>
+		<OutputPath>bin\$(Platform)\Release\</OutputPath>
+	</PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resp\RespCommands.json" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
