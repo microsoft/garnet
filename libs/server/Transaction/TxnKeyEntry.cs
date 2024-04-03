@@ -82,7 +82,7 @@ namespace Garnet.server
         {
             var keyHash = !isObject
                 ? comparer.lockableContext.GetKeyHash(keyArgSlice.SpanByte)
-                : comparer.objectStoreLockableContext.GetKeyHash(keyArgSlice.ReadOnlySpan.ToArray());
+                : comparer.objectStoreLockableContext.GetKeyHash(keyArgSlice.ToArray());
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)

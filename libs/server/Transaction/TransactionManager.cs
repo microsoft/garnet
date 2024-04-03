@@ -211,7 +211,7 @@ namespace Garnet.server
         internal void Log(byte id, ArgSlice input)
         {
             Debug.Assert(functionsState.StoredProcMode);
-            SpanByte sb = new SpanByte(input.length, (nint)input.ptr);
+            SpanByte sb = new SpanByte(input.Length, (nint)input.ptr);
             appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = session.Version, sessionID = session.ID }, ref sb, out _);
         }
 
@@ -234,7 +234,7 @@ namespace Garnet.server
             if (type == StoreType.Main || type == StoreType.All)
                 session.ResetModified(key.SpanByte);
             if (type == StoreType.Object || type == StoreType.All)
-                objectStoreSession?.ResetModified(key.Span.ToArray());
+                objectStoreSession?.ResetModified(key.ToArray());
         }
 
         void UpdateTransactionStoreType(StoreType type)
