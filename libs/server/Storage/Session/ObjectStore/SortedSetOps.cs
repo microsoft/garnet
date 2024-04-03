@@ -27,7 +27,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             zaddCount = 0;
-            if (key.Bytes.Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, score, member);
@@ -39,7 +39,7 @@ namespace Garnet.server
             rmwInput->count = 1;
             rmwInput->done = 0;
 
-            RMWObjectStoreOperation(key.Bytes, input, out var output, ref objectStoreContext);
+            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             zaddCount = output.opsDone;
             return GarnetStatus.OK;
@@ -60,7 +60,7 @@ namespace Garnet.server
         {
             zaddCount = 0;
 
-            if (inputs.Length == 0 || key.Bytes.Length == 0)
+            if (inputs.Length == 0 || key.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare header in buffer
@@ -74,11 +74,11 @@ namespace Garnet.server
             foreach (var (score, member) in inputs)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, score, member);
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
-            RMWObjectStoreOperation(key.Bytes, input, out var output, ref objectStoreContext);
+            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             zaddCount = output.opsDone;
             return GarnetStatus.OK;
@@ -146,7 +146,7 @@ namespace Garnet.server
             foreach (var member in members)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, member);
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
@@ -181,8 +181,8 @@ namespace Garnet.server
             {
                 fixed (byte* ptr2 = maxBytes)
                 {
-                    var minArgSlice = new ArgSlice { ptr = ptr, length = minBytes.Length };
-                    var maxArgSlice = new ArgSlice { ptr = ptr2, length = maxBytes.Length };
+                    var minArgSlice = new ArgSlice(ptr, minBytes.Length);
+                    var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
                     var _inputSlice = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, minArgSlice, maxArgSlice);
 
                     // Prepare header in input buffer
@@ -192,7 +192,7 @@ namespace Garnet.server
                     rmwInput->count = 3;
                     rmwInput->done = 0;
 
-                    RMWObjectStoreOperation(key.Bytes, _inputSlice, out var output, ref objectStoreContext);
+                    RMWObjectStoreOperation(key.ToArray(), _inputSlice, out var output, ref objectStoreContext);
                     countRemoved = output.opsDone;
                 }
             }
@@ -225,8 +225,8 @@ namespace Garnet.server
             {
                 fixed (byte* ptr2 = maxBytes)
                 {
-                    var minArgSlice = new ArgSlice { ptr = ptr, length = minBytes.Length };
-                    var maxArgSlice = new ArgSlice { ptr = ptr2, length = maxBytes.Length };
+                    var minArgSlice = new ArgSlice(ptr, minBytes.Length);
+                    var maxArgSlice = new ArgSlice(ptr2, maxBytes.Length);
                     var _inputSlice = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, minArgSlice, maxArgSlice);
 
                     // Prepare header in input buffer
@@ -236,7 +236,7 @@ namespace Garnet.server
                     rmwInput->count = 3;
                     rmwInput->done = 0;
 
-                    RMWObjectStoreOperation(key.Bytes, _inputSlice, out var output, ref objectStoreContext);
+                    RMWObjectStoreOperation(key.ToArray(), _inputSlice, out var output, ref objectStoreContext);
                     countRemoved = output.opsDone;
                 }
             }
@@ -269,8 +269,8 @@ namespace Garnet.server
             {
                 fixed (byte* ptr2 = stopBytes)
                 {
-                    var startArgSlice = new ArgSlice { ptr = ptr, length = startBytes.Length };
-                    var stopArgSlice = new ArgSlice { ptr = ptr2, length = stopBytes.Length };
+                    var startArgSlice = new ArgSlice(ptr, startBytes.Length);
+                    var stopArgSlice = new ArgSlice(ptr2, stopBytes.Length);
                     var _inputSlice = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, startArgSlice, stopArgSlice);
 
                     // Prepare header in input buffer
@@ -280,7 +280,7 @@ namespace Garnet.server
                     rmwInput->count = 3;
                     rmwInput->done = 0;
 
-                    RMWObjectStoreOperation(key.Bytes, _inputSlice, out var output, ref objectStoreContext);
+                    RMWObjectStoreOperation(key.ToArray(), _inputSlice, out var output, ref objectStoreContext);
                     countRemoved = output.opsDone;
                 }
             }
@@ -316,7 +316,7 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = RMWObjectStoreOperationWithOutput(key.Bytes, input, ref objectStoreContext, ref outputFooter);
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
 
             //process output
             //if (status == GarnetStatus.OK)
@@ -349,7 +349,7 @@ namespace Garnet.server
 
             fixed (byte* ptr = incrementBytes)
             {
-                var incrementArgSlice = new ArgSlice { ptr = ptr, length = incrementBytes.Length };
+                var incrementArgSlice = new ArgSlice(ptr, incrementBytes.Length);
                 var _inputSlice = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, incrementArgSlice, member);
 
                 // Prepare header in input buffer
@@ -360,7 +360,7 @@ namespace Garnet.server
                 rmwInput->done = 0;
 
                 var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-                var status = RMWObjectStoreOperationWithOutput(key.Bytes, _inputSlice, ref objectStoreContext, ref outputFooter);
+                var status = RMWObjectStoreOperationWithOutput(key.ToArray(), _inputSlice, ref objectStoreContext, ref outputFooter);
 
                 //Process output
                 string error = default;
@@ -370,7 +370,7 @@ namespace Garnet.server
                     if (error == default)
                     {
                         // get the new score
-                        double.TryParse(Encoding.ASCII.GetString(result?[0].Bytes), out newScore);
+                        double.TryParse(Encoding.ASCII.GetString(result?[0].ToArray()), out newScore);
                     }
                 }
             }
@@ -391,7 +391,7 @@ namespace Garnet.server
         {
             zcardCount = 0;
 
-            if (key.Bytes.Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
@@ -402,7 +402,7 @@ namespace Garnet.server
             rmwInput->count = 1;
             rmwInput->done = 0;
 
-            ReadObjectStoreOperation(key.Bytes, input, out ObjectOutputHeader output, ref objectStoreContext);
+            ReadObjectStoreOperation(key.ToArray(), input, out ObjectOutputHeader output, ref objectStoreContext);
 
             zcardCount = output.opsDone;
             return GarnetStatus.OK;
@@ -432,7 +432,7 @@ namespace Garnet.server
             error = default;
 
             //min and max are required
-            if (min.Bytes.Length == 0 || max.Bytes.Length == 0)
+            if (min.Length == 0 || max.Length == 0)
             {
                 //error in arguments
                 error = "Missins required min and max parameters";
@@ -469,16 +469,16 @@ namespace Garnet.server
 
             // min and max parameters
             var tmp = scratchBufferManager.FormatScratchAsResp(0, min, max);
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             //operation order
             if (operation != default)
             {
                 fixed (byte* ptrOp = operation)
                 {
-                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice { ptr = ptrOp, length = operation.Length });
+                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, operation.Length));
                 }
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
 
             //reverse
@@ -487,9 +487,9 @@ namespace Garnet.server
                 ReadOnlySpan<byte> reverseBytes = "REV"u8;
                 fixed (byte* ptrOp = reverseBytes)
                 {
-                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice { ptr = ptrOp, length = reverseBytes.Length });
+                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, reverseBytes.Length));
                 }
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
 
             //limit parameter
@@ -498,16 +498,16 @@ namespace Garnet.server
                 ReadOnlySpan<byte> limitBytes = "LIMIT"u8;
                 fixed (byte* ptrOp = limitBytes)
                 {
-                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice { ptr = ptrOp, length = limitBytes.Length });
+                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, limitBytes.Length));
                 }
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
 
                 //offset
                 var limitOffset = Encoding.ASCII.GetBytes(limit.Item1);
                 fixed (byte* ptrOp = limitOffset)
                 {
-                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice { ptr = ptrOp, length = limitOffset.Length });
-                    inputLength += tmp.length;
+                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrOp, limitOffset.Length));
+                    inputLength += tmp.Length;
                 }
 
                 //count
@@ -517,14 +517,14 @@ namespace Garnet.server
                 {
                     byte* ptr = (byte*)ptrCount;
                     NumUtils.IntToBytes(limit.Item2, limitCountLength, ref ptr);
-                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice { ptr = ptrCount, length = limitCountLength });
-                    inputLength += tmp.length;
+                    tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(ptrCount, limitCountLength));
+                    inputLength += tmp.Length;
                 }
             }
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.Bytes, input, ref objectContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectContext, ref outputFooter);
 
             if (status == GarnetStatus.OK)
                 elements = ProcessRespArrayOutput(outputFooter, out error);
@@ -561,13 +561,13 @@ namespace Garnet.server
 
             try
             {
-                var statusOp = GET(keys[0].Bytes, out GarnetObjectStoreOutput firstSortedSet, ref objectStoreLockableContext);
+                var statusOp = GET(keys[0].ToArray(), out GarnetObjectStoreOutput firstSortedSet, ref objectStoreLockableContext);
                 if (statusOp == GarnetStatus.OK)
                 {
                     // read the rest of the keys
                     for (int item = 1; item < keys.Length; item++)
                     {
-                        statusOp = GET(keys[item].Bytes, out GarnetObjectStoreOutput nextSortedSet, ref objectStoreLockableContext);
+                        statusOp = GET(keys[item].ToArray(), out GarnetObjectStoreOutput nextSortedSet, ref objectStoreLockableContext);
                         if (statusOp != GarnetStatus.OK)
                         {
                             continue;
@@ -603,7 +603,7 @@ namespace Garnet.server
         {
             items = default;
 
-            if (key.Bytes.Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             if (String.IsNullOrEmpty(match))
@@ -633,7 +633,7 @@ namespace Garnet.server
                 tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(matchKeywordPtr, CmdStrings.MATCH.Length),
                             new ArgSlice(matchPatterPtr, matchPatternValue.Length));
             }
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             // Write count
             int lengthCountNumber = NumUtils.NumDigits(count);
@@ -647,12 +647,12 @@ namespace Garnet.server
                 tmp = scratchBufferManager.FormatScratchAsResp(0, new ArgSlice(countPtr, CmdStrings.COUNT.Length),
                           new ArgSlice(countValuePtr, countBytes.Length));
             }
-            inputLength += tmp.length;
+            inputLength += tmp.Length;
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
-            var status = ReadObjectStoreOperationWithOutput(key.Bytes, input, ref objectStoreContext, ref outputFooter);
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
 
             items = default;
             if (status == GarnetStatus.OK)
