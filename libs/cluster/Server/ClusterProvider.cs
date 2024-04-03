@@ -229,7 +229,6 @@ namespace Garnet.cluster
                     replicationInfo[commonInfoCount + 7] = new("slave_read_only", "1");
                     replicationInfo[commonInfoCount + 8] = new("replica_announced", "1");
                     replicationInfo[commonInfoCount + 9] = new("master_sync_last_io_seconds_ago", replicationManager.LastPrimarySyncSeconds.ToString());
-                    
                 }
                 else
                 {
