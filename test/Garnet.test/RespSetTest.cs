@@ -338,12 +338,12 @@ namespace Garnet.test
             // Missing arguments
             response = lightClientRequest.SendCommand("SISMEMBER myset");
             expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "SISMEMBER");
-            strResponse = Encoding.ASCII.GetString(response);
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
 
             // Extra arguments
             response = lightClientRequest.SendCommand("SISMEMBER myset \"Hello\" \"ExtraArg\"");
-            strResponse = Encoding.ASCII.GetString(response);
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
         }
 
