@@ -526,7 +526,7 @@ namespace Garnet.test
                 var source = File.ReadAllText(filePath);
                 var stringText = SourceText.From(source, Encoding.UTF8);
                 return SyntaxFactory.ParseSyntaxTree(stringText,
-                    CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.CSharp10), string.Empty);
+                    CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest), string.Empty);
             });
 
             var syntaxTrees = filesToCompile.Select(f => parseFunc(f));
