@@ -27,7 +27,7 @@ namespace Garnet.server
         {
             itemsDoneCount = 0;
 
-            if (key.Bytes.Length == 0 || elements.Length == 0)
+            if (key.Length == 0 || elements.Length == 0)
                 return GarnetStatus.OK;
 
             // Prepare header in buffer
@@ -42,11 +42,11 @@ namespace Garnet.server
             foreach (var item in elements)
             {
                 var tmp = scratchBufferManager.FormatScratchAsResp(0, item);
-                inputLength += tmp.length;
+                inputLength += tmp.Length;
             }
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
-            RMWObjectStoreOperation(key.Bytes, input, out var output, ref objectStoreContext);
+            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.countDone;
             return GarnetStatus.OK;
@@ -79,7 +79,7 @@ namespace Garnet.server
             rmwInput->count = 1;
             rmwInput->done = 0;
 
-            var status = RMWObjectStoreOperation(key.Bytes, element, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key.ToArray(), element, out var output, ref objectStoreContext);
             itemsDoneCount = output.countDone;
 
             return status;
@@ -117,7 +117,7 @@ namespace Garnet.server
         public unsafe GarnetStatus ListPop<TObjectContext>(ArgSlice key, int count, ListOperation lop, ref TObjectContext objectStoreContext, out ArgSlice[] elements)
                  where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
-            var _key = key.Bytes;
+            var _key = key.ToArray();
             SpanByte _keyAsSpan = key.SpanByte;
 
             // Construct input for operation
@@ -132,7 +132,7 @@ namespace Garnet.server
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
-            var status = RMWObjectStoreOperationWithOutput(key.Bytes, input, ref objectStoreContext, ref outputFooter);
+            var status = RMWObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
 
             //process output
             elements = default;
@@ -155,7 +155,7 @@ namespace Garnet.server
         {
             count = 0;
 
-            if (key.Bytes.Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
@@ -167,7 +167,7 @@ namespace Garnet.server
             rmwInput->count = count;
             rmwInput->done = 0;
 
-            var status = ReadObjectStoreOperation(key.Bytes, input, out var output, ref objectStoreContext);
+            var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             count = output.countDone;
             return status;
@@ -190,7 +190,7 @@ namespace Garnet.server
 
             //If source and destination are the same, the operation is equivalent to removing the last element from the list
             //and pushing it as first element of the list, so it can be considered as a list rotation command.
-            bool sameKey = sourceKey.Bytes.SequenceEqual(destinationKey.Bytes);
+            bool sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
 
             bool createTransaction = false;
             if (txnManager.state != TxnState.Running)
@@ -206,7 +206,7 @@ namespace Garnet.server
             try
             {
                 // get the source key
-                var statusOp = GET(sourceKey.Bytes, out var sourceList, ref objectLockableContext);
+                var statusOp = GET(sourceKey.ToArray(), out var sourceList, ref objectLockableContext);
 
                 if (statusOp == GarnetStatus.NOTFOUND || ((ListObject)sourceList.garnetObject).LnkList.Count == 0)
                 {
@@ -231,13 +231,13 @@ namespace Garnet.server
                     srcListObject.UpdateSize(element, false);
 
                     //update sourcelist
-                    SET(sourceKey.Bytes, sourceList.garnetObject, ref objectStoreLockableContext);
+                    SET(sourceKey.ToArray(), sourceList.garnetObject, ref objectStoreLockableContext);
 
                     IGarnetObject newListValue = null;
                     if (!sameKey)
                     {
                         // read destination key
-                        var _destinationKey = destinationKey.ReadOnlySpan.ToArray();
+                        var _destinationKey = destinationKey.ToArray();
                         statusOp = GET(_destinationKey, out var destinationList, ref objectStoreLockableContext);
 
                         if (statusOp == GarnetStatus.NOTFOUND)
@@ -268,7 +268,7 @@ namespace Garnet.server
                     }
 
                     // upsert
-                    SET(destinationKey.Bytes, newListValue, ref objectStoreLockableContext);
+                    SET(destinationKey.ToArray(), newListValue, ref objectStoreLockableContext);
                 }
             }
             finally
@@ -302,7 +302,7 @@ namespace Garnet.server
             rmwInput->count = start;
             rmwInput->done = stop;
 
-            var status = RMWObjectStoreOperation(key.Bytes, input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             return status == GarnetStatus.OK;
         }
