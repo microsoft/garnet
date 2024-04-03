@@ -187,9 +187,15 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        for (int i = start; i <= stop; i++)
+                        var i = -1;
+                        foreach (var bytes in list)
                         {
-                            while (!RespWriteUtils.WriteBulkString(list.ElementAt(i), ref curr, end))
+                            i++;
+                            if (i < start)
+                                continue;
+                            if (i > stop)
+                                break;
+                            while (!RespWriteUtils.WriteBulkString(bytes, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                         _output.opsDone = count;
