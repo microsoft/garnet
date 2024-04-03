@@ -14,6 +14,6 @@ namespace Garnet.server
         /// Compute hash slot of given ArgSlice
         /// </summary>
         public static unsafe ushort HashSlot(ArgSlice argSlice)
-            => NumUtils.HashSlot(argSlice.ptr, argSlice.length);
+            => NumUtils.HashSlot(argSlice.ptr, argSlice.Length);
     }
 }

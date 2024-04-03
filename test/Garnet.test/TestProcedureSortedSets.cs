@@ -97,7 +97,7 @@ namespace Garnet
             var status = api.SortedSetRange(ssA, minRange, maxRange, sortedSetOrderOperation: SortedSetOrderOperation.ByScore, out var elements, out string error, false, false, limit: ("1", 5));
             if (status == GarnetStatus.OK && error == default)
             {
-                if (!elements[0].Span.SequenceEqual(ssItems[2].member.Bytes))
+                if (!elements[0].ReadOnlySpan.SequenceEqual(ssItems[2].member.ReadOnlySpan))
                     result = false;
                 else
                 {
