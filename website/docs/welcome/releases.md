@@ -38,6 +38,12 @@ On Linux
 docker run --network=host --ulimit memlock=-1 ghcr.io/microsoft/garnet
 ```
 
+On Linux configured with basic authentication, replace `{{replace_password_here}}` with your password
+
+```console
+docker run --network=host --ulimit memlock=-1 ghcr.io/microsoft/garnet --auth Password --password {{replace_password_here}}
+```
+
 On MacOS
 
 ```console
