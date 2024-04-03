@@ -1656,5 +1656,35 @@ namespace Garnet.test
             Assert.IsTrue(time.Value.TotalSeconds > 0);
         }
 
+        [Test]
+        public void IncrNonNumber()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "key";
+            _ = db.StringSet(key, "foo");
+            try
+            {
+                _ = db.StringIncrement(key);
+            }
+            catch (Exception e)
+            {
+                Assert.AreEqual(e.Message, "ERR value is not an integer or out of range.");
+            }
+        }
+
+        [Test]
+        public void IncrNonNumberLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            _ = lightClientRequest.SendCommand("set key 'foo'");
+            var result = lightClientRequest.SendCommand("incr key");
+            var expectedResponse = "-ERR value is not an integer or out of range.\r\n";
+            Assert.AreEqual(expectedResponse, Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length));
+        }
+
+
     }
 }

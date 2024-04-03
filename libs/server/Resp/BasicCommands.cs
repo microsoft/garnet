@@ -775,9 +775,16 @@ namespace Garnet.server
             var output = new ArgSlice(pbOutput, 20);
 
             var status = storageApi.Increment(key, input, ref output);
-
-            while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
-                SendAndReset();
+            if (output.Bytes[0] == (byte)0xEE)
+            {
+                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }

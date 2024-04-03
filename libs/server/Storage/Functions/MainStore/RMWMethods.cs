@@ -292,21 +292,49 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.INCR:
+                    if(!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
+                    {
+                        *output.SpanByte.ToPointer() = (byte)0xEE;
+                        // skip
+                        return true;
+                    }
+
                     long val = NumUtils.BytesToLong(value.AsSpan());
                     val++;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECR:
+                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
+                    {
+                        *output.SpanByte.ToPointer() = (byte)0xEE;
+                        // skip
+                        return true;
+                    }
+
                     val = NumUtils.BytesToLong(value.AsSpan());
                     val--;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.INCRBY:
+                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
+                    {
+                        *output.SpanByte.ToPointer() = (byte)0xEE;
+                        // skip
+                        return true;
+                    }
+
                     val = NumUtils.BytesToLong(value.LengthWithoutMetadata, value.ToPointer());
                     val += NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECRBY:
+                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
+                    {
+                        *output.SpanByte.ToPointer() = (byte)0xEE;
+                        // skip
+                        return true;
+                    }
+
                     val = NumUtils.BytesToLong(value.LengthWithoutMetadata, value.ToPointer());
                     val -= NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);

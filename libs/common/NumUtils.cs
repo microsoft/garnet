@@ -513,5 +513,51 @@ namespace Garnet.common
             return true;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="source"></param>
+        /// <param name="v"></param>
+        /// <returns></returns>
+        public static bool TryBytesToLong(ReadOnlySpan<byte> source, out long v)
+        {
+            v = 0;
+            var length = source.Length;
+            fixed (byte* ptr = source)
+            {
+                bool fNeg = (*ptr == '-');
+
+                // check range
+                if (fNeg)
+                {
+                    if (length - 1 > 19)
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    if (length > 19)
+                    {
+                        return false;
+                    }
+                }
+
+                var beg = fNeg ? ptr + 1 : ptr;
+                var end = ptr + length;
+                long result = 0;
+
+                while (beg < end)
+                {
+                    if (!(*beg >= 48 && *beg <= 57))
+                    {
+                        return false;
+                    }
+                    result = result * 10 + (*beg++ - '0');
+                }
+                v = fNeg ? -(result) : result;
+            }
+            return true;
+        }
     }
 }
