@@ -18,7 +18,7 @@ namespace Garnet.server
         {
             previous = false;
 
-            if (key.Bytes.Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(byte);
@@ -34,7 +34,7 @@ namespace Garnet.server
             pcurr += RespInputHeader.Size;
 
             //offset
-            *(long*)pcurr = NumUtils.BytesToLong(offset.Bytes);
+            *(long*)pcurr = NumUtils.BytesToLong(offset.ToArray());
             pcurr += sizeof(long);
 
             //bit value
@@ -52,7 +52,7 @@ namespace Garnet.server
         {
             bValue = false;
 
-            if (key.Bytes.Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long);
@@ -68,7 +68,7 @@ namespace Garnet.server
             pcurr += RespInputHeader.Size;
 
             //offset
-            *(long*)pcurr = NumUtils.BytesToLong(offset.Bytes);
+            *(long*)pcurr = NumUtils.BytesToLong(offset.ToArray());
             pcurr += sizeof(long);
 
             SpanByteAndMemory output = new(null);
@@ -215,7 +215,7 @@ namespace Garnet.server
         public GarnetStatus StringBitOperation(BitmapOperation bitop, ArgSlice destinationKey, ArgSlice[] keys, out long result)
         {
             result = 0;
-            if (destinationKey.Bytes.Length == 0)
+            if (destinationKey.Length == 0)
                 return GarnetStatus.OK;
             ArgSlice[] keysBitOp = new ArgSlice[keys.Length + 1];
             keysBitOp[0] = destinationKey;
@@ -228,7 +228,7 @@ namespace Garnet.server
         {
             result = 0;
 
-            if (key.Bytes.Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             int inputSize = sizeof(int) + RespInputHeader.Size + sizeof(long) + sizeof(long) + sizeof(byte);
