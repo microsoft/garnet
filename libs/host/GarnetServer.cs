@@ -70,7 +70,7 @@ namespace Garnet
         /// </summary>
         /// <param name="commandLineArgs">Command line arguments</param>
         /// <param name="loggerFactory">Logger factory</param>
-        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null)
+        public GarnetServer(string[] commandLineArgs, ILoggerFactory loggerFactory = null, bool cleanupDir = false)
         {
             Trace.Listeners.Add(new ConsoleTraceListener());
 
@@ -119,6 +119,7 @@ namespace Garnet
 
             // Assign values to GarnetServerOptions
             this.opts = serverSettings.GetServerOptions(this.loggerFactory.CreateLogger("Options"));
+            this.cleanupDir = cleanupDir;
             this.InitializeServer();
         }
 
