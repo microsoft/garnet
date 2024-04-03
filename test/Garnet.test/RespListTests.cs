@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -653,7 +654,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("LINSERT mykey", "PING", 1, 1);
-            var expectedResponse = "-ERR wrong number of arguments for LINSERT command.\r\n+PONG\r\n";
+            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "LINSERT")}+PONG\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }

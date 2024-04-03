@@ -36,11 +36,9 @@ namespace Garnet.server
         private unsafe bool HashSet<TGarnetApi>(int count, byte* ptr, HashOperation hop, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += hop == HashOperation.HSET ? 10 : (hop == HashOperation.HSETNX ? 12 : 11);
-
             if (((hop == HashOperation.HSET || hop == HashOperation.HMSET)
-                  && (count < 3 || count % 2 != 0)) ||
-                (hop == HashOperation.HSETNX && count != 4))
+                  && (count == 1 || count % 2 != 1)) ||
+                (hop == HashOperation.HSETNX && count != 3))
             {
                 return AbortWithWrongNumberOfArguments(hop.ToString(), count);
             }
@@ -67,7 +65,7 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - ptr) + sizeof(ObjectInputHeader);
 
-                var inputCount = (count - 2) / 2;
+                var inputCount = (count - 1) / 2;
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
@@ -121,12 +119,10 @@ namespace Garnet.server
         private unsafe bool HashGet<TGarnetApi>(int count, byte* ptr, HashOperation op, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += op == HashOperation.HGET ? 10 : (op == HashOperation.HGETALL ? 13 : (op == HashOperation.HMGET ? 11 : 17));
-
-            if ((op == HashOperation.HGETALL && count - 2 != 0) ||
-                (op == HashOperation.HRANDFIELD && count - 2 < 0) ||
-                (op == HashOperation.HGET && count != 3) ||
-                (op == HashOperation.HMGET && count < 3))
+            if ((op == HashOperation.HGETALL && count != 1) ||
+                (op == HashOperation.HRANDFIELD && count < 1) ||
+                (op == HashOperation.HGET && count != 2) ||
+                (op == HashOperation.HMGET && count < 2))
             {
                 return AbortWithWrongNumberOfArguments(op.ToString(), count);
             }
@@ -153,7 +149,7 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                int inputCount = op == HashOperation.HGETALL ? 0 : (op == HashOperation.HRANDFIELD ? count : count - 2);
+                int inputCount = op == HashOperation.HGETALL ? 0 : (op == HashOperation.HRANDFIELD ? count + 1 : count - 1);
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
                 inputPtr->header.HashOp = op;
@@ -189,11 +185,11 @@ namespace Garnet.server
                             return false;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        if (op == HashOperation.HMGET && count - 2 >= 1)
+                        if (op == HashOperation.HMGET && count - 1 >= 1)
                         {
                             // HMGET key field [field ...]
-                            // Write an empty array of count - 2 elements with null values.
-                            while (!RespWriteUtils.WriteArrayWithNullElements(count - 2, ref dcurr, dend))
+                            // Write an empty array of count - 1 elements with null values.
+                            while (!RespWriteUtils.WriteArrayWithNullElements(count - 1, ref dcurr, dend))
                                 SendAndReset();
                         }
                         else if (op != HashOperation.HMGET)
@@ -202,7 +198,7 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteResponse(respBytes, ref dcurr, dend))
                                 SendAndReset();
                         }
-                        ReadLeftToken(count - 2, ref ptr);
+                        ReadLeftToken(count - 1, ref ptr);
                         break;
                 }
             }
@@ -226,11 +222,10 @@ namespace Garnet.server
         private unsafe bool HashLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count != 2)
+            if (count != 1)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
+                // Send error to output
                 return AbortWithWrongNumberOfArguments("HLEN", count);
             }
             else
@@ -297,9 +292,8 @@ namespace Garnet.server
         private unsafe bool HashStrLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 13;
 
-            if (count != 3)
+            if (count != 2)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("HSTRLEN", count);
@@ -349,7 +343,7 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
-                        ReadLeftToken(count - 2, ref ptr);
+                        ReadLeftToken(count - 1, ref ptr);
                         break;
                 }
             }
@@ -371,9 +365,7 @@ namespace Garnet.server
         private unsafe bool HashDelete<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count < 2)
+            if (count < 1)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("HDEL", count);
@@ -392,7 +384,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                var inputCount = count - 2;
+                var inputCount = count - 1;
 
                 // Prepare input
                 var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
@@ -430,7 +422,7 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         hashItemsDoneCount = hashOpsCount = 0;
-                        ReadLeftToken(count - 2, ref ptr);
+                        ReadLeftToken(count - 1, ref ptr);
                         break;
                 }
             }
@@ -452,9 +444,7 @@ namespace Garnet.server
         private unsafe bool HashExists<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
            where TGarnetApi : IGarnetApi
         {
-            ptr += 13;
-
-            if (count != 3)
+            if (count != 2)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("HEXISTS", count);
@@ -504,7 +494,7 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
-                        ReadLeftToken(count - 2, ref ptr);
+                        ReadLeftToken(count - 1, ref ptr);
                         break;
                 }
             }
@@ -527,7 +517,11 @@ namespace Garnet.server
         private unsafe bool HashKeys<TGarnetApi>(int count, byte* ptr, HashOperation op, ref TGarnetApi storageApi)
           where TGarnetApi : IGarnetApi
         {
-            ptr += 11;
+            if (count != 1)
+            {
+                hashItemsDoneCount = hashOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("HKEYS", count);
+            }
 
             // Get the key for Hash
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
@@ -553,7 +547,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Hash;
             inputPtr->header.HashOp = op;
-            inputPtr->count = count - 2;
+            inputPtr->count = count - 1;
             inputPtr->done = hashOpsCount;
 
             // Prepare GarnetObjectStore output
@@ -584,7 +578,7 @@ namespace Garnet.server
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                         SendAndReset();
-                    ReadLeftToken(count - 2, ref ptr);
+                    ReadLeftToken(count - 1, ref ptr);
                     break;
             }
 
@@ -609,11 +603,10 @@ namespace Garnet.server
         private unsafe bool HashIncrement<TGarnetApi>(int count, byte* ptr, HashOperation op, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += op == HashOperation.HINCRBY ? 13 : 19;
-
             // Check if parameters number is right
-            if (count != 4)
+            if (count != 3)
             {
+                // Send error to output
                 return AbortWithWrongNumberOfArguments(op == HashOperation.HINCRBY ? "HINCRBY" : "HINCRBYFLOAT", count);
             }
             else
@@ -642,7 +635,7 @@ namespace Garnet.server
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
                 inputPtr->header.HashOp = op;
-                inputPtr->count = count;
+                inputPtr->count = count + 1;
                 inputPtr->done = 0;
 
                 // Prepare GarnetObjectStore output

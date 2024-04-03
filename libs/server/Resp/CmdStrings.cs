@@ -118,7 +118,7 @@ namespace Garnet.server
         /// <summary>
         /// Response string templates
         /// </summary>
-        public const string ErrMissingParam = "-ERR wrong number of arguments for '{0}' command\r\n";
+        public const string ErrWrongNumArgs = "-ERR wrong number of arguments for '{0}' command\r\n";
         public const string UnknownOption = "Unknown option or number of arguments for CONFIG SET - '{0}'";
 
         /// <summary>

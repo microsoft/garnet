@@ -39,7 +39,7 @@ namespace Garnet.server
         /// <summary>
         /// Process cluster commands
         /// </summary>
-        unsafe bool ProcessClusterCommands(ReadOnlySpan<byte> command, ReadOnlySpan<byte> bufSpan, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result);
+        unsafe bool ProcessClusterCommands(RespCommand command, ReadOnlySpan<byte> bufSpan, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result);
 
         /// <summary>
         /// Single key slot verify (check only, do not write result to network)
