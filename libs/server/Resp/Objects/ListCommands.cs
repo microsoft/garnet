@@ -680,8 +680,8 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref param2.ptr, ref param2.length, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                var sourceDirection = param1.Bytes.SequenceEqual(Encoding.ASCII.GetBytes("RIGHT")) ? OperationDirection.Right : OperationDirection.Left;
-                var destinationDirection = param2.Bytes.SequenceEqual(Encoding.ASCII.GetBytes("RIGHT")) ? OperationDirection.Right : OperationDirection.Left;
+                var sourceDirection = param1.ReadOnlySpan.SequenceEqual("RIGHT"u8) ? OperationDirection.Right : OperationDirection.Left;
+                var destinationDirection = param2.ReadOnlySpan.SequenceEqual("RIGHT"u8) ? OperationDirection.Right : OperationDirection.Left;
 
                 result = ListMove(count, sourceKey, destinationKey, sourceDirection, destinationDirection, out var node, ref storageApi);
                 if (node != null)

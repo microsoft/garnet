@@ -33,7 +33,7 @@ namespace Garnet.server
             }
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkSingleKeySlotVerify(argSlices[0].ptr, argSlices[0].length, false))
+            if (NetworkSingleKeySlotVerify(argSlices[0].ptr, argSlices[0].Length, false))
                 return true;
 
             //4 byte length of input
@@ -62,7 +62,7 @@ namespace Garnet.server
             SpanByte key = argSlices[0].SpanByte;
             for (int i = 1; i < argSlices.Length; i++)
             {
-                *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(argSlices[i].ptr, argSlices[i].length);
+                *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(argSlices[i].ptr, argSlices[i].Length);
 
                 var o = new SpanByteAndMemory(output, 1);
                 var status = storageApi.HyperLogLogAdd(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);

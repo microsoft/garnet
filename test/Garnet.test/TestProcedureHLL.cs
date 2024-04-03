@@ -45,7 +45,7 @@ namespace Garnet
             {
                 for (int i = 0; i < elements.Length; i++)
                 {
-                    elements[i] = Encoding.ASCII.GetString(GetNextArg(input, ref offset).Bytes);
+                    elements[i] = Encoding.ASCII.GetString(GetNextArg(input, ref offset).ToArray());
                 }
                 api.HyperLogLogAdd(hll, elements, out var resultPfAdd);
                 result = resultPfAdd;

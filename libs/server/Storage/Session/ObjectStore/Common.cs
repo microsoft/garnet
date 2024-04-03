@@ -144,7 +144,7 @@ namespace Garnet.server
 
                         int i = 0;
                         if (isScanOutput)
-                            elements[i++] = new ArgSlice { ptr = element, length = len };
+                            elements[i++] = new ArgSlice(element, len);
 
                         for (; i < elements.Length; i++)
                         {
@@ -152,7 +152,7 @@ namespace Garnet.server
                             len = 0;
                             if (RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr, outputPtr + outputSpan.Length))
                             {
-                                elements[i] = new ArgSlice { ptr = element, length = len };
+                                elements[i] = new ArgSlice(element, len);
                             }
                         }
                     }
@@ -162,7 +162,7 @@ namespace Garnet.server
                         len = 0;
                         if (!RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
-                        elements = new ArgSlice[1] { new ArgSlice { ptr = result, length = len } };
+                        elements = [new ArgSlice(result, len)];
                     }
                 }
             }
