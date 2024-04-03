@@ -130,7 +130,7 @@ namespace Garnet.cluster
         {
             if (clusterProvider.clusterManager == null)
             {
-                if (!DrainCommands(bufSpan, count - 1))
+                if (!DrainCommands(bufSpan, count))
                     return false;
                 while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRCLUSTER, ref dcurr, dend))
                     SendAndReset();
@@ -139,24 +139,24 @@ namespace Garnet.cluster
 
             bool errorFlag = false;
             string errorCmd = string.Empty;
-            if (count > 1)
+            if (count > 0)
             {
                 var param = GetCommand(bufSpan, out bool success1);
                 if (!success1) return false;
 
-                if (ProcessClusterBasicCommands(bufSpan, param, count, out errorFlag, out errorCmd))
+                if (ProcessClusterBasicCommands(bufSpan, param, count - 1, out errorFlag, out errorCmd))
                     goto checkErrorFlags;
-                else if (ProcessFailoverCommands(bufSpan, param, count, out errorFlag, out errorCmd))
+                else if (ProcessFailoverCommands(bufSpan, param, count - 1, out errorFlag, out errorCmd))
                     goto checkErrorFlags;
-                else if (ProcessSlotManageCommands(bufSpan, param, count, out errorFlag, out errorCmd))
+                else if (ProcessSlotManageCommands(bufSpan, param, count - 1, out errorFlag, out errorCmd))
                     goto checkErrorFlags;
-                else if (ProcessClusterMigrationCommands(bufSpan, param, count, out errorFlag, out errorCmd))
+                else if (ProcessClusterMigrationCommands(bufSpan, param, count - 1, out errorFlag, out errorCmd))
                     goto checkErrorFlags;
-                else if (ProcessClusterReplicationCommands(bufSpan, param, count, out errorFlag, out errorCmd))
+                else if (ProcessClusterReplicationCommands(bufSpan, param, count - 1, out errorFlag, out errorCmd))
                     goto checkErrorFlags;
                 else
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count - 1))
                         return false;
                     string paramStr = Encoding.ASCII.GetString(param.ToArray());
                     while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Unknown subcommand or wrong number of arguments for '" + paramStr + "'. Try CLUSTER HELP.\r\n")), ref dcurr, dend))
@@ -188,14 +188,14 @@ namespace Garnet.cluster
             if (param.SequenceEqual(CmdStrings.BUMPEPOCH) || param.SequenceEqual(CmdStrings.bumpepoch))
             {
                 bool success;
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out success))
                 {
                     return success;
                 }
 
-                if (count > 2)
+                if (count > 0)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -220,14 +220,14 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.FORGET) || param.SequenceEqual(CmdStrings.forget))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -239,7 +239,7 @@ namespace Garnet.cluster
                         return false;
 
                     int expirySeconds = 60;
-                    if (count == 4)
+                    if (count == 2)
                     {
                         if (!RespReadUtils.ReadIntWithLengthHeader(out expirySeconds, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -255,9 +255,9 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.INFO) || param.SequenceEqual(CmdStrings.info))
             {
-                if (count > 2)
+                if (count > 0)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -286,14 +286,14 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.MEET) || param.SequenceEqual(CmdStrings.meet))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count != 4)
+                if (count != 2)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -345,9 +345,9 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.NODES) || param.SequenceEqual(CmdStrings.nodes))
             {
-                if (count > 2)
+                if (count > 0)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -363,9 +363,9 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.set_config_epoch) || param.SequenceEqual(CmdStrings.SET_CONFIG_EPOCH))
             {
-                if (count != 3)
+                if (count != 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -400,9 +400,9 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.GOSSIP))
             {
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -411,7 +411,7 @@ namespace Garnet.cluster
                 {
                     var ptr = recvBufferPtr + readHead;
                     bool gossipWithMeet = false;
-                    if (count > 3)
+                    if (count > 1)
                     {
                         if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var withMeet, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -460,7 +460,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.RESET) || param.SequenceEqual(CmdStrings.reset))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
@@ -468,7 +468,8 @@ namespace Garnet.cluster
                 var ptr = recvBufferPtr + readHead;
                 var soft = true;
                 var expirySeconds = 60;
-                if (count > 2)
+
+                if (count > 0)
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))
                         return false;
@@ -476,7 +477,7 @@ namespace Garnet.cluster
                         soft = false;
                 }
 
-                if (count > 3)
+                if (count > 1)
                 {
                     if (!RespReadUtils.ReadIntWithLengthHeader(out expirySeconds, ref ptr, recvBufferPtr + bytesRead))
                         return false;
@@ -500,14 +501,14 @@ namespace Garnet.cluster
             errorCmd = string.Empty;
             if (param.SequenceEqual(CmdStrings.FAILOVER) || param.SequenceEqual(CmdStrings.failover))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 2)
+                if (count < 0)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -517,7 +518,7 @@ namespace Garnet.cluster
                     var ptr = recvBufferPtr + readHead;
                     FailoverOption failoverOption = FailoverOption.DEFAULT;
                     TimeSpan failoverTimeout = default;
-                    if (count > 2)
+                    if (count > 0)
                     {
                         if (!RespReadUtils.ReadStringWithLengthHeader(out var failoverOptionStr, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -533,7 +534,7 @@ namespace Garnet.cluster
                         }
                     }
 
-                    if (count > 3)
+                    if (count > 1)
                     {
                         if (!RespReadUtils.ReadIntWithLengthHeader(out var failoverTimeoutSeconds, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -619,14 +620,14 @@ namespace Garnet.cluster
             errorCmd = string.Empty;
             if (param.SequenceEqual(CmdStrings.ADDSLOTS) || param.SequenceEqual(CmdStrings.addslots))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -634,7 +635,7 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: false))
+                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: false))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
@@ -651,14 +652,14 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.ADDSLOTSRANGE) || param.SequenceEqual(CmdStrings.addslotsrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 4 || (count & 0x1) == 0x1)
+                if (count < 2 || (count & 0x1) == 0x1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -666,7 +667,7 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: true))
+                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: true))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
@@ -698,9 +699,9 @@ namespace Garnet.cluster
             else if (param.SequenceEqual(CmdStrings.COUNTKEYSINSLOT) || param.SequenceEqual(CmdStrings.countkeysinslot))
             {
                 var current = clusterProvider.clusterManager.CurrentConfig;
-                if (count != 3)
+                if (count != 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -740,14 +741,14 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.DELSLOTS) || param.SequenceEqual(CmdStrings.delslots))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -755,7 +756,7 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: false))
+                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: false))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
@@ -771,15 +772,15 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.DELSLOTSRANGE) || param.SequenceEqual(CmdStrings.delslotsrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
                 // CLUSTER ADDSLOTSRANGE [start-slot end-slot] // 2 + [2] even number of arguments
-                if (count < 4 || (count & 0x1) == 0x1)
+                if (count < 2 || (count & 0x1) == 0x1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -787,7 +788,7 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: true))
+                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: true))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
@@ -803,14 +804,14 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.DELKEYSINSLOT) || param.SequenceEqual(CmdStrings.delkeysinslot))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count != 3)
+                if (count != 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -833,14 +834,14 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.DELKEYSINSLOTRANGE) || param.SequenceEqual(CmdStrings.delkeysinslotrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count != 3)
+                if (count != 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -848,8 +849,9 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
+
                     // Parse slot ranges
-                    if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: true))
+                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: true))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
@@ -867,9 +869,10 @@ namespace Garnet.cluster
             else if (param.SequenceEqual(CmdStrings.GETKEYSINSLOT) || param.SequenceEqual(CmdStrings.getkeysinslot))
             {
                 var current = clusterProvider.clusterManager.CurrentConfig;
-                if (count < 4)
+
+                if (count < 2)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -908,9 +911,9 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.KEYSLOT) || param.SequenceEqual(CmdStrings.keyslot))
             {
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -931,14 +934,14 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.SETSLOT) || param.SequenceEqual(CmdStrings.setslot))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 4)
+                if (count < 2)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -957,7 +960,7 @@ namespace Garnet.cluster
                     catch { }
 
                     string nodeid = null;
-                    if (count > 4)
+                    if (count > 2)
                     {
                         if (!RespReadUtils.ReadStringWithLengthHeader(out nodeid, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -1003,14 +1006,14 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.SETSLOTSRANGE) || param.SequenceEqual(CmdStrings.setslotsrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 5)
+                if (count < 3)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -1024,7 +1027,7 @@ namespace Garnet.cluster
 
                     SlotState slotState;
                     string nodeid = default;
-                    var _count = count - 3;
+                    var _count = count - 1;
                     var ptr = recvBufferPtr + readHead;
                     // Extract subcommand
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var subcommand, ref ptr, recvBufferPtr + bytesRead))
@@ -1036,7 +1039,7 @@ namespace Garnet.cluster
                     {
                         // Log error for invalid slot state option
                         logger?.LogError(ex, "");
-                        if (!DrainCommands(bufSpan, count - 3))
+                        if (!DrainCommands(bufSpan, count - 1))
                             return false;
                         errorFlag = true;
                         errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -1048,7 +1051,7 @@ namespace Garnet.cluster
                     {
                         if (!RespReadUtils.ReadStringWithLengthHeader(out nodeid, ref ptr, recvBufferPtr + bytesRead))
                             return false;
-                        _count = count - 4;
+                        _count = count - 2;
                     }
 
                     //Parse slot ranges
@@ -1097,9 +1100,9 @@ namespace Garnet.cluster
             else if (param.SequenceEqual(CmdStrings.SLOTSTATE) || param.SequenceEqual(CmdStrings.slotstate))
             {
                 // CLUSTER SLOTSTATE <slot>
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -1138,15 +1141,15 @@ namespace Garnet.cluster
 
             if (param.SequenceEqual(CmdStrings.MIGRATE))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
                 // CLUSTER MIGRATE <node-id> <slot> <number-of-keys-in-slot> <serialized-data>
-                if (count != 5)
+                if (count != 3)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -1271,9 +1274,9 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.MTASKS))
             {
-                if (count != 2)
+                if (count != 0)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
                     errorCmd = Encoding.ASCII.GetString(param.ToArray());
@@ -1297,7 +1300,7 @@ namespace Garnet.cluster
             errorCmd = string.Empty;
             if (param.SequenceEqual(CmdStrings.REPLICAS) || param.SequenceEqual(CmdStrings.replicas))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
@@ -1318,7 +1321,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.REPLICATE) || param.SequenceEqual(CmdStrings.replicate))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
@@ -1328,7 +1331,7 @@ namespace Garnet.cluster
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeid, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                if (count == 4)
+                if (count == 2)
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var backgroundFlag, ref ptr, recvBufferPtr + bytesRead))
                         return false;

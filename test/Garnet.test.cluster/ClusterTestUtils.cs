@@ -599,8 +599,8 @@ namespace Garnet.test.cluster
 
         public void CloseConnections()
         {
-            redis.Close(false);
-            redis.Dispose();
+            redis?.Close(false);
+            redis?.Dispose();
         }
 
         public string[] GetNodeIds(List<int> nodes = null, ILogger logger = null)
