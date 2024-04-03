@@ -34,11 +34,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count < 3)
+            if (count < 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SADD", count);
@@ -56,7 +54,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                var inputCount = count - 2;
+                var inputCount = count - 1;
                 // Prepare input
                 var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
 
@@ -107,11 +105,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetRemove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count < 3)
+            if (count < 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SREM", count);
@@ -129,7 +125,7 @@ namespace Garnet.server
                         return false;
                     return true;
                 }
-                var inputCount = count - 2; // only identifiers
+                var inputCount = count - 1; // only identifiers
 
                 // Prepare input
                 var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
@@ -155,7 +151,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                         SendAndReset();
-                    ReadLeftToken(count - 2, ref ptr);
+                    ReadLeftToken(count - 1, ref ptr);
                 }
                 else
                 {
@@ -189,11 +185,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-            ptr += 11;
-
-            if (count != 2)
+            if (count != 1)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SCARD", count);
@@ -259,11 +253,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetMembers<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-            ptr += 14;
-
-            if (count != 2)
+            if (count != 1)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SMEMBERS", count);
@@ -318,7 +310,7 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                             SendAndReset();
-                        ReadLeftToken(count - 2, ref ptr);
+                        ReadLeftToken(count - 1, ref ptr);
                         break;
                 }
             }
@@ -340,11 +332,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetPop<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count < 2 || count > 3)
+            if (count < 1 || count > 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SPOP", count);
@@ -377,7 +367,7 @@ namespace Garnet.server
             inputPtr->count = Int32.MinValue;
 
             int countParameter = 0;
-            if (count == 3)
+            if (count == 2)
             {
                 // Get the value for the count parameter
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterByteArray, ref ptr, recvBufferPtr + bytesRead))
@@ -430,7 +420,7 @@ namespace Garnet.server
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     ptr += objOutputHeader.bytesDone;
                     setItemsDoneCount += objOutputHeader.countDone;
-                    if (count == 3 && setItemsDoneCount < countParameter)
+                    if (count == 2 && setItemsDoneCount < countParameter)
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:

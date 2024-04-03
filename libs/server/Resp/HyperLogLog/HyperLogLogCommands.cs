@@ -22,9 +22,7 @@ namespace Garnet.server
         private bool HyperLogLogAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 11;
-            int argCount = count - 1;
-            ArgSlice[] argSlices = new ArgSlice[argCount];
+            ArgSlice[] argSlices = new ArgSlice[count];
 
             //Read pfadd dstKey and input values
             for (int i = 0; i < argSlices.Length; i++)
@@ -106,10 +104,7 @@ namespace Garnet.server
         private bool HyperLogLogLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            //[$7\r\nPFCOUNT\r\n $]
-            ptr += 13;
-            int keyCount = count - 1;
-            ArgSlice[] keys = new ArgSlice[keyCount];
+            ArgSlice[] keys = new ArgSlice[count];
 
             //Read pfmerge dstKey and srckeys
             for (int i = 0; i < keys.Length; i++)
@@ -160,9 +155,7 @@ namespace Garnet.server
         private bool HyperLogLogMerge<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 13;
-            int keyCount = count - 1;
-            ArgSlice[] keys = new ArgSlice[keyCount];
+            ArgSlice[] keys = new ArgSlice[count];
 
             //Read pfmerge dstKey and srckeys
             for (int i = 0; i < keys.Length; i++)
