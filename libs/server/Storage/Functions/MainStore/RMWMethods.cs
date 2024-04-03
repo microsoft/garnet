@@ -292,50 +292,46 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.INCR:
-                    if(!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
+                    if(!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var val))
                     {
                         *output.SpanByte.ToPointer() = 0xFF;    // -1
                         // skip
                         return true;
                     }
 
-                    long val = NumUtils.BytesToLong(value.AsSpan());
                     val++;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECR:
-                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
+                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out val))
                     {
                         *output.SpanByte.ToPointer() = 0xFF;    // -1
                         // skip
                         return true;
                     }
 
-                    val = NumUtils.BytesToLong(value.AsSpan());
                     val--;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.INCRBY:
-                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
+                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out val))
                     {
                         *output.SpanByte.ToPointer() = 0xFF;    // -1
                         // skip
                         return true;
                     }
 
-                    val = NumUtils.BytesToLong(value.LengthWithoutMetadata, value.ToPointer());
                     val += NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECRBY:
-                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var _))
+                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out val))
                     {
                         *output.SpanByte.ToPointer() = 0xFF;    // -1
                         // skip
                         return true;
                     }
 
-                    val = NumUtils.BytesToLong(value.LengthWithoutMetadata, value.ToPointer());
                     val -= NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
