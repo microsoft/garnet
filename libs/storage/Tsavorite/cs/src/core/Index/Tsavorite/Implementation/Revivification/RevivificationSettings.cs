@@ -262,7 +262,7 @@ namespace Tsavorite.core
                 RecordSize = RevivificationBin.MaxRecordSize,
                 NumberOfRecords = RevivificationBin.DefaultRecordsPerBin
             });
-            FreeRecordBins = binList.ToArray();
+            FreeRecordBins = [.. binList];
         }
     }
 }

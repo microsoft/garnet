@@ -108,7 +108,7 @@ namespace Garnet.server.Custom
                 }
             }
 
-            return supportedTypes.ToArray();
+            return [.. supportedTypes];
         });
 
         public abstract void Register(CustomCommandManager customCommandManager);

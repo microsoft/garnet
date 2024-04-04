@@ -2500,7 +2500,7 @@ namespace Tsavorite.core
             var recoveredIterators = info.Iterators;
             if (recoveredIterators != null)
             {
-                List<string> keys = recoveredIterators.Keys.ToList();
+                List<string> keys = [.. recoveredIterators.Keys];
                 foreach (var key in keys)
                     if (recoveredIterators[key] > SafeTailAddress)
                         recoveredIterators[key] = SafeTailAddress;

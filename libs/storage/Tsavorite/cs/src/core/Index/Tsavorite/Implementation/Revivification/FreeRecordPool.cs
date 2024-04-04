@@ -480,7 +480,7 @@ namespace Tsavorite.core
                 binList.Add(bin);
                 prevBinRecordSize = bin.maxRecordSize;
             }
-            bins = binList.ToArray();
+            bins = [.. binList];
             numBins = bins.Length;
             numberOfBinsToSearch = settings.NumberOfBinsToSearch;
         }

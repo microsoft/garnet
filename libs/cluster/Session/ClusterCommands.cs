@@ -641,7 +641,7 @@ namespace Garnet.cluster
 
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
                     {
-                        clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
+                        clusterProvider.clusterManager.TryAddSlots([.. slots], out var slotIndex);
                         if (slotIndex != -1)
                             resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n"));
                     }
@@ -673,7 +673,7 @@ namespace Garnet.cluster
 
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
                     {
-                        clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
+                        clusterProvider.clusterManager.TryAddSlots([.. slots], out var slotIndex);
                         if (slotIndex != -1)
                             resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n"));
                     }
@@ -761,7 +761,7 @@ namespace Garnet.cluster
                     readHead = (int)(ptr - recvBufferPtr);
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
                     {
-                        clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
+                        clusterProvider.clusterManager.TryRemoveSlots([.. slots], out var slotIndex);
                         if (slotIndex != -1)
                             resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n"));
                     }
@@ -793,7 +793,7 @@ namespace Garnet.cluster
                     readHead = (int)(ptr - recvBufferPtr);
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
                     {
-                        clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
+                        clusterProvider.clusterManager.TryRemoveSlots([.. slots], out var slotIndex);
                         if (slotIndex != -1)
                             resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n"));
                     }

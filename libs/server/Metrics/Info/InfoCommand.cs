@@ -75,7 +75,7 @@ namespace Garnet.server
             }
             else
             {
-                InfoMetricsType[] sectionsArr = sections == null ? GarnetInfoMetrics.defaultInfo : sections.ToArray();
+                InfoMetricsType[] sectionsArr = sections == null ? GarnetInfoMetrics.defaultInfo : [.. sections];
                 GarnetInfoMetrics garnetInfo = new();
                 string info = garnetInfo.GetRespInfo(sectionsArr, storeWrapper);
                 while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(info), ref dcurr, dend))

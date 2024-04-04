@@ -352,7 +352,7 @@ Please check the syntax of your command. For detailed usage information run with
                 }
             }
 
-            return consolidatedArgs.ToArray();
+            return [.. consolidatedArgs];
         }
     }
 }

@@ -52,7 +52,7 @@ namespace Garnet.server
                         }
                     }
                     else
-                        events = GarnetLatencyMetrics.defaultLatencyTypes.ToHashSet();
+                        events = [.. GarnetLatencyMetrics.defaultLatencyTypes];
 
                     byte[] response = null;
                     if (invalid)
@@ -107,7 +107,7 @@ namespace Garnet.server
                             }
                         }
                         else
-                            events = GarnetLatencyMetrics.defaultLatencyTypes.ToHashSet();
+                            events = [.. GarnetLatencyMetrics.defaultLatencyTypes];
 
                         ReadOnlySpan<byte> response = null;
                         if (invalid)

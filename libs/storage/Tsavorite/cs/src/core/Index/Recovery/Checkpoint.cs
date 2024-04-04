@@ -50,7 +50,7 @@ namespace Tsavorite.core
             if (CommitCookie != null && CommitCookie.Length != 0)
             {
                 var convertedCookie = Convert.ToBase64String(CommitCookie);
-                metadata = metadata.Concat(Encoding.Default.GetBytes(convertedCookie)).ToArray();
+                metadata = [.. metadata, .. Encoding.Default.GetBytes(convertedCookie)];
             }
             checkpointManager.CommitLogCheckpoint(_hybridLogCheckpointToken, metadata);
             Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);
@@ -62,7 +62,7 @@ namespace Tsavorite.core
             if (CommitCookie != null && CommitCookie.Length != 0)
             {
                 var convertedCookie = Convert.ToBase64String(CommitCookie);
-                metadata = metadata.Concat(Encoding.Default.GetBytes(convertedCookie)).ToArray();
+                metadata = [.. metadata, .. Encoding.Default.GetBytes(convertedCookie)];
             }
             checkpointManager.CommitLogIncrementalCheckpoint(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.version, metadata, deltaLog);
             Log.ShiftBeginAddress(_hybridLogCheckpoint.info.beginAddress, truncateLog: true);

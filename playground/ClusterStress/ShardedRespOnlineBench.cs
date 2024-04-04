@@ -179,8 +179,8 @@ namespace Resp.benchmark
         private void UpdateSlotMap(ClusterConfiguration clusterConfig)
         {
             var nodes = clusterConfig.Nodes.ToArray();
-            primaryNodes = nodes.ToList().FindAll(p => !p.IsReplica).ToArray();
-            replicaNodes = nodes.ToList().FindAll(p => p.IsReplica).ToArray();
+            primaryNodes = [.. nodes.ToList().FindAll(p => !p.IsReplica)];
+            replicaNodes = [.. nodes.ToList().FindAll(p => p.IsReplica)];
             ushort j = 0;
             foreach (var node in nodes)
             {
