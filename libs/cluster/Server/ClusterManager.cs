@@ -286,6 +286,7 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
+            replicationManager.Reset();
             FlushConfig();
         }
 
