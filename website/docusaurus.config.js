@@ -76,7 +76,7 @@ const config = {
         title: 'Garnet',
         logo: {
           alt: 'Garnet Logo',
-          src: 'img/garnet-logo.png',
+          src: 'img/garnet-logo-diamond.png',
         },
         items: [
           {
