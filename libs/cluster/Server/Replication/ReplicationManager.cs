@@ -25,11 +25,11 @@ namespace Garnet.cluster
         readonly ILogger logger;
         bool _disposed;
 
-        private DateTime primary_sync_last_time;
+        private long primary_sync_last_time;
 
-        internal ulong LastPrimarySyncSeconds => recovering ? (ulong)(DateTime.UtcNow.Subtract(primary_sync_last_time).TotalSeconds) : 0;
+        internal long LastPrimarySyncSeconds => recovering ? (DateTime.UtcNow.Ticks - primary_sync_last_time) / TimeSpan.TicksPerSecond : 0;
 
-        internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_time = DateTime.UtcNow;
+        internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_time = DateTime.UtcNow.Ticks;
 
 
         public bool recovering;
@@ -137,6 +137,7 @@ namespace Garnet.cluster
         {
             recovering = false;
         }
+
         public void Dispose()
         {
             _disposed = true;
