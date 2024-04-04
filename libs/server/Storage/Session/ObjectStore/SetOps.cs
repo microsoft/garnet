@@ -544,7 +544,7 @@ namespace Garnet.server
         {
             var result = new HashSet<byte[]>();
 
-            var status = GET(keys[0].Bytes, out var first, ref objectContext);
+            var status = GET(keys[0].ToArray(), out var first, ref objectContext);
             if (status == GarnetStatus.OK)
             {
                 if (first.garnetObject is SetObject firstObject)
@@ -559,7 +559,7 @@ namespace Garnet.server
 
             for (var i = 1; i < keys.Length; i++)
             {
-                status = GET(keys[i].Bytes, out var next, ref objectContext);
+                status = GET(keys[i].ToArray(), out var next, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
                     if (next.garnetObject is SetObject nextObject)
