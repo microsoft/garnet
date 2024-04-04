@@ -13,7 +13,7 @@ COPY libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/*.csproj libs/stor
 COPY main/GarnetServer/*.csproj main/GarnetServer/
 COPY metrics/HdrHistogram/*.csproj metrics/HdrHistogram/
 
-RUN dotnet restore main/GarnetServer/GarnetServer.csproj -a $TARGETARCH
+RUN dotnet restore main/GarnetServer/GarnetServer.csproj
 
 # Copy everthing else and publish app
 COPY Garnet.snk Garnet.snk
