@@ -428,6 +428,10 @@ namespace Garnet.server
                                         {
                                             return (RespCommand.Set, (byte)SetOperation.SPOP);
                                         }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSMOVE\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SMOVE);
+                                        }
                                         break;
 
                                     case 'T':
