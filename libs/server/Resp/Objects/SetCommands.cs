@@ -326,9 +326,7 @@ namespace Garnet.server
         private unsafe bool SetIsMember<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 15;
-
-            if (count != 3)
+            if (count != 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SISMEMBER", count);
@@ -382,7 +380,7 @@ namespace Garnet.server
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                         SendAndReset();
-                    ReadLeftToken(count - 2, ref ptr);
+                    ReadLeftToken(count - 1, ref ptr);
                     break;
             }
 
