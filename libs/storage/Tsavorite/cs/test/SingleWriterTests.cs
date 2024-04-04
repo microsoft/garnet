@@ -45,14 +45,14 @@ namespace Tsavorite.test.SingleWriter
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
 
             functions = new SingleWriterTestFunctions();
-            LogSettings logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog) };
+            LogSettings logSettings = new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySize = (1L << 22), ReadCopyOptions = new(ReadCopyFrom.Device, ReadCopyTo.MainLog) };
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCopyDestination dest)
                 {
                     if (dest == ReadCopyDestination.ReadCache)
                     {
-                        logSettings.ReadCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
+                        logSettings.ReadCacheSettings = new() { PageSizeBits = 12, MemorySize = (1L << 22) };
                         logSettings.ReadCopyOptions = default;
                     }
                     break;
@@ -194,7 +194,7 @@ namespace Tsavorite.test.SingleWriter
                 valueSerializer = () => new StructWithString.Serializer()
             };
             store = new TsavoriteKV<StructWithString, StructWithString>(1L << 20,
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, PageSizeBits = 10, MemorySizeBits = 22, SegmentSizeBits = 16 },
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, PageSizeBits = 10, MemorySize = (1L << 22), SegmentSizeBits = 16 },
                 new CheckpointSettings { CheckpointDir = MethodTestDir },
                 serializerSettings: serializerSettings, comparer: new StructWithString.Comparer());
 

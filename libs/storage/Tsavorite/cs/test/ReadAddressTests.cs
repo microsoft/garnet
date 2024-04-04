@@ -164,7 +164,7 @@ namespace Tsavorite.test.readaddress
                     ReadCopyOptions = readCopyOptions,
                     // Use small-footprint values
                     PageSizeBits = 12, // (4K pages)
-                    MemorySizeBits = 20 // (1M memory for main log)
+                    MemorySize = (1L << 20) // (1M memory for main log)
                 };
 
                 store = new TsavoriteKV<Key, Value>(

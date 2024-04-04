@@ -39,9 +39,9 @@ namespace Tsavorite.core
         public const int kMaxSegmentSizeBits = 62;
 
         /// <summary>Minimum number of bits for the size of the in-memory portion of the log</summary>
-        public const int kMinMemorySizeBits = kMinSegmentSizeBits;
+        public const int kMinMemorySize = 1 << kMinSegmentSizeBits;
         /// <summary>Maximum number of bits for the size of the in-memory portion of the log</summary>
-        public const int kMaxMemorySizeBits = kMaxSegmentSizeBits;
+        public const long kMaxMemorySize = 1L << kMaxSegmentSizeBits;
 
         /// <summary>
         /// Device used for main hybrid log
@@ -64,14 +64,11 @@ namespace Tsavorite.core
         public int SegmentSizeBits = 30;
 
         /// <summary>
-        /// Total size of in-memory part of log, in bits
-        /// </summary>
-        public int MemorySizeBits = 34;
-
-        /// <summary>
         /// Controls how many pages should be empty to account for non-power-of-two-sized log
         /// </summary>
-        public int MinEmptyPageCount = 0;
+        //public int MinEmptyPageCount = 0;
+
+        public long MemorySize = 1L << 34; // 16GB
 
         /// <summary>
         /// Fraction of log marked as mutable (in-place updates)
@@ -108,7 +105,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Total size of in-memory part of log, in bits
         /// </summary>
-        public int MemorySizeBits = 34;
+        public long MemorySize = 1L << 34;
 
         /// <summary>
         /// Fraction of log head (in memory) used for second chance 

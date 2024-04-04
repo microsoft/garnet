@@ -98,7 +98,7 @@ namespace Tsavorite.test
             log = CreateTestDevice(deviceType, $"{path}DiskWriteScanBasicTest_{deviceType}.log");
             objlog = CreateTestDevice(deviceType, $"{path}DiskWriteScanBasicTest_{deviceType}.obj.log");
             store = new(128,
-                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
+                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 15), PageSizeBits = 9, SegmentSizeBits = 22 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
                       concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable
                       );
@@ -172,7 +172,7 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice($"{MethodTestDir}/test.log");
             objlog = Devices.CreateLogDevice($"{MethodTestDir}/test.obj.log");
             store = new(128,
-                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
+                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 20), PageSizeBits = 15, SegmentSizeBits = 18 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
                       concurrencyControlMode: ConcurrencyControlMode.None);
 
@@ -241,7 +241,7 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice($"{MethodTestDir}/test.log");
             objlog = Devices.CreateLogDevice($"{MethodTestDir}/test.obj.log");
             store = new(128,
-                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
+                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 20), PageSizeBits = 15, SegmentSizeBits = 18 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
                       concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
 
@@ -332,7 +332,7 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice($"{MethodTestDir}/test.log");
             objlog = Devices.CreateLogDevice($"{MethodTestDir}/test.obj.log");
             store = new(128,
-                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
+                      logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 20), PageSizeBits = 15, SegmentSizeBits = 18 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
                       concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
 

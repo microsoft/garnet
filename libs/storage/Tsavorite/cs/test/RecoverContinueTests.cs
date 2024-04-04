@@ -30,19 +30,19 @@ namespace Tsavorite.test.recovery.sumstore.cntinue
 
             store1 = new TsavoriteKV<AdId, NumClicks>
                 (16,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             store2 = new TsavoriteKV<AdId, NumClicks>
                 (16,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             store3 = new TsavoriteKV<AdId, NumClicks>
                 (16,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 

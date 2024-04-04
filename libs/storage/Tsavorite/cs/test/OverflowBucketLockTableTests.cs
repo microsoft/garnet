@@ -49,7 +49,7 @@ namespace Tsavorite.test.LockTable
             }
             comparer ??= new LongTsavoriteEqualityComparer();
 
-            store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
+            store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySize = (1L << 22) },
                                             comparer: comparer, concurrencyControlMode: ConcurrencyControlMode.LockTable);
         }
 

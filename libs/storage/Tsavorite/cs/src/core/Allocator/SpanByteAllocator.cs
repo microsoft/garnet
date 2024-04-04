@@ -230,7 +230,7 @@ namespace Tsavorite.core
             int offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
 
             // Index of page within the circular buffer
-            int pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
+            int pageIndex = (int)((logicalAddress >> LogPageSizeBits) % BufferSize);
             return *(nativePointers + pageIndex) + offset;
         }
 

@@ -54,7 +54,7 @@ namespace Tsavorite.test.RecordIsolation
                 if (arg is ReadCopyDestination dest)
                 {
                     if (dest == ReadCopyDestination.ReadCache)
-                        readCacheSettings = new() { PageSizeBits = 12, MemorySizeBits = 22 };
+                        readCacheSettings = new() { PageSizeBits = 12, MemorySize = (1L << 22) };
                     continue;
                 }
                 if (arg is CheckpointType chktType)
@@ -67,7 +67,7 @@ namespace Tsavorite.test.RecordIsolation
             comparer = new LongTsavoriteEqualityComparer();
             functions = new RecordIsolationTestFunctions();
 
-            store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
+            store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySize = (1L << 22), ReadCacheSettings = readCacheSettings },
                                             checkpointSettings: checkpointSettings, comparer: comparer, concurrencyControlMode: ConcurrencyControlMode.RecordIsolation);
             session = store.NewSession<long, long, Empty, RecordIsolationTestFunctions>(functions);
         }

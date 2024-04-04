@@ -56,7 +56,7 @@ namespace Tsavorite.test
             }
 
             store = new TsavoriteKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 }, comparer: new HashModuloComparer(hashMod), concurrencyControlMode: concurrencyControlMode); ;
+                (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 9 }, comparer: new HashModuloComparer(hashMod), concurrencyControlMode: concurrencyControlMode); ;
         }
 
         [TearDown]

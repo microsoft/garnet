@@ -198,6 +198,10 @@ namespace Garnet.test
                 opts.MemorySize = opts.ObjectStoreLogMemorySize = MemorySize == default ? "512" : MemorySize;
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
             }
+            else
+            {
+                opts.MemorySize = "16416m"; // 16GB + 1 page to test memory size that is not power of 2
+            }
 
             return new GarnetServer(opts);
         }

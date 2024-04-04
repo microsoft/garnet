@@ -163,7 +163,7 @@ namespace Tsavorite.core
             int offset = (int)(physicalAddress & PageSizeMask);
 
             // Index of page within the circular buffer
-            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
+            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) % BufferSize);
 
             return ref values[pageIndex][offset / RecordSize].info;
         }
@@ -179,7 +179,7 @@ namespace Tsavorite.core
             int offset = (int)(physicalAddress & PageSizeMask);
 
             // Index of page within the circular buffer
-            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
+            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) % BufferSize);
 
             return ref values[pageIndex][offset / RecordSize].key;
         }
@@ -190,7 +190,7 @@ namespace Tsavorite.core
             int offset = (int)(physicalAddress & PageSizeMask);
 
             // Index of page within the circular buffer
-            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) & BufferSizeMask);
+            int pageIndex = (int)((physicalAddress >> LogPageSizeBits) % BufferSize);
 
             return ref values[pageIndex][offset / RecordSize].value;
         }

@@ -18,7 +18,7 @@ namespace Tsavorite.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/MoreLogCompactionTests.log", deleteOnClose: true);
             store = new TsavoriteKV<long, long>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9 });
+                (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 9 });
         }
 
         [TearDown]

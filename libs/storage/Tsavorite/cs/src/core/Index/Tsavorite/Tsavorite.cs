@@ -183,10 +183,10 @@ namespace Tsavorite.core
                             LogDevice = new NullDevice(),
                             ObjectLogDevice = new NullDevice(),
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            MemorySize = logSettings.ReadCacheSettings.MemorySize,
+                            SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator ReadCache"));
+                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator ReadCache")); ; ;
                     readcache.Initialize();
                     ReadCache = new LogAccessor<Key, Value>(this, readcache);
                 }
@@ -204,8 +204,8 @@ namespace Tsavorite.core
                         {
                             LogDevice = new NullDevice(),
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            MemorySize = logSettings.ReadCacheSettings.MemorySize,
+                            SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                         }, spanByteComparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("SpanByteAllocator ReadCache")) as AllocatorBase<Key, Value>;
                     readcache.Initialize();
@@ -223,8 +223,8 @@ namespace Tsavorite.core
                         {
                             LogDevice = new NullDevice(),
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                            MemorySize = logSettings.ReadCacheSettings.MemorySize,
+                            SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                         }, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("BlittableAllocator ReadCache"));
                     readcache.Initialize();

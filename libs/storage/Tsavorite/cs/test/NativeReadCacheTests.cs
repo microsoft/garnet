@@ -16,10 +16,10 @@ namespace Tsavorite.test.ReadCacheTests
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 10 };
+            var readCacheSettings = new ReadCacheSettings { MemorySize = (1L << 15), PageSizeBits = 10 };
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
             store = new TsavoriteKV<KeyStruct, ValueStruct>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings });
+                (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 10, ReadCacheSettings = readCacheSettings });
         }
 
         [TearDown]

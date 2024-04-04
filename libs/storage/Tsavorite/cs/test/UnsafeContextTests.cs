@@ -73,7 +73,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
+            Setup(128, new LogSettings { PageSizeBits = 10, MemorySize = (1L << 12), SegmentSizeBits = 22 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -102,7 +102,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
+            Setup(128, new LogSettings { PageSizeBits = 10, MemorySize = (1L << 12), SegmentSizeBits = 22 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -150,7 +150,7 @@ namespace Tsavorite.test.UnsafeContext
             const int count = 10;
 
             // Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 29) }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -207,7 +207,7 @@ namespace Tsavorite.test.UnsafeContext
             int count = 200;
 
             // Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 29) }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -272,7 +272,7 @@ namespace Tsavorite.test.UnsafeContext
             Random r = new(RandSeed);
             var sw = Stopwatch.StartNew();
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -384,7 +384,7 @@ namespace Tsavorite.test.UnsafeContext
             InputStruct input = default;
             OutputStruct output = default;
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -456,7 +456,7 @@ namespace Tsavorite.test.UnsafeContext
         {
             InputStruct input = default;
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -522,7 +522,7 @@ namespace Tsavorite.test.UnsafeContext
         {
             InputStruct input = default;
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -551,7 +551,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("TsavoriteKV")]
         public void ReadNoRefKey([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -582,7 +582,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void ReadWithoutInput([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -617,7 +617,7 @@ namespace Tsavorite.test.UnsafeContext
             // Just checking without Serial ID so one device type is enough
             deviceType = DeviceType.MLSD;
 
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 29) }, deviceType);
             uContext.BeginUnsafe();
 
             try
@@ -649,7 +649,7 @@ namespace Tsavorite.test.UnsafeContext
         [Category("Smoke")]
         public void ReadBareMinParams([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
             uContext.BeginUnsafe();
 
             try

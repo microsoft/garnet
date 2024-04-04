@@ -145,7 +145,7 @@ namespace Tsavorite.core
             else if (logSize.Total + logAccessor.MemorySizeBytes < lowTargetSize)
             {
                 logger?.LogDebug($"Heap size {logSize.Total} + log {logAccessor.MemorySizeBytes} < target {lowTargetSize}. Alloc: {logAccessor.AllocatedPageCount} EPC: {logAccessor.EmptyPageCount}");
-                while (logSize.Total + logAccessor.MemorySizeBytes < lowTargetSize && logAccessor.EmptyPageCount > logAccessor.MinEmptyPageCount)
+                while (logSize.Total + logAccessor.MemorySizeBytes < lowTargetSize && logAccessor.EmptyPageCount > 0)
                 {
                     if (logAccessor.AllocatedPageCount < logAccessor.BufferSize - logAccessor.EmptyPageCount - 1)
                     {

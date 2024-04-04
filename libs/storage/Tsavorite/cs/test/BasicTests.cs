@@ -71,7 +71,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void NativeInMemWriteRead([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
+            Setup(128, new LogSettings { PageSizeBits = 10, MemorySize = (1L << 12), SegmentSizeBits = 22 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -92,7 +92,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 22 }, deviceType);
+            Setup(128, new LogSettings { PageSizeBits = 10, MemorySize = (1L << 12), SegmentSizeBits = 22 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -132,7 +132,7 @@ namespace Tsavorite.test
             const int count = 10;
 
             // Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 29) }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -181,7 +181,7 @@ namespace Tsavorite.test
             int count = 200;
 
             // Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 29) }, deviceType);
             session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
 
             InputStruct input = default;
@@ -240,7 +240,7 @@ namespace Tsavorite.test
             var sw = Stopwatch.StartNew();
 
             var latencyMs = batchMode == BatchMode.NoBatch ? 0 : DefaultLocalMemoryDeviceLatencyMs;
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType, latencyMs: latencyMs);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType, latencyMs: latencyMs);
 
             for (int c = 0; c < NumRecs; c++)
             {
@@ -316,7 +316,7 @@ namespace Tsavorite.test
             InputStruct input = default;
             OutputStruct output = default;
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -380,7 +380,7 @@ namespace Tsavorite.test
         {
             InputStruct input = default;
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
             var nums = Enumerable.Range(0, 1000).ToArray();
             var rnd = new Random(11);
@@ -441,7 +441,7 @@ namespace Tsavorite.test
         {
             InputStruct input = default;
 
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -462,7 +462,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public void ReadNoRefKey([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -485,7 +485,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ReadWithoutInput([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
             OutputStruct output = default;
 
@@ -513,7 +513,7 @@ namespace Tsavorite.test
             // Just checking without Serial ID so one device type is enough
             deviceType = DeviceType.MLSD;
 
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 29) }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -537,7 +537,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ReadBareMinParams([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
@@ -561,7 +561,7 @@ namespace Tsavorite.test
             // Just functional test of ReadFlag so one device is enough
             deviceType = DeviceType.MLSD;
 
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 29) }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -616,7 +616,7 @@ namespace Tsavorite.test
             // Another ReadFlag functional test so one device is enough
             deviceType = DeviceType.MLSD;
 
-            Setup(128, new LogSettings { MemorySizeBits = 29, ReadCacheSettings = new ReadCacheSettings() }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 29), ReadCacheSettings = new ReadCacheSettings() }, deviceType);
 
             SkipReadCacheFunctions functions = new();
             using var skipReadCacheSession = store.NewSession<InputStruct, OutputStruct, Empty, SkipReadCacheFunctions>(functions);
@@ -695,7 +695,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void UpsertDefaultsTest([Values] DeviceType deviceType)
         {
-            Setup(128, new LogSettings { MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -723,7 +723,7 @@ namespace Tsavorite.test
             // Just checking more parameter values so one device is enough
             deviceType = DeviceType.MLSD;
 
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 29) }, deviceType);
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -749,7 +749,7 @@ namespace Tsavorite.test
             // Simple Upsert of Serial Number test so one device is enough
             deviceType = DeviceType.MLSD;
 
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
+            Setup(128, new LogSettings { MemorySize = (1L << 29) }, deviceType);
 
             int numKeys = 100;
             int keyMod = 10;

@@ -94,7 +94,7 @@ namespace Tsavorite.test
         void TestDeviceWriteRead(IDevice log)
         {
             store = new TsavoriteKV<KeyStruct, ValueStruct>
-                       (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
+                       (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 10 });
 
             var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
 

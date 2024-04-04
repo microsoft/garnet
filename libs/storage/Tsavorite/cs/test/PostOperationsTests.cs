@@ -59,7 +59,7 @@ namespace Tsavorite.test
 
             log = Devices.CreateLogDevice($"{TestUtils.MethodTestDir}/PostOperations.log", deleteOnClose: true);
             store = new TsavoriteKV<int, int>
-                       (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
+                       (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 10 });
             session = store.NewSession<int, int, Empty, PostFunctions>(new PostFunctions());
             Populate();
         }

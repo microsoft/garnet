@@ -216,7 +216,7 @@ namespace Tsavorite.core
                 ReadCopyOptions = ReadCopyOptions,
                 LogDevice = LogDevice,
                 ObjectLogDevice = ObjectLogDevice,
-                MemorySizeBits = Utility.NumBitsPreviousPowerOf2(MemorySize),
+                MemorySize = MemorySize,
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
                 MutableFraction = MutableFraction,
@@ -230,7 +230,7 @@ namespace Tsavorite.core
             return ReadCacheEnabled ?
                 new ReadCacheSettings
                 {
-                    MemorySizeBits = Utility.NumBitsPreviousPowerOf2(ReadCacheMemorySize),
+                    MemorySize = ReadCacheMemorySize,
                     PageSizeBits = Utility.NumBitsPreviousPowerOf2(ReadCachePageSize),
                     SecondChanceFraction = ReadCacheSecondChanceFraction
                 }

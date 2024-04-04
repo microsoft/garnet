@@ -25,7 +25,7 @@ namespace Tsavorite.test.async
             Directory.CreateDirectory(path);
             store1 = new TsavoriteKV<long, long>
                 (1L << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 26 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 12), SegmentSizeBits = 26 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
         }
