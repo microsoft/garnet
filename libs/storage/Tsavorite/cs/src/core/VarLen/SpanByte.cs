@@ -283,17 +283,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Create a SpanByte around a fixed Span&lt;byte&gt;. Warning: ensure the Span is fixed until operation returns.
-        /// </summary>
-        /// <param name="span"></param>
-        /// <returns></returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static SpanByte FromFixedSpan(Span<byte> span)
-        {
-            return new SpanByte(span.Length, (IntPtr)Unsafe.AsPointer(ref span[0]));
-        }
-
-        /// <summary>
         /// Create a SpanByte around a fixed ReadOnlySpan&lt;byte&gt;. Warning: ensure the Span is fixed until operation returns.
         /// </summary>
         /// <param name="span"></param>
@@ -301,10 +290,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static SpanByte FromFixedSpan(ReadOnlySpan<byte> span)
         {
-            fixed (byte* ptr = span)
-            {
-                return new SpanByte(span.Length, (IntPtr)ptr);
-            }
+            return new SpanByte(span.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)));
         }
 
         /// <summary>
