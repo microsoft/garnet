@@ -372,18 +372,7 @@ namespace Garnet.test
 
             var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("SPOP myset 3", 3);
-            var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
-            Assert.AreEqual(3, Int32.Parse(strLen));
-
-            var secondResponse = lightClientRequest.SendCommands("SCARD myset", "PING", 1, 1);
-            var expectedResponse = ":2\r\n+PONG\r\n";
-            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            Assert.AreEqual(expectedResponse, strResponse);
-
-            CreateLongSet();
-            lightClientRequest = TestUtils.CreateRequest();
-            response = lightClientRequest.SendCommand("SPOP myset 2", 2);
-            strResponse = Encoding.ASCII.GetString(response);
+            var strResponse = Encoding.ASCII.GetString(response);
             Assert.AreEqual('*', strResponse[0]);
 
             var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
@@ -391,6 +380,23 @@ namespace Garnet.test
 
             var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
             Assert.IsTrue(int.TryParse(strArrLen, out var arrLen));
+            Assert.AreEqual(3, arrLen);
+
+            var secondResponse = lightClientRequest.SendCommands("SCARD myset", "PING", 1, 1);
+            var expectedResponse = ":2\r\n+PONG\r\n";
+            strResponse = Encoding.ASCII.GetString(secondResponse).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            // Test for popping set until empty
+            response = lightClientRequest.SendCommand("SPOP myset 2", 2);
+            strResponse = Encoding.ASCII.GetString(response);
+            Assert.AreEqual('*', strResponse[0]);
+
+            arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+            Assert.IsTrue(arrLenEndIdx > 1);
+
+            strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            Assert.IsTrue(int.TryParse(strArrLen, out arrLen));
             Assert.AreEqual(2, arrLen);
         }
 
