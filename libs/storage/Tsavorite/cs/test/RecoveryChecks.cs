@@ -89,7 +89,7 @@ namespace Tsavorite.test.recovery
         {
             using var store1 = new TsavoriteKV<long, long>
                 (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20), ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
@@ -119,7 +119,7 @@ namespace Tsavorite.test.recovery
 
             using var store2 = new TsavoriteKV<long, long>
                 (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20), ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
@@ -169,7 +169,7 @@ namespace Tsavorite.test.recovery
         {
             using var store1 = new TsavoriteKV<long, long>
                 (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20), ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
@@ -177,7 +177,7 @@ namespace Tsavorite.test.recovery
 
             using var store2 = new TsavoriteKV<long, long>
                 (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20), ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
@@ -246,7 +246,7 @@ namespace Tsavorite.test.recovery
             {
                 using var store = new TsavoriteKV<long, long>
                     (128,
-                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20 },
+                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20) },
                     checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                     );
 
@@ -294,7 +294,7 @@ namespace Tsavorite.test.recovery
         {
             using var store = new TsavoriteKV<long, long>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 11, SegmentSizeBits = 11 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 11), SegmentSizeBits = 11 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
@@ -438,7 +438,7 @@ namespace Tsavorite.test.recovery
         {
             using var store1 = new TsavoriteKV<long, long>
                 (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20), ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
@@ -446,7 +446,7 @@ namespace Tsavorite.test.recovery
 
             using var store2 = new TsavoriteKV<long, long>
                 (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20), ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
@@ -522,7 +522,7 @@ namespace Tsavorite.test.recovery
         {
             using var store1 = new TsavoriteKV<long, long>
                 (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20), ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
@@ -530,7 +530,7 @@ namespace Tsavorite.test.recovery
 
             using var store2 = new TsavoriteKV<long, long>
                 (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20), ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
@@ -610,7 +610,7 @@ namespace Tsavorite.test.recovery
         {
             using var store1 = new TsavoriteKV<long, long>
                 (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 14), ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path },
                 concurrencyControlMode: ConcurrencyControlMode.RecordIsolation
                 );
@@ -655,7 +655,7 @@ namespace Tsavorite.test.recovery
 
             using var store2 = new TsavoriteKV<long, long>
                 (size,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20), ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
 
@@ -728,7 +728,7 @@ namespace Tsavorite.test.recovery
         {
             using var store1 = new TsavoriteKV<long, long>
                 (1 << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 20), ReadCacheSettings = null },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
@@ -768,7 +768,7 @@ namespace Tsavorite.test.recovery
             // Test that we can recover to latest version
             using var store2 = new TsavoriteKV<long, long>
                 (1 << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 14), ReadCacheSettings = null },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
@@ -791,7 +791,7 @@ namespace Tsavorite.test.recovery
             // Test that we can recover to earlier version
             using var store3 = new TsavoriteKV<long, long>
             (1 << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = null },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 14), ReadCacheSettings = null },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
             );
 

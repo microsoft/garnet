@@ -2,9 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.IO;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -106,17 +104,15 @@ namespace Garnet.server
             this.logger = logger;
         }
 
-        /// <summary>
-        /// Get memory size
-        /// </summary>
-        /// <returns></returns>
-        public int MemorySizeBits()
+        public long MemorySizeCalculator(string memorySize, int pageSizeBits)
         {
-            long size = ParseSize(MemorySize);
-            long adjustedSize = PreviousPowerOf2(size);
+            long size = ParseSize(memorySize);
+            var pageSize = 1L << pageSizeBits;
+            var numPages = (size + pageSize - 1) / pageSize;
+            long adjustedSize = numPages * pageSize;
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using lower log memory size than specified (power of 2)");
-            return (int)Math.Log(adjustedSize, 2);
+                logger?.LogInformation($"Warning: using adjusted memory size {adjustedSize} different from specified {size}");
+            return adjustedSize;
         }
 
         /// <summary>
@@ -170,57 +166,6 @@ namespace Garnet.server
             if (size != adjustedSize)
                 logger?.LogInformation($"Warning: using lower {name} than specified (power of 2)");
             return (int)(adjustedSize / 64);
-        }
-
-        /// <summary>
-        /// Get log settings
-        /// </summary>
-        /// <param name="logSettings"></param>
-        /// <param name="checkpointSettings"></param>
-        /// <param name="indexSize"></param>
-        public void GetSettings(out LogSettings logSettings, out CheckpointSettings checkpointSettings, out int indexSize)
-        {
-            logSettings = new LogSettings
-            {
-                PreallocateLog = false,
-                PageSizeBits = PageSizeBits()
-            };
-            logger?.LogInformation($"[Store] Using page size of {PrettySize((long)Math.Pow(2, logSettings.PageSizeBits))}");
-
-            logSettings.MemorySizeBits = MemorySizeBits();
-            logger?.LogInformation($"[Store] Using log memory size of {PrettySize((long)Math.Pow(2, logSettings.MemorySizeBits))}");
-
-            logger?.LogInformation($"[Store] There are {PrettySize(1 << (logSettings.MemorySizeBits - logSettings.PageSizeBits))} log pages in memory");
-
-            logSettings.SegmentSizeBits = SegmentSizeBits();
-            logger?.LogInformation($"[Store] Using disk segment size of {PrettySize((long)Math.Pow(2, logSettings.SegmentSizeBits))}");
-
-            indexSize = IndexSizeCachelines("hash index size", IndexSize);
-            logger?.LogInformation($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
-
-            if (EnableStorageTier)
-            {
-                if (LogDir is null or "")
-                    LogDir = Directory.GetCurrentDirectory();
-                logSettings.LogDevice = Devices.CreateLogDevice(LogDir + "/Store/hlog", logger: logger);
-            }
-            else
-            {
-                if (LogDir != null)
-                    throw new Exception("LogDir specified without enabling tiered storage (UseStorage)");
-                logSettings.LogDevice = new NullDevice();
-            }
-
-            if (CheckpointDir == null) CheckpointDir = LogDir;
-
-            if (CheckpointDir is null or "")
-                CheckpointDir = Directory.GetCurrentDirectory();
-
-            checkpointSettings = new CheckpointSettings
-            {
-                CheckpointDir = CheckpointDir + "/Store/checkpoints",
-                RemoveOutdated = true,
-            };
         }
 
         /// <summary>

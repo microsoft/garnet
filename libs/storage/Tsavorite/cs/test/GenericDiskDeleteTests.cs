@@ -23,7 +23,7 @@ namespace Tsavorite.test
 
             store = new TsavoriteKV<MyKey, MyValue>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 14, PageSizeBits = 9 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 14), PageSizeBits = 9 },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
                 concurrencyControlMode: ConcurrencyControlMode.None);
             session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());

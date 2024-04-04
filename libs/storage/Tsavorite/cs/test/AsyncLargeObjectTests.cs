@@ -41,7 +41,7 @@ namespace Tsavorite.test.async
             objlog = Devices.CreateLogDevice(test_path + "/LargeObjectTest.obj.log");
 
             store1 = new(128,
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySize = (1L << 26) },
                 new CheckpointSettings { CheckpointDir = test_path },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
@@ -71,7 +71,7 @@ namespace Tsavorite.test.async
             objlog = Devices.CreateLogDevice(test_path + "/LargeObjectTest.obj.log");
 
             store2 = new(128,
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySize = (1L << 26) },
                 new CheckpointSettings { CheckpointDir = test_path },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );

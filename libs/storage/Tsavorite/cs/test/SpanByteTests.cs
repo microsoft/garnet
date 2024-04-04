@@ -27,7 +27,7 @@ namespace Tsavorite.test
             {
                 using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
                 using var store = new TsavoriteKV<SpanByte, SpanByte>
-                    (128, new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 });
+                    (128, new LogSettings { LogDevice = log, MemorySize = (1L << 17), PageSizeBits = 12 });
                 using var s = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
 
                 var key1 = MemoryMarshal.Cast<char, byte>("key1".AsSpan());
@@ -82,7 +82,7 @@ namespace Tsavorite.test
                 using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/test.log", deleteOnClose: true);
                 using var store = new TsavoriteKV<SpanByte, SpanByte>(
                     size: 1L << 10,
-                    new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
+                    new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 12 });
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
 
                 for (int i = 0; i < 200; i++)
@@ -206,7 +206,7 @@ namespace Tsavorite.test
             using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/vl-iter.log", deleteOnClose: true);
             using var store = new TsavoriteKV<SpanByte, SpanByte>
                 (128,
-                new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page
+                new LogSettings { LogDevice = log, MemorySize = (1L << 17), PageSizeBits = 10 }, // 1KB page
                 null, null, null, concurrencyControlMode: ConcurrencyControlMode.None);
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
 

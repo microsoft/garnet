@@ -98,12 +98,12 @@ namespace Tsavorite.test.recovery.sumstore.simple
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest1.log", deleteOnClose: true);
 
             store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager }
                 );
 
             store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointManager = checkpointManager }
                 );
 
@@ -164,12 +164,12 @@ namespace Tsavorite.test.recovery.sumstore.simple
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest2.log", deleteOnClose: true);
 
             store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
             store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
@@ -216,12 +216,12 @@ namespace Tsavorite.test.recovery.sumstore.simple
             checkpointDir = TestUtils.MethodTestDir + "/checkpoints6";
 
             store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
             store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                 );
 
@@ -260,12 +260,12 @@ namespace Tsavorite.test.recovery.sumstore.simple
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleReadAndUpdateInfoTest.log", deleteOnClose: true);
 
             store1 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 
             store2 = new TsavoriteKV<AdId, NumClicks>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                 checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
 

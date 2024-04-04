@@ -35,13 +35,13 @@ namespace Tsavorite.test.async
 
             store1 = new TsavoriteKV<AdId, NumClicks>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySize = (1L << 13) },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = testPath }
                 );
 
             store2 = new TsavoriteKV<AdId, NumClicks>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySize = (1L << 13) },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = testPath }
                 );
 

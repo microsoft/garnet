@@ -20,7 +20,7 @@ namespace Tsavorite.test.async
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
             store = new TsavoriteKV<KeyStruct, ValueStruct>
-                (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
+                (128, new LogSettings { LogDevice = log, MemorySize = (1L << 29) });
         }
 
         [TearDown]

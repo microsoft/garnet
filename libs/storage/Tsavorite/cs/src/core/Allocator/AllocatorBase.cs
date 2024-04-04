@@ -59,6 +59,7 @@ namespace Tsavorite.core
         /// Buffer size
         /// </summary>
         internal readonly int BufferSize;
+
         /// <summary>
         /// Log page size
         /// </summary>
@@ -72,10 +73,7 @@ namespace Tsavorite.core
         /// Page size mask
         /// </summary>
         internal readonly int PageSizeMask;
-        /// <summary>
-        /// Buffer size mask
-        /// </summary>
-        protected readonly int BufferSizeMask;
+
         /// <summary>
         /// Aligned page size in bytes
         /// </summary>
@@ -795,8 +793,8 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"{nameof(settings.PageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
             if (settings.SegmentSizeBits < LogSettings.kMinSegmentSizeBits || settings.SegmentSizeBits > LogSettings.kMaxSegmentSizeBits)
                 throw new TsavoriteException($"{nameof(settings.SegmentSizeBits)} must be between {LogSettings.kMinSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
-            if (settings.MemorySizeBits != 0 && (settings.MemorySizeBits < LogSettings.kMinMemorySizeBits || settings.MemorySizeBits > LogSettings.kMaxMemorySizeBits))
-                throw new TsavoriteException($"{nameof(settings.MemorySizeBits)} must be between {LogSettings.kMinMemorySizeBits} and {LogSettings.kMaxMemorySizeBits}, or may be 0 for ReadOnly TsavoriteLog");
+            if (settings.MemorySize != 0 && (settings.MemorySize < LogSettings.kMinMemorySize || settings.MemorySize > LogSettings.kMaxMemorySize))
+                throw new TsavoriteException($"{nameof(settings.MemorySize)} must be between {LogSettings.kMinMemorySize} and {LogSettings.kMaxMemorySize}, or may be 0 for ReadOnly TsavoriteLog");
             if (settings.MutableFraction < 0.0 || settings.MutableFraction > 1.0)
                 throw new TsavoriteException($"{nameof(settings.MutableFraction)} must be >= 0.0 and <= 1.0");
             if (settings.ReadCacheSettings is not null)
@@ -804,8 +802,8 @@ namespace Tsavorite.core
                 var rcs = settings.ReadCacheSettings;
                 if (rcs.PageSizeBits < LogSettings.kMinPageSizeBits || rcs.PageSizeBits > LogSettings.kMaxPageSizeBits)
                     throw new TsavoriteException($"{nameof(rcs.PageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
-                if (rcs.MemorySizeBits < LogSettings.kMinMemorySizeBits || rcs.MemorySizeBits > LogSettings.kMaxMemorySizeBits)
-                    throw new TsavoriteException($"{nameof(rcs.MemorySizeBits)} must be between {LogSettings.kMinMemorySizeBits} and {LogSettings.kMaxMemorySizeBits}");
+                if (rcs.MemorySize < LogSettings.kMinMemorySize || rcs.MemorySize > LogSettings.kMaxMemorySize)
+                    throw new TsavoriteException($"{nameof(rcs.MemorySize)} must be between {LogSettings.kMinMemorySize} and {LogSettings.kMaxMemorySize}");
                 if (rcs.SecondChanceFraction < 0.0 || rcs.SecondChanceFraction > 1.0)
                     throw new TsavoriteException($"{(rcs.SecondChanceFraction)} must be >= 0.0 and <= 1.0");
             }
@@ -844,10 +842,8 @@ namespace Tsavorite.core
             PageSizeMask = PageSize - 1;
 
             // Total HLOG size
-            LogTotalSizeBits = settings.MemorySizeBits;
-            LogTotalSizeBytes = 1L << LogTotalSizeBits;
+            LogTotalSizeBytes = settings.MemorySize;
             BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
-            BufferSizeMask = BufferSize - 1;
 
             LogMutableFraction = settings.MutableFraction;
 
@@ -862,12 +858,7 @@ namespace Tsavorite.core
             if ((LogTotalSizeBits != 0) && (LogTotalSizeBytes < PageSize))
                 throw new TsavoriteException($"Memory size ({LogTotalSizeBytes}) must be configured to be either 1 (i.e., 0 bits) or at least page size ({PageSize})");
 
-            // Readonlymode has MemorySizeBits 0 => skip the check
-            if (settings.MemorySizeBits > 0 && settings.MinEmptyPageCount > MaxEmptyPageCount)
-                throw new TsavoriteException($"MinEmptyPageCount ({settings.MinEmptyPageCount}) can't be more than MaxEmptyPageCount ({MaxEmptyPageCount})");
-
-            MinEmptyPageCount = settings.MinEmptyPageCount;
-            EmptyPageCount = settings.MinEmptyPageCount;
+            EmptyPageCount = 0;
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
 
@@ -1060,11 +1051,6 @@ namespace Tsavorite.core
         public int MaxEmptyPageCount => BufferSize - 1;
 
         /// <summary>
-        /// Minimum number of empty pages in circular buffer to be maintained to account for non-power-of-two size
-        /// </summary>
-        public int MinEmptyPageCount;
-
-        /// <summary>
         /// How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
         public int EmptyPageCount
@@ -1076,7 +1062,7 @@ namespace Tsavorite.core
                 // HeadOffset lag (from tail).
                 var headOffsetLagSize = MaxEmptyPageCount;
                 if (value > headOffsetLagSize) return;
-                if (value < MinEmptyPageCount) return;
+                if (value < 0) return;
 
                 int oldEPC;
                 lock (this) // linearize all setters of EmptyPageCount

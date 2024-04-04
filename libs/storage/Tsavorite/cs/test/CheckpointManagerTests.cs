@@ -50,7 +50,7 @@ namespace Tsavorite.test
                         LogDevice = log,
                         MutableFraction = 1,
                         PageSizeBits = 10,
-                        MemorySizeBits = 20,
+                        MemorySize = (1L << 20),
                         ReadCacheSettings = null
                     },
                     checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }

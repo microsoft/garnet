@@ -137,7 +137,7 @@ namespace Tsavorite.test.LockTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
-            var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
+            var readCacheSettings = new ReadCacheSettings { MemorySize = (1L << 15), PageSizeBits = 9 };
 
             var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -314,12 +314,12 @@ namespace Tsavorite.test.LockTests
                 log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
 
                 store1 = new TsavoriteKV<int, int>(128,
-                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                     checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                     );
 
                 store2 = new TsavoriteKV<int, int>(128,
-                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
+                    logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << 29) },
                     checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir }
                     );
             }

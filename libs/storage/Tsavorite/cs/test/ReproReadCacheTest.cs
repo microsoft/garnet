@@ -72,7 +72,7 @@ namespace Tsavorite.test.ReadCacheTests
                     if (rcm == ReadCacheMode.UseReadCache)
                         readCacheSettings = new()
                         {
-                            MemorySizeBits = 15,
+                            MemorySize = (1L << 15),
                             PageSizeBits = 12,
                             SecondChanceFraction = 0.1,
                         };
@@ -96,7 +96,7 @@ namespace Tsavorite.test.ReadCacheTests
                 new LogSettings
                 {
                     LogDevice = log,
-                    MemorySizeBits = 15,
+                    MemorySize = (1L << 15),
                     PageSizeBits = 12,
                     ReadCacheSettings = readCacheSettings,
                 }, concurrencyControlMode: concurrencyControlMode);

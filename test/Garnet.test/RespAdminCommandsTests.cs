@@ -185,6 +185,52 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SeSaveRecoverMultipleKeysTest()
+        {
+            bool disableObj = true;
+            bool useAzure = false;
+            if (useAzure)
+                TestUtils.IgnoreIfNotRunningAzureTests();
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, UseAzureStorage: useAzure, lowMemory: true, MemorySize: "5k", PageSize: "1k");
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                for (int i = 0; i < 1000; i++)
+                {
+                    db.StringSet($"SeSaveRecoverTestKey{i:000}", $"SeSaveRecoverTestValue");
+                }
+
+                for (int i = 0; i < 1000; i++)
+                {
+                    var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:000}");
+                    Assert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
+                }
+
+                // Issue and wait for DB save
+                var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
+                server.Save(SaveType.BackgroundSave);
+                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure, lowMemory: true, MemorySize: "5k", PageSize: "1k");
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                for (int i = 0; i < 1000; i++)
+                {
+                    var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:000}");
+                    Assert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
+                }
+            }
+        }
+
+        [Test]
         public void SeSaveRecoverObjectTest()
         {
             var key = "SeSaveRecoverTestObjectKey";

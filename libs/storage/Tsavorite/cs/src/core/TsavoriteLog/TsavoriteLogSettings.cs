@@ -204,7 +204,7 @@ namespace Tsavorite.core
                 LogDevice = LogDevice,
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
-                MemorySizeBits = ReadOnlyMode ? 0 : Utility.NumBitsPreviousPowerOf2(MemorySize),
+                MemorySize = ReadOnlyMode ? 0 : MemorySize,
                 ReadCopyOptions = ReadCopyOptions.None,
                 MutableFraction = MutableFraction,
                 ObjectLogDevice = null,

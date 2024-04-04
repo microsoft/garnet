@@ -35,7 +35,7 @@ namespace Tsavorite.test.ModifiedBit
         {
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: false);
             comparer = new ModifiedBitTestComparer();
-            store = new TsavoriteKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 }, comparer: comparer, concurrencyControlMode: ConcurrencyControlMode.LockTable);
+            store = new TsavoriteKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySize = (1L << 22) }, comparer: comparer, concurrencyControlMode: ConcurrencyControlMode.LockTable);
             session = store.NewSession<int, int, Empty, SimpleFunctions<int, int>>(new SimpleFunctions<int, int>());
         }
 
