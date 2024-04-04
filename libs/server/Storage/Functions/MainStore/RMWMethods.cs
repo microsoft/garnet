@@ -292,7 +292,7 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.INCR:
-                    if(!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var val))
+                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var val))
                     {
                         *output.SpanByte.ToPointer() = 0xFF;    // -1
                         // skip
