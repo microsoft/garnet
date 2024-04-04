@@ -176,7 +176,7 @@ namespace Garnet.server
                     for (int i = 0; i < countParameter; i++)
                     {
                         // Generate a new index based on the elements left in the set
-                        var index = RandomNumberGenerator.GetInt32(0, set.Count - 1);
+                        var index = RandomNumberGenerator.GetInt32(0, set.Count);
                         var item = set.ElementAt(index);
                         set.Remove(item);
                         this.UpdateSize(item, false);
