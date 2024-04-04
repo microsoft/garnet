@@ -227,19 +227,41 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Encodes the <paramref name="item"/> as ASCII bulk string to <paramref name="curr"/>
+        /// Encodes the <paramref name="chars"/> as ASCII bulk string to <paramref name="curr"/>
         /// </summary>
-        public static bool WriteAsciiBulkString(ReadOnlySpan<char> item, ref byte* curr, byte* end)
+        public static bool WriteAsciiBulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)
         {
-            var itemDigits = NumUtils.NumDigits(item.Length);
-            int totalLen = 1 + itemDigits + 2 + item.Length + 2;
+            var itemDigits = NumUtils.NumDigits(chars.Length);
+            int totalLen = 1 + itemDigits + 2 + chars.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
+            NumUtils.IntToBytes(chars.Length, itemDigits, ref curr);
             WriteNewline(ref curr);
-            int bytesWritten = Encoding.ASCII.GetBytes(item, new Span<byte>(curr, item.Length));
+            int bytesWritten = Encoding.ASCII.GetBytes(chars, new Span<byte>(curr, chars.Length));
+            curr += bytesWritten;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Encodes the <paramref name="chars"/> as UTF8 bulk string to <paramref name="curr"/>
+        /// </summary>
+        public static bool WriteUtf8BulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)
+        {
+            // Calculate the amount of bytes it takes to encoded the UTF16 string as UTF8
+            int encodedByteCount = Encoding.UTF8.GetByteCount(chars);
+
+            var itemDigits = NumUtils.NumDigits(encodedByteCount);
+            int totalLen = 1 + itemDigits + 2 + encodedByteCount + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'$';
+            NumUtils.IntToBytes(encodedByteCount, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            int bytesWritten = Encoding.UTF8.GetBytes(chars, new Span<byte>(curr, encodedByteCount));
             curr += bytesWritten;
             WriteNewline(ref curr);
             return true;
