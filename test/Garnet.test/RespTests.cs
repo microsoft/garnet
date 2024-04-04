@@ -64,12 +64,26 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task SingleSetGetGarnetClient()
+        public async Task SingleAsciiSetGetGarnetClient()
         {
             using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
             string origValue = "abcdefg";
+            await db.StringSetAsync("mykey", origValue);
+
+            string retValue = await db.StringGetAsync("mykey");
+
+            Assert.AreEqual(origValue, retValue);
+        }
+
+        [Test]
+        public async Task SingleUnicodeSetGetGarnetClient()
+        {
+            using var db = TestUtils.GetGarnetClient();
+            db.Connect();
+
+            string origValue = "笑い男";
             await db.StringSetAsync("mykey", origValue);
 
             string retValue = await db.StringGetAsync("mykey");
