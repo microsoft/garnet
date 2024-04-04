@@ -353,6 +353,11 @@ namespace Garnet.server
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, byte subcmd, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!_authenticator.IsAuthenticated)
+            {
+                return ProcessArrayCommands(cmd, subcmd, count, ref storageApi);
+            }
+
             bool success = cmd switch
             {
                 RespCommand.GET => NetworkGET(ptr, ref storageApi),
@@ -393,7 +398,6 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
 
                 _ => ProcessArrayCommands(cmd, subcmd, count, ref storageApi)
-
             };
             return success;
         }
