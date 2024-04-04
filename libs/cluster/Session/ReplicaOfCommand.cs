@@ -38,7 +38,7 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogWarning("TryREPLICAOF {msg}", ex.Message);
-                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR REPLICAOF {ex.Message}", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR REPLICAOF {ex.Message}\r\n", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
