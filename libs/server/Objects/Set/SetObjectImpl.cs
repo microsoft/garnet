@@ -219,5 +219,13 @@ namespace Garnet.server
                 output.Length = (int)(curr - ptr);
             }
         }
+
+        private void SetMove(byte* input, int length, byte* output)
+        {
+            var _input = (ObjectInputHeader*)input;
+            var _output = (ObjectOutputHeader*)output;
+
+            
+        }
     }
 }

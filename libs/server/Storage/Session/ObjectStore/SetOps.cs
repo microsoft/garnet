@@ -362,6 +362,34 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Moves a member from a source set to a destination set.
+        /// If the move was performed, this command returns 1.
+        /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="member"></param>
+        /// <param name="smoveResult"></param>
+        /// <param name="objectStoreContext"></param>
+        internal unsafe GarnetStatus SetMove<TObjectContext>(ArgSlice key, ArgSlice member, out int smoveResult, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            smoveResult = 0;
+
+            if (key.Length == 0)
+                return GarnetStatus.OK;
+
+            // Prepare header in input buffer
+            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
+            rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.SetOp = SetOperation.SREM;
+            rmwInput->count = 1;
+            rmwInput->done = 0;
+
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
         ///  Adds the specified members to the set at key.
         ///  Specified members that are already a member of this set are ignored. 
         ///  If key does not exist, a new set is created.
@@ -429,5 +457,18 @@ namespace Garnet.server
         public GarnetStatus SetPop<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+
+        /// <summary>
+        /// Moves a member of a source set to a destination set.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public GarnetStatus SetMove<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            => RMWObjectStoreOperation(key, input, out output, ref objectContext);
     }
 }

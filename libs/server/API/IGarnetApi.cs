@@ -521,6 +521,12 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus SetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
+        // GRANTKNOWLTON
+
+        GarnetStatus SetMove(ArgSlice key, ArgSlice member, out int smoveResult);
+
+        GarnetStatus SetMove(byte[] key, ArgSlice member, out ObjectOutputHeader output);
+
         #endregion
 
         #region List Methods

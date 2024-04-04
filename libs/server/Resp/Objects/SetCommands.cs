@@ -436,6 +436,9 @@ namespace Garnet.server
             readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
-
+        private unsafe bool SetMove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        {
+            return true;
+        }
     }
 }

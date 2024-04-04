@@ -128,6 +128,9 @@ namespace Garnet.server
                             ObjectUtils.WriteScanOutput(items, cursorOutput, ref output, bytesDone);
                         }
                         break;
+                    case SetOperation.SMOVE:
+                        SetMove(_input, input.Length, _output);
+                        break;
                     default:
                         throw new GarnetException($"Unsupported operation {(SetOperation)_input[0]} in SetObject.Operate");
                 }
