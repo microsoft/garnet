@@ -378,7 +378,7 @@ namespace Garnet.server
 
         public unsafe GarnetStatus SETEX<TContext>(ArgSlice key, ArgSlice value, ArgSlice expiryMs, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
-            => SETEX(key, value, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.length, expiryMs.ptr)), ref context);
+            => SETEX(key, value, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.Length, expiryMs.ptr)), ref context);
 
         public GarnetStatus SETEX<TContext>(ArgSlice key, ArgSlice value, TimeSpan expiry, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
@@ -577,8 +577,8 @@ namespace Garnet.server
 
                 try
                 {
-                    byte[] oldKeyArray = oldKeySlice.ReadOnlySpan.ToArray();
-                    byte[] newKeyArray = newKeySlice.ReadOnlySpan.ToArray();
+                    byte[] oldKeyArray = oldKeySlice.ToArray();
+                    byte[] newKeyArray = newKeySlice.ToArray();
 
                     var status = GET(oldKeyArray, out var value, ref objectContext);
 
@@ -636,7 +636,7 @@ namespace Garnet.server
 
             if ((storeType == StoreType.Object || storeType == StoreType.All) && objectStoreSession != null)
             {
-                status = GET(key.Bytes, out _, ref objectContext);
+                status = GET(key.ToArray(), out _, ref objectContext);
             }
 
             return status;
@@ -658,7 +658,7 @@ namespace Garnet.server
         public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(ArgSlice key, ArgSlice expiryMs, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => EXPIRE(key, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.length, expiryMs.ptr)), out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext);
+            => EXPIRE(key, TimeSpan.FromMilliseconds(NumUtils.BytesToLong(expiryMs.Length, expiryMs.ptr)), out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext);
 
         /// <summary>
         /// Set a timeout on key.
@@ -710,7 +710,7 @@ namespace Garnet.server
                 *input.ToPointer() = (byte)GarnetObjectType.Expire;
 
                 var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
-                var keyBA = key.Bytes;
+                var keyBA = key.ToArray();
                 var status = objectStoreContext.RMW(ref keyBA, ref input, ref objO);
 
                 if (status.IsPending)
@@ -762,7 +762,7 @@ namespace Garnet.server
                 (*(RespInputHeader*)pcurr).type = GarnetObjectType.Persist;
 
                 var objO = new GarnetObjectStoreOutput { spanByteAndMemory = o };
-                var _key = key.Bytes;
+                var _key = key.ToArray();
                 var _status = objectStoreContext.RMW(ref _key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref objO);
 
                 if (_status.IsPending)
@@ -791,7 +791,6 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {
             var sbKey = key.SpanByte;
-            var spanValue = value.Span;
             SpanByteAndMemory sbmOut = new(output.SpanByte);
 
             // Total size + Offset size + New value size + Address of new value
@@ -806,7 +805,7 @@ namespace Garnet.server
             pcurr += RespInputHeader.Size;
             *(int*)(pcurr) = offset;
             pcurr += sizeof(int);
-            *(int*)pcurr = spanValue.Length;
+            *(int*)pcurr = value.Length;
             pcurr += sizeof(int);
             *(long*)pcurr = (long)(value.ptr);
 
@@ -865,7 +864,7 @@ namespace Garnet.server
             // If key was not found in the main store then it is an object
             if (status != GarnetStatus.OK && objectStoreSession != null)
             {
-                status = GET(key.Bytes, out GarnetObjectStoreOutput output, ref objectContext);
+                status = GET(key.ToArray(), out GarnetObjectStoreOutput output, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
                     if ((output.garnetObject as SortedSetObject) != null)
@@ -885,6 +884,11 @@ namespace Garnet.server
                         keyType = "hash";
                     }
                 }
+                else
+                {
+                    keyType = "none";
+                    status = GarnetStatus.NOTFOUND;
+                }
             }
             return status;
         }
@@ -900,7 +904,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.NOTFOUND)
             {
-                status = GET(key.Bytes, out GarnetObjectStoreOutput objectValue, ref objectContext);
+                status = GET(key.ToArray(), out GarnetObjectStoreOutput objectValue, ref objectContext);
                 if (status != GarnetStatus.NOTFOUND)
                 {
                     memoryUsage = RecordInfo.GetLength() + (2 * IntPtr.Size) + // Log record length

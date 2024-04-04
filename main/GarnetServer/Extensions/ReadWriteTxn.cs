@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -22,7 +23,7 @@ namespace Garnet
         {
             int offset = 0;
             api.GET(GetNextArg(input, ref offset), out var key1);
-            if (key1.Span.ToString() == "wrong_string")
+            if (key1.ReadOnlySpan.SequenceEqual("wrong_string"u8))
                 return false;
             AddKey(GetNextArg(input, ref offset), LockType.Exclusive, false);
             AddKey(GetNextArg(input, ref offset), LockType.Exclusive, false);

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -497,6 +498,101 @@ namespace Garnet.test
             Assert.AreEqual(lrange[1], "Value-one");
         }
 
+        [Test]
+        public void CanDoLRANGEbasic()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mylist";
+            _ = db.ListRightPush(key, "one");
+            _ = db.ListRightPush(key, "two");
+            _ = db.ListRightPush(key, "three");
+
+            var result = db.ListRange(key, 0, 0);
+            Assert.AreEqual(1, result.Length);
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("one")));
+
+            result = db.ListRange(key, -3, 2);
+            Assert.AreEqual(3, result.Length);
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("one")));
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("two")));
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("three")));
+
+            result = db.ListRange(key, -100, 100);
+            Assert.AreEqual(3, result.Length);
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("one")));
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("two")));
+            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("three")));
+
+            result = db.ListRange(key, 5, 100);
+            Assert.AreEqual(0, result.Length);
+        }
+
+        [Test]
+        public void CanDoLRANGEcorrect()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mylist";
+            _ = db.ListRightPush(key, "a");
+            _ = db.ListRightPush(key, "b");
+            _ = db.ListRightPush(key, "c");
+            _ = db.ListRightPush(key, "d");
+            _ = db.ListRightPush(key, "e");
+            _ = db.ListRightPush(key, "f");
+            _ = db.ListRightPush(key, "g");
+
+            var result = db.ListRange(key, -10, -7);
+            Assert.AreEqual(1, result.Length);
+            Assert.IsTrue(result[0].ToString().Equals("a"));
+
+            result = db.ListRange(key, -4, -2);
+            Assert.AreEqual(3, result.Length);
+            Assert.IsTrue(result[0].ToString().Equals("d"));
+            Assert.IsTrue(result[1].ToString().Equals("e"));
+            Assert.IsTrue(result[2].ToString().Equals("f"));
+
+            result = db.ListRange(key, -1, -1);
+            Assert.AreEqual(1, result.Length);
+            Assert.IsTrue(result[0].ToString().Equals("g"));
+
+            result = db.ListRange(key, -3, 3);
+            Assert.AreEqual(0, result.Length);
+
+            result = db.ListRange(key, -3, 4);
+            Assert.AreEqual(1, result.Length);
+            Assert.IsTrue(result[0].ToString().Equals("e"));
+
+            result = db.ListRange(key, -4, 4);
+            Assert.AreEqual(2, result.Length);
+            Assert.IsTrue(result[0].ToString().Equals("d"));
+            Assert.IsTrue(result[1].ToString().Equals("e"));
+
+            result = db.ListRange(key, 0, 0);
+            Assert.AreEqual(1, result.Length);
+            Assert.IsTrue(result[0].ToString().Equals("a"));
+
+            result = db.ListRange(key, 1, 2);
+            Assert.AreEqual(2, result.Length);
+            Assert.IsTrue(result[0].ToString().Equals("b"));
+            Assert.IsTrue(result[1].ToString().Equals("c"));
+
+            result = db.ListRange(key, 3, 3);
+            Assert.AreEqual(1, result.Length);
+            Assert.IsTrue(result[0].ToString().Equals("d"));
+
+            result = db.ListRange(key, 4, 4);
+            Assert.AreEqual(1, result.Length);
+            Assert.IsTrue(result[0].ToString().Equals("e"));
+
+            result = db.ListRange(key, 5, 10);
+            Assert.AreEqual(2, result.Length);
+            Assert.IsTrue(result[0].ToString().Equals("f"));
+            Assert.IsTrue(result[1].ToString().Equals("g"));
+        }
+
         #region GarnetClientTests
 
         [Test]
@@ -653,7 +749,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("LINSERT mykey", "PING", 1, 1);
-            var expectedResponse = "-ERR wrong number of arguments for LINSERT command.\r\n+PONG\r\n";
+            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "LINSERT")}+PONG\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
