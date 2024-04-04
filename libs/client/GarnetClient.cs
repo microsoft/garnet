@@ -527,9 +527,9 @@ namespace Garnet.client
 
                     RespWriteUtils.WriteDirect(op.Span, ref curr, end);
                     if (param1 != null)
-                        RespWriteUtils.WriteAsciiBulkString(param1, ref curr, end);
+                        RespWriteUtils.WriteUtf8BulkString(param1, ref curr, end);
                     if (param2 != null)
-                        RespWriteUtils.WriteAsciiBulkString(param2, ref curr, end);
+                        RespWriteUtils.WriteUtf8BulkString(param2, ref curr, end);
 
                     Debug.Assert(curr == end);
                 }
@@ -651,7 +651,7 @@ namespace Garnet.client
 
                     RespWriteUtils.WriteDirect(op.Span, ref curr, end);
                     RespWriteUtils.WriteBulkString(clusterOp.Span, ref curr, end);
-                    RespWriteUtils.WriteAsciiBulkString(nodeId, ref curr, end);
+                    RespWriteUtils.WriteUtf8BulkString(nodeId, ref curr, end);
                     RespWriteUtils.WriteArrayItem(currentAddress, ref curr, end);
                     RespWriteUtils.WriteArrayItem(nextAddress, ref curr, end);
                     RespWriteUtils.WriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end);
@@ -858,7 +858,7 @@ namespace Garnet.client
                     if (isArray)//Write arg data
                     {
                         foreach (var arg in args)
-                            RespWriteUtils.WriteAsciiBulkString(arg, ref curr, end);
+                            RespWriteUtils.WriteUtf8BulkString(arg, ref curr, end);
                     }
 
                     Debug.Assert(curr == end);
