@@ -186,6 +186,8 @@ namespace Garnet.server
         Stale = 1 << 18,
         [Description("write")]
         Write = 1 << 19,
+        [Description("allow_busy")]
+        AllowBusy = 1 << 20,
     }
 
     [Flags]
