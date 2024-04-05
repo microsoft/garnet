@@ -5,6 +5,7 @@ using System;
 using System.Text;
 using System.Xml.Linq;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -370,10 +371,10 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="sourceKey"></param>
         /// <param name="destinationKey"></param>
-        /// <param name="sourceMember"></param>
+        /// <param name="member"></param>
         /// <param name="smoveResult"></param>
         /// <param name="objectStoreContext"></param>
-        internal unsafe GarnetStatus SetMove<TObjectContext>(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice sourceMember, out int smoveResult, ref TObjectContext objectStoreContext)
+        internal unsafe GarnetStatus SetMove<TObjectContext>(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             smoveResult = 0;
@@ -389,63 +390,28 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            var createTransaction = false;
-            if (txnManager.state != TxnState.Running)
-            {
-                createTransaction = true;
-                txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
-                txnManager.Run(true);
-            }
+            var deleteStatus = SetRemove(sourceKey, member, out _, ref objectStoreContext);
+            var addStatus = SetAdd(destinationKey, member, out _, ref objectStoreContext);
 
-            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+/*            var deleteInput = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
+            var deleteRmwInput = (ObjectInputHeader*)deleteInput.ptr;
+            deleteRmwInput->header.type = GarnetObjectType.Set;
+            deleteRmwInput->header.SetOp = SetOperation.SREM;
+            deleteRmwInput->count = 1;
+            deleteRmwInput->done = 0;
 
-            try
-            {
-                // get the source key
-                var statusSrcOp = GET(sourceKey.ToArray(), out var sourceSet, ref objectStoreLockableContext);
+            var deleteStatus = RMWObjectStoreOperation(sourceKey.ToArray(), deleteInput, out var deleteOutput, ref objectStoreContext);
+            smoveResult = deleteOutput.opsDone;
 
-                if (statusSrcOp == GarnetStatus.NOTFOUND || ((SetObject)sourceSet.garnetObject).Set.Count == 0)
-                {
-                    return GarnetStatus.OK;
-                }
-                else if (statusSrcOp == GarnetStatus.OK)
-                {
-                    var srcSetObject = ((SetObject)sourceSet.garnetObject).Set;
+            var addInput = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
+            var addRmwInput = (ObjectInputHeader*)addInput.ptr;
+            addRmwInput->header.type = GarnetObjectType.Set;
+            addRmwInput->header.SetOp = SetOperation.SADD;
+            addRmwInput->count = 1;
+            addRmwInput->done = 0;
 
-                    if(!srcSetObject.Contains(sourceMember.ToArray()))
-                    {
-                        return GarnetStatus.OK;
-                    }
-
-                    srcSetObject.Remove(sourceMember.ToArray());
-                }
-
-                SET(sourceKey.ToArray(), sourceSet.garnetObject, ref objectStoreLockableContext);
-
-                // get the destination key
-                var statusDestinationOp = GET(destinationKey.ToArray(), out var destinationSet, ref objectStoreLockableContext);
-
-                if(statusDestinationOp == GarnetStatus.NOTFOUND || ((SetObject)destinationSet.garnetObject).Set.Count == 0)
-                {
-                    return GarnetStatus.OK;
-                }
-                else if (statusDestinationOp == GarnetStatus.OK)
-                {
-                    var srcDstObject = ((SetObject)destinationSet.garnetObject).Set;
-
-                    srcDstObject.Add(sourceMember.ToArray());
-                }
-
-                SET(sourceKey.ToArray(), destinationSet.garnetObject, ref objectStoreLockableContext);
-
-                smoveResult = 1;
-            }
-            finally
-            {
-                if (createTransaction)
-                    txnManager.Commit(true);
-            }
+            var addStatus = RMWObjectStoreOperation(destinationKey.ToArray(), addInput, out var addOutput, ref objectStoreContext);
+            smoveResult = addOutput.opsDone;*/
 
             return GarnetStatus.OK;
         }

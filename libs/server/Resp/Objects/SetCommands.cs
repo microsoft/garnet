@@ -481,26 +481,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                // Prepare input
-                var inputCount = count - 1;
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values on buffer for possible revert
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.Set;
-                inputPtr->header.SetOp = SetOperation.SMOVE;
-                inputPtr->count = inputCount;
-                inputPtr->done = 0;
-
                 var status = storageApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
-
-                // Restore input buffer
-                *inputPtr = save;
 
                 if (status == GarnetStatus.NOTFOUND)
                 {
