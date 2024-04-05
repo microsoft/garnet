@@ -13,40 +13,23 @@ namespace Tsavorite.core
         /// <summary>
         /// Upsert with Span input
         /// </summary>
-        /// <param name="clientSession"></param>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <param name="serialNo"></param>
-        /// <returns></returns>
         public static Status Upsert<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
         {
-            fixed (byte* k = key)
-            fixed (byte* v = desiredValue)
-                return clientSession.Upsert(SpanByte.FromPinnedSpan(key), SpanByte.FromPinnedSpan(desiredValue), userContext, serialNo);
+            fixed (byte* keyPtr = key)
+            fixed (byte* desiredValuePtr = desiredValue)
+                return clientSession.Upsert(SpanByte.FromPointer(keyPtr, key.Length), SpanByte.FromPointer(desiredValuePtr, desiredValue.Length), userContext, serialNo);
         }
 
         /// <summary>
         /// Read with Span input
         /// </summary>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="Functions"></typeparam>
-        /// <param name="clientSession"></param>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="userContext"></param>
-        /// <param name="serialNo"></param>
-        /// <returns></returns>
         public static Status Read<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, ReadOnlySpan<byte> key, ref Input input, ref Output output, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
         {
-            fixed (byte* k = key)
+            fixed (byte* keyPtr = key)
             {
-                var _key = SpanByte.FromPinnedSpan(key);
+                var _key = SpanByte.FromPointer(keyPtr, key.Length);
                 return clientSession.Read(ref _key, ref input, ref output, userContext, serialNo);
             }
         }
@@ -54,22 +37,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Read-modify-write with Span input
         /// </summary>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="Functions"></typeparam>
-        /// <param name="clientSession"></param>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="userContext"></param>
-        /// <param name="serialNo"></param>
-        /// <returns></returns>
         public static Status RMW<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, ReadOnlySpan<byte> key, ref Input input, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
         {
-            fixed (byte* k = key)
+            fixed (byte* keyPtr = key)
             {
-                var _key = SpanByte.FromPinnedSpan(key);
+                var _key = SpanByte.FromPointer(keyPtr, key.Length);
                 return clientSession.RMW(ref _key, ref input, userContext, serialNo);
             }
         }
@@ -77,21 +50,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Delete with Span input
         /// </summary>
-        /// <typeparam name="Input"></typeparam>
-        /// <typeparam name="Output"></typeparam>
-        /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="Functions"></typeparam>
-        /// <param name="clientSession"></param>
-        /// <param name="key"></param>
-        /// <param name="userContext"></param>
-        /// <param name="serialNo"></param>
-        /// <returns></returns>
         public static Status Delete<Input, Output, Context, Functions>(this ClientSession<SpanByte, SpanByte, Input, Output, Context, Functions> clientSession, ReadOnlySpan<byte> key, Context userContext = default, long serialNo = 0)
             where Functions : IFunctions<SpanByte, SpanByte, Input, Output, Context>
         {
-            fixed (byte* k = key)
+            fixed (byte* keyPtr = key)
             {
-                var _key = SpanByte.FromPinnedSpan(key);
+                var _key = SpanByte.FromPointer(keyPtr, key.Length);
                 return clientSession.Delete(ref _key, userContext, serialNo);
             }
         }
