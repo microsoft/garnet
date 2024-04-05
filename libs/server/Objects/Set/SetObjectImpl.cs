@@ -225,7 +225,14 @@ namespace Garnet.server
             var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            
+            int count = _input->count;
+            *_output = default;
+            byte* startptr = input + sizeof(ObjectInputHeader);
+            byte* ptr = startptr;
+            byte* end = input + length;
+
+            int prevDone = _input->done;
+            int countDone = 0;
         }
     }
 }

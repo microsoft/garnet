@@ -521,11 +521,17 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus SetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
-        // GRANTKNOWLTON
-
-        GarnetStatus SetMove(ArgSlice key, ArgSlice member, out int smoveResult);
-
-        GarnetStatus SetMove(byte[] key, ArgSlice member, out ObjectOutputHeader output);
+        /// <summary>
+        /// Moves a member from a source set to a destination set.
+        /// If the move was performed, this command returns 1.
+        /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
+        /// </summary>
+        /// <param name="sourceKey"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="member"></param>
+        /// <param name="smoveResult"></param>
+        /// <returns></returns>
+        GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult);
 
         #endregion
 

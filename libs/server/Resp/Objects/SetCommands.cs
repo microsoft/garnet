@@ -436,8 +436,81 @@ namespace Garnet.server
             readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
         private unsafe bool SetMove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
         {
+            if (count != 3)
+            {
+                setItemsDoneCount = setOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("SMOVE", count);
+            }
+            else
+            {
+                ArgSlice sourceKey = default;
+                ArgSlice destinationKey = default;
+                ArgSlice sourceMember = default;
+
+                // Get the source key 
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceKey.ptr, ref sourceKey.length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                // Get the destination key
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref destinationKey.ptr, ref destinationKey.length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                // Get the member to move
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceMember.ptr, ref sourceMember.length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                var keys = new ArgSlice[2] { sourceKey, destinationKey };
+
+                if (NetworkKeyArraySlotVerify(ref keys, false))
+                {
+                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                    if (!DrainCommands(bufSpan, count)) return false;
+                    return true;
+                }
+
+                // Prepare input
+                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+                // Save old values on buffer for possible revert
+                var save = *inputPtr;
+
+                // Prepare length of header in input buffer
+                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                // Prepare header in input buffer
+                inputPtr->header.type = GarnetObjectType.Set;
+                inputPtr->header.SetOp = SetOperation.SMOVE;
+                inputPtr->count = 1;
+                inputPtr->done = 0;
+
+                var status = storageApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
+
+                // Restore input buffer
+                *inputPtr = save;
+
+                if (status == GarnetStatus.NOTFOUND)
+                {
+                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    ReadLeftToken(count - 1, ref ptr);
+                }
+                else
+                {
+                    return true;
+                }
+            }
             return true;
         }
     }

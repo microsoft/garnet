@@ -296,6 +296,10 @@ namespace Garnet.server
         public GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
             => storageSession.SetScan(key, cursor, match, count, out items, ref objectContext);
 
+        /// <inheritdoc />
+        public GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
+            => storageSession.SetMove(sourceKey, destinationKey, member, out smoveResult, ref objectContext);
+
         #endregion
 
         #region Hash Methods

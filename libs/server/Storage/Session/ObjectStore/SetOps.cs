@@ -3,6 +3,7 @@
 
 using System;
 using System.Text;
+using System.Xml.Linq;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -367,24 +368,84 @@ namespace Garnet.server
         /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="member"></param>
+        /// <param name="sourceKey"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="sourceMember"></param>
         /// <param name="smoveResult"></param>
         /// <param name="objectStoreContext"></param>
-        internal unsafe GarnetStatus SetMove<TObjectContext>(ArgSlice key, ArgSlice member, out int smoveResult, ref TObjectContext objectStoreContext)
+        internal unsafe GarnetStatus SetMove<TObjectContext>(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice sourceMember, out int smoveResult, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             smoveResult = 0;
 
-            if (key.Length == 0)
+            if (sourceKey.Length == 0 || destinationKey.Length == 0 || destinationKey.Length == 0)
                 return GarnetStatus.OK;
 
-            // Prepare header in input buffer
-            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            rmwInput->header.type = GarnetObjectType.Set;
-            rmwInput->header.SetOp = SetOperation.SREM;
-            rmwInput->count = 1;
-            rmwInput->done = 0;
+            var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
+
+            if(sameKey)
+            {
+                smoveResult = 1;
+                return GarnetStatus.OK;
+            }
+
+            var createTransaction = false;
+            if (txnManager.state != TxnState.Running)
+            {
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                txnManager.Run(true);
+            }
+
+            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                // get the source key
+                var statusSrcOp = GET(sourceKey.ToArray(), out var sourceSet, ref objectStoreLockableContext);
+
+                if (statusSrcOp == GarnetStatus.NOTFOUND || ((SetObject)sourceSet.garnetObject).Set.Count == 0)
+                {
+                    return GarnetStatus.OK;
+                }
+                else if (statusSrcOp == GarnetStatus.OK)
+                {
+                    var srcSetObject = ((SetObject)sourceSet.garnetObject).Set;
+
+                    if(!srcSetObject.Contains(sourceMember.ToArray()))
+                    {
+                        return GarnetStatus.OK;
+                    }
+
+                    srcSetObject.Remove(sourceMember.ToArray());
+                }
+
+                SET(sourceKey.ToArray(), sourceSet.garnetObject, ref objectStoreLockableContext);
+
+                // get the destination key
+                var statusDestinationOp = GET(destinationKey.ToArray(), out var destinationSet, ref objectStoreLockableContext);
+
+                if(statusDestinationOp == GarnetStatus.NOTFOUND || ((SetObject)destinationSet.garnetObject).Set.Count == 0)
+                {
+                    return GarnetStatus.OK;
+                }
+                else if (statusDestinationOp == GarnetStatus.OK)
+                {
+                    var srcDstObject = ((SetObject)destinationSet.garnetObject).Set;
+
+                    srcDstObject.Add(sourceMember.ToArray());
+                }
+
+                SET(sourceKey.ToArray(), destinationSet.garnetObject, ref objectStoreLockableContext);
+
+                smoveResult = 1;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
 
             return GarnetStatus.OK;
         }
@@ -457,18 +518,5 @@ namespace Garnet.server
         public GarnetStatus SetPop<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
-
-        /// <summary>
-        /// Moves a member of a source set to a destination set.
-        /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="objectContext"></param>
-        /// <returns></returns>
-        public GarnetStatus SetMove<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => RMWObjectStoreOperation(key, input, out output, ref objectContext);
     }
 }
