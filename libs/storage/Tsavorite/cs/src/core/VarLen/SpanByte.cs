@@ -273,7 +273,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Create a SpanByte around a pinned memory <paramref name="pointer"/> of given <paramref name="length"/>
+        /// Create a SpanByte around a pinned memory <paramref name="pointer"/> of given <paramref name="length"/>.
         /// </summary>
         /// <remarks>
         /// SAFETY: The <paramref name="pointer"/> MUST point to pinned memory.
@@ -291,6 +291,14 @@ namespace Tsavorite.core
         {
             return new SpanByte(span.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)));
         }
+
+        /// <summary>
+        /// Create SpanByte around a pinned <paramref name="memory"/>.
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="memory"/> MUST be pinned.
+        /// </remarks>
+        public static SpanByte FromPinnedMemory(Memory<byte> memory) => FromPinnedSpan(memory.Span);
 
         /// <summary>
         /// Convert payload to new byte array
