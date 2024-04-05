@@ -11,10 +11,12 @@ using System.Text;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Represents a pinned variable length byte array that is viewable as a fixed (pinned) Span&lt;byte&gt;
+    /// Represents a pinned variable length byte array that is viewable as a pinned Span&lt;byte&gt;
+    /// </summary>
+    /// <remarks>
     /// Format: [4-byte (int) length of payload][[optional 8-byte metadata] payload bytes...]
     /// First 2 bits of length are used as a mask for properties, so max payload length is 1GB
-    /// </summary>
+    /// </remarks>
     [StructLayout(LayoutKind.Explicit, Pack = 4)]
     public unsafe struct SpanByte
     {
@@ -92,11 +94,6 @@ namespace Tsavorite.core
         /// </summary>
         public int MetadataSize => (length & kExtraMetadataBitMask) >> (30 - 3);
 
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        /// <param name="length"></param>
-        /// <param name="payload"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public SpanByte(int length, IntPtr payload)
         {
@@ -132,7 +129,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Mark SpanByte as having 8-byte metadata in header of payload
+        /// Mark <see cref="SpanByte"/> as having 8-byte metadata in header of payload
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void MarkExtraMetadata()
@@ -142,7 +139,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Unmark SpanByte as having 8-byte metadata in header of payload
+        /// Unmark <see cref="SpanByte"/> as having 8-byte metadata in header of payload
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnmarkExtraMetadata()
@@ -171,9 +168,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get Span&lt;byte&gt; for this SpanByte's payload (excluding metadata if any)
+        /// Get Span&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
         /// </summary>
-        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Span<byte> AsSpan()
         {
@@ -184,9 +180,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get ReadOnlySpan&lt;byte&gt; for this SpanByte's payload (excluding metadata if any)
+        /// Get ReadOnlySpan&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (excluding metadata if any)
         /// </summary>
-        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ReadOnlySpan<byte> AsReadOnlySpan()
         {
@@ -197,9 +192,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get Span&lt;byte&gt; for this SpanByte's payload (including metadata if any)
+        /// Get Span&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (including metadata if any)
         /// </summary>
-        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Span<byte> AsSpanWithMetadata()
         {
@@ -210,9 +204,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get ReadOnlySpan&lt;byte&gt; for this SpanByte's payload (including metadata if any)
+        /// Get ReadOnlySpan&lt;byte&gt; for this <see cref="SpanByte"/>'s payload (including metadata if any)
         /// </summary>
-        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ReadOnlySpan<byte> AsReadOnlySpanWithMetadata()
         {
@@ -223,10 +216,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// If SpanByte is in a serialized form, return a non-serialized SpanByte wrapper that points to the same payload.
-        /// The resulting SpanByte is safe to heap-copy, as long as the underlying payload remains fixed.
+        /// If <see cref="SpanByte"/> is in a serialized form, return a non-serialized <see cref="SpanByte"/> wrapper that points to the same payload.
         /// </summary>
-        /// <returns></returns>
+        /// <remarks>
+        /// SAFETY: The resulting <see cref="SpanByte"/> is safe to heap-copy, as long as the underlying payload remains pinned.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public SpanByte Deserialize()
         {
@@ -235,10 +229,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Reinterpret a fixed Span&lt;byte&gt; as a serialized SpanByte. Automatically adds Span length to the first 4 bytes.
+        /// Reinterpret a fixed Span&lt;byte&gt; as a serialized <see cref="SpanByte"/>. Automatically adds Span length to the first 4 bytes.
         /// </summary>
-        /// <param name="span"></param>
-        /// <returns></returns>
         public static ref SpanByte Reinterpret(Span<byte> span)
         {
             Debug.Assert(span.Length - sizeof(int) <= ~kHeaderMask);
@@ -251,10 +243,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Reinterpret a fixed ReadOnlySpan&lt;byte&gt; as a serialized SpanByte, without adding length header
+        /// Reinterpret a fixed ReadOnlySpan&lt;byte&gt; as a serialized <see cref="SpanByte"/>, without adding length header
         /// </summary>
-        /// <param name="span"></param>
-        /// <returns></returns>
         public static ref SpanByte ReinterpretWithoutLength(ReadOnlySpan<byte> span)
         {
             fixed (byte* ptr = span)
@@ -264,19 +254,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Reinterpret a fixed pointer as a serialized SpanByte
+        /// Reinterpret a fixed pointer as a serialized <see cref="SpanByte"/>
         /// </summary>
-        /// <param name="ptr"></param>
-        /// <returns></returns>
         public static ref SpanByte Reinterpret(byte* ptr)
         {
             return ref Unsafe.AsRef<SpanByte>(ptr);
         }
 
         /// <summary>
-        /// Reinterpret a fixed ref as a serialized SpanByte (user needs to write the payload length to the first 4 bytes)
+        /// Reinterpret a fixed ref as a serialized <see cref="SpanByte"/> (user needs to write the payload length to the first 4 bytes)
         /// </summary>
-        /// <returns></returns>
         public static ref SpanByte Reinterpret<T>(ref T t)
         {
             return ref Unsafe.As<T, SpanByte>(ref t);
@@ -295,18 +282,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Create SpanByte around a pinned Memory&lt;byte&gt;. Warning: ensure the Memory is pinned until operation returns.
+        /// Create <see cref="SpanByte"/> around a pinned Memory&lt;byte&gt;. Warning: ensure the Memory is pinned until operation returns.
         /// </summary>
-        /// <param name="memory"></param>
-        /// <returns></returns>
         public static SpanByte FromPinnedMemory(Memory<byte> memory) => FromPinnedSpan(memory.Span);
 
         /// <summary>
-        /// Create a SpanByte around a pinned memory pointer of given length
+        /// Create a <see cref="SpanByte"/> around a pinned memory pointer of given length
         /// </summary>
-        /// <param name="ptr"></param>
-        /// <param name="length"></param>
-        /// <returns></returns>
         public static SpanByte FromPointer(byte* ptr, int length) => new(length, (IntPtr)ptr);
 
         /// <summary>
@@ -325,18 +307,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Convert to SpanByteAndMemory wrapper
+        /// Convert to <see cref="SpanByteAndMemory"/> wrapper
         /// </summary>
-        /// <returns></returns>
-        public SpanByteAndMemory ToSpanByteAndMemory()
-        {
-            return new SpanByteAndMemory(this);
-        }
+        public SpanByteAndMemory ToSpanByteAndMemory() => new(this);
 
         /// <summary>
-        /// Try to copy to given pre-allocated SpanByte, checking if space permits at destination SpanByte
+        /// Try to copy to given pre-allocated <see cref="SpanByte"/>, checking if space permits at destination <see cref="SpanByte"/>
         /// </summary>
-        /// <param name="dst"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryCopyTo(ref SpanByte dst)
         {
@@ -346,10 +323,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Blindly copy to given pre-allocated SpanByte, assuming sufficient space.
+        /// Blindly copy to given pre-allocated <see cref="SpanByte"/>, assuming sufficient space.
         /// Does not change length of destination.
         /// </summary>
-        /// <param name="dst"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyTo(ref SpanByte dst)
         {
@@ -359,7 +335,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to copy to given pre-allocated SpanByte, checking if space permits at destination SpanByte
+        /// Try to copy to given pre-allocated <see cref="SpanByte"/>, checking if space permits at destination <see cref="SpanByte"/>
         /// </summary>
         /// <param name="dst">The target of the copy</param>
         /// <param name="fullDestSize">The size available at the destination (e.g. dst.TotalSize or the log-space Value allocation size)</param>
@@ -389,11 +365,10 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Shrink the length header of the in-place allocated buffer on
-        /// Tsavorite hybrid log, pointed to by the given SpanByte.
+        /// Tsavorite hybrid log, pointed to by the given <see cref="SpanByte"/>.
         /// Zeroes out the extra space to retain log scan correctness.
         /// </summary>
         /// <param name="newLength">New length of payload (including metadata)</param>
-        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool ShrinkSerializedLength(int newLength)
         {
@@ -416,10 +391,8 @@ namespace Tsavorite.core
         public static void Clear(byte* pointer, int length) => new Span<byte>(pointer, length).Clear();
 
         /// <summary>
-        /// Copy to given SpanByteAndMemory (only payload copied to actual span/memory)
+        /// Copy to given <see cref="SpanByteAndMemory"/> (only payload copied to actual span/memory)
         /// </summary>
-        /// <param name="dst"></param>
-        /// <param name="memoryPool"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
@@ -440,10 +413,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Copy to given SpanByteAndMemory (header and payload copied to actual span/memory)
+        /// Copy to given <see cref="SpanByteAndMemory"/> (header and payload copied to actual span/memory)
         /// </summary>
-        /// <param name="dst"></param>
-        /// <param name="memoryPool"></param>
         public void CopyWithHeaderTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
             if (dst.IsSpanByte)
@@ -473,7 +444,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy serialized version to specified memory location
         /// </summary>
-        /// <param name="destination"></param>
         public void CopyTo(byte* destination)
         {
             if (Serialized)
