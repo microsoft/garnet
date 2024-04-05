@@ -54,7 +54,7 @@ namespace Tsavorite.test.ReadCacheTests
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            var readCacheSettings = new ReadCacheSettings { MemorySize = (1L << 15), PageSizeBits = 9 };
+            var readCacheSettings = new ReadCacheSettings { MemorySizePages = 1 << 6, PageSizeBits = 9 };
             log = Devices.CreateLogDevice(MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
 
             var concurrencyControlMode = ConcurrencyControlMode.None;
@@ -68,7 +68,7 @@ namespace Tsavorite.test.ReadCacheTests
             }
 
             store = new TsavoriteKV<long, long>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizePages = 1 << 5, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
                 comparer: new ChainComparer(mod), concurrencyControlMode: concurrencyControlMode);
         }
 
@@ -663,8 +663,8 @@ namespace Tsavorite.test.ReadCacheTests
             log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
 
             // Make the main log small enough that we force the readcache
-            ReadCacheSettings readCacheSettings = new() { MemorySize = (1L << 15), PageSizeBits = 9 };
-            var logSettings = new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
+            ReadCacheSettings readCacheSettings = new() { MemorySizePages = 1 << 6, PageSizeBits = 9 };
+            var logSettings = new LogSettings { LogDevice = log, MemorySizePages = 1 << 5, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
 
             HashModulo modRange = HashModulo.NoMod;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -877,8 +877,8 @@ namespace Tsavorite.test.ReadCacheTests
             log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
 
             // Make the main log small enough that we force the readcache
-            var readCacheSettings = new ReadCacheSettings { MemorySize = (1L << 15), PageSizeBits = 9 };
-            var logSettings = new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
+            var readCacheSettings = new ReadCacheSettings { MemorySizePages = 1 << 6, PageSizeBits = 9 };
+            var logSettings = new LogSettings { LogDevice = log, MemorySizePages = 1 << 5, PageSizeBits = 10, ReadCacheSettings = readCacheSettings };
 
             HashModulo modRange = HashModulo.NoMod;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)

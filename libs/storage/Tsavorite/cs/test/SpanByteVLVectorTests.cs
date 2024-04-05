@@ -25,7 +25,7 @@ namespace Tsavorite.test
             var log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
             var store = new TsavoriteKV<SpanByte, SpanByte>
                 (128,
-                new LogSettings { LogDevice = log, MemorySize = (1L << 17), PageSizeBits = 12 },
+                new LogSettings { LogDevice = log, MemorySizePages = 1 << 5, PageSizeBits = 12 },
                 null, null, null);
             var s = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
 
@@ -85,7 +85,7 @@ namespace Tsavorite.test
             var log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
             var store = new TsavoriteKV<SpanByte, SpanByte>
                 (128,
-                new LogSettings { LogDevice = log, MemorySize = (1L << 17), PageSizeBits = 12 },
+                new LogSettings { LogDevice = log, MemorySizePages = 1 << 5, PageSizeBits = 12 },
                 null, null, null);
             var s = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
 

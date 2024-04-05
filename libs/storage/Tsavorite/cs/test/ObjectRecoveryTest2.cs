@@ -78,7 +78,7 @@ namespace Tsavorite.test.recovery.objects
                     LogDevice = log,
                     ObjectLogDevice = objlog,
                     SegmentSizeBits = 12,
-                    MemorySize = (1L << 12),
+                    MemorySizePages = 1 << 3,
                     PageSizeBits = 9
                 },
                 new CheckpointSettings()

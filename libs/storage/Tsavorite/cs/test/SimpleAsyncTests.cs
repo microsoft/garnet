@@ -32,7 +32,7 @@ namespace Tsavorite.test.async
             log = Devices.CreateLogDevice(path + "Async.log", deleteOnClose: true);
             store = new TsavoriteKV<long, long>
                 (1L << 10,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySize = (1L << 15) },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizePages = 1 << 5 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = path }
                 );
         }

@@ -22,7 +22,7 @@ namespace Tsavorite.test
 
             store = new TsavoriteKV<int, RMWValue>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 15), PageSizeBits = 10 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizePages = 1 << 5, PageSizeBits = 10 },
                 serializerSettings: new SerializerSettings<int, RMWValue> { valueSerializer = () => new RMWValueSerializer() }
                 );
         }
@@ -167,7 +167,7 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
 
             store = new TsavoriteKV<long, long>(128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySize = (1L << pageSizeBits), PageSizeBits = pageSizeBits });
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizePages = 1, PageSizeBits = pageSizeBits });
         }
 
         [TearDown]

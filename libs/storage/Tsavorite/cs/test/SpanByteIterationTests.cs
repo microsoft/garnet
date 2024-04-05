@@ -72,7 +72,7 @@ namespace Tsavorite.test
         {
             log = CreateTestDevice(deviceType, $"{path}{deviceType}.log");
             store = new TsavoriteKV<SpanByte, SpanByte>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 9, SegmentSizeBits = 22 },
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizePages = 1 << 6, PageSizeBits = 9, SegmentSizeBits = 22 },
                  concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable);
 
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
@@ -162,7 +162,7 @@ namespace Tsavorite.test
         {
             log = CreateTestDevice(deviceType, $"{path}{deviceType}.log");
             store = new TsavoriteKV<SpanByte, SpanByte>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 9, SegmentSizeBits = 22 });
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizePages = 1 << 6, PageSizeBits = 9, SegmentSizeBits = 22 });
 
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             SpanBytePushIterationTestFunctions scanIteratorFunctions = new();
@@ -207,7 +207,7 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice($"{path}lock_test.log");
             // Must be large enough to contain all records in memory to exercise locking
             store = new TsavoriteKV<SpanByte, SpanByte>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 25), PageSizeBits = 19, SegmentSizeBits = 22 });
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizePages = 1 << 6, PageSizeBits = 19, SegmentSizeBits = 22 });
 
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;

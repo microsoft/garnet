@@ -25,7 +25,7 @@ namespace Tsavorite.test
 
             store = new TsavoriteKV<byte[], byte[]>(
                     1L << 20, // size of hash table in #cache lines; 64 bytes per cache line
-                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 14), PageSizeBits = 9 }, // log device
+                    new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizePages = 1 << 5, PageSizeBits = 9 }, // log device
                     comparer: new ByteArrayEC()
                     );
 

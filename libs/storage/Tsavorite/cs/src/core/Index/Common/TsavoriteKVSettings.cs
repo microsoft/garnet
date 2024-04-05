@@ -47,9 +47,9 @@ namespace Tsavorite.core
         public long SegmentSize = 1L << 30;
 
         /// <summary>
-        /// Total size of in-memory part of log, in bytes. Rounds down to power of 2.
+        /// Total # of pages of in-memory part of log.
         /// </summary>
-        public long MemorySize = 1L << 34;
+        public int MemorySizePages = 512;
 
         /// <summary>
         /// Fraction of log marked as mutable (in-place updates). Rounds down to power of 2.
@@ -188,7 +188,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public override string ToString()
         {
-            var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(MemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
+            var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(MemorySizePages * PageSize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
             retStr += $"; mutable fraction: {MutableFraction}; locking mode: {ConcurrencyControlMode}";
@@ -216,7 +216,7 @@ namespace Tsavorite.core
                 ReadCopyOptions = ReadCopyOptions,
                 LogDevice = LogDevice,
                 ObjectLogDevice = ObjectLogDevice,
-                MemorySize = MemorySize,
+                MemorySizePages = MemorySizePages,
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
                 MutableFraction = MutableFraction,
@@ -230,7 +230,7 @@ namespace Tsavorite.core
             return ReadCacheEnabled ?
                 new ReadCacheSettings
                 {
-                    MemorySize = ReadCacheMemorySize,
+                    MemorySizePages = (int)((ReadCacheMemorySize + ReadCachePageSize - 1) / ReadCachePageSize),
                     PageSizeBits = Utility.NumBitsPreviousPowerOf2(ReadCachePageSize),
                     SecondChanceFraction = ReadCacheSecondChanceFraction
                 }

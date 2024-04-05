@@ -130,7 +130,7 @@ namespace Tsavorite.test.Cancellation
             log = Devices.CreateLogDevice(MethodTestDir + "/hlog.log", deleteOnClose: true);
             store = new TsavoriteKV<int, int>
                 (128,
-                new LogSettings { LogDevice = log, MemorySize = (1L << 17), PageSizeBits = 12 },
+                new LogSettings { LogDevice = log, MemorySizePages = 1 << 5, PageSizeBits = 12 },
                 null, null, null);
 
             functions = new CancellationFunctions();

@@ -23,7 +23,7 @@ namespace Tsavorite.test
 
             store = new TsavoriteKV<int, MyValue>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 15), PageSizeBits = 10 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizePages = 1 << 5, PageSizeBits = 10 },
                 serializerSettings: new SerializerSettings<int, MyValue> { valueSerializer = () => new MyValueSerializer() }
                 );
         }
@@ -117,7 +117,7 @@ namespace Tsavorite.test
                 var checkpointDir = MethodTestDir + $"/checkpoints";
                 log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
                 store = new TsavoriteKV<KeyStruct, ValueStruct>
-                    (128, new LogSettings { LogDevice = log, MemorySize = (1L << 29) },
+                    (128, new LogSettings { LogDevice = log, MemorySizePages = 1 << 4 },
                     checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir },
                     concurrencyControlMode: ConcurrencyControlMode.None);
 
@@ -166,7 +166,7 @@ namespace Tsavorite.test
                 store.Dispose();
 
                 store = new TsavoriteKV<KeyStruct, ValueStruct>
-                    (128, new LogSettings { LogDevice = log, MemorySize = (1L << 29) },
+                    (128, new LogSettings { LogDevice = log, MemorySizePages = 1 << 4 },
                     checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir },
                     concurrencyControlMode: ConcurrencyControlMode.None);
 
