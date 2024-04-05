@@ -363,12 +363,14 @@ namespace Garnet.server
                 MutableFraction = MutablePercent / 100.0,
                 PageSizeBits = PageSizeBits()
             };
-            logger?.LogInformation($"[Store] Using page size of {PrettySize((long)Math.Pow(2, logSettings.PageSizeBits))}");
 
-            logSettings.MemorySize = MemorySizeCalculator(MemorySize, logSettings.PageSizeBits);
-            logger?.LogInformation($"[Store] Using log memory size of {PrettySize(logSettings.MemorySize)}");
+            var pageSize = (long)Math.Pow(2, logSettings.PageSizeBits);
+            logger?.LogInformation($"[Store] Using page size of {PrettySize(pageSize)}");
 
-            logger?.LogInformation($"[Store] There are {PrettySize(logSettings.MemorySize / 1 << logSettings.PageSizeBits)} log pages in memory");
+            logSettings.MemorySizePages = MemorySizePagesCalculator(MemorySize, logSettings.PageSizeBits);
+            logger?.LogInformation($"[Store] Using log memory size of {PrettySize(logSettings.MemorySizePages * pageSize)}");
+
+            logger?.LogInformation($"[Store] There are {PrettySize(logSettings.MemorySizePages)} log pages in memory");
 
             logSettings.SegmentSizeBits = SegmentSizeBits();
             logger?.LogInformation($"[Store] Using disk segment size of {PrettySize((long)Math.Pow(2, logSettings.SegmentSizeBits))}");
@@ -494,15 +496,17 @@ namespace Garnet.server
                 MutableFraction = ObjectStoreMutablePercent / 100.0,
                 PageSizeBits = ObjectStorePageSizeBits()
             };
-            logger?.LogInformation($"[Object Store] Using page size of {PrettySize((long)Math.Pow(2, objLogSettings.PageSizeBits))}");
-            logger?.LogInformation($"[Object Store] Each page can hold ~{(long)(Math.Pow(2, objLogSettings.PageSizeBits) / 24)} key-value pairs of objects");
+            var pageSize = (long)Math.Pow(2, objLogSettings.PageSizeBits);
+            logger?.LogInformation($"[Object Store] Using page size of {PrettySize(pageSize)}");
+            logger?.LogInformation($"[Object Store] Each page can hold ~{pageSize / 24} key-value pairs of objects");
 
-            objLogSettings.MemorySize = MemorySizeCalculator(ObjectStoreLogMemorySize, objLogSettings.PageSizeBits); //, out var objectStoreEmptyPageCount);
-            logger?.LogInformation($"[Object Store] Using log memory size of {PrettySize(objLogSettings.MemorySize)}");
+            objLogSettings.MemorySizePages = MemorySizePagesCalculator(ObjectStoreLogMemorySize, objLogSettings.PageSizeBits); //, out var objectStoreEmptyPageCount);
+            logger?.LogInformation($"[Object Store] Using log memory size of {PrettySize(objLogSettings.MemorySizePages * pageSize)}");
 
-            logger?.LogInformation($"[Object Store] This can hold ~{objLogSettings.MemorySize / 24} key-value pairs of objects in memory total");
+            var memorySize = objLogSettings.MemorySizePages * pageSize;
+            logger?.LogInformation($"[Object Store] This can hold ~{memorySize / 24} key-value pairs of objects in memory total");
 
-            logger?.LogInformation($"[Object Store] There are {PrettySize(objLogSettings.MemorySize / (1L << objLogSettings.PageSizeBits))} log pages in memory");
+            logger?.LogInformation($"[Object Store] There are {PrettySize(objLogSettings.MemorySizePages)} log pages in memory");
 
             objLogSettings.SegmentSizeBits = ObjectStoreSegmentSizeBits();
             logger?.LogInformation($"[Object Store] Using disk segment size of {PrettySize((long)Math.Pow(2, objLogSettings.SegmentSizeBits))}");

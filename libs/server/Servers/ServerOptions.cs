@@ -104,15 +104,15 @@ namespace Garnet.server
             this.logger = logger;
         }
 
-        public long MemorySizeCalculator(string memorySize, int pageSizeBits)
+        public int MemorySizePagesCalculator(string memorySize, int pageSizeBits)
         {
             long size = ParseSize(memorySize);
-            var pageSize = 1L << pageSizeBits;
-            var numPages = (size + pageSize - 1) / pageSize;
+            long pageSize = 1L << pageSizeBits;
+            int numPages = (int)((size + pageSize - 1) / pageSize);
             long adjustedSize = numPages * pageSize;
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using adjusted memory size {adjustedSize} different from specified {size}");
-            return adjustedSize;
+                logger?.LogInformation($"Warning: using adjusted memory size {PrettySize(adjustedSize)} different from specified {PrettySize(size)}");
+            return numPages;
         }
 
         /// <summary>

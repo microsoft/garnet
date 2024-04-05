@@ -30,7 +30,7 @@ namespace Tsavorite.test.statemachine
             Directory.CreateDirectory(checkpointDir);
             store = new TsavoriteKV<AdId, NumClicks>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySize = (1L << 13) },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizePages = 1 << 3 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir, CheckpointVersionSwitchBarrier = true }
                 );
         }
@@ -150,7 +150,7 @@ namespace Tsavorite.test.statemachine
 
             var store = new TsavoriteKV<AdId, NumClicks>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySize = (1L << 13) },
+                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizePages = 1 << 3 },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir + "/statemachinetest" }
                 );
 

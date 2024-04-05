@@ -41,7 +41,7 @@ namespace Tsavorite.test.largeobjects
 
             store1 = new TsavoriteKV<MyKey, MyLargeValue>
                 (128,
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySize = (1L << 26) },
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizePages = 1 << 5 },
                 new CheckpointSettings { CheckpointDir = test_path },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
@@ -70,7 +70,7 @@ namespace Tsavorite.test.largeobjects
 
             store2 = new TsavoriteKV<MyKey, MyLargeValue>
                 (128,
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySize = (1L << 26) },
+                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizePages = 1 << 5 },
                 new CheckpointSettings { CheckpointDir = test_path },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );

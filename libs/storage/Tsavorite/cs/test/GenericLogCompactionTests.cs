@@ -31,7 +31,7 @@ namespace Tsavorite.test
 
                 store = new TsavoriteKV<MyKey, MyValue>
                     (128,
-                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 14), PageSizeBits = 9 },
+                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizePages = 1 << 5, PageSizeBits = 9 },
                     serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                     );
             }
@@ -46,7 +46,7 @@ namespace Tsavorite.test
 
                 store = new TsavoriteKV<MyKey, MyValue>
                     (128,
-                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 14), PageSizeBits = 9, SegmentSizeBits = 22 },
+                    logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizePages = 1 << 5, PageSizeBits = 9, SegmentSizeBits = 22 },
                     serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                     );
             }

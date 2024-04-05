@@ -525,7 +525,7 @@ namespace Tsavorite.test.Expiration
             log = Devices.CreateLogDevice(MethodTestDir + "/hlog.log", deleteOnClose: true);
             store = new TsavoriteKV<SpanByte, SpanByte>
                 (128,
-                new LogSettings { LogDevice = log, MemorySize = (1L << 19), PageSizeBits = 14 },
+                new LogSettings { LogDevice = log, MemorySizePages = 1 << 5, PageSizeBits = 14 },
                 null, null, null);
 
             functions = new ExpirationFunctions();

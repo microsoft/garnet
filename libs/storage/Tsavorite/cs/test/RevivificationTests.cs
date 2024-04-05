@@ -216,7 +216,7 @@ namespace Tsavorite.test.Revivification
                 revivificationSettings.RevivifiableFraction = revivifiableFraction.Value;
             if (recordElision.HasValue)
                 revivificationSettings.RestoreDeletedRecordsIfBinIsFull = recordElision.Value == RecordElision.NoElide;
-            store = new TsavoriteKV<int, int>(1L << 18, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySize = (1L << 20) },
+            store = new TsavoriteKV<int, int>(1L << 18, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizePages = 1 << 8 },
                                             concurrencyControlMode: concurrencyControlMode, revivificationSettings: revivificationSettings);
             functions = new RevivificationFixedLenFunctions();
             session = store.NewSession<int, int, Empty, RevivificationFixedLenFunctions>(functions);
@@ -617,7 +617,7 @@ namespace Tsavorite.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             CollisionRange collisionRange = CollisionRange.None;
-            LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySize = (1L << 20) };
+            LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySizePages = 1 << 3 };
             var concurrencyControlMode = ConcurrencyControlMode.LockTable;
             var revivificationSettings = RevivificationSettings.PowerOf2Bins;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -1674,7 +1674,7 @@ namespace Tsavorite.test.Revivification
 
             store = new TsavoriteKV<MyKey, MyValue>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySize = (1L << 22), PageSizeBits = 12 },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizePages = 1 << 10, PageSizeBits = 12 },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
                 concurrencyControlMode: concurrencyControlMode, revivificationSettings: RevivificationSettings.DefaultFixedLength);
 
@@ -1835,7 +1835,7 @@ namespace Tsavorite.test.Revivification
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
 
             CollisionRange collisionRange = CollisionRange.None;
-            LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySize = (1L << 20) };
+            LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 17, MemorySizePages = 1 << 3 };
             var concurrencyControlMode = ConcurrencyControlMode.LockTable;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {

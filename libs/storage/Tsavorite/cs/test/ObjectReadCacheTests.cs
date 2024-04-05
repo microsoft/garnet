@@ -16,13 +16,13 @@ namespace Tsavorite.test.ReadCacheTests
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            var readCacheSettings = new ReadCacheSettings { MemorySize = (1L << 15), PageSizeBits = 10 };
+            var readCacheSettings = new ReadCacheSettings { MemorySizePages = 1 << 5, PageSizeBits = 10 };
             log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/ObjectReadCacheTests.log", deleteOnClose: true);
             objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/ObjectReadCacheTests.obj.log", deleteOnClose: true);
 
             store = new TsavoriteKV<MyKey, MyValue>
                 (128,
-                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MemorySize = (1L << 15), PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
+                logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MemorySizePages = 1 << 5, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
                 serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
                 );
         }

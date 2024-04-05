@@ -183,7 +183,7 @@ namespace Tsavorite.core
                             LogDevice = new NullDevice(),
                             ObjectLogDevice = new NullDevice(),
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySize = logSettings.ReadCacheSettings.MemorySize,
+                            MemorySizePages = logSettings.ReadCacheSettings.MemorySizePages,
                             SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                         }, serializerSettings, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator ReadCache")); ; ;
@@ -204,7 +204,7 @@ namespace Tsavorite.core
                         {
                             LogDevice = new NullDevice(),
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySize = logSettings.ReadCacheSettings.MemorySize,
+                            MemorySizePages = logSettings.ReadCacheSettings.MemorySizePages,
                             SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                         }, spanByteComparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("SpanByteAllocator ReadCache")) as AllocatorBase<Key, Value>;
@@ -223,7 +223,7 @@ namespace Tsavorite.core
                         {
                             LogDevice = new NullDevice(),
                             PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySize = logSettings.ReadCacheSettings.MemorySize,
+                            MemorySizePages = logSettings.ReadCacheSettings.MemorySizePages,
                             SegmentSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
                             MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
                         }, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("BlittableAllocator ReadCache"));

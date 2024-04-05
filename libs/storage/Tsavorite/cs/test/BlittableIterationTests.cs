@@ -64,7 +64,7 @@ namespace Tsavorite.test
         {
             log = CreateTestDevice(deviceType, $"{path}{deviceType}.log");
             store = new TsavoriteKV<KeyStruct, ValueStruct>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 9, SegmentSizeBits = 22 },
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizePages = 1 << 6, PageSizeBits = 9, SegmentSizeBits = 22 },
                  concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable);
 
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
@@ -148,7 +148,7 @@ namespace Tsavorite.test
         {
             log = Devices.CreateLogDevice($"{path}stop_test.log");
             store = new TsavoriteKV<KeyStruct, ValueStruct>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySize = (1L << 15), PageSizeBits = 9, SegmentSizeBits = 22 });
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizePages = 1 << 6, PageSizeBits = 9, SegmentSizeBits = 22 });
 
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             BlittablePushIterationTestFunctions scanIteratorFunctions = new();
@@ -187,7 +187,7 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice($"{path}lock_test.log");
             // Must be large enough to contain all records in memory to exercise locking
             store = new TsavoriteKV<KeyStruct, ValueStruct>(1L << 20,
-                 new LogSettings { LogDevice = log, MemorySize = (1L << 25), PageSizeBits = 20, SegmentSizeBits = 22 },
+                 new LogSettings { LogDevice = log, MemorySizePages = 1 << 5, PageSizeBits = 20, SegmentSizeBits = 22 },
                  concurrencyControlMode: concurrencyControlMode);
 
             const int totalRecords = 2000;

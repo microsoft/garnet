@@ -104,11 +104,11 @@ namespace Tsavorite.benchmark
 
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new TsavoriteKV<SpanByte, SpanByte>
-                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySize = (1L << 26) },
+                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizePages = 16 },
                     new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, concurrencyControlMode: testLoader.Options.ConcurrencyControlMode, revivificationSettings: revivificationSettings);
             else
                 store = new TsavoriteKV<SpanByte, SpanByte>
-                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, MemorySize = (1L << 35) },
+                    (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizePages = 1 << 10 },
                     new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, concurrencyControlMode: testLoader.Options.ConcurrencyControlMode, revivificationSettings: revivificationSettings);
         }
 

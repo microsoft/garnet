@@ -167,7 +167,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 if (arg is ReadCopyDestination dest)
                 {
                     if (dest == ReadCopyDestination.ReadCache)
-                        readCacheSettings = new() { PageSizeBits = 12, MemorySize = (1L << 22) };
+                        readCacheSettings = new() { PageSizeBits = 12, MemorySizePages = 1 << 10 };
                     break;
                 }
                 if (arg is CheckpointType chktType)
@@ -180,7 +180,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             comparer = new LockableUnsafeComparer();
             functions = new LockableUnsafeFunctions();
 
-            store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySize = (1L << 22), ReadCacheSettings = readCacheSettings },
+            store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizePages = 1 << 10, ReadCacheSettings = readCacheSettings },
                                             checkpointSettings: checkpointSettings, comparer: comparer,
                                             concurrencyControlMode: ConcurrencyControlMode.LockTable);
             session = store.NewSession<long, long, Empty, LockableUnsafeFunctions>(functions);

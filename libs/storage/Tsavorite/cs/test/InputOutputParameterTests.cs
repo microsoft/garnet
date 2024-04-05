@@ -82,7 +82,7 @@ namespace Tsavorite.test.InputOutputParameterTests
 
             log = TestUtils.CreateTestDevice(TestUtils.DeviceType.LocalMemory, Path.Combine(TestUtils.MethodTestDir, "Device.log"));
             store = new TsavoriteKV<int, int>
-                (128, new LogSettings { LogDevice = log, MemorySize = (1L << 22), SegmentSizeBits = 22, PageSizeBits = 10 });
+                (128, new LogSettings { LogDevice = log, MemorySizePages = 1 << 12, SegmentSizeBits = 22, PageSizeBits = 10 });
             session = store.NewSession<int, int, Empty, UpsertInputFunctions>(new UpsertInputFunctions());
         }
 

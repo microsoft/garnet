@@ -793,8 +793,8 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"{nameof(settings.PageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
             if (settings.SegmentSizeBits < LogSettings.kMinSegmentSizeBits || settings.SegmentSizeBits > LogSettings.kMaxSegmentSizeBits)
                 throw new TsavoriteException($"{nameof(settings.SegmentSizeBits)} must be between {LogSettings.kMinSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
-            if (settings.MemorySize != 0 && (settings.MemorySize < LogSettings.kMinMemorySize || settings.MemorySize > LogSettings.kMaxMemorySize))
-                throw new TsavoriteException($"{nameof(settings.MemorySize)} must be between {LogSettings.kMinMemorySize} and {LogSettings.kMaxMemorySize}, or may be 0 for ReadOnly TsavoriteLog");
+            if (settings.MemorySizePages != 0 && (settings.MemorySizePages < LogSettings.kMinMemorySizePages || settings.MemorySizePages > LogSettings.kMaxMemorySizePages))
+                throw new TsavoriteException($"{nameof(settings.MemorySizePages)} must be between {LogSettings.kMinMemorySizePages} and {LogSettings.kMaxMemorySizePages}, or may be 0 for ReadOnly TsavoriteLog");
             if (settings.MutableFraction < 0.0 || settings.MutableFraction > 1.0)
                 throw new TsavoriteException($"{nameof(settings.MutableFraction)} must be >= 0.0 and <= 1.0");
             if (settings.ReadCacheSettings is not null)
@@ -802,8 +802,8 @@ namespace Tsavorite.core
                 var rcs = settings.ReadCacheSettings;
                 if (rcs.PageSizeBits < LogSettings.kMinPageSizeBits || rcs.PageSizeBits > LogSettings.kMaxPageSizeBits)
                     throw new TsavoriteException($"{nameof(rcs.PageSizeBits)} must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
-                if (rcs.MemorySize < LogSettings.kMinMemorySize || rcs.MemorySize > LogSettings.kMaxMemorySize)
-                    throw new TsavoriteException($"{nameof(rcs.MemorySize)} must be between {LogSettings.kMinMemorySize} and {LogSettings.kMaxMemorySize}");
+                if (rcs.MemorySizePages < LogSettings.kMinMemorySizePages || rcs.MemorySizePages > LogSettings.kMaxMemorySizePages)
+                    throw new TsavoriteException($"{nameof(rcs.MemorySizePages)} must be between {LogSettings.kMinMemorySizePages} and {LogSettings.kMaxMemorySizePages}");
                 if (rcs.SecondChanceFraction < 0.0 || rcs.SecondChanceFraction > 1.0)
                     throw new TsavoriteException($"{(rcs.SecondChanceFraction)} must be >= 0.0 and <= 1.0");
             }
@@ -842,8 +842,8 @@ namespace Tsavorite.core
             PageSizeMask = PageSize - 1;
 
             // Total HLOG size
-            LogTotalSizeBytes = settings.MemorySize;
-            BufferSize = (int)(LogTotalSizeBytes / (1L << LogPageSizeBits));
+            LogTotalSizeBytes = (long)settings.MemorySizePages * PageSize;
+            BufferSize = settings.MemorySizePages;
 
             LogMutableFraction = settings.MutableFraction;
 
