@@ -13,7 +13,7 @@ COPY libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/*.csproj libs/stor
 COPY main/GarnetServer/*.csproj main/GarnetServer/
 COPY metrics/HdrHistogram/*.csproj metrics/HdrHistogram/
 
-RUN dotnet restore main/GarnetServer/GarnetServer.csproj
+RUN dotnet restore main/GarnetServer/GarnetServer.csproj --ucr
 
 # Copy everthing else and publish app
 COPY Garnet.snk Garnet.snk
@@ -23,7 +23,7 @@ COPY metrics/ metrics/
 COPY test/testcerts test/testcerts
 
 WORKDIR /src/main/GarnetServer
-RUN dotnet publish -c Release -o /app -r win-x64 --no-restore --self-contained false -f net8.0
+RUN dotnet publish -c Release -o /app --ucr --no-restore --no-self-contained -f net8.0
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-nanoserver-$TAG AS runtime
