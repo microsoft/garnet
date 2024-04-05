@@ -22,9 +22,9 @@ namespace Garnet.common
             RandomNumberGenerator.Fill(nodeIdBuffer);
 
             Span<char> charBuffer = stackalloc char[nodeIdBuffer.Length * 2]; // not the same as size (if size is odd)
-            int index = 0;
             fixed (char* hexChars = "0123456789abcdef")
             {
+                int index = 0;
                 foreach (byte b in nodeIdBuffer)
                 {
                     charBuffer[index++] = hexChars[b >> 4]; // hi nibble
@@ -40,9 +40,9 @@ namespace Garnet.common
         /// <param name="size">The length of the hex identifier string</param>
         /// <returns></returns>
         public static string DefaultHexId(int size = 40)
-            => size == 40 ? DefaultHex40 : new string('0', size &= ~1); // note: trimmed to multiples of 2
+            => size == 40 ? DefaultHexId40 : new string('0', size & ~1); // note: trimmed to multiples of 2
 
-        const string DefaultHex40 = "0000000000000000000000000000000000000000"; // '0' x40
+        const string DefaultHexId40 = "0000000000000000000000000000000000000000"; // '0' x40
 
     }
 }
