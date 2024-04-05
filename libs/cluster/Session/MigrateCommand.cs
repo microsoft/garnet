@@ -45,28 +45,28 @@ namespace Garnet.cluster
                     resp = CmdStrings.RESP_UNKNOWN_ENDPOINT_ERROR;
                     break;
                 case MigrateCmdParseState.MULTISLOTREF:
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotMultiRef} specified multiple times\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotMultiRef} specified multiple times\r\n");
                     break;
                 case MigrateCmdParseState.SLOTNOTLOCAL:
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR slot {slotMultiRef} not owned by current node.\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR slot {slotMultiRef} not owned by current node.\r\n");
                     break;
                 case MigrateCmdParseState.CROSSSLOT:
                     resp = CmdStrings.RESP_CROSSLOT_ERROR;
                     break;
                 case MigrateCmdParseState.TARGETNODENOTMASTER:
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Cannot initiate migration, target node ({targetAddress}:{targetPort}) is not a primary.\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Cannot initiate migration, target node ({targetAddress}:{targetPort}) is not a primary.\r\n");
                     break;
                 case MigrateCmdParseState.INCOMPLETESLOTSRANGE:
                     resp = CmdStrings.RESP_INCOMPLETESLOTSRANGE_ERROR;
                     break;
                 case MigrateCmdParseState.SLOTOUTOFRANGE:
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotMultiRef} out of range\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotMultiRef} out of range\r\n");
                     break;
                 default:
                     resp = CmdStrings.RESP_PARSING_ERROR;
                     break;
             }
-            while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                 SendAndReset();
             return false;
         }
@@ -290,7 +290,7 @@ namespace Garnet.cluster
             // Check if session is authorized to perform migration.
             if (!CheckACLAdminPermissions())
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_NOAUTH, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_NOAUTH, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -315,15 +315,14 @@ namespace Garnet.cluster
                 out var mSession))
             {
                 // Migration task could not be added due to possible conflicting migration tasks
-                var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-IOERR Migrate keys failed.\r\n"));
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect("-IOERR Migrate keys failed.\r\n"u8, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
                 //Start migration task
                 mSession.StartMigrationTask(out var resp);
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
 

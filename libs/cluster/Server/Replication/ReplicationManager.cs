@@ -24,9 +24,16 @@ namespace Garnet.cluster
 
         readonly ILogger logger;
         bool _disposed;
+
+        private long primary_sync_last_time;
+
+        internal long LastPrimarySyncSeconds => recovering ? (DateTime.UtcNow.Ticks - primary_sync_last_time) / TimeSpan.TicksPerSecond : 0;
+
+        internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_time = DateTime.UtcNow.Ticks;
+
+
         public bool recovering;
         private long replicationOffset;
-
         public long ReplicationOffset
         {
             get
@@ -124,6 +131,11 @@ namespace Garnet.cluster
             if (clusterProvider.clusterManager.CurrentConfig.GetLocalNodeRole() == NodeRole.REPLICA)
                 return;
             storeWrapper.EnqueueCommit(isMainStore, newVersion);
+        }
+
+        public void Reset()
+        {
+            recovering = false;
         }
 
         public void Dispose()
