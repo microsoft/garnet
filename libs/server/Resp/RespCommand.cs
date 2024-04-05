@@ -884,6 +884,10 @@ namespace Garnet.server
                                 {
                                     return (RespCommand.BITFIELD_RO, 0);
                                 }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSRAND"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("MEMBER\r\n"u8))
+                                {
+                                    return (RespCommand.Set, (byte)SetOperation.SRANDMEMBER);
+                                }
                                 break;
 
                             case 12:
