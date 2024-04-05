@@ -1,29 +1,17 @@
 ARG TAG=ltsc2022
 FROM mcr.microsoft.com/dotnet/sdk:8.0-nanoserver-$TAG AS build
-WORKDIR /src
 
-# Copy csproj and restore as distinct layers
-COPY libs/client/*.csproj libs/client/
-COPY libs/cluster/*.csproj libs/cluster/
-COPY libs/common/*.csproj libs/common/
-COPY libs/host/*.csproj libs/host/
-COPY libs/server/*.csproj libs/server/
-COPY libs/storage/Tsavorite/cs/src/core/*.csproj libs/storage/Tsavorite/cs/src/core/
-COPY libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/*.csproj libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/
-COPY main/GarnetServer/*.csproj main/GarnetServer/
-COPY metrics/HdrHistogram/*.csproj metrics/HdrHistogram/
+WORKDIR /source
 
-RUN dotnet restore main/GarnetServer/GarnetServer.csproj --ucr
+# Copy files
+COPY . .
+WORKDIR /source/main/GarnetServer
 
-# Copy everthing else and publish app
-COPY Garnet.snk Garnet.snk
-COPY libs/ libs/
-COPY main/ main/
-COPY metrics/ metrics/
-COPY test/testcerts test/testcerts
+RUN dotnet restore
+RUN dotnet build -c Release
 
-WORKDIR /src/main/GarnetServer
-RUN dotnet publish -c Release -o /app --ucr --no-restore --no-self-contained -f net8.0
+# Copy and publish app and libraries
+RUN dotnet publish -c Release -o /app -r win-x64 --self-contained false -f net8.0
 
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-nanoserver-$TAG AS runtime
@@ -34,4 +22,4 @@ COPY --from=build /app .
 EXPOSE 6379
 
 # Run GarnetServer with an index size of 128MB
-ENTRYPOINT ["./GarnetServer.exe", "-i", "128m", "--port", "6379"]
+ENTRYPOINT ["/app/GarnetServer.exe", "-i", "128m", "--port", "6379"]
