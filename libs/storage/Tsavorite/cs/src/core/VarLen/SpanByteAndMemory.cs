@@ -26,7 +26,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor using given <paramref name="spanByte"/>
         /// </summary>
-        /// <param name="spanByte"></param>
         public SpanByteAndMemory(SpanByte spanByte)
         {
             if (spanByte.Serialized) throw new Exception("Cannot create new SpanByteAndMemory using serialized SpanByte");
@@ -35,7 +34,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Constructor using <see cref="core.SpanByte"/> at given pinned pointer, of given length
+        /// Constructor using <see cref="core.SpanByte"/> at given pinned <paramref name="pointer"/>, of given <paramref name="length"/>
         /// </summary>
         public SpanByteAndMemory(void* pointer, int length)
         {
@@ -48,14 +47,18 @@ namespace Tsavorite.core
         /// </summary>
         public int Length
         {
-            get => SpanByte.Length;
+            readonly get => SpanByte.Length;
             set => SpanByte.Length = value;
         }
 
         /// <summary>
+        /// Is it allocated as <see cref="core.SpanByte"/> (on stack)?
+        /// </summary>
+        public readonly bool IsSpanByte => !SpanByte.Invalid;
+
+        /// <summary>
         /// Constructor using given IMemoryOwner
         /// </summary>
-        /// <param name="memory"></param>
         public SpanByteAndMemory(IMemoryOwner<byte> memory)
         {
             SpanByte = default;
@@ -66,8 +69,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor using given IMemoryOwner and length
         /// </summary>
-        /// <param name="memory"></param>
-        /// <param name="length"></param>
         public SpanByteAndMemory(IMemoryOwner<byte> memory, int length)
         {
             SpanByte = default;
@@ -77,16 +78,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// As a span of the contained data. Use this when you haven't tested IsSpanByte.
+        /// As a span of the contained data. Use this when you haven't tested <see cref="IsSpanByte"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ReadOnlySpan<byte> AsReadOnlySpan() => IsSpanByte ? SpanByte.AsReadOnlySpan() : Memory.Memory.Span.Slice(0, Length);
 
         /// <summary>
-        /// As a span of the contained data. Use this when you have already tested IsSpanByte.
+        /// As a span of the contained data. Use this when you have already tested <see cref="IsSpanByte"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReadOnlySpan<byte> AsMemoryReadOnlySpan()
+        public readonly ReadOnlySpan<byte> AsMemoryReadOnlySpan()
         {
             Debug.Assert(!IsSpanByte, "Cannot call AsMemoryReadOnlySpan when IsSpanByte");
             return Memory.Memory.Span.Slice(0, Length);
@@ -101,10 +102,5 @@ namespace Tsavorite.core
         /// Convert to be used on heap (IMemoryOwner)
         /// </summary>
         public void ConvertToHeap() { SpanByte.Invalid = true; }
-
-        /// <summary>
-        /// Is it allocated as <see cref="SpanByte"/> (on stack)?
-        /// </summary>
-        public bool IsSpanByte => !SpanByte.Invalid;
     }
 }

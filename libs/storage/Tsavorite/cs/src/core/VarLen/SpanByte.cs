@@ -21,11 +21,11 @@ namespace Tsavorite.core
     public unsafe struct SpanByte
     {
         // Byte #31 is used to denote unserialized (1) or serialized (0) data 
-        const int kUnserializedBitMask = 1 << 31;
+        private const int UnserializedBitMask = 1 << 31;
         // Byte #30 is used to denote extra metadata present (1) or absent (0) in payload
-        const int kExtraMetadataBitMask = 1 << 30;
+        private const int ExtraMetadataBitMask = 1 << 30;
         // Mask for header
-        const int kHeaderMask = 0x3 << 30;
+        private const int HeaderMask = 0x3 << 30;
 
         /// <summary>
         /// Length of the payload
@@ -39,7 +39,7 @@ namespace Tsavorite.core
         [FieldOffset(4)]
         private IntPtr payload;
 
-        internal IntPtr Pointer => payload;
+        internal readonly IntPtr Pointer => payload;
 
         /// <summary>
         /// Pointer to the beginning of payload, not including metadata if any
@@ -70,35 +70,38 @@ namespace Tsavorite.core
         /// </summary>
         public int Length
         {
-            get { return length & ~kHeaderMask; }
-            set { length = (length & kHeaderMask) | value; }
+            readonly get => length & ~HeaderMask;
+            set { length = (length & HeaderMask) | value; }
         }
 
         /// <summary>
         /// Length of payload, not including metadata if any
         /// </summary>
-        public int LengthWithoutMetadata => (length & ~kHeaderMask) - MetadataSize;
+        public readonly int LengthWithoutMetadata => (length & ~HeaderMask) - MetadataSize;
 
         /// <summary>
         /// Format of structure
         /// </summary>
-        public bool Serialized => (length & kUnserializedBitMask) == 0;
+        public readonly bool Serialized => (length & UnserializedBitMask) == 0;
 
         /// <summary>
         /// Total serialized size in bytes, including header and metadata if any
         /// </summary>
-        public int TotalSize => sizeof(int) + Length;
+        public readonly int TotalSize => sizeof(int) + Length;
 
         /// <summary>
         /// Size of metadata header, if any (returns 0 or 8)
         /// </summary>
-        public int MetadataSize => (length & kExtraMetadataBitMask) >> (30 - 3);
+        public readonly int MetadataSize => (length & ExtraMetadataBitMask) >> (30 - 3);
 
+        /// <summary>
+        /// Create a <see cref="SpanByte"/> around a given <paramref name="payload"/> pointer and given <paramref name="length"/>
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public SpanByte(int length, IntPtr payload)
         {
-            Debug.Assert(length <= ~kHeaderMask);
-            this.length = length | kUnserializedBitMask;
+            Debug.Assert(length <= ~HeaderMask);
+            this.length = length | UnserializedBitMask;
             this.payload = payload;
         }
 
@@ -118,7 +121,7 @@ namespace Tsavorite.core
             {
                 if (value > 0)
                 {
-                    length |= kExtraMetadataBitMask;
+                    length |= ExtraMetadataBitMask;
                     Debug.Assert(Length >= MetadataSize);
                     if (Serialized)
                         *(long*)Unsafe.AsPointer(ref payload) = value;
@@ -135,7 +138,7 @@ namespace Tsavorite.core
         public void MarkExtraMetadata()
         {
             Debug.Assert(Length >= 8);
-            length |= kExtraMetadataBitMask;
+            length |= ExtraMetadataBitMask;
         }
 
         /// <summary>
@@ -144,7 +147,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnmarkExtraMetadata()
         {
-            length &= ~kExtraMetadataBitMask;
+            length &= ~ExtraMetadataBitMask;
         }
 
         /// <summary>
@@ -152,12 +155,12 @@ namespace Tsavorite.core
         /// </summary>
         public bool Invalid
         {
-            get { return ((length & kUnserializedBitMask) != 0) && payload == IntPtr.Zero; }
+            readonly get => ((length & UnserializedBitMask) != 0) && payload == IntPtr.Zero;
             set
             {
                 if (value)
                 {
-                    length |= kUnserializedBitMask;
+                    length |= UnserializedBitMask;
                     payload = IntPtr.Zero;
                 }
                 else
@@ -233,7 +236,7 @@ namespace Tsavorite.core
         /// </summary>
         public static ref SpanByte Reinterpret(Span<byte> span)
         {
-            Debug.Assert(span.Length - sizeof(int) <= ~kHeaderMask);
+            Debug.Assert(span.Length - sizeof(int) <= ~HeaderMask);
 
             fixed (byte* ptr = span)
             {
@@ -287,11 +290,6 @@ namespace Tsavorite.core
         public static SpanByte FromPinnedMemory(Memory<byte> memory) => FromPinnedSpan(memory.Span);
 
         /// <summary>
-        /// Create a <see cref="SpanByte"/> around a pinned memory pointer of given length
-        /// </summary>
-        public static SpanByte FromPointer(byte* ptr, int length) => new(length, (IntPtr)ptr);
-
-        /// <summary>
         /// Convert payload to new byte array
         /// </summary>
         public byte[] ToByteArray() => AsReadOnlySpan().ToArray();
@@ -309,7 +307,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Convert to <see cref="SpanByteAndMemory"/> wrapper
         /// </summary>
-        public SpanByteAndMemory ToSpanByteAndMemory() => new(this);
+        public readonly SpanByteAndMemory ToSpanByteAndMemory() => new(this);
 
         /// <summary>
         /// Try to copy to given pre-allocated <see cref="SpanByte"/>, checking if space permits at destination <see cref="SpanByte"/>
@@ -453,7 +451,7 @@ namespace Tsavorite.core
             }
             else
             {
-                *(int*)destination = length & ~kUnserializedBitMask;
+                *(int*)destination = length & ~UnserializedBitMask;
                 Buffer.MemoryCopy((void*)payload, destination + sizeof(int), Length, Length);
             }
         }
