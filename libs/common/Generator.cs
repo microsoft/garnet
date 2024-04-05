@@ -21,17 +21,17 @@ namespace Garnet.common
             Span<byte> nodeIdBuffer = stackalloc byte[size / 2];
             RandomNumberGenerator.Fill(nodeIdBuffer);
 
-            Span<char> charBuffer = stackalloc char[nodeIdBuffer.Length * 2]; // not the same as size (if size is odd)
+            char* charBuffer = stackalloc char[nodeIdBuffer.Length * 2]; // not the same as size (if size is odd)
+            int index = 0;
             fixed (char* hexChars = "0123456789abcdef")
             {
-                int index = 0;
                 foreach (byte b in nodeIdBuffer)
                 {
                     charBuffer[index++] = hexChars[b >> 4]; // hi nibble
                     charBuffer[index++] = hexChars[b & 0xF]; // lo nibble
                 }
             }
-            return new string(charBuffer);
+            return new string(charBuffer, 0, index);
         }
 
         /// <summary>
