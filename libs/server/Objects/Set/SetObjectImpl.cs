@@ -265,7 +265,6 @@ namespace Garnet.server
                         countDone++;
                     }
                     countDone += count - countParameter;
-                    
                 }
                 else if (count == int.MinValue) // no count parameter is present
                 {
