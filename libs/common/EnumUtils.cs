@@ -11,24 +11,32 @@ namespace Garnet.common
     public static class EnumUtils
     {
         private static readonly Dictionary<Type, IDictionary<string, string>> EnumNameToDescriptionCache = new();
+        private static readonly Dictionary<Type, IDictionary<string, string>> EnumDescriptionToNameCache = new();
 
-        public static IDictionary<string, string> GetEnumNameToDescription<T>() where T : Enum
+        private static void AddTypeToCache<T>()
         {
-            if (EnumNameToDescriptionCache.ContainsKey(typeof(T))) return EnumNameToDescriptionCache[typeof(T)];
-
             var valToDesc = new Dictionary<string, string>();
+            var descToVal = new Dictionary<string, string>();
             foreach (var flagFieldInfo in typeof(T).GetFields())
             {
                 var descAttr = (DescriptionAttribute)flagFieldInfo.GetCustomAttributes(typeof(DescriptionAttribute), false).FirstOrDefault();
                 if (descAttr != null)
                 {
                     valToDesc.Add(flagFieldInfo.Name, descAttr.Description);
+                    descToVal.Add(descAttr.Description, flagFieldInfo.Name);
                 }
             }
 
             EnumNameToDescriptionCache.Add(typeof(T), valToDesc);
+            EnumDescriptionToNameCache.Add(typeof(T), descToVal);
+        }
 
-            return valToDesc;
+        public static IDictionary<string, string> GetEnumNameToDescription<T>() where T : Enum
+        {
+            if (!EnumNameToDescriptionCache.ContainsKey(typeof(T))) 
+                AddTypeToCache<T>();
+
+            return EnumNameToDescriptionCache[typeof(T)];
         }
 
         public static string[] GetEnumDescriptions<T>(T flags) where T : Enum
@@ -37,6 +45,19 @@ namespace Garnet.common
 
             var nameToDesc = EnumUtils.GetEnumNameToDescription<T>();
             return flags.ToString().Split(',').Select(f => nameToDesc.ContainsKey(f.Trim()) ? nameToDesc[f.Trim()] : f).ToArray();
+        }
+
+        public static bool TryParseEnumFromDescription<T>(string strVal, out T val) where T : struct, Enum
+        {
+            val = default;
+
+            if (!EnumDescriptionToNameCache.ContainsKey(typeof(T)))
+                AddTypeToCache<T>();
+
+            if (!EnumDescriptionToNameCache[typeof(T)].ContainsKey(strVal)) 
+                return Enum.TryParse(strVal, out val);
+            
+            return Enum.TryParse(EnumDescriptionToNameCache[typeof(T)][strVal], out val);
         }
     }
 }

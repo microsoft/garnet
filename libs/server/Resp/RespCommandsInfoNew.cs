@@ -3,21 +3,26 @@
 
 using System;
 using System.ComponentModel;
+using System.Linq;
+using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
 
-namespace Garnet.server.Resp
+namespace Garnet.server
 {
-    public class RespCommandInfoNew
+    public class RespCommandsInfoNew
     {
+        public static RespCommandsInfoNew[] AllRespCommands;
+
+        public static RespCommandsInfoNew[] AllTxnRespCommands;
+
         public RespCommand Command { get; init; }
 
         public string Name { get; init; }
 
         public int Arity { get; init; }
-
-        public RespCommandOptions Options { get; init; }
 
         public RespCommandFlags Flags
         {
@@ -49,10 +54,12 @@ namespace Garnet.server.Resp
 
         public RespCommandKeySpecifications? KeySpecifications { get; init; }
 
-        public RespCommandInfoNew[]? SubCommands { get; init; }
+        public RespCommandsInfoNew[]? SubCommands { get; init; }
 
         [JsonIgnore]
         public string RespFormat => this._respFormat ??= GetRespFormat();
+
+        private const string RespCommandsEmbeddedFileName = @"RespCommands.json";
 
         private readonly RespCommandFlags _flags;
         private readonly RespAclCategories _aclCategories;
@@ -60,6 +67,27 @@ namespace Garnet.server.Resp
         private string? _respFormat;
         private readonly string[] _respFormatFlags;
         private readonly string[] _respFormatAclCategories;
+
+        static RespCommandsInfoNew()
+        {
+            InitRespCommands();
+        }
+
+        private static void InitRespCommands()
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var resourceName = assembly.GetManifestResourceNames().FirstOrDefault(rn => rn.EndsWith(RespCommandsEmbeddedFileName))!;
+
+            var serializerOptions = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Converters = { new JsonStringEnumConverter(), new KeySpecConverter() }
+            };
+
+            using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)!;
+            AllRespCommands = JsonSerializer.Deserialize<RespCommandsInfoNew[]>(stream, serializerOptions)!;
+            AllTxnRespCommands = AllRespCommands.Where(rc => !rc.Flags.HasFlag(RespCommandFlags.NoMulti)).ToArray();
+        }
 
         private string GetRespFormat()
         {
@@ -209,7 +237,7 @@ namespace Garnet.server.Resp
     }
 
     [Flags]
-    public enum RespCommandOptions : ushort
+    public enum RespCommandOptionsNew : ushort
     {
         None = 0,
         EX = 1,

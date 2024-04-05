@@ -9,22 +9,22 @@
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, Read, String",
-    "SubCommands": null,
     "Tips": null,
     "KeySpecifications": {
       "BeginSearch": {
-        "$type": "index",
+        "TypeDiscriminator": "BeginSearchIndex",
         "Index": 1
       },
       "FindKeys": {
-        "$type": "range",
+        "TypeDiscriminator": "FindKeysRange",
         "LastKey": 0,
         "KeyStep": 1,
         "Limit": 0
       },
       "Notes": null,
       "Flags": "RO, Access"
-    }
+    },
+    "SubCommands": null
   },
   {
     "Command": "SET",
@@ -36,33 +36,35 @@
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Slow, String, Write",
-    "SubCommands": null,
     "Tips": null,
     "KeySpecifications": {
       "BeginSearch": {
-        "$type": "index",
+        "TypeDiscriminator": "BeginSearchIndex",
         "Index": 1
       },
       "FindKeys": {
-        "$type": "range",
+        "TypeDiscriminator": "FindKeysRange",
         "LastKey": 0,
         "KeyStep": 1,
         "Limit": 0
       },
       "Notes": "RW and ACCESS due to the optional \u0060GET\u0060 argument",
       "Flags": "RW, Access, Update, VariableFlags"
-    }
+    },
+    "SubCommands": null
   },
   {
     "Command": "CONFIG",
     "Name": "CONFIG",
-    "Arity": 2,
+    "Arity": -2,
     "Options": "None",
     "Flags": "None",
     "FirstKey": 0,
     "LastKey": 0,
     "Step": 0,
     "AclCategories": "Slow",
+    "Tips": null,
+    "KeySpecifications": null,
     "SubCommands": [
       {
         "Command": "CONFIG",
@@ -74,9 +76,9 @@
         "LastKey": 0,
         "Step": 0,
         "AclCategories": "Admin, Dangerous, Slow",
-        "SubCommands": null,
         "Tips": null,
-        "KeySpecifications": null
+        "KeySpecifications": null,
+        "SubCommands": null
       },
       {
         "Command": "CONFIG",
@@ -88,9 +90,9 @@
         "LastKey": 0,
         "Step": 0,
         "AclCategories": "Admin, Dangerous, Slow",
-        "SubCommands": null,
         "Tips": null,
-        "KeySpecifications": null
+        "KeySpecifications": null,
+        "SubCommands": null
       },
       {
         "Command": "CONFIG",
@@ -102,15 +104,13 @@
         "LastKey": 0,
         "Step": 0,
         "AclCategories": "Admin, Dangerous, Slow",
-        "SubCommands": null,
         "Tips": [
           "request_policy:all_nodes",
           "response_policy:all_succeeded"
         ],
-        "KeySpecifications": null
+        "KeySpecifications": null,
+        "SubCommands": null
       }
-    ],
-    "Tips": null,
-    "KeySpecifications": null
+    ]
   }
 ]

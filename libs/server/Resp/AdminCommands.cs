@@ -261,7 +261,7 @@ namespace Garnet.server
                 else
                 {
                     // TODO: include the built-in commands
-                    string resultStr = "";
+                    var resultSb = new StringBuilder();
                     int cnt = 0;
                     for (int i = 0; i < storeWrapper.customCommandManager.CommandId; i++)
                     {
@@ -269,13 +269,19 @@ namespace Garnet.server
                         if (cmd != null)
                         {
                             cnt++;
-                            resultStr += $"*6\r\n${cmd.nameStr.Length}\r\n{cmd.nameStr}\r\n:{1 + cmd.NumKeys + cmd.NumParams}\r\n*1\r\n+fast\r\n:1\r\n:1\r\n:1\r\n";
+                            resultSb.Append($"*6\r\n${cmd.nameStr.Length}\r\n{cmd.nameStr}\r\n:{1 + cmd.NumKeys + cmd.NumParams}\r\n*1\r\n+fast\r\n:1\r\n:1\r\n:1\r\n");
                         }
+                    }
+
+                    foreach (var cmd in RespCommandsInfoNew.AllRespCommands)
+                    {
+                        cnt++;
+                        resultSb.Append(cmd.RespFormat);
                     }
 
                     while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"*{cnt}\r\n"), ref dcurr, dend))
                         SendAndReset();
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(resultStr), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(resultSb.ToString()), ref dcurr, dend))
                         SendAndReset();
                 }
             }

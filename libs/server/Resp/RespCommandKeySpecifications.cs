@@ -3,11 +3,13 @@
 
 using System;
 using System.ComponentModel;
+using System.Formats.Asn1;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
 
-namespace Garnet.server.Resp
+namespace Garnet.server
 {
     public class RespCommandKeySpecifications
     {
@@ -49,7 +51,7 @@ namespace Garnet.server.Resp
             if (this.Flags != KeySpecificationFlags.None)
             {
                 elemCount += 2;
-                sb.Append("+flags\r\n");
+                sb.Append("$5\r\nflags\r\n");
                 sb.Append($"*{this._respFormatFlags.Length}\r\n");
                 foreach (var flag in this._respFormatFlags)
                     sb.Append($"+{flag}\r\n");
@@ -58,12 +60,12 @@ namespace Garnet.server.Resp
             if (this.BeginSearch != null)
             {
                 elemCount += 2;
-                sb.Append("+begin_search\r\n");
+                sb.Append("$12\r\nbegin_search\r\n");
                 sb.Append("*4\r\n");
-                sb.Append($"+type\r\n");
-                sb.Append($"+{this.BeginSearch.RespFormatType}\r\n");
-                sb.Append($"+spec\r\n");
-                sb.Append($"+{this.BeginSearch.RespFormatSpec}\r\n");
+                sb.Append("$4\r\ntype\r\n");
+                sb.Append($"{this.BeginSearch.RespFormatType}\r\n");
+                sb.Append("$4\r\nspec\r\n");
+                sb.Append($"{this.BeginSearch.RespFormatSpec}\r\n");
             }
 
             if (this.FindKeys != null)
@@ -71,10 +73,10 @@ namespace Garnet.server.Resp
                 elemCount += 2;
                 sb.Append("+find_keys\r\n");
                 sb.Append("*4\r\n");
-                sb.Append($"+type\r\n");
-                sb.Append($"+{this.FindKeys.RespFormatType}\r\n");
-                sb.Append($"+spec\r\n");
-                sb.Append($"+{this.FindKeys.RespFormatSpec}\r\n");
+                sb.Append("$4\r\ntype\r\n");
+                sb.Append($"{this.FindKeys.RespFormatType}\r\n");
+                sb.Append("$4\r\nspec\r\n");
+                sb.Append($"{this.FindKeys.RespFormatSpec}\r\n");
             }
 
             return $"*{elemCount}\r\n{sb}";
@@ -118,9 +120,6 @@ namespace Garnet.server.Resp
         string RespFormatSpec { get; }
     }
 
-    [JsonDerivedType(typeof(BeginSearchIndex), "index")]
-    [JsonDerivedType(typeof(BeginSearchKeyword), "keyword")]
-    [JsonDerivedType(typeof(BeginSearchUnknown), "unknown")]
     public interface IBeginSearchKeySpec : IKeySpec
     {
 
@@ -131,12 +130,12 @@ namespace Garnet.server.Resp
         public int Index { get; init; }
 
         [JsonIgnore]
-        public string RespFormatType => "index";
+        public string RespFormatType => "$5\r\nindex";
 
         [JsonIgnore]
         public string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*2\r\n+index\r\n:{this.Index}"; }
+            get { return this._respFormatSpec ??= $"*2\r\n$5\r\nindex\r\n:{this.Index}"; }
         }
 
         private string? _respFormatSpec;
@@ -156,12 +155,12 @@ namespace Garnet.server.Resp
         public int StartFrom { get; init; }
 
         [JsonIgnore]
-        public string RespFormatType => "keyword";
+        public string RespFormatType => "$7\r\nkeyword";
 
         [JsonIgnore]
         public string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*4\r\n+keyword\r\n:{this.Keyword}\r\n+startfrom\r\n:{this.StartFrom}"; }
+            get { return this._respFormatSpec ??= $"*4\r\n$7\r\nkeyword\r\n${this.Keyword?.Length ?? 0}\r\n{this.Keyword}\r\n$9\r\nstartfrom\r\n:{this.StartFrom}"; }
         }
 
         private string? _respFormatSpec;
@@ -178,7 +177,7 @@ namespace Garnet.server.Resp
     public class BeginSearchUnknown : IBeginSearchKeySpec
     {
         [JsonIgnore]
-        public string RespFormatType => "unknown";
+        public string RespFormatType => "$7\r\nunknown";
 
         [JsonIgnore]
         public string RespFormatSpec
@@ -189,9 +188,6 @@ namespace Garnet.server.Resp
         private string? _respFormatSpec;
     }
 
-    [JsonDerivedType(typeof(FindKeysRange), "range")]
-    [JsonDerivedType(typeof(FindKeysKeyNum), "keynum")]
-    [JsonDerivedType(typeof(FindKeysUnknown), "unknown")]
     public interface IFindKeysKeySpec : IKeySpec
     {
 
@@ -206,12 +202,12 @@ namespace Garnet.server.Resp
         public int Limit { get; init; }
 
         [JsonIgnore]
-        public string RespFormatType => "range";
+        public string RespFormatType => "$5\r\nrange";
 
         [JsonIgnore]
         public string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*6\r\n+lastkey\r\n:{this.LastKey}\r\n+keystep\r\n:{this.KeyStep}\r\n+limit\r\n:{this.Limit}"; }
+            get { return this._respFormatSpec ??= $"*6\r\n$7\r\nlastkey\r\n:{this.LastKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}\r\n$5\r\nlimit\r\n:{this.Limit}"; }
         }
 
         private string? _respFormatSpec;
@@ -235,12 +231,12 @@ namespace Garnet.server.Resp
         public int KeyStep { get; init; }
 
         [JsonIgnore]
-        public string RespFormatType => "keynum";
+        public string RespFormatType => "$6\r\nkeynum";
 
         [JsonIgnore]
         public string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*6\r\n+keynumidx\r\n:{this.KeyNumIdx}\r\n+firstkey\r\n:{this.FirstKey}\r\n+keystep\r\n:{this.KeyStep}"; }
+            get { return this._respFormatSpec ??= $"*6\r\n$9\r\nkeynumidx\r\n:{this.KeyNumIdx}\r\n$8\r\nfirstkey\r\n:{this.FirstKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}"; }
         }
 
         private string? _respFormatSpec;
@@ -258,7 +254,7 @@ namespace Garnet.server.Resp
     public class FindKeysUnknown : IFindKeysKeySpec
     {
         [JsonIgnore]
-        public string RespFormatType => "unknown";
+        public string RespFormatType => "$7\r\nunknown";
 
         [JsonIgnore]
         public string RespFormatSpec
@@ -267,5 +263,167 @@ namespace Garnet.server.Resp
         }
 
         private string? _respFormatSpec;
+    }
+
+    public class KeySpecConverter : JsonConverter<IKeySpec>
+    {
+        public override bool CanConvert(Type typeToConvert) => typeof(IKeySpec).IsAssignableFrom(typeToConvert);
+
+        public override IKeySpec Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (!typeof(IKeySpec).IsAssignableFrom(typeToConvert)) return null;
+
+            if (reader.TokenType != JsonTokenType.StartObject)
+            {
+                throw new JsonException();
+            }
+
+            reader.Read();
+            if (reader.TokenType != JsonTokenType.PropertyName)
+            {
+                throw new JsonException();
+            }
+
+            string? propertyName = reader.GetString();
+            if (propertyName != "TypeDiscriminator")
+            {
+                throw new JsonException();
+            }
+
+            reader.Read();
+            if (reader.TokenType != JsonTokenType.String)
+            {
+                throw new JsonException();
+            }
+
+            var typeDiscriminator = reader.GetString();
+
+            int index = 0;
+            string keyword = null;
+            var startFrom = 0;
+            var lastKey = 0;
+            var keyStep = 0;
+            var limit = 0;
+            var keyNumIdx = 0;
+            var firstKey = 0;
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject)
+                {
+                    return typeDiscriminator switch
+                    {
+                        nameof(BeginSearchIndex) => new BeginSearchIndex(index),
+                        nameof(BeginSearchKeyword) => new BeginSearchKeyword(keyword, startFrom),
+                        nameof(BeginSearchUnknown) => new BeginSearchUnknown(),
+                        nameof(FindKeysRange) => new FindKeysRange(lastKey, keyStep, limit),
+                        nameof(FindKeysKeyNum) => new FindKeysKeyNum(keyNumIdx, firstKey, keyStep),
+                        nameof(FindKeysUnknown) => new FindKeysUnknown(),
+                        _ => throw new JsonException()
+                    };
+                }
+
+                if (reader.TokenType == JsonTokenType.PropertyName)
+                {
+                    propertyName = reader.GetString();
+                    reader.Read();
+
+                    switch (typeDiscriminator)
+                    {
+                        case (nameof(BeginSearchIndex)):
+                            switch (propertyName)
+                            {
+                                case nameof(BeginSearchIndex.Index):
+                                    index = reader.GetInt32();
+                                    break;
+                            }
+
+                            break;
+                        case (nameof(BeginSearchKeyword)):
+                            switch (propertyName)
+                            {
+                                case nameof(BeginSearchKeyword.Keyword):
+                                    keyword = reader.GetString();
+                                    break;
+                                case nameof(BeginSearchKeyword.StartFrom):
+                                    startFrom = reader.GetInt32();
+                                    break;
+                            }
+
+                            break;
+                        case (nameof(FindKeysRange)):
+                            switch (propertyName)
+                            {
+                                case nameof(FindKeysRange.LastKey):
+                                    lastKey = reader.GetInt32();
+                                    break;
+                                case nameof(FindKeysRange.KeyStep):
+                                    keyStep = reader.GetInt32();
+                                    break;
+                                case nameof(FindKeysRange.Limit):
+                                    limit = reader.GetInt32();
+                                    break;
+                            }
+                            break;
+                        case (nameof(FindKeysKeyNum)):
+                            switch (propertyName)
+                            {
+                                case nameof(FindKeysKeyNum.KeyNumIdx):
+                                    keyNumIdx = reader.GetInt32();
+                                    break;
+                                case nameof(FindKeysKeyNum.FirstKey):
+                                    firstKey = reader.GetInt32();
+                                    break;
+                                case nameof(FindKeysKeyNum.KeyStep):
+                                    keyStep = reader.GetInt32();
+                                    break;
+                            }
+                            break;
+                    }
+                }
+            }
+
+            throw new JsonException();
+        }
+
+        public override void Write(Utf8JsonWriter writer, IKeySpec keySpec, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+
+            switch (keySpec)
+            {
+                case BeginSearchIndex beginSearchIndex:
+                    writer.WriteString("TypeDiscriminator", nameof(BeginSearchIndex));
+                    writer.WriteNumber(nameof(BeginSearchIndex.Index), beginSearchIndex.Index);
+                    break;
+                case BeginSearchKeyword beginSearchKeyword:
+                    writer.WriteString("TypeDiscriminator", nameof(BeginSearchKeyword));
+                    writer.WriteString(nameof(beginSearchKeyword.Keyword), beginSearchKeyword.Keyword);
+                    writer.WriteNumber(nameof(beginSearchKeyword.StartFrom), beginSearchKeyword.StartFrom);
+                    break;
+                case BeginSearchUnknown beginSearchUnknown:
+                    writer.WriteString("TypeDiscriminator", nameof(BeginSearchUnknown));
+                    break;
+                case FindKeysRange findKeysRange:
+                    writer.WriteString("TypeDiscriminator", nameof(FindKeysRange));
+                    writer.WriteNumber(nameof(FindKeysRange.LastKey), findKeysRange.LastKey);
+                    writer.WriteNumber(nameof(FindKeysRange.KeyStep), findKeysRange.KeyStep);
+                    writer.WriteNumber(nameof(FindKeysRange.Limit), findKeysRange.Limit);
+                    break;
+                case FindKeysKeyNum findKeysKeyNum:
+                    writer.WriteString("TypeDiscriminator", nameof(FindKeysKeyNum));
+                    writer.WriteNumber(nameof(FindKeysKeyNum.KeyNumIdx), findKeysKeyNum.KeyNumIdx);
+                    writer.WriteNumber(nameof(FindKeysKeyNum.FirstKey), findKeysKeyNum.FirstKey);
+                    writer.WriteNumber(nameof(FindKeysKeyNum.KeyStep), findKeysKeyNum.KeyStep);
+                    break;
+                case FindKeysUnknown findKeysUnknown:
+                    writer.WriteString("TypeDiscriminator", nameof(FindKeysUnknown));
+                    break;
+                default: 
+                    throw new JsonException();
+            }
+
+            writer.WriteEndObject();
+        }
     }
 }
