@@ -419,12 +419,13 @@ namespace Garnet.test
             Assert.IsTrue(int.TryParse(strArrLen, out var arrLen));
             Assert.IsTrue(arrLen == 5);
 
-            var response2 = lightClientRequest.SendCommand("SADD myset one");
+            var lightClientRequest2 = TestUtils.CreateRequest();
+            var response2 = lightClientRequest2.SendCommand("SADD myset one");
             var expectedResponse = ":1\r\n";
             strResponse = Encoding.ASCII.GetString(response2).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
 
-            response2 = lightClientRequest.SendCommand("SCARD myset");
+            response2 = lightClientRequest2.SendCommand("SCARD myset");
             expectedResponse = ":1\r\n";
             strResponse = Encoding.ASCII.GetString(response2).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
