@@ -290,11 +290,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Create <see cref="SpanByte"/> around a pinned Memory&lt;byte&gt;. Warning: ensure the Memory is pinned until operation returns.
-        /// </summary>
-        public static SpanByte FromPinnedMemory(Memory<byte> memory) => FromPinnedSpan(memory.Span);
-
-        /// <summary>
         /// Convert payload to new byte array
         /// </summary>
         public byte[] ToByteArray() => AsReadOnlySpan().ToArray();

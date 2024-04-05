@@ -75,7 +75,7 @@ namespace Garnet.cluster
                     if (!o.IsSpanByte)
                     {
                         memoryHandle = o.Memory.Memory.Pin();
-                        value = SpanByte.FromPinnedMemory(o.Memory.Memory);
+                        value = SpanByte.FromPinnedSpan(o.Memory.Memory.Span);
                     }
                     else
                         value = o.SpanByte;
