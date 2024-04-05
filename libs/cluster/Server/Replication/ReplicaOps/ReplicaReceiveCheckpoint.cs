@@ -167,6 +167,7 @@ namespace Garnet.cluster
         /// <exception cref="Exception">Throws invalid type checkpoint metadata.</exception>
         public void ProcessCheckpointMetadata(Guid fileToken, CheckpointFileType fileType, byte[] checkpointMetadata)
         {
+            UpdateLastPrimarySyncTime();
             ReplicationLogCheckpointManager ckptManager = fileType switch
             {
                 CheckpointFileType.STORE_SNAPSHOT or
@@ -290,6 +291,7 @@ namespace Garnet.cluster
             long beginAddress,
             long recoveredReplicationOffset)
         {
+            UpdateLastPrimarySyncTime();
             storeWrapper.RecoverCheckpoint(recoverMainStoreFromToken, recoverObjectStoreFromToken,
                 remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
 
