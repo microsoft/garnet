@@ -496,7 +496,7 @@ namespace Garnet.server
                 if (!canParse)
                 {
                     ReadOnlySpan<byte> errorMessage = "-ERR value is not an integer or out of range\r\n"u8;
-                    while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
                         SendAndReset();
 
                     // Restore input buffer
@@ -542,7 +542,7 @@ namespace Garnet.server
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
