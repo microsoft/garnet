@@ -184,6 +184,8 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone++;
                     }
+
+                    countDone += count - countDone;
                 }
                 else if (count == int.MinValue) // no count parameter is present, we just pop and return a random item of the set
                 {

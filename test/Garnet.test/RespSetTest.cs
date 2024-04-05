@@ -401,6 +401,36 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoSPOPWithMoreCountThanSetSizeCommandLC()
+        {
+            CreateLongSet();
+
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand("SPOP myset 10", 5);
+
+            var strResponse = Encoding.ASCII.GetString(response);
+            Assert.AreEqual('*', strResponse[0]);
+
+            var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+            Assert.IsTrue(arrLenEndIdx > 1);
+
+            var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            Assert.IsTrue(int.TryParse(strArrLen, out var arrLen));
+            Assert.IsTrue(arrLen == 5);
+
+            var response2 = lightClientRequest.SendCommand("SADD myset one");
+            var expectedResponse = ":1\r\n";
+            strResponse = Encoding.ASCII.GetString(response2).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response2 = lightClientRequest.SendCommand("SCARD myset");
+            expectedResponse = ":1\r\n";
+            strResponse = Encoding.ASCII.GetString(response2).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
+
+        [Test]
         public void MultiWithNonExistingSet()
         {
             var lightClientRequest = TestUtils.CreateRequest();
