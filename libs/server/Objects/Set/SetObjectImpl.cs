@@ -267,7 +267,7 @@ namespace Garnet.server
                     countDone += count - countParameter;
                     
                 }
-                else if (count == int.MinValue) // // no count parameter is present
+                else if (count == int.MinValue) // no count parameter is present
                 {
                     // Return a single random element from the set
                     if (set.Count > 0)
@@ -289,7 +289,7 @@ namespace Garnet.server
                 {
                     // Return an array with potentially duplicate elements
                     int countParameter = Math.Abs(count);
-                    
+
                     // Write the size of the array reply
                     while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
