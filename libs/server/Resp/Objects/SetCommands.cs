@@ -3,6 +3,7 @@
 
 using System;
 using System.Text;
+using System.Xml.Linq;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -481,6 +482,7 @@ namespace Garnet.server
                 }
 
                 // Prepare input
+                var inputCount = count - 1;
                 var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
 
                 // Save old values on buffer for possible revert
@@ -492,7 +494,7 @@ namespace Garnet.server
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Set;
                 inputPtr->header.SetOp = SetOperation.SMOVE;
-                inputPtr->count = 1;
+                inputPtr->count = inputCount;
                 inputPtr->done = 0;
 
                 var status = storageApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
@@ -508,9 +510,15 @@ namespace Garnet.server
                 }
                 else
                 {
-                    return true;
+                    while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
+                        SendAndReset();
                 }
             }
+            // Reset session counters
+            setItemsDoneCount = setOpsCount = 0;
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
     }

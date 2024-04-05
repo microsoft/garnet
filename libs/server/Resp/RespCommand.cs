@@ -428,10 +428,6 @@ namespace Garnet.server
                                         {
                                             return (RespCommand.Set, (byte)SetOperation.SPOP);
                                         }
-                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSMOVE\r\n"u8))
-                                        {
-                                            return (RespCommand.Set, (byte)SetOperation.SMOVE);
-                                        }
                                         break;
 
                                     case 'T':
@@ -564,6 +560,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSSCAN\r\n"u8))
                                         {
                                             return (RespCommand.Set, (byte)SetOperation.SSCAN);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSMOVE\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SMOVE);
                                         }
                                         break;
 
