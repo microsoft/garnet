@@ -54,7 +54,7 @@ namespace Garnet.client
             if (username != null)
             {
                 //2
-                while (!RespWriteUtils.WriteBulkString(username, ref curr, end))
+                while (!RespWriteUtils.WriteAsciiBulkString(username, ref curr, end))
                 {
                     Flush();
                     curr = offset;
@@ -63,7 +63,7 @@ namespace Garnet.client
             }
 
             //3
-            while (!RespWriteUtils.WriteBulkString(password, ref curr, end))
+            while (!RespWriteUtils.WriteAsciiBulkString(password, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -128,7 +128,7 @@ namespace Garnet.client
             if (nodeid != null)
             {
                 //4
-                while (!RespWriteUtils.WriteBulkString(nodeid, ref curr, end))
+                while (!RespWriteUtils.WriteAsciiBulkString(nodeid, ref curr, end))
                 {
                     Flush();
                     curr = offset;
@@ -198,7 +198,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(sourceNodeId, ref curr, end))
+            while (!RespWriteUtils.WriteAsciiBulkString(sourceNodeId, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -365,7 +365,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(sourceNodeId, ref curr, end))
+            while (!RespWriteUtils.WriteAsciiBulkString(sourceNodeId, ref curr, end))
             {
                 Flush();
                 curr = offset;

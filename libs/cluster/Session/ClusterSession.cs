@@ -196,7 +196,7 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_NOAUTH, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_NOAUTH, ref dcurr, dend))
                         SendAndReset();
                     processingCompleted = true;
                 }
