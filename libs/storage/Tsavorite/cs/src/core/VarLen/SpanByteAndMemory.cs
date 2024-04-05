@@ -93,14 +93,9 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// View a fixed Span&lt;byte&gt; as a SpanByteAndMemory
+        /// Create a <see cref="SpanByteAndMemory"/> from pinned <paramref name="span"/>.
         /// </summary>
-        /// <param name="span"></param>
-        /// <returns></returns>
-        public static SpanByteAndMemory FromFixedSpan(Span<byte> span)
-        {
-            return new SpanByteAndMemory { SpanByte = SpanByte.FromFixedSpan(span) };
-        }
+        public static SpanByteAndMemory FromPinnedSpan(ReadOnlySpan<byte> span) => new(SpanByte.FromPinnedSpan(span));
 
         /// <summary>
         /// Convert to be used on heap (IMemoryOwner)

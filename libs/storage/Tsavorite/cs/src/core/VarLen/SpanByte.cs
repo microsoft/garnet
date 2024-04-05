@@ -283,12 +283,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Create a SpanByte around a fixed ReadOnlySpan&lt;byte&gt;. Warning: ensure the Span is fixed until operation returns.
+        /// Create a <see cref="SpanByte"/> from the given <paramref name="span"/>.
         /// </summary>
-        /// <param name="span"></param>
-        /// <returns></returns>
+        /// <remarks>
+        /// SAFETY: The <paramref name="span"/> MUST point to pinned memory.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static SpanByte FromFixedSpan(ReadOnlySpan<byte> span)
+        public static SpanByte FromPinnedSpan(ReadOnlySpan<byte> span)
         {
             return new SpanByte(span.Length, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)));
         }
@@ -298,10 +299,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="memory"></param>
         /// <returns></returns>
-        public static SpanByte FromPinnedMemory(Memory<byte> memory)
-        {
-            return FromFixedSpan(memory.Span);
-        }
+        public static SpanByte FromPinnedMemory(Memory<byte> memory) => FromPinnedSpan(memory.Span);
 
         /// <summary>
         /// Create a SpanByte around a pinned memory pointer of given length
@@ -309,19 +307,12 @@ namespace Tsavorite.core
         /// <param name="ptr"></param>
         /// <param name="length"></param>
         /// <returns></returns>
-        public static SpanByte FromPointer(byte* ptr, int length)
-        {
-            return new SpanByte(length, (IntPtr)ptr);
-        }
-
+        public static SpanByte FromPointer(byte* ptr, int length) => new(length, (IntPtr)ptr);
 
         /// <summary>
         /// Convert payload to new byte array
         /// </summary>
-        public byte[] ToByteArray()
-        {
-            return AsReadOnlySpan().ToArray();
-        }
+        public byte[] ToByteArray() => AsReadOnlySpan().ToArray();
 
         /// <summary>
         /// Convert payload to specified (disposable) memory owner
