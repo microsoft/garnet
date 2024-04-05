@@ -96,6 +96,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Create a <see cref="SpanByteAndMemory"/> from pinned <paramref name="span"/>.
         /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="span"/> MUST point to pinned memory.
+        /// </remarks>
         public static SpanByteAndMemory FromPinnedSpan(ReadOnlySpan<byte> span) => new(SpanByte.FromPinnedSpan(span));
 
         /// <summary>
