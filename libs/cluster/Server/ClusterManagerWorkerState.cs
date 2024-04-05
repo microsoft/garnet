@@ -60,7 +60,7 @@ namespace Garnet.cluster
                         return CmdStrings.RESP_CANNOT_FORGET_MYSELF_ERROR;
 
                     if (current.GetNodeRoleFromNodeId(nodeid) == NodeRole.UNASSIGNED)
-                        return new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}.\r\n"));
+                        return Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}.\r\n");
 
                     if (current.GetLocalNodeRole() == NodeRole.REPLICA && current.GetLocalNodePrimaryId().Equals(nodeid))
                         return CmdStrings.RESP_CANNOT_FORGET_MY_PRIMARY_ERROR;
@@ -155,7 +155,7 @@ namespace Garnet.cluster
                 if (!force && current.GetLocalNodeRole() != NodeRole.PRIMARY)
                 {
                     logger?.LogError("-ERR I am already replica of {localNodePrimaryId}", current.GetLocalNodePrimaryId());
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I am already replica of {current.GetLocalNodePrimaryId()}.\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR I am already replica of {current.GetLocalNodePrimaryId()}.\r\n");
                     return false;
                 }
 
@@ -170,14 +170,14 @@ namespace Garnet.cluster
                 if (workerId == 0)
                 {
                     logger?.LogError("-ERR I don't know about node {nodeid}.", nodeid);
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}.\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}.\r\n");
                     return false;
                 }
 
                 if (current.GetNodeRoleFromNodeId(nodeid) != NodeRole.PRIMARY)
                 {
                     logger?.LogError("-ERR Trying to replicate node ({nodeid}) that is not a primary.", nodeid);
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Trying to replicate node ({nodeid}) that is not a primary.\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Trying to replicate node ({nodeid}) that is not a primary.\r\n");
                     return false;
                 }
 

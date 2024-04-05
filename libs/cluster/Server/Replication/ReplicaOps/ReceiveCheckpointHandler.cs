@@ -49,6 +49,7 @@ namespace Garnet.cluster
         /// <param name="segmentId"></param>
         public void ProcessFileSegments(int segmentId, Guid token, CheckpointFileType type, long startAddress, Span<byte> data)
         {
+            clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
             if (writeIntoCkptDevice == null)
             {
                 Debug.Assert(writeIntoCkptDevice == null);
