@@ -295,7 +295,7 @@ namespace Garnet.server
                     if (success)
                     {
                         // Return "Unknown RESP Command" message
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -525,7 +525,7 @@ namespace Garnet.server
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
                 }
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command == RespCommand.SUBSCRIBE)
@@ -554,8 +554,7 @@ namespace Garnet.server
 
                 if (count != currentCustomTransaction.NumParams)
                 {
-
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}\r\n", ref dcurr, dend))
                         SendAndReset();
 
                     currentCustomTransaction = null;
@@ -581,7 +580,7 @@ namespace Garnet.server
 
                 if (count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
                 {
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}\r\n", ref dcurr, dend))
                         SendAndReset();
 
                     currentCustomCommand = null;
@@ -607,7 +606,7 @@ namespace Garnet.server
 
                 if (count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
                 {
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}\r\n", ref dcurr, dend))
                         SendAndReset();
 
                     currentCustomObjectCommand = null;

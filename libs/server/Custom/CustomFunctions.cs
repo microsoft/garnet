@@ -20,12 +20,10 @@ namespace Garnet.server
         /// <summary>
         /// Create output as simple string, from given string
         /// </summary>
-        protected static unsafe void WriteSimpleString(ref (IMemoryOwner<byte>, int) output, string simpleString)
+        protected static unsafe void WriteSimpleString(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<char> simpleString)
         {
-            var encodedLen = System.Text.Encoding.ASCII.GetByteCount(simpleString);
-
             // Get space for simple string
-            int len = 1 + encodedLen + 2;
+            int len = 1 + simpleString.Length + 2;
             if (output.Item1 != null)
             {
                 if (output.Item1.Memory.Length < len)
@@ -40,7 +38,7 @@ namespace Garnet.server
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteSimpleString(simpleString, encodedLen, ref curr, ptr + len);
+                RespWriteUtils.WriteSimpleString(simpleString, ref curr, ptr + len);
             }
             output.Item2 = len;
         }
@@ -48,7 +46,7 @@ namespace Garnet.server
         /// <summary>
         /// Create output as simple string, from given string
         /// </summary>
-        protected static unsafe void WriteSimpleString(ref MemoryResult<byte> output, string simpleString)
+        protected static unsafe void WriteSimpleString(ref MemoryResult<byte> output, ReadOnlySpan<char> simpleString)
         {
             var _output = (output.MemoryOwner, output.Length);
             WriteSimpleString(ref _output, simpleString);
@@ -137,17 +135,16 @@ namespace Garnet.server
         /// <summary>
         /// Create output as error message, from given string
         /// </summary>
-        protected static unsafe void WriteError(ref (IMemoryOwner<byte>, int) output, string errorMessage)
+        protected static unsafe void WriteError(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<char> errorMessage)
         {
-            var bytes = System.Text.Encoding.ASCII.GetBytes(errorMessage);
             // Get space for error
-            int len = 1 + bytes.Length + 2;
+            int len = 1 + errorMessage.Length + 2;
             output.Item1?.Dispose();
             output.Item1 = MemoryPool.Rent(len);
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteError(bytes, ref curr, ptr + len);
+                RespWriteUtils.WriteError(errorMessage, ref curr, ptr + len);
             }
             output.Item2 = len;
         }

@@ -81,16 +81,17 @@ namespace Garnet.common
         /// <summary>
         /// Write simple string
         /// </summary>
-        public static bool WriteSimpleString(byte[] item, ref byte* curr, byte* end)
+        /// <param name="simpleString">An ASCII encoded simple string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
+        public static bool WriteSimpleString(ReadOnlySpan<byte> simpleString, ref byte* curr, byte* end)
         {
             // Simple strings are of the form "+OK\r\n"
-            int totalLen = 1 + item.Length + 2;
+            int totalLen = 1 + simpleString.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'+';
-            new ReadOnlySpan<byte>(item).CopyTo(new Span<byte>(curr, item.Length));
-            curr += item.Length;
+            simpleString.CopyTo(new Span<byte>(curr, simpleString.Length));
+            curr += simpleString.Length;
             WriteNewline(ref curr);
             return true;
         }
@@ -98,16 +99,17 @@ namespace Garnet.common
         /// <summary>
         /// Write simple string
         /// </summary>
-        public static bool WriteSimpleString(ReadOnlySpan<char> item, int encodedLen, ref byte* curr, byte* end)
+        /// <param name="simpleString">An ASCII simple string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
+        public static bool WriteSimpleString(ReadOnlySpan<char> simpleString, ref byte* curr, byte* end)
         {
             // Simple strings are of the form "+OK\r\n"
-            int totalLen = 1 + encodedLen + 2;
+            int totalLen = 1 + simpleString.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'+';
-            Encoding.ASCII.GetBytes(item, new Span<byte>(curr, encodedLen));
-            curr += encodedLen;
+            int bytesWritten = Encoding.ASCII.GetBytes(simpleString, new Span<byte>(curr, simpleString.Length));
+            curr += bytesWritten;
             WriteNewline(ref curr);
             return true;
         }
@@ -133,31 +135,62 @@ namespace Garnet.common
         /// <summary>
         /// Write error
         /// </summary>
-        public static bool WriteError(byte[] item, ref byte* curr, byte* end)
+        /// <param name="errorString">An ASCII encoded error string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
+        public static bool WriteError(ReadOnlySpan<byte> errorString, ref byte* curr, byte* end)
         {
-            // Simple strings are of the form "+OK\r\n"
-            int totalLen = 1 + item.Length + 2;
+            int totalLen = 1 + errorString.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'-';
-            new ReadOnlySpan<byte>(item).CopyTo(new Span<byte>(curr, item.Length));
-            curr += item.Length;
+            errorString.CopyTo(new Span<byte>(curr, errorString.Length));
+            curr += errorString.Length;
             WriteNewline(ref curr);
             return true;
         }
 
         /// <summary>
-        /// Write byte array directly
+        /// Write error
         /// </summary>
-        public static bool WriteDirect(ReadOnlySpan<byte> item, ref byte* curr, byte* end)
+        /// <param name="errorString">An ASCII error string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
+        public static bool WriteError(ReadOnlySpan<char> errorString, ref byte* curr, byte* end)
         {
-            int totalLen = item.Length;
+            int totalLen = 1 + errorString.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
-            item.CopyTo(new Span<byte>(curr, item.Length));
-            curr += item.Length;
+            *curr++ = (byte)'-';
+            int bytesWritten = Encoding.ASCII.GetBytes(errorString, new Span<byte>(curr, errorString.Length));
+            curr += bytesWritten;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Writes the contents of <paramref name="span"/> as byte array to <paramref name="curr"/>
+        /// </summary>
+        /// <returns><see langword="true"/> if the the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
+        public static bool WriteDirect(ReadOnlySpan<byte> span, ref byte* curr, byte* end)
+        {
+            if (span.Length > (int)(end - curr))
+                return false;
+
+            span.CopyTo(new Span<byte>(curr, span.Length));
+            curr += span.Length;
+            return true;
+        }
+
+        /// <summary>
+        /// Encodes the <paramref name="span"/> as ASCII to <paramref name="curr"/>
+        /// </summary>
+        /// <returns><see langword="true"/> if the the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
+        public static bool WriteAsciiDirect(ReadOnlySpan<char> span, ref byte* curr, byte* end)
+        {
+            if (span.Length > (int)(end - curr))
+                return false;
+
+            int bytesWritten = Encoding.ASCII.GetBytes(span, new Span<byte>(curr, span.Length));
+            curr += bytesWritten;
             return true;
         }
 
@@ -194,39 +227,42 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write bulk string
+        /// Encodes the <paramref name="chars"/> as ASCII bulk string to <paramref name="curr"/>
         /// </summary>
-        public static bool WriteBulkString(ReadOnlySpan<char> item, ref byte* curr, byte* end)
+        public static bool WriteAsciiBulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)
         {
-            var itemDigits = NumUtils.NumDigits(item.Length);
-            int totalLen = 1 + itemDigits + 2 + item.Length + 2;
+            var itemDigits = NumUtils.NumDigits(chars.Length);
+            int totalLen = 1 + itemDigits + 2 + chars.Length + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
+            NumUtils.IntToBytes(chars.Length, itemDigits, ref curr);
             WriteNewline(ref curr);
-            Encoding.UTF8.GetBytes(item, new Span<byte>(curr, item.Length));
-            curr += item.Length;
+            int bytesWritten = Encoding.ASCII.GetBytes(chars, new Span<byte>(curr, chars.Length));
+            curr += bytesWritten;
             WriteNewline(ref curr);
             return true;
         }
 
         /// <summary>
-        /// Write bulk string
+        /// Encodes the <paramref name="chars"/> as UTF8 bulk string to <paramref name="curr"/>
         /// </summary>
-        public static bool WriteBulkString(Span<byte> item, ref byte* curr, byte* end)
+        public static bool WriteUtf8BulkString(ReadOnlySpan<char> chars, ref byte* curr, byte* end)
         {
-            var itemDigits = NumUtils.NumDigits(item.Length);
-            int totalLen = 1 + itemDigits + 2 + item.Length + 2;
+            // Calculate the amount of bytes it takes to encoded the UTF16 string as UTF8
+            int encodedByteCount = Encoding.UTF8.GetByteCount(chars);
+
+            var itemDigits = NumUtils.NumDigits(encodedByteCount);
+            int totalLen = 1 + itemDigits + 2 + encodedByteCount + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
             *curr++ = (byte)'$';
-            NumUtils.IntToBytes(item.Length, itemDigits, ref curr);
+            NumUtils.IntToBytes(encodedByteCount, itemDigits, ref curr);
             WriteNewline(ref curr);
-            item.CopyTo(new Span<byte>(curr, item.Length));
-            curr += item.Length;
+            int bytesWritten = Encoding.UTF8.GetBytes(chars, new Span<byte>(curr, encodedByteCount));
+            curr += bytesWritten;
             WriteNewline(ref curr);
             return true;
         }
@@ -372,18 +408,6 @@ namespace Garnet.common
 
             //$size\r\ninteger\r\n
             return 1 + integerLenSize + 2 + sign + integerLen + 2;
-        }
-
-        /// <summary>
-        /// Write response from ReadOnlySpan of byte
-        /// </summary>
-        public static bool WriteResponse(ReadOnlySpan<byte> response, ref byte* curr, byte* end)
-        {
-            if ((int)(end - curr) < response.Length)
-                return false;
-            response.CopyTo(new Span<byte>(curr, response.Length));
-            curr += response.Length;
-            return true;
         }
 
 

@@ -78,7 +78,7 @@ namespace Garnet.server
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;
                         errorFlag = true;
-                        errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                        errorCmd = Encoding.ASCII.GetString(param);
                     }
                     else
                     {
@@ -112,7 +112,7 @@ namespace Garnet.server
                         ReadOnlySpan<byte> response = null;
                         if (invalid)
                         {
-                            response = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Invalid type {invalidEvent}\r\n"));
+                            response = Encoding.ASCII.GetBytes($"-ERR Invalid type {invalidEvent}\r\n");
                         }
                         else
                         {
@@ -123,7 +123,7 @@ namespace Garnet.server
                             }
                             response = CmdStrings.RESP_OK;
                         }
-                        while (!RespWriteUtils.WriteResponse(response, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(response, ref dcurr, dend))
                             SendAndReset();
 
                         readHead = (int)(ptr - recvBufferPtr);
@@ -136,9 +136,9 @@ namespace Garnet.server
                     List<string> latencyCommands = RespLatencyHelp.GetLatencyCommands();
                     while (!RespWriteUtils.WriteArrayLength(latencyCommands.Count, ref dcurr, dend))
                         SendAndReset();
-                    foreach (String command in latencyCommands)
+                    foreach (string command in latencyCommands)
                     {
-                        while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(command), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteSimpleString(command, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -146,8 +146,8 @@ namespace Garnet.server
                 {
                     if (!DrainCommands(bufSpan, count - 1))
                         return false;
-                    string paramStr = Encoding.ASCII.GetString(param.ToArray());
-                    while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Unknown subcommand. Try LATENCY HELP.\r\n")), ref dcurr, dend))
+                    string paramStr = Encoding.ASCII.GetString(param);
+                    while (!RespWriteUtils.WriteDirect("-ERR Unknown subcommand. Try LATENCY HELP.\r\n"u8, ref dcurr, dend))
                         SendAndReset();
                 }
             }

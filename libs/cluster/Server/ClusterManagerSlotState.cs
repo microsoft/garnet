@@ -94,7 +94,7 @@ namespace Garnet.cluster
 
                 if (migratingWorkerId == 0)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n");
                     return false;
                 }
 
@@ -106,20 +106,20 @@ namespace Garnet.cluster
 
                 if (current.GetNodeRoleFromNodeId(nodeid) != NodeRole.PRIMARY)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Target node {nodeid} is not a master node.\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Target node {nodeid} is not a master node.\r\n");
                     return false;
                 }
 
                 if (!current.IsLocal((ushort)slot))
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I'm not the owner of hash slot {slot}\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR I'm not the owner of hash slot {slot}\r\n");
                     return false;
                 }
 
                 if (current.GetState((ushort)slot) != SlotState.STABLE)
                 {
                     var _migratingNodeId = current.GetNodeIdFromSlot((ushort)slot);
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot already scheduled for migration from {_migratingNodeId}\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Slot already scheduled for migration from {_migratingNodeId}\r\n");
                     return false;
                 }
 
@@ -161,7 +161,7 @@ namespace Garnet.cluster
                 //Check migrating worker is a known valid worker
                 if (migratingWorkerId == 0)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n");
                     return false;
                 }
 
@@ -175,7 +175,7 @@ namespace Garnet.cluster
                 //Check if local node is primary
                 if (current.GetNodeRoleFromNodeId(nodeid) != NodeRole.PRIMARY)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Target node {nodeid} is not a master node.\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Target node {nodeid} is not a master node.\r\n");
                     return false;
                 }
 
@@ -184,7 +184,7 @@ namespace Garnet.cluster
                     //Check if slot is owned by local node
                     if (!current.IsLocal((ushort)slot))
                     {
-                        resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I'm not the owner of hash slot {slot}\r\n"));
+                        resp = Encoding.ASCII.GetBytes($"-ERR I'm not the owner of hash slot {slot}\r\n");
                         return false;
                     }
 
@@ -192,7 +192,7 @@ namespace Garnet.cluster
                     if (current.GetState((ushort)slot) != SlotState.STABLE)
                     {
                         var _migratingNodeId = current.GetNodeIdFromSlot((ushort)slot);
-                        resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot already scheduled for migration from {_migratingNodeId}\r\n"));
+                        resp = Encoding.ASCII.GetBytes($"-ERR Slot already scheduled for migration from {_migratingNodeId}\r\n");
                         return false;
                     }
                 }
@@ -227,32 +227,32 @@ namespace Garnet.cluster
                 var importingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
                 if (importingWorkerId == 0)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n");
                     return false;
                 }
 
                 if (current.GetLocalNodeRole() != NodeRole.PRIMARY)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Importing node {current.GetLocalNodeRole()} is not a master node.\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Importing node {current.GetLocalNodeRole()} is not a master node.\r\n");
                     return false;
                 }
 
                 if (current.IsLocal((ushort)slot, readCommand: false))
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR This is a local hash slot {slot} and is already imported\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR This is a local hash slot {slot} and is already imported\r\n");
                     return false;
                 }
 
                 string sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
                 if (sourceNodeId == null || !sourceNodeId.Equals(nodeid))
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slot} is not owned by {nodeid}\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Slot {slot} is not owned by {nodeid}\r\n");
                     return false;
                 }
 
                 if (current.GetState((ushort)slot) != SlotState.STABLE)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot already scheduled for import from {nodeid}\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Slot already scheduled for import from {nodeid}\r\n");
                     return false;
                 }
 
@@ -284,14 +284,14 @@ namespace Garnet.cluster
                 // Check importing nodeId is valid
                 if (importingWorkerId == 0)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n");
                     return false;
                 }
 
                 // Check local node is a primary
                 if (current.GetLocalNodeRole() != NodeRole.PRIMARY)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Importing node {current.GetLocalNodeRole()} is not a master node.\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Importing node {current.GetLocalNodeRole()} is not a master node.\r\n");
                     return false;
                 }
 
@@ -301,7 +301,7 @@ namespace Garnet.cluster
                     // Can only import remote slots
                     if (current.IsLocal((ushort)slot, readCommand: false))
                     {
-                        resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR This is a local hash slot {slot} and is already imported\r\n"));
+                        resp = Encoding.ASCII.GetBytes($"-ERR This is a local hash slot {slot} and is already imported\r\n");
                         return false;
                     }
 
@@ -309,14 +309,14 @@ namespace Garnet.cluster
                     var sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
                     if (sourceNodeId == null || !sourceNodeId.Equals(nodeid))
                     {
-                        resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slot} is not owned by {nodeid}\r\n"));
+                        resp = Encoding.ASCII.GetBytes($"-ERR Slot {slot} is not owned by {nodeid}\r\n");
                         return false;
                     }
 
                     // Check if slot is in stable state
                     if (current.GetState((ushort)slot) != SlotState.STABLE)
                     {
-                        resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot already scheduled for import from {nodeid}\r\n"));
+                        resp = Encoding.ASCII.GetBytes($"-ERR Slot already scheduled for import from {nodeid}\r\n");
                         return false;
                     }
                 }
@@ -345,7 +345,7 @@ namespace Garnet.cluster
             var workerId = current.GetWorkerIdFromNodeId(nodeid);
             if (workerId == 0)
             {
-                resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n"));
+                resp = Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n");
                 return false;
             }
 
@@ -368,7 +368,7 @@ namespace Garnet.cluster
             {
                 if (!current.GetLocalNodeId().Equals(nodeid))
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Input nodeid {nodeid} different from local nodeid {CurrentConfig.GetLocalNodeId()}.\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR Input nodeid {nodeid} different from local nodeid {CurrentConfig.GetLocalNodeId()}.\r\n");
                     return false;
                 }
 
@@ -404,7 +404,7 @@ namespace Garnet.cluster
                 var workerId = current.GetWorkerIdFromNodeId(nodeid);
                 if (workerId == 0)
                 {
-                    resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n"));
+                    resp = Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}\r\n");
                     return false;
                 }
 
