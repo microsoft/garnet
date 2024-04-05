@@ -1,0 +1,3027 @@
+﻿[
+  {
+    "Command": "GET",
+    "Name": "GET",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, String",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SET",
+    "Name": "SET",
+    "Arity": -3,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": "RW and ACCESS due to the optional \u0060GET\u0060 argument",
+      "Flags": "RW, Access, Update, VariableFlags"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "GETRANGE",
+    "Name": "GETRANGE",
+    "Arity": 4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow, String",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SETRANGE",
+    "Name": "SETRANGE",
+    "Arity": 4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "PFADD",
+    "Name": "PFADD",
+    "Arity": -2,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "HyperLogLog, Fast, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Insert"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "PFCOUNT",
+    "Name": "PFCOUNT",
+    "Arity": -2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "HyperLogLog, Read, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": -1,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": "RW because it may change the internal representation of the key, and propagate to replicas",
+      "Flags": "RW, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "PFMERGE",
+    "Name": "PFMERGE",
+    "Arity": -2,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "HyperLogLog, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Insert"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SETEX",
+    "Name": "SETEX",
+    "Arity": 4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "OW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "PSETEX",
+    "Name": "PSETEX",
+    "Arity": 4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "OW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "DEL",
+    "Name": "DEL",
+    "Arity": -2,
+    "Flags": "Write",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "KeySpace, Slow, Write",
+    "Tips": [
+      "request_policy:multi_shard",
+      "response_policy:agg_sum"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": -1,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RM, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "EXISTS",
+    "Name": "EXISTS",
+    "Arity": -2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Read",
+    "Tips": [
+      "request_policy:multi_shard",
+      "response_policy:agg_sum"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": -1,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "RENAME",
+    "Name": "RENAME",
+    "Arity": 3,
+    "Flags": "Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "KeySpace, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "INCR",
+    "Name": "INCR",
+    "Arity": 2,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "INCRBY",
+    "Name": "INCRBY",
+    "Arity": 3,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "DECR",
+    "Name": "DECR",
+    "Arity": 2,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "DECRBY",
+    "Name": "DECRBY",
+    "Arity": 3,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "EXPIRE",
+    "Name": "EXPIRE",
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "PEXPIRE",
+    "Name": "PEXPIRE",
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "PERSIST",
+    "Name": "PERSIST",
+    "Arity": 2,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "TTL",
+    "Name": "TTL",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Read",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "PTTL",
+    "Name": "PTTL",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Read",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SETBIT",
+    "Name": "SETBIT",
+    "Arity": 4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Bitmap, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "GETBIT",
+    "Name": "GETBIT",
+    "Arity": 3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Bitmap, Fast, Read",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "BITCOUNT",
+    "Name": "BITCOUNT",
+    "Arity": -2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Bitmap, Read, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "BITPOS",
+    "Name": "BITPOS",
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Bitmap, Read, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "BITFIELD",
+    "Name": "BITFIELD",
+    "Arity": -2,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Bitmap, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": "This command allows both access and modification of the key",
+      "Flags": "RW, Access, Update, VariableFlags"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "MSET",
+    "Name": "MSET",
+    "Arity": -3,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 2,
+    "AclCategories": "Slow, String, Write",
+    "Tips": [
+      "request_policy:multi_shard",
+      "response_policy:all_succeeded"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": -1,
+        "KeyStep": 2,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "OW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "MSETNX",
+    "Name": "MSETNX",
+    "Arity": -3,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 2,
+    "AclCategories": "Slow, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": -1,
+        "KeyStep": 2,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "OW, Insert"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "MGET",
+    "Name": "MGET",
+    "Arity": -2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, String",
+    "Tips": [
+      "request_policy:multi_shard"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": -1,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "UNLINK",
+    "Name": "UNLINK",
+    "Arity": -2,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Write",
+    "Tips": [
+      "request_policy:multi_shard",
+      "response_policy:agg_sum"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": -1,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RM, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "MULTI",
+    "Name": "MULTI",
+    "Arity": 1,
+    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Fast, Transaction",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": []
+  },
+  {
+    "Command": "EXEC",
+    "Name": "EXEC",
+    "Arity": 1,
+    "Flags": "Loading, NoScript, SkipSlowLog, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow, Transaction",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": []
+  },
+  {
+    "Command": "WATCH",
+    "Name": "WATCH",
+    "Arity": -2,
+    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Fast, Transaction",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": -1,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "UNWATCH",
+    "Name": "UNWATCH",
+    "Arity": 1,
+    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Fast, Transaction",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": []
+  },
+  {
+    "Command": "DISCARD",
+    "Name": "DISCARD",
+    "Arity": 1,
+    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Fast, Transaction",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": []
+  },
+  {
+    "Command": "GETDEL",
+    "Name": "GETDEL",
+    "Arity": 2,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "APPEND",
+    "Name": "APPEND",
+    "Arity": 3,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, String, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Insert"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "ECHO",
+    "Name": "ECHO",
+    "Arity": 2,
+    "Flags": "Fast, Loading, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Connection, Fast",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": []
+  },
+  {
+    "Command": "REPLICAOF",
+    "Name": "REPLICAOF",
+    "Arity": 3,
+    "Flags": "Admin, NoAsyncLoading, NoScript, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Admin, Dangerous, Slow",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": []
+  },
+  {
+    "Command": "SECONDARYOF",
+    "Name": "SLAVEOF",
+    "Arity": 3,
+    "Flags": "Admin, NoAsyncLoading, NoScript, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Admin, Dangerous, Slow",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": []
+  },
+  {
+    "Command": "CONFIG",
+    "Name": "CONFIG",
+    "Arity": -2,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": [
+      {
+        "Command": "NONE",
+        "Name": "CONFIG|REWRITE",
+        "Arity": 2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CONFIG|GET",
+        "Arity": -3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CONFIG|SET",
+        "Arity": -4,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      }
+    ]
+  },
+  {
+    "Command": "CLIENT",
+    "Name": "CLIENT",
+    "Arity": -2,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZADD",
+    "Arity": -4,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, SortedSet, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZMSCORE",
+    "Arity": -3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, SortedSet",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZREM",
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, SortedSet, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZCARD",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, SortedSet",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZPOPMAX",
+    "Arity": -2,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, SortedSet, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZSCORE",
+    "Arity": 3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, SortedSet",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZCOUNT",
+    "Arity": 4,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, SortedSet",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZINCRBY",
+    "Arity": 4,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, SortedSet, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZRANK",
+    "Arity": -3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, SortedSet",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZRANGE",
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, SortedSet, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZRANGEBYSCORE",
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, SortedSet, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZREVRANK",
+    "Arity": -3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, SortedSet",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZREMRANGEBYLEX",
+    "Arity": 4,
+    "Flags": "Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZREMRANGEBYRANK",
+    "Arity": 4,
+    "Flags": "Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZREMRANGEBYSCORE",
+    "Arity": 4,
+    "Flags": "Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "SortedSet, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZLEXCOUNT",
+    "Arity": 4,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, SortedSet",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZPOPMIN",
+    "Arity": -2,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, SortedSet, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZRANDMEMBER",
+    "Arity": -2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, SortedSet, Slow",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "GEOADD",
+    "Arity": -5,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Geo, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "GEOHASH",
+    "Arity": -2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Geo, Read, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "GEODIST",
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Geo, Read, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "GEOPOS",
+    "Arity": -2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Geo, Read, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "GEOSEARCH",
+    "Arity": -7,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Geo, Read, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZREVRANGE",
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, SortedSet, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "SortedSet",
+    "Name": "ZSCAN",
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, SortedSet, Slow",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "List",
+    "Name": "LPUSH",
+    "Arity": -3,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, List, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Insert"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "List",
+    "Name": "LPOP",
+    "Arity": -2,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, List, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "List",
+    "Name": "RPUSH",
+    "Arity": -3,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, List, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Insert"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "List",
+    "Name": "RPOP",
+    "Arity": -2,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, List, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "List",
+    "Name": "LLEN",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, List, Read",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "List",
+    "Name": "LTRIM",
+    "Arity": 4,
+    "Flags": "Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "List, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "List",
+    "Name": "LRANGE",
+    "Arity": 4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "List, Read, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "List",
+    "Name": "LINDEX",
+    "Arity": 3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "List, Read, Slow",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "List",
+    "Name": "LINSERT",
+    "Arity": 5,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "List, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Insert"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "List",
+    "Name": "LREM",
+    "Arity": 4,
+    "Flags": "Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "List, Slow, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HSET",
+    "Arity": -4,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HMSET",
+    "Arity": -4,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HGET",
+    "Arity": 3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HMGET",
+    "Arity": -3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HGETALL",
+    "Arity": 2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Read, Slow",
+    "Tips": [
+      "nondeterministic_output_order"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HDEL",
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HLEN",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HEXISTS",
+    "Arity": 3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HKEYS",
+    "Arity": 2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Read, Slow",
+    "Tips": [
+      "nondeterministic_output_order"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HVALS",
+    "Arity": 2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Read, Slow",
+    "Tips": [
+      "nondeterministic_output_order"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HINCRBY",
+    "Arity": 4,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HINCRBYFLOAT",
+    "Arity": 4,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Update"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HSETNX",
+    "Arity": 4,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Insert"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HRANDFIELD",
+    "Arity": -2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Read, Slow",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HSCAN",
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Read, Slow",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Hash",
+    "Name": "HSTRLEN",
+    "Arity": 3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Set",
+    "Name": "SADD",
+    "Arity": -3,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Set, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Insert"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Set",
+    "Name": "SMEMBERS",
+    "Arity": 2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Set, Slow",
+    "Tips": [
+      "nondeterministic_output_order"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Set",
+    "Name": "SREM",
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Set, Write",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Set",
+    "Name": "SCARD",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Set",
+    "Tips": [],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Set",
+    "Name": "SPOP",
+    "Arity": -2,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Set, Write",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RW, Access, Delete"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "Set",
+    "Name": "SSCAN",
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Set, Slow",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": {
+      "BeginSearch": {
+        "TypeDiscriminator": "BeginSearchIndex",
+        "Index": 1
+      },
+      "FindKeys": {
+        "TypeDiscriminator": "FindKeysRange",
+        "LastKey": 0,
+        "KeyStep": 1,
+        "Limit": 0
+      },
+      "Notes": null,
+      "Flags": "RO, Access"
+    },
+    "SubCommands": []
+  },
+  {
+    "Command": "ACL",
+    "Name": "ACL",
+    "Arity": -2,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": [
+      {
+        "Command": "NONE",
+        "Name": "ACL|DELUSER",
+        "Arity": -3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "ACL|LOAD",
+        "Arity": 2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "ACL|USERS",
+        "Arity": 2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "ACL|WHOAMI",
+        "Arity": 2,
+        "Flags": "Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "ACL|LIST",
+        "Arity": 2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "ACL|CAT",
+        "Arity": -2,
+        "Flags": "Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "ACL|SETUSER",
+        "Arity": -3,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      }
+    ]
+  },
+  {
+    "Command": "CLUSTER",
+    "Name": "CLUSTER",
+    "Arity": -2,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": [
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|FORGET",
+        "Arity": 3,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|DELSLOTS",
+        "Arity": -3,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|INFO",
+        "Arity": 2,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|MYID",
+        "Arity": 2,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|MEET",
+        "Arity": -4,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|REPLICATE",
+        "Arity": 3,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|FAILOVER",
+        "Arity": -2,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|ADDSLOTS",
+        "Arity": -3,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|RESET",
+        "Arity": -2,
+        "Flags": "Admin, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|ADDSLOTSRANGE",
+        "Arity": -4,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|KEYSLOT",
+        "Arity": 3,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|SLOTS",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|GETKEYSINSLOT",
+        "Arity": 4,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|DELSLOTSRANGE",
+        "Arity": -4,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|SETSLOT",
+        "Arity": -4,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|BUMPEPOCH",
+        "Arity": 2,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|NODES",
+        "Arity": 2,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|COUNTKEYSINSLOT",
+        "Arity": 3,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|REPLICAS",
+        "Arity": 3,
+        "Flags": "Admin, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "CLUSTER|SET-CONFIG-EPOCH",
+        "Arity": 3,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [],
+        "KeySpecifications": null,
+        "SubCommands": []
+      }
+    ]
+  },
+  {
+    "Command": "MEMORY",
+    "Name": "MEMORY",
+    "Arity": -2,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": [
+      {
+        "Command": "NONE",
+        "Name": "MEMORY|USAGE",
+        "Arity": -3,
+        "Flags": "ReadOnly",
+        "FirstKey": 2,
+        "LastKey": 2,
+        "Step": 1,
+        "AclCategories": "Read, Slow",
+        "Tips": [],
+        "KeySpecifications": {
+          "BeginSearch": {
+            "TypeDiscriminator": "BeginSearchIndex",
+            "Index": 2
+          },
+          "FindKeys": {
+            "TypeDiscriminator": "FindKeysRange",
+            "LastKey": 0,
+            "KeyStep": 1,
+            "Limit": 0
+          },
+          "Notes": null,
+          "Flags": "RO"
+        },
+        "SubCommands": []
+      }
+    ]
+  },
+  {
+    "Command": "LATENCY",
+    "Name": "LATENCY",
+    "Arity": -2,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow",
+    "Tips": [],
+    "KeySpecifications": null,
+    "SubCommands": [
+      {
+        "Command": "NONE",
+        "Name": "LATENCY|HISTOGRAM",
+        "Arity": -2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "nondeterministic_output",
+          "request_policy:all_nodes",
+          "response_policy:special"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      },
+      {
+        "Command": "NONE",
+        "Name": "LATENCY|RESET",
+        "Arity": -2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:agg_sum"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": []
+      }
+    ]
+  }
+]

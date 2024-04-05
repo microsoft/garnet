@@ -25,7 +25,7 @@
 	</PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Resp\RespCommands.json" />
+    <EmbeddedResource Include="Resp\RespCommandsInfo.json" />
   </ItemGroup>
 
   <ItemGroup>

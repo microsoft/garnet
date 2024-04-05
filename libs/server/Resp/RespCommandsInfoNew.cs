@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
@@ -16,9 +17,11 @@ namespace Garnet.server
     {
         public static RespCommandsInfoNew[] AllRespCommands;
 
-        public static RespCommandsInfoNew[] AllTxnRespCommands;
+        public static IReadOnlyDictionary<RespCommand, RespCommandsInfoNew[]> AllTxnRespCommands;
 
         public RespCommand Command { get; init; }
+
+        public byte? ArrayCommand { get; set; }
 
         public string Name { get; init; }
 
@@ -59,7 +62,12 @@ namespace Garnet.server
         [JsonIgnore]
         public string RespFormat => this._respFormat ??= GetRespFormat();
 
-        private const string RespCommandsEmbeddedFileName = @"RespCommands.json";
+        private const string RespCommandsEmbeddedFileName = @"RespCommandsInfo.json";
+
+        public static readonly IReadOnlySet<RespCommand> ArrayCommands = new HashSet<RespCommand>()
+        {
+            RespCommand.Set, RespCommand.SortedSet, RespCommand.Hash, RespCommand.List
+        };
 
         private readonly RespCommandFlags _flags;
         private readonly RespAclCategories _aclCategories;
@@ -86,7 +94,38 @@ namespace Garnet.server
 
             using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)!;
             AllRespCommands = JsonSerializer.Deserialize<RespCommandsInfoNew[]>(stream, serializerOptions)!;
-            AllTxnRespCommands = AllRespCommands.Where(rc => !rc.Flags.HasFlag(RespCommandFlags.NoMulti)).ToArray();
+
+            var allTxnBasicRespCommands = new Dictionary<RespCommand, List<RespCommandsInfoNew>>();
+            var allTxnArrayRespCommands = new Dictionary<RespCommand, List<RespCommandsInfoNew>>();
+            foreach (var respCommandInfo in AllRespCommands)
+            {
+                if (respCommandInfo.Flags.HasFlag(RespCommandFlags.NoMulti)) continue;
+
+                var allCommandsDst = ArrayCommands.Contains(respCommandInfo.Command)
+                    ? allTxnArrayRespCommands
+                    : allTxnBasicRespCommands;
+
+                if (!allCommandsDst.ContainsKey(respCommandInfo.Command))
+                    allCommandsDst.Add(respCommandInfo.Command, new List<RespCommandsInfoNew>());
+
+                allCommandsDst[respCommandInfo.Command].Add(respCommandInfo);
+            }
+
+            AllTxnRespCommands = allTxnBasicRespCommands.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToArray());
+        }
+
+        public static RespCommandsInfoNew FindCommand(RespCommand cmd, byte subCmd = 0)
+        {
+            RespCommandsInfoNew result = cmd switch
+            {
+                RespCommand.SortedSet or
+                RespCommand.List or
+                RespCommand.Hash or
+                RespCommand.Set => AllTxnRespCommands[],
+                RespCommand.All => customCommandsInfoMap.GetValueOrDefault(cmd),
+                _ => basicCommandsInfoMap.GetValueOrDefault(cmd)
+            };
+            return result;
         }
 
         private string GetRespFormat()
