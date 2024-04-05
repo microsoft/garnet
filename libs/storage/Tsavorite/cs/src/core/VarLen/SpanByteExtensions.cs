@@ -18,7 +18,7 @@ namespace Tsavorite.core
         {
             fixed (byte* keyPtr = key)
             fixed (byte* desiredValuePtr = desiredValue)
-                return clientSession.Upsert(SpanByte.FromPointer(keyPtr, key.Length), SpanByte.FromPointer(desiredValuePtr, desiredValue.Length), userContext, serialNo);
+                return clientSession.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(desiredValuePtr, desiredValue.Length), userContext, serialNo);
         }
 
         /// <summary>
@@ -29,7 +29,7 @@ namespace Tsavorite.core
         {
             fixed (byte* keyPtr = key)
             {
-                var _key = SpanByte.FromPointer(keyPtr, key.Length);
+                var _key = SpanByte.FromPinnedPointer(keyPtr, key.Length);
                 return clientSession.Read(ref _key, ref input, ref output, userContext, serialNo);
             }
         }
@@ -42,7 +42,7 @@ namespace Tsavorite.core
         {
             fixed (byte* keyPtr = key)
             {
-                var _key = SpanByte.FromPointer(keyPtr, key.Length);
+                var _key = SpanByte.FromPinnedPointer(keyPtr, key.Length);
                 return clientSession.RMW(ref _key, ref input, userContext, serialNo);
             }
         }
@@ -55,7 +55,7 @@ namespace Tsavorite.core
         {
             fixed (byte* keyPtr = key)
             {
-                var _key = SpanByte.FromPointer(keyPtr, key.Length);
+                var _key = SpanByte.FromPinnedPointer(keyPtr, key.Length);
                 return clientSession.Delete(ref _key, userContext, serialNo);
             }
         }

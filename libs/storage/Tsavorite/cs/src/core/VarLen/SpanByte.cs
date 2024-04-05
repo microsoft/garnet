@@ -275,7 +275,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Create a SpanByte around a pinned memory <paramref name="pointer"/> of given <paramref name="length"/>
         /// </summary>
-        public static SpanByte FromPointer(byte* pointer, int length) => new(length, (nint)pointer);
+        /// <remarks>
+        /// SAFETY: The <paramref name="pointer"/> MUST point to pinned memory.
+        /// </remarks>
+        public static SpanByte FromPinnedPointer(byte* pointer, int length) => new(length, (nint)pointer);
 
         /// <summary>
         /// Create a <see cref="SpanByte"/> from the given <paramref name="span"/>.
