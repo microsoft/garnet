@@ -167,6 +167,43 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write generic error of the form "-ERR <paramref name="errorString"/>\r\n"
+        /// </summary>
+        /// <param name="errorString">An ASCII encoded error message. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
+        public static bool WriteGenericError(ReadOnlySpan<byte> errorString, ref byte* curr, byte* end)
+        {
+            int totalLen = 1 + 4 + errorString.Length + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'-';
+            WriteBytes<uint>(ref curr, "ERR "u8);
+            errorString.CopyTo(new Span<byte>(curr, errorString.Length));
+            curr += errorString.Length;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write generic error of the form "-ERR <paramref name="errorString"/>\r\n"
+        /// </summary>
+        /// <param name="errorString">An ASCII error message. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
+        public static bool WriteGenericError(ReadOnlySpan<char> errorString, ref byte* curr, byte* end)
+        {
+            // Generic errors are of the form "-ERR [errorString]\r\n"
+            int totalLen = 1 + 4 + errorString.Length + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'-';
+            WriteBytes<uint>(ref curr, "ERR "u8);
+            int bytesWritten = Encoding.ASCII.GetBytes(errorString, new Span<byte>(curr, errorString.Length));
+            curr += bytesWritten;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
         /// Writes the contents of <paramref name="span"/> as byte array to <paramref name="curr"/>
         /// </summary>
         /// <returns><see langword="true"/> if the the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
