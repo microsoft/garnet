@@ -190,7 +190,7 @@ namespace Garnet.test
                 },
             };
 
-        private unsafe bool TryParseRespCommandInfo(ref byte* ptr, byte* end, out RespCommandsInfoNew command, string parentCommand = null)
+        private unsafe bool TryParseRespCommandInfo(ref byte* ptr, byte* end, out RespCommandsInfo command, string parentCommand = null)
         {
             command = default;
 
@@ -377,7 +377,7 @@ namespace Garnet.test
 
             // 10) SubCommands
             RespReadUtils.ReadArrayLength(out var scCount, ref ptr, end);
-            var subCommands = new List<RespCommandsInfoNew>();
+            var subCommands = new List<RespCommandsInfo>();
             for (var scIdx = 0; scIdx < scCount; scIdx++)
             {
                 if (TryParseRespCommandInfo(ref ptr, end, out var subCommand, name))
@@ -394,7 +394,7 @@ namespace Garnet.test
 
             if (supportedCommand != null)
             {
-                command = new RespCommandsInfoNew
+                command = new RespCommandsInfo
                 {
                     Name = name.ToUpper(),
                     Command = supportedCommand.Command,
@@ -429,7 +429,7 @@ namespace Garnet.test
                 var end = ptr + response.Length;
                 RespReadUtils.ReadArrayLength(out var cmdCount, ref ptr, end);
 
-                var commands = new List<RespCommandsInfoNew>();
+                var commands = new List<RespCommandsInfo>();
                 for (var cmdIdx = 0; cmdIdx < cmdCount; cmdIdx++)
                 {
                     if(TryParseRespCommandInfo(ref ptr, end, out var command))

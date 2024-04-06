@@ -3,260 +3,300 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Garnet.common;
 
 namespace Garnet.server
 {
-    /// <summary>
-    /// Container for command information
-    /// </summary>
-    class RespCommandsInfo
+    public class RespCommandsInfo
     {
-        public readonly string nameStr;
+        public static IReadOnlyDictionary<string, RespCommandsInfo> AllRespCommands;
 
-        /// <summary>
-        /// Number of arguments of the command.
-        /// </summary>
-        public readonly int arity;
+        public static IReadOnlyDictionary<RespCommand, RespCommandsInfo> AllTxnBasicRespCommands;
+        public static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>> AllTxnArrayRespCommands;
 
-        /// <summary>
-        /// Name of the command
-        /// </summary>
-        public readonly byte[] name;
-        public readonly byte arrayCommand;
+        public RespCommand Command { get; init; }
 
-        /// <summary>
-        /// Associated RESPCommand Id
-        /// </summary>
-        public readonly RespCommand command;
-        public readonly HashSet<RespCommandOption> options;
+        public byte? ArrayCommand { get; set; }
 
-        public RespCommandsInfo(string name, RespCommand command, int arity, HashSet<RespCommandOption> options)
+        public string Name { get; init; }
+
+        public int Arity { get; init; }
+
+        public RespCommandFlags Flags
         {
-            nameStr = name.ToUpper();
-            this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);
-            this.command = command;
-            this.arity = arity;
-            this.options = options;
-            this.arrayCommand = 255;
-        }
-        public RespCommandsInfo(string name, RespCommand command, int arity, HashSet<RespCommandOption> options, byte arrayCommand) : this(name, command, arity, options)
-        {
-            this.arrayCommand = arrayCommand;
-        }
-
-        /// <summary>
-        /// Check whether the option is for this command or not and returns RespCommandsOptionInfo
-        /// </summary>
-        public bool MatchOptions(ReadOnlySpan<byte> command, out RespCommandsOptionInfo optionOutput)
-        {
-            for (int i = 0; i < RespCommandsOptionInfo.optionMap.Length; i++)
+            get => this._flags;
+            init
             {
-                optionOutput = RespCommandsOptionInfo.optionMap[i];
-                if (command.SequenceEqual(new ReadOnlySpan<byte>(optionOutput.name)) && this.options.Contains(optionOutput.option))
-                    return true;
+                this._flags = value;
+                this._respFormatFlags = EnumUtils.GetEnumDescriptions(this._flags);
             }
-            optionOutput = null;
-            return false;
         }
 
-        public static RespCommandsInfo findCommand(RespCommand cmd, byte subCmd = 0)
-        {
+        public int FirstKey { get; init; }
 
-            RespCommandsInfo result = cmd switch
+        public int LastKey { get; init; }
+
+        public int Step { get; init; }
+
+        public RespAclCategories AclCategories
+        {
+            get => this._aclCategories;
+            init
             {
-                RespCommand.SortedSet => sortedSetCommandsInfoMap.GetValueOrDefault(subCmd),
-                RespCommand.List => listCommandsInfoMap.GetValueOrDefault(subCmd),
-                RespCommand.Hash => hashCommandsInfoMap.GetValueOrDefault(subCmd),
-                RespCommand.Set => setCommandsInfoMap.GetValueOrDefault(subCmd),
-                RespCommand.All => customCommandsInfoMap.GetValueOrDefault(cmd),
-                _ => basicCommandsInfoMap.GetValueOrDefault(cmd)
-            };
-            return result;
+                this._aclCategories = value;
+                this._respFormatAclCategories = EnumUtils.GetEnumDescriptions(this._aclCategories);
+            }
         }
 
-        private static readonly Dictionary<RespCommand, RespCommandsInfo> basicCommandsInfoMap = new Dictionary<RespCommand, RespCommandsInfo>
+        public string[]? Tips { get; init; }
+
+        public RespCommandKeySpecifications? KeySpecifications { get; init; }
+
+        public RespCommandsInfo[]? SubCommands { get; init; }
+
+        [JsonIgnore]
+        public string RespFormat => this._respFormat ??= GetRespFormat();
+
+        private const string RespCommandsEmbeddedFileName = @"RespCommandsInfo.json";
+
+        private readonly RespCommandFlags _flags;
+        private readonly RespAclCategories _aclCategories;
+
+        private string? _respFormat;
+        private readonly string[] _respFormatFlags;
+        private readonly string[] _respFormatAclCategories;
+
+        static RespCommandsInfo()
         {
-            {RespCommand.GET,         new RespCommandsInfo("GET",        RespCommand.GET,         1, null)},
-            {RespCommand.SET,         new RespCommandsInfo("SET",        RespCommand.SET,        -2, new HashSet<RespCommandOption>{
-                RespCommandOption.EX,
-                RespCommandOption.NX,
-                RespCommandOption.XX,
-                RespCommandOption.GET,
-                RespCommandOption.PX,
-                RespCommandOption.EXAT,
-                RespCommandOption.PXAT,
-            })},
-            {RespCommand.GETRANGE,    new RespCommandsInfo("GETRANGE",   RespCommand.GETRANGE,    3, null)},
-            {RespCommand.SETRANGE,    new RespCommandsInfo("SETRANGE",   RespCommand.SETRANGE,    3, null)},
-            // PUBLISH
-            {RespCommand.PFADD,       new RespCommandsInfo("PFADD",      RespCommand.PFADD,      -2, null)},
-            {RespCommand.PFCOUNT,     new RespCommandsInfo("PFCOUNT",    RespCommand.PFCOUNT,    -1, null)},
-            {RespCommand.PFMERGE,     new RespCommandsInfo("PFMERGE",    RespCommand.PFMERGE,    -2, null)},
+            InitRespCommands();
+        }
 
-            {RespCommand.SETEX,       new RespCommandsInfo("SETEX",      RespCommand.SETEX,      -3, null)},
-            {RespCommand.PSETEX,      new RespCommandsInfo("PSETEX",     RespCommand.PSETEX,      3, null)},
-            {RespCommand.SETEXNX,     new RespCommandsInfo("SETEXNX",    RespCommand.SETEXNX,    -2, null)},
-            {RespCommand.SETEXXX,     new RespCommandsInfo("SETEXXX",    RespCommand.SETEXXX,    -2, null)},
-            {RespCommand.DEL,         new RespCommandsInfo("DEL",        RespCommand.DEL,        -1, null)},
-            {RespCommand.EXISTS,      new RespCommandsInfo("EXISTS",     RespCommand.EXISTS,      1, null)},
-            {RespCommand.RENAME,      new RespCommandsInfo("RENAME",     RespCommand.RENAME,      2, null)},
-            {RespCommand.INCR,        new RespCommandsInfo("INCR",       RespCommand.INCR,        1, null)},
-            {RespCommand.INCRBY,      new RespCommandsInfo("INCRBY",     RespCommand.INCRBY,      2, null)},
-            {RespCommand.DECR,        new RespCommandsInfo("DECR",       RespCommand.DECR,        1, null)},
-            {RespCommand.DECRBY,      new RespCommandsInfo("DECRBY",     RespCommand.DECRBY,      2, null)},
-            {RespCommand.EXPIRE,      new RespCommandsInfo("EXPIRE",     RespCommand.EXPIRE,     -2, new HashSet<RespCommandOption>{
-                RespCommandOption.NX,
-                RespCommandOption.XX,
-                RespCommandOption.GT,
-                RespCommandOption.LT,
-            })},
-            {RespCommand.PEXPIRE,     new RespCommandsInfo("PEXPIRE",    RespCommand.PEXPIRE,    -2, new HashSet<RespCommandOption>{
-                RespCommandOption.NX,
-                RespCommandOption.XX,
-                RespCommandOption.GT,
-                RespCommandOption.LT,
-            })},
-            {RespCommand.PERSIST,     new RespCommandsInfo("PERSIST",    RespCommand.PERSIST,     1, null)},
-            {RespCommand.TTL,         new RespCommandsInfo("TTL",        RespCommand.TTL,         1, null)},
-            {RespCommand.PTTL,        new RespCommandsInfo("PTTL",       RespCommand.PTTL,        1, null)},
-            {RespCommand.SETBIT,      new RespCommandsInfo("SETBIT",     RespCommand.SETBIT,      3, null)},
-            {RespCommand.GETBIT,      new RespCommandsInfo("GETBIT",     RespCommand.GETBIT,      2, null)},
-            {RespCommand.BITCOUNT,    new RespCommandsInfo("BITCOUNT",   RespCommand.BITCOUNT,   -1, null)},
-            {RespCommand.BITPOS,      new RespCommandsInfo("BITPOS",     RespCommand.BITPOS,     -2, null)},
-            {RespCommand.BITFIELD,    new RespCommandsInfo("BITFIELD",   RespCommand.BITFIELD,   -1, null)},
-
-            {RespCommand.MSET,        new RespCommandsInfo("MSET",       RespCommand.MSET,       -2, null)},
-            {RespCommand.MSETNX,      new RespCommandsInfo("MSETNX",     RespCommand.MSETNX,     -2, null)},
-            {RespCommand.MGET,        new RespCommandsInfo("MGET",       RespCommand.MGET,       -2, null)},
-            {RespCommand.UNLINK,      new RespCommandsInfo("UNLINK",     RespCommand.UNLINK,     -1, null)},
-
-            {RespCommand.MULTI,       new RespCommandsInfo("MULTI",      RespCommand.MULTI,       0,  null)},
-            {RespCommand.EXEC,        new RespCommandsInfo("EXEC",       RespCommand.EXEC,        0,  null)},
-            {RespCommand.WATCH,       new RespCommandsInfo("WATCH",      RespCommand.WATCH,      -1, null)},
-            {RespCommand.UNWATCH,     new RespCommandsInfo("WATCH",      RespCommand.UNWATCH,     0, null)},
-            {RespCommand.DISCARD,     new RespCommandsInfo("DISCARD",    RespCommand.DISCARD,     0,  null)},
-            {RespCommand.GETDEL,      new RespCommandsInfo("GETDEL",     RespCommand.GETDEL,      1, null)},
-            {RespCommand.APPEND,      new RespCommandsInfo("APPEND",     RespCommand.APPEND,      2,  null)},
-
-            //Admin Commands
-            {RespCommand.ECHO,        new RespCommandsInfo("ECHO",       RespCommand.ECHO,        1, null)},
-            {RespCommand.REPLICAOF,   new RespCommandsInfo("REPLICAOF",  RespCommand.REPLICAOF,   2, null)},
-            {RespCommand.SECONDARYOF, new RespCommandsInfo("SLAVEOF",    RespCommand.SECONDARYOF, 2, null)},
-            {RespCommand.CONFIG,      new RespCommandsInfo("CONFIG",     RespCommand.CONFIG,      1, null)},
-            {RespCommand.CLIENT,      new RespCommandsInfo("CLIENT",     RespCommand.CLIENT,      3, null)},
-            {RespCommand.REGISTERCS,  new RespCommandsInfo("REGISTERCS", RespCommand.REGISTERCS, -4, null)},
-        };
-
-        private static readonly Dictionary<byte, RespCommandsInfo> sortedSetCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
+        private static void InitRespCommands()
         {
-            {(byte)SortedSetOperation.ZADD,             new RespCommandsInfo("ZADD", RespCommand.SortedSet,             -3,null, (byte)SortedSetOperation.ZADD)},
-            {(byte)SortedSetOperation.ZMSCORE,          new RespCommandsInfo("ZMSCORE", RespCommand.SortedSet,          -2,null, (byte)SortedSetOperation.ZMSCORE)},
-            {(byte)SortedSetOperation.ZREM,             new RespCommandsInfo("ZREM", RespCommand.SortedSet,             -2,null, (byte)SortedSetOperation.ZREM)},
-            {(byte)SortedSetOperation.ZCARD,            new RespCommandsInfo("ZCARD", RespCommand.SortedSet,             1,null, (byte)SortedSetOperation.ZCARD)},
-            {(byte)SortedSetOperation.ZPOPMAX,          new RespCommandsInfo("ZPOPMAX", RespCommand.SortedSet,          -1,null, (byte)SortedSetOperation.ZPOPMAX)},
-            {(byte)SortedSetOperation.ZSCORE,           new RespCommandsInfo("ZSCORE", RespCommand.SortedSet,            2,null, (byte)SortedSetOperation.ZSCORE)},
-            {(byte)SortedSetOperation.ZCOUNT,           new RespCommandsInfo("ZCOUNT", RespCommand.SortedSet,            3,null, (byte)SortedSetOperation.ZCOUNT)},
-            {(byte)SortedSetOperation.ZINCRBY,          new RespCommandsInfo("ZINCRBY", RespCommand.SortedSet,           3,null, (byte)SortedSetOperation.ZINCRBY)},
-            {(byte)SortedSetOperation.ZRANK,            new RespCommandsInfo("ZRANK", RespCommand.SortedSet,             2,null, (byte)SortedSetOperation.ZRANK)},
-            {(byte)SortedSetOperation.ZRANGE,           new RespCommandsInfo("ZRANGE", RespCommand.SortedSet,           -3,null, (byte)SortedSetOperation.ZRANGE)},
-            {(byte)SortedSetOperation.ZRANGEBYSCORE,    new RespCommandsInfo("ZRANGEBYSCORE", RespCommand.SortedSet,    -3,null, (byte)SortedSetOperation.ZRANGEBYSCORE)},
-            {(byte)SortedSetOperation.ZREVRANK,         new RespCommandsInfo("ZREVRANK", RespCommand.SortedSet,          2,null, (byte)SortedSetOperation.ZREVRANK)},
-            {(byte)SortedSetOperation.ZREMRANGEBYLEX,   new RespCommandsInfo("ZREMRANGEBYLEX", RespCommand.SortedSet,    3,null, (byte)SortedSetOperation.ZREMRANGEBYLEX)},
-            {(byte)SortedSetOperation.ZREMRANGEBYRANK,  new RespCommandsInfo("ZREMRANGEBYRANK", RespCommand.SortedSet,   3,null, (byte)SortedSetOperation.ZREMRANGEBYRANK)},
-            {(byte)SortedSetOperation.ZREMRANGEBYSCORE, new RespCommandsInfo("ZREMRANGEBYSCORE", RespCommand.SortedSet,  3,null, (byte)SortedSetOperation.ZREMRANGEBYSCORE)},
-            {(byte)SortedSetOperation.ZLEXCOUNT,        new RespCommandsInfo("ZLEXCOUNT", RespCommand.SortedSet,         3,null, (byte)SortedSetOperation.ZLEXCOUNT)},
-            {(byte)SortedSetOperation.ZPOPMIN,          new RespCommandsInfo("ZPOPMIN", RespCommand.SortedSet,          -1,null, (byte)SortedSetOperation.ZPOPMIN)},
-            {(byte)SortedSetOperation.ZRANDMEMBER,      new RespCommandsInfo("ZRANDMEMBER", RespCommand.SortedSet,      -1,null, (byte)SortedSetOperation.ZRANDMEMBER)},
-            {(byte)SortedSetOperation.GEOADD,           new RespCommandsInfo("GEOADD", RespCommand.SortedSet,           -4,null, (byte)SortedSetOperation.GEOADD)},
-            {(byte)SortedSetOperation.GEOHASH,          new RespCommandsInfo("GEOHASH", RespCommand.SortedSet,          -1,null, (byte)SortedSetOperation.GEOHASH)},
-            {(byte)SortedSetOperation.GEODIST,          new RespCommandsInfo("GEODIST", RespCommand.SortedSet,          -3,null, (byte)SortedSetOperation.GEODIST)},
-            {(byte)SortedSetOperation.GEOPOS,           new RespCommandsInfo("GEOPOS", RespCommand.SortedSet,           -1,null, (byte)SortedSetOperation.GEOPOS)},
-            {(byte)SortedSetOperation.GEOSEARCH,        new RespCommandsInfo("GEOSEARCH", RespCommand.SortedSet,        -6,null, (byte)SortedSetOperation.GEOSEARCH)},
-            {(byte)SortedSetOperation.ZREVRANGE,        new RespCommandsInfo("ZREVRANGE", RespCommand.SortedSet,        -3,null, (byte)SortedSetOperation.ZREVRANGE)},
-            {(byte)SortedSetOperation.ZSCAN,            new RespCommandsInfo("ZSCAN", RespCommand.SortedSet,            -2,null, (byte)SortedSetOperation.ZSCAN)},
-        };
+            var assembly = Assembly.GetExecutingAssembly();
+            var resourceName = assembly.GetManifestResourceNames().FirstOrDefault(rn => rn.EndsWith(RespCommandsEmbeddedFileName))!;
 
-        private static readonly Dictionary<byte, RespCommandsInfo> listCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
-        {
-            {(byte)ListOperation.LPUSH,     new RespCommandsInfo("LPUSH",   RespCommand.List,   -2, null, (byte)ListOperation.LPUSH)},
-            {(byte)ListOperation.LPOP,      new RespCommandsInfo("LPOP",    RespCommand.List,   -1, null, (byte)ListOperation.LPOP)},
-            {(byte)ListOperation.RPUSH,     new RespCommandsInfo("RPUSH",   RespCommand.List,   -2, null, (byte)ListOperation.RPUSH)},
-            {(byte)ListOperation.RPOP,      new RespCommandsInfo("RPOP",    RespCommand.List,   -1, null, (byte)ListOperation.RPOP)},
-            {(byte)ListOperation.LLEN,      new RespCommandsInfo("LLEN",    RespCommand.List,    1, null, (byte)ListOperation.LLEN)},
-            {(byte)ListOperation.LTRIM,     new RespCommandsInfo("LTRIM",   RespCommand.List,    3, null, (byte)ListOperation.LTRIM)},
-            {(byte)ListOperation.LRANGE,    new RespCommandsInfo("LRANGE",  RespCommand.List,    3, null, (byte)ListOperation.LRANGE)},
-            {(byte)ListOperation.LINDEX,    new RespCommandsInfo("LINDEX",  RespCommand.List,    2, null, (byte)ListOperation.LINDEX)},
-            {(byte)ListOperation.LINSERT,   new RespCommandsInfo("LINSERT", RespCommand.List,    4, null, (byte)ListOperation.LINSERT)},
-            {(byte)ListOperation.LREM,      new RespCommandsInfo("LREM",    RespCommand.List,    3, null, (byte)ListOperation.LREM) },
-        };
+            var serializerOptions = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Converters = { new JsonStringEnumConverter(), new KeySpecConverter() }
+            };
 
-        private static readonly Dictionary<byte, RespCommandsInfo> hashCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
-        {
-            {(byte)HashOperation.HSET,          new RespCommandsInfo("HSET",            RespCommand.Hash,   -3,  null,   (byte)HashOperation.HSET) },
-            {(byte)HashOperation.HMSET,         new RespCommandsInfo("HMSET",           RespCommand.Hash,   -3,  null,   (byte)HashOperation.HMSET)},
-            {(byte)HashOperation.HGET,          new RespCommandsInfo("HGET",            RespCommand.Hash,    2,  null,   (byte)HashOperation.HGET)},
-            {(byte)HashOperation.HMGET,         new RespCommandsInfo("HMGET",           RespCommand.Hash,   -2,  null,   (byte)HashOperation.HMGET)},
-            {(byte)HashOperation.HGETALL,       new RespCommandsInfo("HGETALL",         RespCommand.Hash,    1,  null,   (byte)HashOperation.HGETALL)},
-            {(byte)HashOperation.HDEL,          new RespCommandsInfo("HDEL",            RespCommand.Hash,   -2,  null,   (byte)HashOperation.HDEL)},
-            {(byte)HashOperation.HLEN,          new RespCommandsInfo("HLEN",            RespCommand.Hash,    1,  null,   (byte)HashOperation.HLEN)},
-            {(byte)HashOperation.HEXISTS,       new RespCommandsInfo("HEXISTS",         RespCommand.Hash,    2,  null,   (byte)HashOperation.HEXISTS)},
-            {(byte)HashOperation.HKEYS,         new RespCommandsInfo("HKEYS",           RespCommand.Hash,    1,  null,   (byte)HashOperation.HKEYS)},
-            {(byte)HashOperation.HVALS,         new RespCommandsInfo("HVALS",           RespCommand.Hash,    1,  null,   (byte)HashOperation.HVALS)},
-            {(byte)HashOperation.HINCRBY,       new RespCommandsInfo("HINCRBY",         RespCommand.Hash,    3,  null,   (byte)HashOperation.HINCRBY)},
-            {(byte)HashOperation.HINCRBYFLOAT,  new RespCommandsInfo("HINCRBYFLOAT",    RespCommand.Hash,    3,  null,   (byte)HashOperation.HINCRBYFLOAT)},
-            {(byte)HashOperation.HSETNX,        new RespCommandsInfo("HSETNX",          RespCommand.Hash,    3,  null,   (byte)HashOperation.HSETNX)},
-            {(byte)HashOperation.HRANDFIELD,    new RespCommandsInfo("HRANDFIELD",      RespCommand.Hash,   -1,  null,   (byte)HashOperation.HRANDFIELD)},
-            {(byte)HashOperation.HSCAN,         new RespCommandsInfo("HSCAN",           RespCommand.Hash,   -2,  null,   (byte)HashOperation.HSCAN)},
-             {(byte)HashOperation.HSTRLEN,      new RespCommandsInfo("HSTRLEN",         RespCommand.Hash,    2,  null,   (byte)HashOperation.HSTRLEN)},
-        };
+            using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)!;
+            var respCommands = JsonSerializer.Deserialize<RespCommandsInfo[]>(stream, serializerOptions)!;
 
-        private static readonly Dictionary<byte, RespCommandsInfo> setCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
-        {
-            {(byte)SetOperation.SADD,       new RespCommandsInfo("SADD",     RespCommand.Set,   -2, null, (byte)SetOperation.SADD)},
-            {(byte)SetOperation.SMEMBERS,   new RespCommandsInfo("SMEMBERS", RespCommand.Set,    1, null, (byte)SetOperation.SMEMBERS)},
-            {(byte)SetOperation.SREM,       new RespCommandsInfo("SREM",     RespCommand.Set,   -2, null, (byte)SetOperation.SREM)},
-            {(byte)SetOperation.SCARD,      new RespCommandsInfo("SCARD",    RespCommand.Set,    1, null, (byte)SetOperation.SCARD)},
-            {(byte)SetOperation.SPOP,       new RespCommandsInfo("SPOP",     RespCommand.Set,   -1, null, (byte)SetOperation.SPOP) },
-            {(byte)SetOperation.SSCAN,      new RespCommandsInfo("SSCAN",    RespCommand.Set,   -2, null, (byte)SetOperation.SSCAN) },
-        };
+            var allRespCommands = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
+            foreach (var respCommandsInfo in respCommands)
+            {
+                allRespCommands.Add(respCommandsInfo.Name, respCommandsInfo);
+            }
 
-        private static readonly Dictionary<RespCommand, RespCommandsInfo> customCommandsInfoMap = new Dictionary<RespCommand, RespCommandsInfo>
+            AllRespCommands = new ReadOnlyDictionary<string, RespCommandsInfo>(allRespCommands);
+
+            var allTxnBasicRespCommands = new Dictionary<RespCommand, RespCommandsInfo>();
+            var allTxnArrayRespCommands = new Dictionary<RespCommand, Dictionary<byte, RespCommandsInfo>>();
+            foreach (var respCommandInfo in AllRespCommands.Values)
+            {
+                if (respCommandInfo.Flags.HasFlag(RespCommandFlags.NoMulti)) continue;
+
+                if (respCommandInfo.ArrayCommand.HasValue)
+                {
+                    if (!allTxnArrayRespCommands.ContainsKey(respCommandInfo.Command))
+                        allTxnArrayRespCommands.Add(respCommandInfo.Command, new Dictionary<byte, RespCommandsInfo>());
+                    allTxnArrayRespCommands[respCommandInfo.Command].Add(respCommandInfo.ArrayCommand.Value, respCommandInfo);
+                }
+                else
+                {
+                    allTxnBasicRespCommands.Add(respCommandInfo.Command, respCommandInfo);
+                }
+            }
+
+            AllTxnBasicRespCommands = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(allTxnBasicRespCommands);
+            AllTxnArrayRespCommands =
+                new ReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>(allTxnArrayRespCommands.ToDictionary(kvp => kvp.Key,
+                        kvp => (IReadOnlyDictionary<byte, RespCommandsInfo>)new ReadOnlyDictionary<byte, RespCommandsInfo>(kvp.Value)));
+        }
+
+        public static RespCommandsInfo FindCommand(RespCommand cmd, byte subCmd = 0)
         {
-            {RespCommand.COSCAN,    new RespCommandsInfo("COSCAN",   RespCommand.All,   -2, null, (byte)RespCommand.COSCAN) },
-        };
+            if (AllTxnArrayRespCommands.ContainsKey(cmd) && AllTxnArrayRespCommands[cmd].ContainsKey(subCmd))
+                return AllTxnArrayRespCommands[cmd][subCmd];
+
+            if (AllTxnBasicRespCommands.ContainsKey(cmd))
+                return AllTxnBasicRespCommands[cmd];
+
+            return null;
+        }
+
+        private string GetRespFormat()
+        {
+            var sb = new StringBuilder();
+
+            sb.Append("*10\r\n");
+            // 1) Name
+            sb.Append($"${this.Name.Length}\r\n{this.Name}\r\n");
+            // 2) Arity
+            sb.Append($":{this.Arity}\r\n");
+            // 3) Flags
+            sb.Append($"*{this._respFormatFlags.Length}\r\n");
+            foreach (var flag in this._respFormatFlags)
+                sb.Append($"+{flag}\r\n");
+            // 4) First key
+            sb.Append($":{this.FirstKey}\r\n");
+            // 5) Last key
+            sb.Append($":{this.LastKey}\r\n");
+            // 6) Step
+            sb.Append($":{this.Step}\r\n");
+            // 7) ACL categories
+            sb.Append($"*{this._respFormatAclCategories.Length}\r\n");
+            foreach (var aclCat in this._respFormatAclCategories)
+                sb.Append($"+@{aclCat}\r\n");
+            // 8) Tips
+            var tipCount = this.Tips?.Length ?? 0;
+            sb.Append($"*{tipCount}\r\n");
+            if (this.Tips != null && tipCount > 0)
+            {
+                foreach (var tip in this.Tips)
+                    sb.Append($"${tip.Length}\r\n{tip}\r\n");
+            }
+            // 9) Key specifications
+            if (this.KeySpecifications == null)
+            {
+                sb.Append("*0\r\n");
+            }
+            else
+            {
+                sb.Append(this.KeySpecifications.RespFormat);
+            }
+            // 10) SubCommands
+            var subCommandCount = this.SubCommands?.Length ?? 0;
+            sb.Append($"*{subCommandCount}\r\n");
+            if (this.SubCommands != null && subCommandCount > 0)
+            {
+                foreach (var subCommand in SubCommands)
+                    sb.Append(subCommand.RespFormat);
+            }
+
+            return sb.ToString();
+        }
     }
 
-    /// <summary>
-    /// Container for commands option information
-    /// </summary>
-    class RespCommandsOptionInfo
+    [Flags]
+    public enum RespCommandFlags
     {
-        public readonly string nameStr;
-        public readonly int arity;
-        public readonly byte[] name;
-        public readonly RespCommandOption option;
+        None = 0,
+        [Description("admin")]
+        Admin = 1,
+        [Description("asking")]
+        Asking = 1 << 1,
+        [Description("blocking")]
+        Blocking = 1 << 2,
+        [Description("denyoom")]
+        DenyOom = 1 << 3,
+        [Description("fast")]
+        Fast = 1 << 4,
+        [Description("loading")]
+        Loading = 1 << 5,
+        [Description("moveablekeys")]
+        MoveableKeys = 1 << 6,
+        [Description("no_auth")]
+        NoAuth = 1 << 7,
+        [Description("no_async_loading")]
+        NoAsyncLoading = 1 << 8,
+        [Description("no_mandatory_keys")]
+        NoMandatoryKeys = 1 << 9,
+        [Description("no_multi")]
+        NoMulti = 1 << 10,
+        [Description("noscript")]
+        NoScript = 1 << 11,
+        [Description("pubsub")]
+        PubSub = 1 << 12,
+        [Description("random")]
+        Random = 1 << 13,
+        [Description("readonly")]
+        ReadOnly = 1 << 14,
+        [Description("sort_for_script")]
+        SortForScript = 1 << 15,
+        [Description("skip_monitor")]
+        SkipMonitor = 1 << 16,
+        [Description("skip_slowlog")]
+        SkipSlowLog = 1 << 17,
+        [Description("stale")]
+        Stale = 1 << 18,
+        [Description("write")]
+        Write = 1 << 19,
+        [Description("allow_busy")]
+        AllowBusy = 1 << 20,
+    }
 
+    [Flags]
+    public enum RespAclCategories
+    {
+        None = 0,
+        [Description("admin")]
+        Admin = 1,
+        [Description("bitmap")]
+        Bitmap = 1 << 1,
+        [Description("blocking")]
+        Blocking = 1 << 2,
+        [Description("connection")]
+        Connection = 1 << 3,
+        [Description("dangerous")]
+        Dangerous = 1 << 4,
+        [Description("geo")]
+        Geo = 1 << 5,
+        [Description("hash")]
+        Hash = 1 << 6,
+        [Description("hyperloglog")]
+        HyperLogLog = 1 << 7,
+        [Description("fast")]
+        Fast = 1 << 8,
+        [Description("keyspace")]
+        KeySpace = 1 << 9,
+        [Description("list")]
+        List = 1 << 10,
+        [Description("pubsub")]
+        PubSub = 1 << 11,
+        [Description("read")]
+        Read = 1 << 12,
+        [Description("scripting")]
+        Scripting = 1 << 13,
+        [Description("set")]
+        Set = 1 << 14,
+        [Description("sortedset")]
+        SortedSet = 1 << 15,
+        [Description("slow")]
+        Slow = 1 << 16,
+        [Description("stream")]
+        Stream = 1 << 17,
+        [Description("string")]
+        String = 1 << 18,
+        [Description("transaction")]
+        Transaction = 1 << 19,
+        [Description("write")]
+        Write = 1 << 20,
+    }
 
-        public RespCommandsOptionInfo(string name, RespCommandOption opt, int ariry)
-        {
-            nameStr = name.ToUpper();
-            this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);
-            this.option = opt;
-            this.arity = ariry;
-        }
-
-        public static readonly RespCommandsOptionInfo[] optionMap = new RespCommandsOptionInfo[]
-        {
-            new RespCommandsOptionInfo("EX" ,RespCommandOption.EX, 2),
-            new RespCommandsOptionInfo("NX" ,RespCommandOption.NX, 1),
-            new RespCommandsOptionInfo("XX" ,RespCommandOption.XX, 1),
-            new RespCommandsOptionInfo("GET" ,RespCommandOption.GET, 1),
-            new RespCommandsOptionInfo("PX" ,RespCommandOption.PX, 2),
-            new RespCommandsOptionInfo("EXAT" ,RespCommandOption.EXAT, 2),
-            new RespCommandsOptionInfo("PXAT" ,RespCommandOption.PXAT, 2),
-            new RespCommandsOptionInfo("PERSIST" ,RespCommandOption.PERSIST, 1),
-            new RespCommandsOptionInfo("GT" ,RespCommandOption.GT, 1),
-            new RespCommandsOptionInfo("LT" ,RespCommandOption.LT, 1),
-        };
+    [Flags]
+    public enum RespCommandOptionsNew : ushort
+    {
+        None = 0,
+        EX = 1,
+        NX = 1 << 1,
+        XX = 1 << 2,
+        GET = 1 << 3,
+        PX = 1 << 4,
+        EXAT = 1 << 5,
+        PXAT = 1 << 6,
+        PERSIST = 1 << 7,
+        GT = 1 << 8,
+        LT = 1 << 9,
     }
 }

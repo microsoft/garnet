@@ -42,6 +42,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> AUTH => "AUTH"u8;
         public static ReadOnlySpan<byte> auth => "auth"u8;
         public static ReadOnlySpan<byte> INFO => "INFO"u8;
+        public static ReadOnlySpan<byte> info => "info"u8;
+        public static ReadOnlySpan<byte> DOCS => "DOCS"u8;
+        public static ReadOnlySpan<byte> docs => "docs"u8;
         public static ReadOnlySpan<byte> COMMAND => "COMMAND"u8;
         public static ReadOnlySpan<byte> LATENCY => "LATENCY"u8;
         public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;

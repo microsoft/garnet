@@ -101,7 +101,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
 
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
-            RespCommandsInfo commandInfo = RespCommandsInfo.findCommand(cmd, subCommand);
+            var commandInfo = RespCommandsInfo.FindCommand(cmd, subCommand);
             if (commandInfo == null)
             {
                 while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref dcurr, dend))
@@ -114,10 +114,11 @@ namespace Garnet.server
 
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
-            bool invalidNumArgs = commandInfo.arity > 0 ? count != (commandInfo.arity) : count < -commandInfo.arity;
+            var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
+            bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
-            bool isWatch = (commandInfo.command == RespCommand.WATCH || commandInfo.command == RespCommand.WATCHMS || commandInfo.command == RespCommand.WATCHOS);
+            bool isWatch = (commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCHMS || commandInfo.Command == RespCommand.WATCHOS);
 
             if (invalidNumArgs || isWatch)
             {
@@ -128,7 +129,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    string err = string.Format(CmdStrings.ErrWrongNumArgs, commandInfo.nameStr);
+                    string err = string.Format(CmdStrings.ErrWrongNumArgs, commandInfo.Name);
                     while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes(err)), ref dcurr, dend))
                         SendAndReset();
                     txnManager.Abort();

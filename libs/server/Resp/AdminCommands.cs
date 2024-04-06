@@ -251,16 +251,52 @@ namespace Garnet.server
             }
             else if (command == RespCommand.COMMAND)
             {
-                if (count != 0)
+                if (count > 0)
                 {
-                    if (!DrainCommands(bufSpan, count))
-                        return false;
-                    errorFlag = true;
-                    errorCmd = "command";
+                    var param = GetCommand(bufSpan, out var success);
+                    if (!success) return false;
+
+                    if (!param.SequenceEqual(CmdStrings.INFO) && !param.SequenceEqual(CmdStrings.info)
+                        && !param.SequenceEqual(CmdStrings.DOCS) && !param.SequenceEqual(CmdStrings.docs))
+                    {
+                        if (!DrainCommands(bufSpan, count - 1))
+                            return false;
+                        errorFlag = true;
+                        errorCmd = "command";
+                    }
                 }
+
+                // More than one command names were specified, return specified commands info
+                if (count > 1)
+                {
+                    RespWriteUtils.WriteArrayLength(count - 1, ref dcurr, dend);
+
+                    var ptr = recvBufferPtr + readHead;
+
+                    for (var i = 0; i < count - 1; i++)
+                    {
+                        if (!RespReadUtils.ReadStringWithLengthHeader(out var cmdName, ref ptr, recvBufferPtr + bytesRead))
+                            return false;
+
+                        if (RespCommandsInfo.AllRespCommands.ContainsKey(cmdName))
+                        {
+                            while (!RespWriteUtils.WriteDirect(
+                                       Encoding.ASCII.GetBytes(RespCommandsInfo.AllRespCommands[cmdName].RespFormat),
+                                       ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                                SendAndReset();
+                        }
+                    }
+
+                    readHead = (int)(ptr - recvBufferPtr);
+                }
+                // No commands were specified, return all commands info
                 else
                 {
-                    // TODO: include the built-in commands
                     var resultSb = new StringBuilder();
                     int cnt = 0;
                     for (int i = 0; i < storeWrapper.customCommandManager.CommandId; i++)
@@ -269,11 +305,12 @@ namespace Garnet.server
                         if (cmd != null)
                         {
                             cnt++;
-                            resultSb.Append($"*6\r\n${cmd.nameStr.Length}\r\n{cmd.nameStr}\r\n:{1 + cmd.NumKeys + cmd.NumParams}\r\n*1\r\n+fast\r\n:1\r\n:1\r\n:1\r\n");
+                            resultSb.Append(
+                                $"*6\r\n${cmd.nameStr.Length}\r\n{cmd.nameStr}\r\n:{1 + cmd.NumKeys + cmd.NumParams}\r\n*1\r\n+fast\r\n:1\r\n:1\r\n:1\r\n");
                         }
                     }
 
-                    foreach (var cmd in RespCommandsInfoNew.AllRespCommands)
+                    foreach (var cmd in RespCommandsInfo.AllRespCommands.Values)
                     {
                         cnt++;
                         resultSb.Append(cmd.RespFormat);
