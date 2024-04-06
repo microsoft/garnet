@@ -40,7 +40,7 @@ namespace Garnet.server
 
                 if (!Int32.TryParse(cursor, out int cursorValue) || cursorValue < 0)
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRORCURSORVALUE, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
                         SendAndReset();
                     ReadLeftToken(count - 1, ref ptr);
                     return true;

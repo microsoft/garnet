@@ -47,7 +47,7 @@ namespace Garnet.server
             {
                 zaddDoneCount = zaddAddCount = 0;
 
-                return AbortWithErrorMessage(count, CmdStrings.RESP_SYNTAX_ERROR);
+                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
 
             // Get the key for SortedSet

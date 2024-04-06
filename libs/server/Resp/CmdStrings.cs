@@ -82,38 +82,46 @@ namespace Garnet.server
         /// Response strings
         /// </summary>
         public static ReadOnlySpan<byte> RESP_OK => "+OK\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERR => "-ERR unknown command\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_CLUSTER_DISABLED => "-ERR This instance has cluster support disabled\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_WRONG_ARGUMENTS => "-ERR wrong number of arguments for 'config|set' command\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_WRONG_TYPE => "-WRONGTYPE Operation against a key holding the wrong kind of value.\r\n"u8;
         public static ReadOnlySpan<byte> RESP_ERRNOTFOUND => "$-1\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERRNOSUCHKEY => "-ERR no such key\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_NOAUTH => "-NOAUTH Authentication required.\r\n"u8;
         public static ReadOnlySpan<byte> RESP_EMPTYLIST => "*0\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_1 => ":1\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_0 => ":0\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_N1 => ":-1\r\n"u8;
         public static ReadOnlySpan<byte> RESP_PONG => "+PONG\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_HLL_TYPE_ERROR => "-WRONGTYPE Key is not a valid HyperLogLog string value.\r\n"u8;
         public static ReadOnlySpan<byte> RESP_EMPTY => "$0\r\n\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_NESTED_MULTI => "-ERR MULTI calls can not be nested\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_EXEC_WO_MULTI => "-ERR EXEC without MULTI\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_DISCARD_WO_MULTI => "-ERR DISCARD without MULTI\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_WATCH_IN_MULTI => "-ERR WATCH inside MULTI is not allowed\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_EXEC_ABORT => "-EXECABORT Transaction discarded because of previous errors.\r\n"u8;
         public static ReadOnlySpan<byte> RESP_QUEUED => "+QUEUED\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERRINVALIDEXP_IN_SET => "-ERR invalid expire time in 'set' command\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "-ERR syntax error\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERROFFSETOUTOFRANGE => "-ERR offset is out of range\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERRORCURSORVALUE => "-ERR cursor value should be equal or greater than 0.\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_MALFORMED_REGISTERCS_COMMAND => "-ERR malformed REGISTERCS command.\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERROR_GETTING_BINARY_FILES => "-ERR unable to access one or more binary files.\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERROR_BINARY_FILES_NOT_IN_ALLOWED_PATHS => "-ERR one or more binary file are not contained in allowed paths.\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERROR_LOADING_ASSEMBLIES => "-ERR unable to load one or more assemblies.\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERROR_ASSEMBLY_NOT_SIGNED => "-ERR one or more assemblies loaded is not digitally signed.\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERROR_INSTANTIATING_CLASS => "-ERR unable to instantiate one or more classes from given assemblies.\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERROR_REGISTERCS_UNSUPPORTED_CLASS => "-ERR unable to register one or more unsupported classes.\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_ERROR_VALUE_IS_NOT_INTEGER => "-ERR value is not an integer or out of range.\r\n"u8;
+
+        /// <summary>
+        /// Simple error respone strings, i.e. these are sent in the form "responseString\r\n"
+        /// </summary>
+        public static ReadOnlySpan<byte> RESP_NOAUTH => "-NOAUTH Authentication required.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_WRONG_TYPE => "-WRONGTYPE Operation against a key holding the wrong kind of value.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_HLL_TYPE_ERROR => "-WRONGTYPE Key is not a valid HyperLogLog string value.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_EXEC_ABORT => "-EXECABORT Transaction discarded because of previous errors.\r\n"u8;
+
+        /// <summary>
+        /// Generic error respone strings, i.e. these are sent in the form "-ERR responseString\r\n"
+        /// </summary>
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UNK_CMD => "-ERR unknown command\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CLUSTER_DISABLED => "-ERR This instance has cluster support disabled\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WRONG_ARGUMENTS => "-ERR wrong number of arguments for 'config|set' command\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NOSUCHKEY => "-ERR no such key\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NESTED_MULTI => "-ERR MULTI calls can not be nested\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_EXEC_WO_MULTI => "-ERR EXEC without MULTI\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_DISCARD_WO_MULTI => "-ERR DISCARD without MULTI\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WATCH_IN_MULTI => "-ERR WATCH inside MULTI is not allowed\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_SET => "-ERR invalid expire time in 'set' command\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SYNTAX_ERROR => "-ERR syntax error\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_OFFSETOUTOFRANGE => "-ERR offset is out of range\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CURSORVALUE => "-ERR cursor value should be equal or greater than 0.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND => "-ERR malformed REGISTERCS command.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_GETTING_BINARY_FILES => "-ERR unable to access one or more binary files.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS => "-ERR one or more binary file are not contained in allowed paths.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_LOADING_ASSEMBLIES => "-ERR unable to load one or more assemblies.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED => "-ERR one or more assemblies loaded is not digitally signed.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INSTANTIATING_CLASS => "-ERR unable to instantiate one or more classes from given assemblies.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS => "-ERR unable to register one or more unsupported classes.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER => "-ERR value is not an integer or out of range.\r\n"u8;
 
         /// <summary>
         /// Response string templates

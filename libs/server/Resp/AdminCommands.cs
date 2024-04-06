@@ -140,7 +140,7 @@ namespace Garnet.server
                     {
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_WRONG_ARGUMENTS, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_WRONG_ARGUMENTS, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -309,7 +309,7 @@ namespace Garnet.server
                 {
                     if (!DrainCommands(bufSpan, count))
                         return false;
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_CLUSTER_DISABLED, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -502,7 +502,7 @@ namespace Garnet.server
                 // Unknown RESP Command
                 if (!DrainCommands(bufSpan, count))
                     return false;
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
             }
 

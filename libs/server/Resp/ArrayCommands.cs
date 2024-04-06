@@ -227,19 +227,19 @@ namespace Garnet.server
             var classInstances = new Dictionary<string, object>();
             // Get all binary file paths from inputs binary paths
             if (!FileUtils.TryGetFiles(binaryPaths, out var files, out _, new[] { ".dll", ".exe" },
-                    SearchOption.AllDirectories)) return CmdStrings.RESP_ERROR_GETTING_BINARY_FILES;
+                    SearchOption.AllDirectories)) return CmdStrings.RESP_ERR_GENERIC_GETTING_BINARY_FILES;
 
             // Check that all binary files are contained in allowed binary paths
             var binaryFiles = files.ToArray();
             if (binaryFiles.Any(f =>
                     storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))
             {
-                return CmdStrings.RESP_ERROR_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
+                return CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
             }
 
             // Get all assemblies from binary files
             if (!FileUtils.TryLoadAssemblies(binaryFiles, out var assemblies, out _))
-                return CmdStrings.RESP_ERROR_LOADING_ASSEMBLIES;
+                return CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
 
             var loadedAssemblies = assemblies.ToArray();
 
@@ -250,7 +250,7 @@ namespace Garnet.server
                 {
                     var publicKey = loadedAssembly.GetName().GetPublicKey();
                     if (publicKey == null || publicKey.Length == 0)
-                        return CmdStrings.RESP_ERROR_ASSEMBLY_NOT_SIGNED;
+                        return CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
                 }
             }
 
@@ -268,13 +268,13 @@ namespace Garnet.server
             var supportedCustomCommandTypes = RegisterCustomCommandProviderBase.SupportedCustomCommandBaseTypesLazy.Value;
             if (loadedTypes.Any(t => !supportedCustomCommandTypes.Any(st => st.IsAssignableFrom(t))))
             {
-                return CmdStrings.RESP_ERROR_REGISTERCS_UNSUPPORTED_CLASS;
+                return CmdStrings.RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS;
             }
 
             // Check that all types have empty constructors
             if (loadedTypes.Any(t => t.GetConstructor(Type.EmptyTypes) == null))
             {
-                return CmdStrings.RESP_ERROR_INSTANTIATING_CLASS;
+                return CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
             }
 
             // Instantiate types
@@ -287,7 +287,7 @@ namespace Garnet.server
             // If any class specified in the arguments was not instantiated, return an error
             if (classNameToRegisterArgs.Keys.Any(c => classInstances[c] == null))
             {
-                return CmdStrings.RESP_ERROR_INSTANTIATING_CLASS;
+                return CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
             }
 
             // Register each command / transaction using its specified class instance
@@ -300,7 +300,7 @@ namespace Garnet.server
                         RegisterCustomCommandProviderFactory.GetRegisterCustomCommandProvider(classInstances[classNameToArgs.Key], args);
 
                     if (registerApi == null)
-                        return CmdStrings.RESP_ERROR_REGISTERCS_UNSUPPORTED_CLASS;
+                        return CmdStrings.RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS;
 
                     registerApis.Add(registerApi);
                 }
@@ -334,7 +334,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> response = null;
 
             if (leftTokens == 0)
-                response = CmdStrings.RESP_MALFORMED_REGISTERCS_COMMAND;
+                response = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
             // Parse the REGISTERCS command - list of registration sub-commands followed by a list of paths to binary files / folders
             // Syntax - REGISTERCS cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...] SRC path [path ...]
@@ -377,7 +377,7 @@ namespace Garnet.server
                     // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
                     if (classNameToRegisterArgs.Count == 0)
                     {
-                        response = CmdStrings.RESP_MALFORMED_REGISTERCS_COMMAND;
+                        response = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                         break;
                     }
 
@@ -403,7 +403,7 @@ namespace Garnet.server
                     }
 
                     // Unexpected token
-                    response = CmdStrings.RESP_MALFORMED_REGISTERCS_COMMAND;
+                    response = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                     break;
                 }
 
