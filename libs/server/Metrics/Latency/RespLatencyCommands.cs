@@ -114,7 +114,7 @@ namespace Garnet.server
 
                         if (invalid)
                         {
-                            while (!RespWriteUtils.WriteGenericError($"-ERR Invalid type {invalidEvent}", ref dcurr, dend))
+                            while (!RespWriteUtils.WriteGenericError($"Invalid type {invalidEvent}", ref dcurr, dend))
                                 SendAndReset();
                         }
                         else
