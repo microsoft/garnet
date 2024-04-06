@@ -128,7 +128,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    string err = string.Format(CmdStrings.ErrWrongNumArgs, commandInfo.nameStr);
+                    string err = string.Format(CmdStrings.GenericErrWrongNumArgs, commandInfo.nameStr);
                     while (!RespWriteUtils.WriteGenericError(err, ref dcurr, dend))
                         SendAndReset();
                     txnManager.Abort();

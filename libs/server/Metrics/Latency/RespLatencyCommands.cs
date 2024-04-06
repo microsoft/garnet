@@ -159,7 +159,7 @@ namespace Garnet.server
 
             if (errorFlag && !string.IsNullOrWhiteSpace(errorCmd))
             {
-                var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, errorCmd);
+                var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, errorCmd);
                 while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }

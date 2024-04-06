@@ -751,7 +751,7 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS), $"-{rse.Message}\r\n");
+                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS), rse.Message);
             }
             Assert.IsNull(resp);
 
@@ -769,7 +769,7 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS), $"-{rse.Message}\r\n");
+                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS), rse.Message);
             }
             Assert.IsNull(resp);
 
@@ -787,7 +787,7 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS), $"-{rse.Message}\r\n");
+                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS), rse.Message);
             }
             Assert.IsNull(resp);
         }

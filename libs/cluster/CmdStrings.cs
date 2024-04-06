@@ -103,8 +103,8 @@ namespace Garnet.cluster
         public const string ErrMissingParam = "-ERR wrong number of arguments for '{0}' command\r\n";
 
         /// <summary>
-        /// Error response strings
-        /// </summary>        
+        /// Generic error respone strings, i.e. these are sent in the form "-ERR responseString\r\n"
+        /// </summary>
         public static ReadOnlySpan<byte> RESP_ERRCLUSTER => "-ERR This instance has cluster support disabled\r\n"u8;
         public static ReadOnlySpan<byte> RESP_SLOT_OUT_OFF_RANGE => "-ERR Slot out of range\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CONFIG_UPDATE_ERROR => "-ERR Updating the config epoch\r\n"u8;

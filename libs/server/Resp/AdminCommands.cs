@@ -32,7 +32,7 @@ namespace Garnet.server
                     if (!DrainCommands(bufSpan, count))
                         return false;
                     errorCmd = "auth";
-                    var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, errorCmd);
+                    var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, errorCmd);
                     while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
                         SendAndReset();
                 }
@@ -173,7 +173,7 @@ namespace Garnet.server
                     string errorMsg = null;
                     if (unknownOption)
                     {
-                        errorMsg = string.Format(CmdStrings.UnknownOption, unknownKey);
+                        errorMsg = string.Format(CmdStrings.GenericErrUnknownOption, unknownKey);
                     }
                     else
                     {
@@ -507,7 +507,7 @@ namespace Garnet.server
 
             if (errorFlag && !string.IsNullOrWhiteSpace(errorCmd))
             {
-                var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, errorCmd);
+                var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, errorCmd);
                 while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }

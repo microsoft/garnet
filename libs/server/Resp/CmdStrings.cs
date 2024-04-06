@@ -126,8 +126,8 @@ namespace Garnet.server
         /// <summary>
         /// Response string templates
         /// </summary>
-        public const string ErrWrongNumArgs = "wrong number of arguments for '{0}' command";
-        public const string UnknownOption = "Unknown option or number of arguments for CONFIG SET - '{0}'";
+        public const string GenericErrWrongNumArgs = "wrong number of arguments for '{0}' command";
+        public const string GenericErrUnknownOption = "Unknown option or number of arguments for CONFIG SET - '{0}'";
 
         /// <summary>
         /// Object types

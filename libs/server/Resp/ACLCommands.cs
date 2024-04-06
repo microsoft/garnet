@@ -42,7 +42,7 @@ namespace Garnet.server
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
-                var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, "ACL");
+                var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "ACL");
                 while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
                     SendAndReset();
 
