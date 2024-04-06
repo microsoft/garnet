@@ -30,15 +30,10 @@ namespace Garnet.cluster
             }
             else
             {
-                var port = -1;
-                try
+                if (!int.TryParse(portStr, out var port)) 
                 {
-                    port = int.Parse(portStr);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning("TryREPLICAOF {msg}", ex.Message);
-                    while (!RespWriteUtils.WriteGenericError($"REPLICAOF {ex.Message}", ref dcurr, dend))
+                    logger?.LogWarning("TryREPLICAOF failed to parse port {port}", portStr);
+                    while (!RespWriteUtils.WriteGenericError($"REPLICAOF failed to parse port '{portStr}'", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -52,9 +47,16 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    var resp = clusterProvider.replicationManager.TryBeginReplicate(this, primaryId, background: false, force: true);
-                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                        SendAndReset();
+                    if (!clusterProvider.replicationManager.TryBeginReplicate(this, primaryId, background: false, force: true, out var errorMessage))
+                    {
+                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
                     return true;
                 }
             }
