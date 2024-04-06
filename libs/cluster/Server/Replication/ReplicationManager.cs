@@ -234,7 +234,7 @@ namespace Garnet.cluster
                 clusterProvider.replicationManager.recovering = true;
                 clusterProvider.WaitForConfigTransition();
                 if (!TryReplicateFromPrimary(out var errorMessage))
-                    logger?.LogError("An error occurred at ReplicationManager.Recover {error}", Encoding.ASCII.GetString(errorMessage));
+                    logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage));
             }
             else if (localNodeRole == NodeRole.PRIMARY && replicaOfNodeId == null)
             {
@@ -244,9 +244,8 @@ namespace Garnet.cluster
                     // TODO: Initiate AOF sync task correctly when restarting primary
                     if (clusterProvider.replicationManager.TryAddReplicationTask(replicaId, 0, out var aofSyncTaskInfo))
                     {
-                        var resp = TryConnectToReplica(replicaId, 0, aofSyncTaskInfo);
-                        if (!resp.SequenceEqual(CmdStrings.RESP_OK))
-                            logger?.LogError(Encoding.ASCII.GetString(resp));
+                        if (!TryConnectToReplica(replicaId, 0, aofSyncTaskInfo, out var errorMessage))
+                            logger?.LogError(Encoding.ASCII.GetString(errorMessage));
                     }
                 }
             }

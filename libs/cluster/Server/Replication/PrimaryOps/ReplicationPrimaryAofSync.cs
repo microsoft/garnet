@@ -36,20 +36,23 @@ namespace Garnet.cluster
             => aofTaskStore.SafeTruncateAof(CheckpointCoveredAofAddress);
 
         /// <summary>
-        /// Initiate connection from primary to replica in order to stream aof.
+        /// Try to initiate connection from primary to replica in order to stream aof.
         /// </summary>
         /// <param name="nodeid"></param>
         /// <param name="startAddress"></param>
         /// <param name="aofSyncTaskInfo"></param>
+        /// <param name="errorMessage">The ASCII encoded error message if the method return <c>false</c>; otherwise <c>default</c></param>
         /// <returns></returns>
-        public ReadOnlySpan<byte> TryConnectToReplica(string nodeid, long startAddress, AofSyncTaskInfo aofSyncTaskInfo)
+        public bool TryConnectToReplica(string nodeid, long startAddress, AofSyncTaskInfo aofSyncTaskInfo, out ReadOnlySpan<byte> errorMessage)
         {
+            errorMessage = default;
             if (_disposed)
             {
                 aofTaskStore.TryRemove(aofSyncTaskInfo);
-                var msg = $"-ERR Replication Manager Disposed";
-                logger?.LogError(msg);
-                return Encoding.ASCII.GetBytes($"-ERR Replication Manager Disposed");
+
+                errorMessage = "Replication Manager Disposed"u8;
+                logger?.LogError(Encoding.ASCII.GetString(errorMessage));
+                return false;
             }
 
             // TODO: why do we need to verify this?
@@ -58,9 +61,10 @@ namespace Garnet.cluster
             if (address == null)
             {
                 aofTaskStore.TryRemove(aofSyncTaskInfo);
-                var msg = $"-ERR unknown endpoint for {nodeid}";
+                var msg = $"unknown endpoint for {nodeid}";
                 logger.LogError(msg);
-                return Encoding.ASCII.GetBytes(msg);
+                errorMessage = Encoding.ASCII.GetBytes(msg);
+                return false;
             }
 
             var tailAddress = storeWrapper.appendOnlyFile.TailAddress;
@@ -75,12 +79,13 @@ namespace Garnet.cluster
                 {
                     aofTaskStore.TryRemove(aofSyncTaskInfo);
                     logger?.LogError("AOF sync task failed to start. Requested address {startAddress} unavailable. Local primary tail address {tailAddress}", startAddress, tailAddress);
-                    return Encoding.ASCII.GetBytes($"-ERR requested AOF address: {startAddress} goes beyond, primary tail address: {tailAddress}\r\n");
+                    errorMessage = Encoding.ASCII.GetBytes($"requested AOF address: {startAddress} goes beyond, primary tail address: {tailAddress}");
+                    return false;
                 }
             }
 
             Task.Run(aofSyncTaskInfo.ReplicaSyncTask);
-            return CmdStrings.RESP_OK;
+            return true;
         }
     }
 }
