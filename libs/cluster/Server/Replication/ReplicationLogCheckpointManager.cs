@@ -21,8 +21,8 @@ namespace Garnet.cluster
         public long CurrentSafeAofAddress = 0;
         public long RecoveredSafeAofAddress = 0;
 
-        public string PrimaryReplicationId = string.Empty;
-        public string RecoveredPrimaryReplicationId = string.Empty;
+        public string CurrentReplicationId = string.Empty;
+        public string RecoveredReplicationId = string.Empty;
 
         readonly bool isMainStore = isMainStore;
         public Action<bool, long, long> checkpointVersionShift;
@@ -69,9 +69,9 @@ namespace Garnet.cluster
         /// <returns></returns>
         private unsafe byte[] AddCookie(byte[] commitMetadata)
         {
-            var cookieSize = sizeof(long) + this.PrimaryReplicationId.Length;
+            var cookieSize = sizeof(long) + this.CurrentReplicationId.Length;
             var commitMetadataWithCookie = new byte[sizeof(int) + cookieSize + commitMetadata.Length];
-            var primaryReplIdBytes = Encoding.ASCII.GetBytes(PrimaryReplicationId);
+            var primaryReplIdBytes = Encoding.ASCII.GetBytes(CurrentReplicationId);
             fixed (byte* ptr = commitMetadataWithCookie)
             fixed (byte* pridPtr = primaryReplIdBytes)
             fixed (byte* cmPtr = commitMetadata)
@@ -86,7 +86,7 @@ namespace Garnet.cluster
 
         private byte[] ExtractCookie(byte[] commitMetadataWithCookie)
         {
-            var cookieTotalSize = GetCookieData(commitMetadataWithCookie, out RecoveredSafeAofAddress, out RecoveredPrimaryReplicationId);
+            var cookieTotalSize = GetCookieData(commitMetadataWithCookie, out RecoveredSafeAofAddress, out RecoveredReplicationId);
             var payloadSize = commitMetadataWithCookie.Length - cookieTotalSize;
 
             var commitMetadata = new byte[payloadSize];

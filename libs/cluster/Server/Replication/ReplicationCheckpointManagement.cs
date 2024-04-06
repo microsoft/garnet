@@ -108,9 +108,9 @@ namespace Garnet.cluster
         /// </summary>
         public void SetPrimaryReplicationId()
         {
-            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).PrimaryReplicationId = PrimaryReplId;
+            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).CurrentReplicationId = PrimaryReplId;
             if (!clusterProvider.serverOptions.DisableObjects)
-                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).PrimaryReplicationId = PrimaryReplId;
+                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).CurrentReplicationId = PrimaryReplId;
         }
     }
 }
