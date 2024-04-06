@@ -102,7 +102,6 @@ namespace Garnet.cluster
         /// </summary>
         public const string ErrMissingParam = "-ERR wrong number of arguments for '{0}' command\r\n";
 
-
         /// <summary>
         /// Error response strings
         /// </summary>        
