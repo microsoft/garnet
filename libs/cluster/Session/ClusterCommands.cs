@@ -379,14 +379,21 @@ namespace Garnet.cluster
                     readHead = (int)(ptr - recvBufferPtr);
                     if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_ASSIGNMENT, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_ASSIGNMENT, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
                     {
-                        var resp = clusterProvider.clusterManager.TrySetLocalConfigEpoch(configEpoch);
-                        while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                            SendAndReset();
+                        if (!clusterProvider.clusterManager.TrySetLocalConfigEpoch(configEpoch, out var errorMessage))
+                        {
+                            while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
                 }
             }
