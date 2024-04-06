@@ -112,10 +112,10 @@ namespace Garnet.server
                         else
                             events = GarnetLatencyMetrics.defaultLatencyTypes.ToHashSet();
 
-                        ReadOnlySpan<byte> response = null;
                         if (invalid)
                         {
-                            response = Encoding.ASCII.GetBytes($"-ERR Invalid type {invalidEvent}\r\n");
+                            while (!RespWriteUtils.WriteGenericError($"-ERR Invalid type {invalidEvent}", ref dcurr, dend))
+                                SendAndReset();
                         }
                         else
                         {
@@ -124,10 +124,9 @@ namespace Garnet.server
                                 foreach (var e in events)
                                     storeWrapper.monitor.resetLatencyMetrics[e] = true;
                             }
-                            response = CmdStrings.RESP_OK;
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
                         }
-                        while (!RespWriteUtils.WriteDirect(response, ref dcurr, dend))
-                            SendAndReset();
 
                         readHead = (int)(ptr - recvBufferPtr);
                     }
