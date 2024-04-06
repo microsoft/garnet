@@ -66,7 +66,7 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteAsciiDirect(response, ref dcurr, dend))
                             SendAndReset();
                     }
-                    
+
                     readHead = (int)(ptr - recvBufferPtr);
                 }
                 else if (param.SequenceEqual(CmdStrings.RESET) || param.SequenceEqual(CmdStrings.reset))
