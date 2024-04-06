@@ -1319,7 +1319,7 @@ namespace Garnet.test.cluster
                 logger?.LogInformation(ex, "Exception occurred in CountKeysInSlot");
                 if (slot < 0 || slot > ushort.MaxValue - 1)
                 {
-                    Assert.AreEqual(ex.Message, "ERR Slot out of range");
+                    Assert.AreEqual("ERR Slot out of range", ex.Message);
                     return 0;
                 }
                 return 0;
@@ -1563,7 +1563,7 @@ namespace Garnet.test.cluster
         {
             var endPoint = (IPEndPoint)endpoints[nodeIndex];
             var server = redis.GetServer(endPoint);
-            var objects = ranges.SelectMany(x => new List<object> { (object)x.Item1, (object)x.Item2 }).ToList();
+            var objects = ranges.SelectMany(x => new List<object> { x.Item1, x.Item2 }).ToList();
             objects.Insert(0, addslot ? "addslotsrange" : "delslotsrange");
 
             try
