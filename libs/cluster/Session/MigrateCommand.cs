@@ -46,7 +46,7 @@ namespace Garnet.cluster
                 MigrateCmdParseState.TARGETNODENOTMASTER => Encoding.ASCII.GetBytes($"Cannot initiate migration, target node ({targetAddress}:{targetPort}) is not a primary."),
                 MigrateCmdParseState.INCOMPLETESLOTSRANGE => CmdStrings.RESP_ERR_GENERIC_INCOMPLETESLOTSRANGE,
                 MigrateCmdParseState.SLOTOUTOFRANGE => Encoding.ASCII.GetBytes($"Slot {slotMultiRef} out of range."),
-                
+
                 _ => CmdStrings.RESP_ERR_GENERIC_PARSING,
             };
             while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))

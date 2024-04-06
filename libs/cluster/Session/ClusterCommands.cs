@@ -686,7 +686,7 @@ namespace Garnet.cluster
                         if (slotIndex != -1)
                             errorMessage = Encoding.ASCII.GetBytes($"Slot {slotIndex} is already busy");
                     }
-                    
+
                     if (errorMessage == default)
                     {
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -1146,7 +1146,7 @@ namespace Garnet.cluster
                     //Parse slot ranges
                     if (!TryParseSlots(_count, ref ptr, out var slots, out var errorMessage, range: true))
                         return false;
-                    
+
                     readHead = (int)(ptr - recvBufferPtr);
 
                     //Execute
