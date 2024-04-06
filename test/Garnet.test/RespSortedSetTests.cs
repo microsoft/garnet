@@ -1860,7 +1860,7 @@ namespace Garnet.test
             Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
 
-        private static string FormatWrongNumOfArgsError(string commandName) => $"-ERR {string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";
+        private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";
     }
 
     public class SortedSetComparer : IComparer<(double, byte[])>

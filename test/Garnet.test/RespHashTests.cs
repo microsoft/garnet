@@ -988,7 +988,7 @@ namespace Garnet.test
 
         #endregion
 
-        private static string FormatWrongNumOfArgsError(string commandName) => $"-ERR {string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";
+        private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";
     }
 
 }
