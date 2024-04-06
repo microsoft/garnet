@@ -23,6 +23,7 @@ namespace Garnet.server
         SMEMBERS,
         SCARD,
         SSCAN,
+        SISMEMBER,
     }
 
 
@@ -110,6 +111,9 @@ namespace Garnet.server
                         break;
                     case SetOperation.SMEMBERS:
                         SetMembers(_input, input.Length, ref output);
+                        break;
+                    case SetOperation.SISMEMBER:
+                        SetIsMember(_input, input.Length, ref output);
                         break;
                     case SetOperation.SREM:
                         SetRemove(_input, input.Length, _output);
