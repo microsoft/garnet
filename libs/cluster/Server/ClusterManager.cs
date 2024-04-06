@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -21,12 +20,6 @@ namespace Garnet.cluster
         ClusterConfig currentConfig;
         readonly IDevice clusterConfigDevice;
         readonly SectorAlignedBufferPool pool;
-
-        /// <summary>
-        /// Replication manager - needs to be set after instantiation, hence made public
-        /// </summary>
-        public ReplicationManager replicationManager;
-
         readonly ILogger logger;
 
         /// <summary>
@@ -47,9 +40,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Constructor
         /// </summary>
-        public unsafe ClusterManager(
-            ClusterProvider clusterProvider,
-            ILoggerFactory loggerFactory = null)
+        public unsafe ClusterManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             var opts = clusterProvider.serverOptions;
@@ -61,7 +52,7 @@ namespace Garnet.cluster
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
             var address = opts.Address ?? StoreWrapper.GetIp();
-            logger = loggerFactory?.CreateLogger($"ClusterManager-{address}:{opts.Port}");
+            this.logger = logger;
             var recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !opts.CleanClusterConfig;
 
             tlsOptions = opts.TlsOptions;
@@ -286,7 +277,7 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
-            replicationManager.Reset();
+            clusterProvider.replicationManager.Reset();
             FlushConfig();
         }
 

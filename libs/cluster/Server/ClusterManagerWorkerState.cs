@@ -144,7 +144,6 @@ namespace Garnet.cluster
             while (true)
             {
                 var current = CurrentConfig;
-                //(error) ERR Can't replicate myself
                 if (current.GetLocalNodeId().Equals(nodeid))
                 {
                     logger?.LogError("{msg}", Encoding.ASCII.GetString(CmdStrings.RESP_CANNOT_REPLICATE_SELF_ERROR));

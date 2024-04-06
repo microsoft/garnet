@@ -30,7 +30,7 @@ namespace Garnet.cluster
         /// <returns>Return resp span with success or otherwise any err.</returns>
         public ReadOnlySpan<byte> BeginReplicate(ClusterSession session, string nodeid, bool background, bool force)
         {
-            ReadOnlySpan<byte> resp = CmdStrings.RESP_OK;
+            var resp = CmdStrings.RESP_OK;
             if (!replicateLock.TryWriteLock())
                 return Encoding.ASCII.GetBytes("-ERR Replicate already in progress\r\n");
 
@@ -46,8 +46,8 @@ namespace Garnet.cluster
                     session.UnsafeWaitForConfigTransition();
 
                     //TODO: We should not be resetting this, need to decide where to start syncing from
-                    clusterProvider.replicationManager.ReplicationOffset = 0;
-                    resp = clusterProvider.replicationManager.TryReplicateFromPrimary(background);
+                    ReplicationOffset = 0;
+                    resp = TryReplicateFromPrimary(background);
                 }
             }
             finally
@@ -88,7 +88,7 @@ namespace Garnet.cluster
             if (background)
             {
                 logger?.LogInformation("Initiating background checkpoint retrieval");
-                Task.Run(InitiateReplicaSync);
+                _ = Task.Run(InitiateReplicaSync);
             }
             else
             {
@@ -114,8 +114,8 @@ namespace Garnet.cluster
 
             if (address == null || port == -1)
             {
-                var errorMsg = $"-ERR don't have primary\r\n";
-                logger?.LogError(errorMsg);
+                var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_NOT_ASSIGNED_PRIMARY_ERROR);
+                logger?.LogError("{msg}", errorMsg);
                 return errorMsg;
             }
 
@@ -126,7 +126,7 @@ namespace Garnet.cluster
                 gcs.Connect();
 
                 var nodeId = current.GetLocalNodeId();
-                cEntry = clusterProvider.replicationManager.GetLatestCheckpointEntryFromDisk();
+                cEntry = GetLatestCheckpointEntryFromDisk();
 
                 storeWrapper.RecoverAOF();
                 logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
@@ -216,19 +216,6 @@ namespace Garnet.cluster
                 return obj ? logFactory.Get(new FileDescriptor("ObjectStore", "hlog.obj")) : logFactory.Get(new FileDescriptor("ObjectStore", "hlog"));
             }
             return null;
-        }
-
-        private long GetObjectStoreSnapshotSize(Guid token)
-        {
-            var device = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).GetDevice(CheckpointFileType.OBJ_STORE_SNAPSHOT_OBJ, token);
-            long size = 0;
-            if (device is not null)
-            {
-                device.Initialize(-1);
-                size = device.GetFileSize(0);
-                device.Dispose();
-            }
-            return size;
         }
 
         /// <summary>
