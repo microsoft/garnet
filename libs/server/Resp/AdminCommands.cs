@@ -56,7 +56,7 @@ namespace Garnet.server
                     // NOTE: Some authenticators cannot accept username/password pairs
                     if (!_authenticator.CanAuthenticate)
                     {
-                        while (!RespWriteUtils.WriteDirect("-ERR Client sent AUTH, but configured authenticator does not accept passwords\r\n"u8, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError("Client sent AUTH, but configured authenticator does not accept passwords"u8, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -214,7 +214,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteAsciiDirect($"-ERR {errorMsg}\r\n", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -397,7 +397,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteDirect("-ERR checkpoint already in progress\r\n"u8, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError("checkpoint already in progress"u8, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -452,7 +452,7 @@ namespace Garnet.server
 
                     if (generation < 0 || generation > GC.MaxGeneration)
                     {
-                        while (!RespWriteUtils.WriteDirect("-ERR Invalid GC generation.\r\n"u8, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError("Invalid GC generation."u8, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }

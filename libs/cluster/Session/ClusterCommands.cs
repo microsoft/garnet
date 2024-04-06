@@ -159,7 +159,7 @@ namespace Garnet.cluster
                     if (!DrainCommands(bufSpan, count - 1))
                         return false;
                     string paramStr = Encoding.ASCII.GetString(param);
-                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Unknown subcommand or wrong number of arguments for '{paramStr}'. Try CLUSTER HELP.\r\n", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError($"Unknown subcommand or wrong number of arguments for '{paramStr}'. Try CLUSTER HELP.", ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -528,7 +528,7 @@ namespace Garnet.cluster
                         }
                         catch
                         {
-                            while (!RespWriteUtils.WriteAsciiDirect($"-ERR Failover option ({failoverOptionStr}) not supported\r\n", ref dcurr, dend))
+                            while (!RespWriteUtils.WriteGenericError($"Failover option ({failoverOptionStr}) not supported", ref dcurr, dend))
                                 SendAndReset();
                             failoverOption = FailoverOption.INVALID;
                         }
@@ -1343,7 +1343,7 @@ namespace Garnet.cluster
                         background = true;
                     else
                     {
-                        while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid CLUSTER REPLICATE FLAG ({backgroundFlag}) not valid\r\n", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError($"Invalid CLUSTER REPLICATE FLAG ({backgroundFlag}) not valid", ref dcurr, dend))
                             SendAndReset();
                         readHead = (int)(ptr - recvBufferPtr);
                         return true;
@@ -1353,7 +1353,7 @@ namespace Garnet.cluster
 
                 if (!clusterProvider.serverOptions.EnableAOF)
                 {
-                    while (!RespWriteUtils.WriteDirect("-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n"u8, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError("Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option."u8, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -1413,13 +1413,13 @@ namespace Garnet.cluster
                 if (localRole != NodeRole.REPLICA)
                 {
                     // TODO: handle this
-                    //while (!RespWriteUtils.WriteDirect("-ERR aofsync node not a replica\r\n"u8, ref dcurr, dend))
+                    //while (!RespWriteUtils.WriteGenericError("aofsync node not a replica"u8, ref dcurr, dend))
                     //    SendAndReset();
                 }
                 else if (!primaryId.Equals(nodeId))
                 {
                     // TODO: handle this
-                    //while (!RespWriteUtils.WriteAsciiDirect($"-ERR aofsync node replicating {primaryId}\r\n", ref dcurr, dend))
+                    //while (!RespWriteUtils.WriteGenericError($"aofsync node replicating {primaryId}", ref dcurr, dend))
                     //    SendAndReset();
                 }
                 else

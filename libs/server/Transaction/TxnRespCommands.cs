@@ -276,7 +276,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid number of parameters to stored proc {txid}, expected {numParams}, actual {count - 1}\r\n", ref dcurr, dend))
+                while (!RespWriteUtils.WriteGenericError($"Invalid number of parameters to stored proc {txid}, expected {numParams}, actual {count - 1}", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }

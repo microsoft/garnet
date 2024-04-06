@@ -252,7 +252,7 @@ namespace Garnet.server
 
             if (invalidOption)
             {
-                while (!RespWriteUtils.WriteAsciiDirect($"-ERR Unsupported option {optionStr}\r\n", ref dcurr, dend))
+                while (!RespWriteUtils.WriteGenericError($"Unsupported option {optionStr}", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }

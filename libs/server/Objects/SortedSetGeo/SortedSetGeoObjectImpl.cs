@@ -462,7 +462,7 @@ namespace Garnet.server
                 // Check that we have the mandatory options
                 if (!((opts.FromMember || opts.FromLonLat) && (opts.ByRadius || opts.ByBox)))
                 {
-                    while (!RespWriteUtils.WriteDirect("-ERR required parameters are missing.\r\n"u8, ref curr, end))
+                    while (!RespWriteUtils.WriteGenericError("required parameters are missing."u8, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _input->count = 0;
                     count = 0;

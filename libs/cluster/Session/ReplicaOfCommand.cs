@@ -38,7 +38,7 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogWarning("TryREPLICAOF {msg}", ex.Message);
-                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR REPLICAOF {ex.Message}\r\n", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError($"REPLICAOF {ex.Message}", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -46,7 +46,7 @@ namespace Garnet.cluster
                 var primaryId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(address, port);
                 if (primaryId == null)
                 {
-                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR I don't know about node {address}:{port}.\r\n", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError($"I don't know about node {address}:{port}.", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
