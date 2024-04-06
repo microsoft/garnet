@@ -8,6 +8,7 @@ using System.Text;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
+using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {

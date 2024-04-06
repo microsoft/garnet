@@ -378,7 +378,7 @@ namespace Garnet.server
 
             foreach (var key in keys)
             {
-                if (GET(key.Bytes, out var currObject, ref objectStoreContext) == GarnetStatus.OK)
+                if (GET(key.ToArray(), out var currObject, ref objectStoreContext) == GarnetStatus.OK)
                 {
                     var currSet = ((SetObject)currObject.garnetObject).Set;
                     output.UnionWith(currSet);
