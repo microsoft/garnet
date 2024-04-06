@@ -665,8 +665,7 @@ namespace Garnet.server
                         if (output.countDone == Int32.MaxValue)
                         {
                             // Error in arguments
-                            ReadOnlySpan<byte> errorMessage = "-ERR max or min value is not a float value.\r\n"u8;
-                            while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteGenericError("max or min value is not a float value."u8, ref dcurr, dend))
                                 SendAndReset();
                         }
                         else if (output.countDone == Int32.MinValue)  // command partially executed
@@ -758,8 +757,7 @@ namespace Garnet.server
                         if (output.countDone == Int32.MaxValue)
                         {
                             // Error in arguments
-                            ReadOnlySpan<byte> errorMessage = "-ERR max or min value not in a valid range.\r\n"u8;
-                            while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteGenericError("max or min value not in a valid range."u8, ref dcurr, dend))
                                 SendAndReset();
                         }
                         else if (output.countDone == Int32.MinValue)  // command partially executed
@@ -838,7 +836,6 @@ namespace Garnet.server
                 *inputPtr = save;
 
                 ReadOnlySpan<byte> errorMessage = default;
-
                 switch (status)
                 {
                     case GarnetStatus.OK:
@@ -848,17 +845,17 @@ namespace Garnet.server
                             var tokens = ReadLeftToken(count - 1, ref ptr);
                             if (tokens < count - 1)
                                 return false;
-                            errorMessage = "-ERR wrong key type used in ZINCRBY command.\r\n"u8;
+                            errorMessage = "wrong key type used in ZINCRBY command."u8;
                         }
                         else
                         {
                             //process output
                             var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                             //check for partial execution
-                            if (objOutputHeader.countDone == Int32.MinValue)
+                            if (objOutputHeader.countDone == int.MinValue)
                                 return false;
-                            else if (objOutputHeader.countDone == Int32.MaxValue)
-                                errorMessage = "-ERR increment value is not valid.\r\n"u8;
+                            else if (objOutputHeader.countDone == int.MaxValue)
+                                errorMessage = "increment value is not valid."u8;
                             ptr += objOutputHeader.bytesDone;
                         }
                         break;
@@ -870,7 +867,7 @@ namespace Garnet.server
 
                 if (errorMessage != default)
                 {
-                    while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -1009,17 +1006,17 @@ namespace Garnet.server
                 //restore input buffer
                 *inputPtr = save;
 
-                var errorMessage = Encoding.ASCII.GetBytes(op == SortedSetOperation.ZREMRANGEBYRANK ?
-                                                            "-ERR start or stop value is not in an integer or out of range.\r\n" :
-                                                            "-ERR max or min value is not a float value.\r\n");
-
                 switch (status)
                 {
                     case GarnetStatus.OK:
                         if (output.countDone == Int32.MaxValue)
                         {
+                            var errorMessage = op == SortedSetOperation.ZREMRANGEBYRANK ?
+                                "start or stop value is not in an integer or out of range."u8 :
+                                "max or min value is not a float value."u8;
+
                             // Error in arguments
-                            while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
                                 SendAndReset();
                         }
                         else if (output.countDone == Int32.MinValue)  // command partially executed

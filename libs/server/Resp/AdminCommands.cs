@@ -357,11 +357,16 @@ namespace Garnet.server
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
-                var resp = CmdStrings.RESP_OK;
                 if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
-                    resp = "-ERR checkpoint already in progress\r\n"u8;
-                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                    SendAndReset();
+                {
+                    while (!RespWriteUtils.WriteGenericError("checkpoint already in progress"u8, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
             }
             else if (command == RespCommand.LASTSAVE)
             {
