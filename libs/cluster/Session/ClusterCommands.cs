@@ -967,39 +967,43 @@ namespace Garnet.cluster
                     }
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    ReadOnlySpan<byte> resp = CmdStrings.RESP_OK;
                     if (!ClusterConfig.OutOfRange(slot))
                     {
+                        ReadOnlySpan<byte> errorMessage = default;
                         switch (slotState)
                         {
                             case SlotState.STABLE:
-                                _ = clusterProvider.clusterManager.TryResetSlotState(slot, out resp);
+                                _ = clusterProvider.clusterManager.TryResetSlotState(slot, out errorMessage);
                                 break;
                             case SlotState.IMPORTING:
-                                _ = clusterProvider.clusterManager.PrepareSlotForImport(slot, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.TryPrepareSlotForImport(slot, nodeid, out errorMessage);
                                 break;
                             case SlotState.MIGRATING:
-                                _ = clusterProvider.clusterManager.PrepareSlotForMigration(slot, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.TryPrepareSlotForMigration(slot, nodeid, out errorMessage);
                                 break;
                             case SlotState.NODE:
-                                _ = clusterProvider.clusterManager.PrepareSlotForOwnershipChange(slot, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.TryPrepareSlotForOwnershipChange(slot, nodeid, out errorMessage);
                                 break;
                             default:
-                                resp = Encoding.ASCII.GetBytes($"-ERR Slot state {subcommand} not supported.\r\n");
-                                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                                    SendAndReset();
+                                errorMessage = Encoding.ASCII.GetBytes($"Slot state {subcommand} not supported.");
                                 break;
                         }
 
-                        if (resp.SequenceEqual(CmdStrings.RESP_OK)) UnsafeWaitForConfigTransition();
-
-                        while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                            SendAndReset();
+                        if (errorMessage == default)
+                        {
+                            UnsafeWaitForConfigTransition();
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
                     else
                     {
-                        resp = CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE;
-                        while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
