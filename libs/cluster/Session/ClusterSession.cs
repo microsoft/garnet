@@ -61,7 +61,7 @@ namespace Garnet.cluster
         public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
         public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
 
-        public bool ProcessClusterCommands(ReadOnlySpan<byte> command, ReadOnlySpan<byte> bufSpan, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result)
+        public bool ProcessClusterCommands(RespCommand command, ReadOnlySpan<byte> bufSpan, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result)
         {
             this.recvBufferPtr = recvBufferPtr;
             this.bytesRead = bytesRead;
@@ -72,26 +72,26 @@ namespace Garnet.cluster
 
             try
             {
-                if (command.SequenceEqual(CmdStrings.CLUSTER))
+                if (command == RespCommand.CLUSTER)
                 {
                     result = ProcessClusterCommands(bufSpan, count);
                 }
-                else if (command.SequenceEqual(CmdStrings.MIGRATE))
+                else if (command == RespCommand.MIGRATE)
                 {
                     result = TryMIGRATE(count, recvBufferPtr + readHead);
                 }
-                else if (command.SequenceEqual(CmdStrings.FAILOVER))
+                else if (command == RespCommand.FAILOVER)
                 {
-                    if (!CheckACLAdminPermissions(bufSpan, count - 1, out bool success))
+                    if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                     {
                         return success;
                     }
 
                     result = TryFAILOVER(count, recvBufferPtr + readHead);
                 }
-                else if (command.SequenceEqual(CmdStrings.REPLICAOF) || command.SequenceEqual(CmdStrings.SECONDARYOF))
+                else if ((command == RespCommand.REPLICAOF) || (command == RespCommand.SECONDARYOF))
                 {
-                    if (!CheckACLAdminPermissions(bufSpan, count - 1, out bool success))
+                    if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                     {
                         return success;
                     }
@@ -196,7 +196,7 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_NOAUTH, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_NOAUTH, ref dcurr, dend))
                         SendAndReset();
                     processingCompleted = true;
                 }

@@ -31,7 +31,7 @@ namespace Garnet.server
             {
                 if (!DrainCommands(bufSpan, count))
                     return false;
-                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR ACL commands are not supported by the configured authenticator.\r\n"), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiDirect($"-ERR ACL commands are not supported by the configured authenticator.\r\n", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -42,7 +42,7 @@ namespace Garnet.server
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
-                var errorMsg = string.Format(CmdStrings.ErrMissingParam, "ACL");
+                var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, "ACL");
                 var bresp_ERRMISSINGPARAM = Encoding.ASCII.GetBytes(errorMsg);
                 bresp_ERRMISSINGPARAM.CopyTo(new Span<byte>(dcurr, bresp_ERRMISSINGPARAM.Length));
                 dcurr += bresp_ERRMISSINGPARAM.Length;
@@ -71,7 +71,7 @@ namespace Garnet.server
 
                 foreach (var user in users)
                 {
-                    RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(user.Value.DescribeUser()), ref dcurr, dend);
+                    RespWriteUtils.WriteAsciiBulkString(user.Value.DescribeUser(), ref dcurr, dend);
                 }
                 SendAndReset();
             }
@@ -88,7 +88,7 @@ namespace Garnet.server
 
                 foreach (var user in users)
                 {
-                    RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(user.Key), ref dcurr, dend);
+                    RespWriteUtils.WriteAsciiBulkString(user.Key, ref dcurr, dend);
                 }
                 SendAndReset();
             }
@@ -100,7 +100,7 @@ namespace Garnet.server
 
                 foreach (var category in categories)
                 {
-                    RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(category), ref dcurr, dend);
+                    RespWriteUtils.WriteAsciiBulkString(category, ref dcurr, dend);
                 }
                 SendAndReset();
             }
@@ -146,13 +146,13 @@ namespace Garnet.server
                     // Abort command execution
                     if (!DrainCommands(bufSpan, count - opsParsed - 3))
                         return false;
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR {exception.Message}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR {exception.Message}\r\n", ref dcurr, dend))
                         SendAndReset();
 
                     return true;
                 }
 
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             // Subcommand: DELUSER [<username> ...]
@@ -187,7 +187,7 @@ namespace Garnet.server
                     // Abort command execution
                     if (!DrainCommands(bufSpan, count - attemptedDeletes - 2))
                         return false;
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR {exception.Message}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR {exception.Message}\r\n", ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -202,7 +202,7 @@ namespace Garnet.server
             {
                 // Return the name of the currently authenticated user.
                 Debug.Assert(aclAuthenticator.GetUser() != null);
-                while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(aclAuthenticator.GetUser().Name), ref dcurr, dend))
+                while (!RespWriteUtils.WriteSimpleString(aclAuthenticator.GetUser().Name, ref dcurr, dend))
                     SendAndReset();
             }
             // Subcommand: LOAD
@@ -224,12 +224,12 @@ namespace Garnet.server
                     logger?.LogInformation("Reading updated ACL configuration file '{filepath}'", aclAuthenticationSettings.AclConfigurationFile);
                     this.storeWrapper.accessControlList.Load(aclAuthenticationSettings.DefaultPassword, aclAuthenticationSettings.AclConfigurationFile);
 
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
                 catch (ACLException exception)
                 {
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR {exception.Message}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR {exception.Message}\r\n", ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -239,7 +239,7 @@ namespace Garnet.server
                 if (!DrainCommands(bufSpan, count - 1))
                     return false;
 
-                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"-ERR Unknown subcommand or wrong number of arguments for ACL command '{subcommand}'.\r\n"), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiDirect($"-ERR Unknown subcommand or wrong number of arguments for ACL command '{subcommand}'.\r\n", ref dcurr, dend))
                     SendAndReset();
             }
 

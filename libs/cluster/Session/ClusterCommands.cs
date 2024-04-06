@@ -107,7 +107,7 @@ namespace Garnet.cluster
                         continue;
                     if (!slots.Add(slot))
                     {
-                        resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slot} specified multiple times\r\n"));
+                        resp = Encoding.ASCII.GetBytes($"-ERR Slot {slot} specified multiple times\r\n");
                         mRef = true;
                     }
                 }
@@ -130,36 +130,36 @@ namespace Garnet.cluster
         {
             if (clusterProvider.clusterManager == null)
             {
-                if (!DrainCommands(bufSpan, count - 1))
+                if (!DrainCommands(bufSpan, count))
                     return false;
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRCLUSTER, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRCLUSTER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
             bool errorFlag = false;
             string errorCmd = string.Empty;
-            if (count > 1)
+            if (count > 0)
             {
                 var param = GetCommand(bufSpan, out bool success1);
                 if (!success1) return false;
 
-                if (ProcessClusterBasicCommands(bufSpan, param, count, out errorFlag, out errorCmd))
+                if (ProcessClusterBasicCommands(bufSpan, param, count - 1, out errorFlag, out errorCmd))
                     goto checkErrorFlags;
-                else if (ProcessFailoverCommands(bufSpan, param, count, out errorFlag, out errorCmd))
+                else if (ProcessFailoverCommands(bufSpan, param, count - 1, out errorFlag, out errorCmd))
                     goto checkErrorFlags;
-                else if (ProcessSlotManageCommands(bufSpan, param, count, out errorFlag, out errorCmd))
+                else if (ProcessSlotManageCommands(bufSpan, param, count - 1, out errorFlag, out errorCmd))
                     goto checkErrorFlags;
-                else if (ProcessClusterMigrationCommands(bufSpan, param, count, out errorFlag, out errorCmd))
+                else if (ProcessClusterMigrationCommands(bufSpan, param, count - 1, out errorFlag, out errorCmd))
                     goto checkErrorFlags;
-                else if (ProcessClusterReplicationCommands(bufSpan, param, count, out errorFlag, out errorCmd))
+                else if (ProcessClusterReplicationCommands(bufSpan, param, count - 1, out errorFlag, out errorCmd))
                     goto checkErrorFlags;
                 else
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count - 1))
                         return false;
-                    string paramStr = Encoding.ASCII.GetString(param.ToArray());
-                    while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Unknown subcommand or wrong number of arguments for '" + paramStr + "'. Try CLUSTER HELP.\r\n")), ref dcurr, dend))
+                    string paramStr = Encoding.ASCII.GetString(param);
+                    while (!RespWriteUtils.WriteAsciiDirect($"-ERR Unknown subcommand or wrong number of arguments for '{paramStr}'. Try CLUSTER HELP.\r\n", ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -188,17 +188,17 @@ namespace Garnet.cluster
             if (param.SequenceEqual(CmdStrings.BUMPEPOCH) || param.SequenceEqual(CmdStrings.bumpepoch))
             {
                 bool success;
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out success))
                 {
                     return success;
                 }
 
-                if (count > 2)
+                if (count > 0)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -208,29 +208,29 @@ namespace Garnet.cluster
 
                     if (success)
                     {
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_CONFIG_UPDATE_ERROR, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_CONFIG_UPDATE_ERROR, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
             }
             else if (param.SequenceEqual(CmdStrings.FORGET) || param.SequenceEqual(CmdStrings.forget))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -239,7 +239,7 @@ namespace Garnet.cluster
                         return false;
 
                     int expirySeconds = 60;
-                    if (count == 4)
+                    if (count == 2)
                     {
                         if (!RespReadUtils.ReadIntWithLengthHeader(out expirySeconds, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -249,25 +249,25 @@ namespace Garnet.cluster
                     logger?.LogTrace("CLUSTER FORGET {nodeid} {seconds}", nodeid, expirySeconds);
                     var resp = clusterProvider.clusterManager.TryRemoveWorker(nodeid, expirySeconds);
 
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.INFO) || param.SequenceEqual(CmdStrings.info))
             {
-                if (count > 2)
+                if (count > 0)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
                     readHead = (int)(ptr - recvBufferPtr);
                     var clusterInfo = clusterProvider.clusterManager.GetInfo();
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(clusterInfo), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiBulkString(clusterInfo, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -280,23 +280,23 @@ namespace Garnet.cluster
                     SendAndReset();
                 foreach (var command in clusterCommands)
                 {
-                    while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(command), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteSimpleString(command, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.MEET) || param.SequenceEqual(CmdStrings.meet))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count != 4)
+                if (count != 2)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -311,7 +311,7 @@ namespace Garnet.cluster
                     var ipaddressStr = Encoding.ASCII.GetString(ipaddress);
                     logger?.LogTrace("CLUSTER MEET {ipaddressStr} {port}", ipaddressStr, port);
                     clusterProvider.clusterManager.RunMeetTask(ipaddressStr, port);
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -319,7 +319,7 @@ namespace Garnet.cluster
             {
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
-                while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId()), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiBulkString(clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId(), ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.MYPARENTID) || param.SequenceEqual(CmdStrings.myparentid))
@@ -329,7 +329,7 @@ namespace Garnet.cluster
 
                 var current = clusterProvider.clusterManager.CurrentConfig;
                 var parentId = current.GetLocalNodeRole() == NodeRole.PRIMARY ? current.GetLocalNodeId() : current.GetLocalNodePrimaryId();
-                while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(parentId), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiBulkString(parentId, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.ENDPOINT) || param.SequenceEqual(CmdStrings.endpoint))
@@ -340,35 +340,35 @@ namespace Garnet.cluster
                 readHead = (int)(ptr - recvBufferPtr);
                 var current = clusterProvider.clusterManager.CurrentConfig;
                 var (host, port) = current.GetEndpointFromNodeId(nodeid);
-                while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes($"{host}:{port}"), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiBulkString($"{host}:{port}", ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.NODES) || param.SequenceEqual(CmdStrings.nodes))
             {
-                if (count > 2)
+                if (count > 0)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
                     readHead = (int)(ptr - recvBufferPtr);
                     string nodes = clusterProvider.clusterManager.CurrentConfig.GetClusterInfo();
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(nodes), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiBulkString(nodes, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.set_config_epoch) || param.SequenceEqual(CmdStrings.SET_CONFIG_EPOCH))
             {
-                if (count != 3)
+                if (count != 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -379,13 +379,13 @@ namespace Garnet.cluster
                     readHead = (int)(ptr - recvBufferPtr);
                     if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
                     {
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_CONFIG_EPOCH_ASSIGNMENT_ERROR, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_CONFIG_EPOCH_ASSIGNMENT_ERROR, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
                     {
                         var resp = clusterProvider.clusterManager.TrySetLocalConfigEpoch(configEpoch);
-                        while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -395,23 +395,23 @@ namespace Garnet.cluster
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
                 var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo();
-                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(shardsInfo), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiDirect(shardsInfo, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.GOSSIP))
             {
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
                     bool gossipWithMeet = false;
-                    if (count > 3)
+                    if (count > 1)
                     {
                         if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var withMeet, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -460,7 +460,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.RESET) || param.SequenceEqual(CmdStrings.reset))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
@@ -468,7 +468,8 @@ namespace Garnet.cluster
                 var ptr = recvBufferPtr + readHead;
                 var soft = true;
                 var expirySeconds = 60;
-                if (count > 2)
+
+                if (count > 0)
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))
                         return false;
@@ -476,7 +477,7 @@ namespace Garnet.cluster
                         soft = false;
                 }
 
-                if (count > 3)
+                if (count > 1)
                 {
                     if (!RespReadUtils.ReadIntWithLengthHeader(out expirySeconds, ref ptr, recvBufferPtr + bytesRead))
                         return false;
@@ -487,7 +488,7 @@ namespace Garnet.cluster
                 clusterProvider.clusterManager.TryReset(soft, expirySeconds);
                 if (!soft) clusterProvider.FlushDB(true);
 
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else { return false; }
@@ -500,24 +501,24 @@ namespace Garnet.cluster
             errorCmd = string.Empty;
             if (param.SequenceEqual(CmdStrings.FAILOVER) || param.SequenceEqual(CmdStrings.failover))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 2)
+                if (count < 0)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
                     FailoverOption failoverOption = FailoverOption.DEFAULT;
                     TimeSpan failoverTimeout = default;
-                    if (count > 2)
+                    if (count > 0)
                     {
                         if (!RespReadUtils.ReadStringWithLengthHeader(out var failoverOptionStr, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -527,13 +528,13 @@ namespace Garnet.cluster
                         }
                         catch
                         {
-                            while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"-ERR Failover option ({failoverOptionStr}) not supported\r\n"), ref dcurr, dend))
+                            while (!RespWriteUtils.WriteAsciiDirect($"-ERR Failover option ({failoverOptionStr}) not supported\r\n", ref dcurr, dend))
                                 SendAndReset();
                             failoverOption = FailoverOption.INVALID;
                         }
                     }
 
-                    if (count > 3)
+                    if (count > 1)
                     {
                         if (!RespReadUtils.ReadIntWithLengthHeader(out var failoverTimeoutSeconds, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -563,7 +564,7 @@ namespace Garnet.cluster
                     {
                         resp = CmdStrings.RESP_REPLICATION_AOF_TURNEDOFF_ERROR;
                     }
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -584,7 +585,7 @@ namespace Garnet.cluster
                     Encoding.ASCII.GetString(nodeIdBytes),
                     BitConverter.ToInt64(requestEpochBytes),
                     claimedSlots) ? CmdStrings.RESP_RETURN_VAL_1 : CmdStrings.RESP_RETURN_VAL_0;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.failstopwrites))
@@ -619,22 +620,22 @@ namespace Garnet.cluster
             errorCmd = string.Empty;
             if (param.SequenceEqual(CmdStrings.ADDSLOTS) || param.SequenceEqual(CmdStrings.addslots))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: false))
+                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: false))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
@@ -642,31 +643,31 @@ namespace Garnet.cluster
                     {
                         clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n"));
+                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n");
                     }
 
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.ADDSLOTSRANGE) || param.SequenceEqual(CmdStrings.addslotsrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 4 || (count & 0x1) == 0x1)
+                if (count < 2 || (count & 0x1) == 0x1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: true))
+                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: true))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
@@ -674,10 +675,10 @@ namespace Garnet.cluster
                     {
                         clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n"));
+                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n");
                     }
 
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -691,19 +692,19 @@ namespace Garnet.cluster
                     SendAndReset();
                 foreach (var replica in banlist)
                 {
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(replica), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiBulkString(replica, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.COUNTKEYSINSLOT) || param.SequenceEqual(CmdStrings.countkeysinslot))
             {
                 var current = clusterProvider.clusterManager.CurrentConfig;
-                if (count != 3)
+                if (count != 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -714,7 +715,7 @@ namespace Garnet.cluster
 
                     if (ClusterConfig.OutOfRange(slot))
                     {
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
                             SendAndReset();
                     }
                     else if (!current.IsLocal((ushort)slot))
@@ -732,7 +733,7 @@ namespace Garnet.cluster
                         catch (Exception ex)
                         {
                             logger?.LogError(ex, "Critical error in count keys");
-                            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_N1, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_N1, ref dcurr, dend))
                                 SendAndReset();
                         }
                     }
@@ -740,80 +741,80 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.DELSLOTS) || param.SequenceEqual(CmdStrings.delslots))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: false))
+                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: false))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
                     {
                         clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n"));
+                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n");
                     }
 
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.DELSLOTSRANGE) || param.SequenceEqual(CmdStrings.delslotsrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
                 // CLUSTER ADDSLOTSRANGE [start-slot end-slot] // 2 + [2] even number of arguments
-                if (count < 4 || (count & 0x1) == 0x1)
+                if (count < 2 || (count & 0x1) == 0x1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: true))
+                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: true))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
                     {
                         clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n"));
+                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n");
                     }
 
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.DELKEYSINSLOT) || param.SequenceEqual(CmdStrings.delkeysinslot))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count != 3)
+                if (count != 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -827,29 +828,30 @@ namespace Garnet.cluster
                     if (!clusterProvider.serverOptions.DisableObjects)
                         ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
 
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.DELKEYSINSLOTRANGE) || param.SequenceEqual(CmdStrings.delkeysinslotrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count != 3)
+                if (count != 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
+
                     // Parse slot ranges
-                    if (!ParseSlots(count - 2, ref ptr, out var slots, out var resp, range: true))
+                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: true))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
@@ -860,19 +862,20 @@ namespace Garnet.cluster
                             ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
                     }
 
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.GETKEYSINSLOT) || param.SequenceEqual(CmdStrings.getkeysinslot))
             {
                 var current = clusterProvider.clusterManager.CurrentConfig;
-                if (count < 4)
+
+                if (count < 2)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -887,7 +890,7 @@ namespace Garnet.cluster
 
                     if (ClusterConfig.OutOfRange(slot))
                     {
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
                             SendAndReset();
                     }
                     else if (!current.IsLocal((ushort)slot))
@@ -908,12 +911,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.KEYSLOT) || param.SequenceEqual(CmdStrings.keyslot))
             {
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -931,17 +934,17 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.SETSLOT) || param.SequenceEqual(CmdStrings.setslot))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 4)
+                if (count < 2)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -957,7 +960,7 @@ namespace Garnet.cluster
                     catch { }
 
                     string nodeid = null;
-                    if (count > 4)
+                    if (count > 2)
                     {
                         if (!RespReadUtils.ReadStringWithLengthHeader(out nodeid, ref ptr, recvBufferPtr + bytesRead))
                             return false;
@@ -983,37 +986,37 @@ namespace Garnet.cluster
                                 break;
                             default:
                                 resp = Encoding.ASCII.GetBytes($"-ERR Slot state {subcommand} not supported.\r\n");
-                                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                                     SendAndReset();
                                 break;
                         }
 
                         if (resp.SequenceEqual(CmdStrings.RESP_OK)) UnsafeWaitForConfigTransition();
 
-                        while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
                     {
                         resp = CmdStrings.RESP_SLOT_OUT_OFF_RANGE;
-                        while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
             }
             else if (param.SequenceEqual(CmdStrings.SETSLOTSRANGE) || param.SequenceEqual(CmdStrings.setslotsrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
-                if (count < 5)
+                if (count < 3)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -1024,7 +1027,7 @@ namespace Garnet.cluster
 
                     SlotState slotState;
                     string nodeid = default;
-                    var _count = count - 3;
+                    var _count = count - 1;
                     var ptr = recvBufferPtr + readHead;
                     // Extract subcommand
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var subcommand, ref ptr, recvBufferPtr + bytesRead))
@@ -1036,10 +1039,10 @@ namespace Garnet.cluster
                     {
                         // Log error for invalid slot state option
                         logger?.LogError(ex, "");
-                        if (!DrainCommands(bufSpan, count - 3))
+                        if (!DrainCommands(bufSpan, count - 1))
                             return false;
                         errorFlag = true;
-                        errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                        errorCmd = Encoding.ASCII.GetString(param);
                         return true;
                     }
 
@@ -1048,7 +1051,7 @@ namespace Garnet.cluster
                     {
                         if (!RespReadUtils.ReadStringWithLengthHeader(out nodeid, ref ptr, recvBufferPtr + bytesRead))
                             return false;
-                        _count = count - 4;
+                        _count = count - 2;
                     }
 
                     //Parse slot ranges
@@ -1075,14 +1078,14 @@ namespace Garnet.cluster
                                 break;
                             default:
                                 resp = Encoding.ASCII.GetBytes($"-ERR Slot state {subcommand} not supported.\r\n");
-                                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                                     SendAndReset();
                                 break;
                         }
                     }
 
                     if (resp.SequenceEqual(CmdStrings.RESP_OK)) UnsafeWaitForConfigTransition();
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -1091,18 +1094,18 @@ namespace Garnet.cluster
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
                 var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo();
-                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(slotsInfo), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiDirect(slotsInfo, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.SLOTSTATE) || param.SequenceEqual(CmdStrings.slotstate))
             {
                 // CLUSTER SLOTSTATE <slot>
-                if (count < 3)
+                if (count < 1)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -1123,7 +1126,7 @@ namespace Garnet.cluster
                         SlotState.FAIL => "-",
                         _ => throw new Exception($"Invalid SlotState filetype {state}"),
                     };
-                    while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"+{slot} {stateStr} {nodeId}\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiDirect($"+{slot} {stateStr} {nodeId}\r\n", ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -1138,18 +1141,18 @@ namespace Garnet.cluster
 
             if (param.SequenceEqual(CmdStrings.MIGRATE))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
 
                 // CLUSTER MIGRATE <node-id> <slot> <number-of-keys-in-slot> <serialized-data>
-                if (count != 5)
+                if (count != 3)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -1259,9 +1262,9 @@ namespace Garnet.cluster
 
                     var resp = CmdStrings.RESP_OK;
                     if (migrateState == 1)
-                        resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Node not in IMPORTING state.\r\n"));
+                        resp = "-ERR Node not in IMPORTING state.\r\n"u8;
 
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
 
                     migrateSetCount = 0;
@@ -1271,12 +1274,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.MTASKS))
             {
-                if (count != 2)
+                if (count != 0)
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
                     errorFlag = true;
-                    errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                    errorCmd = Encoding.ASCII.GetString(param);
                 }
                 else
                 {
@@ -1297,7 +1300,7 @@ namespace Garnet.cluster
             errorCmd = string.Empty;
             if (param.SequenceEqual(CmdStrings.REPLICAS) || param.SequenceEqual(CmdStrings.replicas))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
@@ -1312,13 +1315,13 @@ namespace Garnet.cluster
                     SendAndReset();
                 foreach (var replica in replicas)
                 {
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(replica), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteAsciiBulkString(replica, ref dcurr, dend))
                         SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.REPLICATE) || param.SequenceEqual(CmdStrings.replicate))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
                 {
                     return success;
                 }
@@ -1328,7 +1331,7 @@ namespace Garnet.cluster
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeid, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                if (count == 4)
+                if (count == 2)
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var backgroundFlag, ref ptr, recvBufferPtr + bytesRead))
                         return false;
@@ -1340,7 +1343,7 @@ namespace Garnet.cluster
                         background = true;
                     else
                     {
-                        while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"-ERR Invalid CLUSTER REPLICATE FLAG ({backgroundFlag}) not valid\r\n"), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid CLUSTER REPLICATE FLAG ({backgroundFlag}) not valid\r\n", ref dcurr, dend))
                             SendAndReset();
                         readHead = (int)(ptr - recvBufferPtr);
                         return true;
@@ -1350,13 +1353,13 @@ namespace Garnet.cluster
 
                 if (!clusterProvider.serverOptions.EnableAOF)
                 {
-                    while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes("-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect("-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n"u8, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
                     var resp = clusterProvider.replicationManager.BeginReplicate(this, nodeid, background, false);
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -1374,12 +1377,12 @@ namespace Garnet.cluster
                 {
                     clusterProvider.replicationManager.TryAddReplicationTask(nodeid, nextAddress, out var aofSyncTaskInfo);
                     var resp = clusterProvider.replicationManager.TryConnectToReplica(nodeid, nextAddress, aofSyncTaskInfo);
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_REPLICATION_AOF_TURNEDOFF_ERROR, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_REPLICATION_AOF_TURNEDOFF_ERROR, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -1410,19 +1413,19 @@ namespace Garnet.cluster
                 if (localRole != NodeRole.REPLICA)
                 {
                     // TODO: handle this
-                    //while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes("-ERR aofsync node not a replica\r\n"), ref dcurr, dend))
+                    //while (!RespWriteUtils.WriteDirect("-ERR aofsync node not a replica\r\n"u8, ref dcurr, dend))
                     //    SendAndReset();
                 }
                 else if (!primaryId.Equals(nodeId))
                 {
                     // TODO: handle this
-                    //while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"-ERR aofsync node replicating {primaryId}\r\n"), ref dcurr, dend))
+                    //while (!RespWriteUtils.WriteAsciiDirect($"-ERR aofsync node replicating {primaryId}\r\n", ref dcurr, dend))
                     //    SendAndReset();
                 }
                 else
                 {
                     clusterProvider.replicationManager.ProcessPrimaryStream(record, recordLength, previousAddress, currentAddress, nextAddress);
-                    //while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    //while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     //    SendAndReset();
                 }
             }
@@ -1443,7 +1446,7 @@ namespace Garnet.cluster
 
                 var remoteEntry = CheckpointEntry.FromByteArray(cEntryByteArray);
                 var resp = clusterProvider.replicationManager.BeginReplicaSyncSession(nodeId, primary_replid, remoteEntry, replicaAofBeginAddress, replicaAofTailAddress);
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.send_ckpt_metadata))
@@ -1460,7 +1463,7 @@ namespace Garnet.cluster
                 var fileToken = new Guid(fileTokenBytes);
                 var fileType = (CheckpointFileType)fileTypeInt;
                 clusterProvider.replicationManager.ProcessCheckpointMetadata(fileToken, fileType, checkpointMetadata);
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.send_ckpt_file_segment))
@@ -1485,7 +1488,7 @@ namespace Garnet.cluster
                 // Commenting due to high verbosity
                 // logger?.LogTrace("send_ckpt_file_segment {fileToken} {ckptFileType} {startAddress} {dataLength}", fileToken, ckptFileType, startAddress, data.Length);
                 clusterProvider.replicationManager.recvCheckpointHandler.ProcessFileSegments(segmentId, fileToken, ckptFileType, startAddress, data);
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.begin_replica_recover))

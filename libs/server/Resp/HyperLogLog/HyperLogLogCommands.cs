@@ -22,9 +22,7 @@ namespace Garnet.server
         private bool HyperLogLogAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 11;
-            int argCount = count - 1;
-            ArgSlice[] argSlices = new ArgSlice[argCount];
+            ArgSlice[] argSlices = new ArgSlice[count];
 
             //Read pfadd dstKey and input values
             for (int i = 0; i < argSlices.Length; i++)
@@ -35,7 +33,7 @@ namespace Garnet.server
             }
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkSingleKeySlotVerify(argSlices[0].ptr, argSlices[0].length, false))
+            if (NetworkSingleKeySlotVerify(argSlices[0].ptr, argSlices[0].Length, false))
                 return true;
 
             //4 byte length of input
@@ -64,7 +62,7 @@ namespace Garnet.server
             SpanByte key = argSlices[0].SpanByte;
             for (int i = 1; i < argSlices.Length; i++)
             {
-                *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(argSlices[i].ptr, argSlices[i].length);
+                *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(argSlices[i].ptr, argSlices[i].Length);
 
                 var o = new SpanByteAndMemory(output, 1);
                 var status = storageApi.HyperLogLogAdd(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
@@ -72,7 +70,7 @@ namespace Garnet.server
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -82,12 +80,12 @@ namespace Garnet.server
 
             if (pfaddUpdated > 0)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -106,10 +104,7 @@ namespace Garnet.server
         private bool HyperLogLogLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            //[$7\r\nPFCOUNT\r\n $]
-            ptr += 13;
-            int keyCount = count - 1;
-            ArgSlice[] keys = new ArgSlice[keyCount];
+            ArgSlice[] keys = new ArgSlice[count];
 
             //Read pfmerge dstKey and srckeys
             for (int i = 0; i < keys.Length; i++)
@@ -141,7 +136,7 @@ namespace Garnet.server
             var status = storageApi.HyperLogLogLength(keys, ref Unsafe.AsRef<SpanByte>(pbCmdInput), out long cardinality, out bool error);
             if (error)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -160,9 +155,7 @@ namespace Garnet.server
         private bool HyperLogLogMerge<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ptr += 13;
-            int keyCount = count - 1;
-            ArgSlice[] keys = new ArgSlice[keyCount];
+            ArgSlice[] keys = new ArgSlice[count];
 
             //Read pfmerge dstKey and srckeys
             for (int i = 0; i < keys.Length; i++)
@@ -180,13 +173,13 @@ namespace Garnet.server
             //Invalid Type
             if (error)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
             else if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             return true;

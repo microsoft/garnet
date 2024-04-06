@@ -34,11 +34,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count < 3)
+            if (count < 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SADD", count);
@@ -56,7 +54,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                var inputCount = count - 2;
+                var inputCount = count - 1;
                 // Prepare input
                 var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
 
@@ -166,11 +164,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetRemove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
-
-            if (count < 3)
+            if (count < 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SREM", count);
@@ -188,7 +184,7 @@ namespace Garnet.server
                         return false;
                     return true;
                 }
-                var inputCount = count - 2; // only identifiers
+                var inputCount = count - 1; // only identifiers
 
                 // Prepare input
                 var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
@@ -212,9 +208,9 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.NOTFOUND)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                         SendAndReset();
-                    ReadLeftToken(count - 2, ref ptr);
+                    ReadLeftToken(count - 1, ref ptr);
                 }
                 else
                 {
@@ -248,11 +244,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-            ptr += 11;
-
-            if (count != 2)
+            if (count != 1)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SCARD", count);
@@ -294,7 +288,7 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.NOTFOUND)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -318,11 +312,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetMembers<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-            ptr += 14;
-
-            if (count < 1 || count > 2)
+            if (count != 1)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SMEMBERS", count);
@@ -377,9 +369,78 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                             SendAndReset();
-                        ReadLeftToken(count - 2, ref ptr);
+                        ReadLeftToken(count - 1, ref ptr);
                         break;
                 }
+            }
+
+            // Reset session counters
+            setItemsDoneCount = setOpsCount = 0;
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        private unsafe bool SetIsMember<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count != 2)
+            {
+                setItemsDoneCount = setOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("SISMEMBER", count);
+            }
+
+            // Get the key
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, true))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+                return true;
+            }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save old values
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.Set;
+            inputPtr->header.SetOp = SetOperation.SISMEMBER;
+            inputPtr->count = count - 2;
+            inputPtr->done = 0;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SetIsMember(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Restore input buffer
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    // Process output
+                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ptr += objOutputHeader.bytesDone;
+                    setItemsDoneCount += objOutputHeader.countDone;
+                    if (setItemsDoneCount > objOutputHeader.opsDone)
+                        return false;
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        SendAndReset();
+                    ReadLeftToken(count - 1, ref ptr);
+                    break;
             }
 
             // Reset session counters
@@ -399,9 +460,13 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool SetPop<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-             where TGarnetApi : IGarnetApi
+            where TGarnetApi : IGarnetApi
         {
-            ptr += 10;
+            if (count < 1 || count > 2)
+            {
+                setItemsDoneCount = setOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("SPOP", count);
+            }
 
             // Get the key
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
@@ -430,7 +495,7 @@ namespace Garnet.server
             inputPtr->count = Int32.MinValue;
 
             int countParameter = 0;
-            if (count == 3)
+            if (count == 2)
             {
                 // Get the value for the count parameter
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterByteArray, ref ptr, recvBufferPtr + bytesRead))
@@ -441,7 +506,7 @@ namespace Garnet.server
                 if (!canParse || countParameter < 0)
                 {
                     ReadOnlySpan<byte> errorMessage = "-ERR value is not an integer or out of range\r\n"u8;
-                    while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
                         SendAndReset();
 
                     // Restore input buffer
@@ -483,11 +548,11 @@ namespace Garnet.server
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     ptr += objOutputHeader.bytesDone;
                     setItemsDoneCount += objOutputHeader.countDone;
-                    if (count == 3 && setItemsDoneCount < countParameter)
+                    if (count == 2 && setItemsDoneCount < countParameter)
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
             }

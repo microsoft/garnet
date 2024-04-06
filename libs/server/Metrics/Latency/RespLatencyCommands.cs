@@ -16,14 +16,14 @@ namespace Garnet.server
             bool errorFlag = false;
             string errorCmd = string.Empty;
 
-            if (count > 1)
+            if (count > 0)
             {
                 var param = GetCommand(bufSpan, out bool success1);
                 if (!success1) return false;
 
                 if (param.SequenceEqual(CmdStrings.HISTOGRAM) || param.SequenceEqual(CmdStrings.histogram))
                 {
-                    if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                    if (!CheckACLAdminPermissions(bufSpan, count - 1, out bool success))
                     {
                         return success;
                     }
@@ -32,10 +32,10 @@ namespace Garnet.server
                     HashSet<LatencyMetricsType> events = null;
                     bool invalid = false;
                     string invalidEvent = null;
-                    if (count > 2)
+                    if (count > 1)
                     {
                         events = new();
-                        for (int i = 0; i < count - 2; i++)
+                        for (int i = 0; i < count - 1; i++)
                         {
                             if (!RespReadUtils.ReadStringWithLengthHeader(out var eventStr, ref ptr, recvBufferPtr + bytesRead))
                                 return false;
@@ -68,17 +68,17 @@ namespace Garnet.server
                 }
                 else if (param.SequenceEqual(CmdStrings.RESET) || param.SequenceEqual(CmdStrings.reset))
                 {
-                    if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                    if (!CheckACLAdminPermissions(bufSpan, count - 1, out bool success))
                     {
                         return success;
                     }
 
-                    if (count < 2)
+                    if (count < 1)
                     {
-                        if (!DrainCommands(bufSpan, count - 2))
+                        if (!DrainCommands(bufSpan, count - 1))
                             return false;
                         errorFlag = true;
-                        errorCmd = Encoding.ASCII.GetString(param.ToArray());
+                        errorCmd = Encoding.ASCII.GetString(param);
                     }
                     else
                     {
@@ -86,10 +86,10 @@ namespace Garnet.server
                         var ptr = recvBufferPtr + readHead;
                         bool invalid = false;
                         string invalidEvent = null;
-                        if (count - 2 > 0)
+                        if (count - 1 > 0)
                         {
                             events = new();
-                            for (int i = 0; i < count - 2; i++)
+                            for (int i = 0; i < count - 1; i++)
                             {
                                 if (!RespReadUtils.ReadStringWithLengthHeader(out var eventStr, ref ptr, recvBufferPtr + bytesRead))
                                     return false;
@@ -112,7 +112,7 @@ namespace Garnet.server
                         ReadOnlySpan<byte> response = null;
                         if (invalid)
                         {
-                            response = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Invalid type {invalidEvent}\r\n"));
+                            response = Encoding.ASCII.GetBytes($"-ERR Invalid type {invalidEvent}\r\n");
                         }
                         else
                         {
@@ -123,7 +123,7 @@ namespace Garnet.server
                             }
                             response = CmdStrings.RESP_OK;
                         }
-                        while (!RespWriteUtils.WriteResponse(response, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(response, ref dcurr, dend))
                             SendAndReset();
 
                         readHead = (int)(ptr - recvBufferPtr);
@@ -136,18 +136,18 @@ namespace Garnet.server
                     List<string> latencyCommands = RespLatencyHelp.GetLatencyCommands();
                     while (!RespWriteUtils.WriteArrayLength(latencyCommands.Count, ref dcurr, dend))
                         SendAndReset();
-                    foreach (String command in latencyCommands)
+                    foreach (string command in latencyCommands)
                     {
-                        while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(command), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteSimpleString(command, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
                 else
                 {
-                    if (!DrainCommands(bufSpan, count - 2))
+                    if (!DrainCommands(bufSpan, count - 1))
                         return false;
-                    string paramStr = Encoding.ASCII.GetString(param.ToArray());
-                    while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("-ERR Unknown subcommand. Try LATENCY HELP.\r\n")), ref dcurr, dend))
+                    string paramStr = Encoding.ASCII.GetString(param);
+                    while (!RespWriteUtils.WriteDirect("-ERR Unknown subcommand. Try LATENCY HELP.\r\n"u8, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -159,7 +159,7 @@ namespace Garnet.server
 
             if (errorFlag && !string.IsNullOrWhiteSpace(errorCmd))
             {
-                var errorMsg = string.Format(CmdStrings.ErrMissingParam, errorCmd);
+                var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, errorCmd);
                 var bresp_ERRMISSINGPARAM = Encoding.ASCII.GetBytes(errorMsg);
                 bresp_ERRMISSINGPARAM.CopyTo(new Span<byte>(dcurr, bresp_ERRMISSINGPARAM.Length));
                 dcurr += bresp_ERRMISSINGPARAM.Length;

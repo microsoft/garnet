@@ -599,8 +599,8 @@ namespace Garnet.test.cluster
 
         public void CloseConnections()
         {
-            redis.Close(false);
-            redis.Dispose();
+            redis?.Close(false);
+            redis?.Dispose();
         }
 
         public string[] GetNodeIds(List<int> nodes = null, ILogger logger = null)
@@ -781,7 +781,7 @@ namespace Garnet.test.cluster
                     count++;
                     break;
                 default:
-                    throw new Exception("Unexpected response: " + Encoding.ASCII.GetString(new Span<byte>(buf, bytesRead).ToArray()).Replace("\n", "|").Replace("\r", "") + "]");
+                    throw new Exception("Unexpected response: " + Encoding.ASCII.GetString(new Span<byte>(buf, bytesRead)).Replace("\n", "|").Replace("\r", "") + "]");
             }
             return (bytesRead, count);
         }
@@ -814,7 +814,7 @@ namespace Garnet.test.cluster
                         RespReadUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, buf + data.Length);
                         break;
                     default:
-                        throw new Exception("Unexpected response: " + Encoding.ASCII.GetString(new Span<byte>(buf, data.Length).ToArray()).Replace("\n", "|").Replace("\r", "") + "]");
+                        throw new Exception("Unexpected response: " + Encoding.ASCII.GetString(new Span<byte>(buf, data.Length)).Replace("\n", "|").Replace("\r", "") + "]");
                 }
             }
 

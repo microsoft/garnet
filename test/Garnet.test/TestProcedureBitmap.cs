@@ -56,9 +56,9 @@ namespace Garnet
             var bitmapB = GetNextArg(input, ref offset);
 
             //simple set and get for bitmaps
-            api.StringSetBit(bitmapA, offsetArgument, bitValueArgument.Bytes[0] == '1', out _);
+            api.StringSetBit(bitmapA, offsetArgument, bitValueArgument.ToArray()[0] == '1', out _);
             api.StringGetBit(bitmapA, offsetArgument, out bool storedBitValue);
-            if (storedBitValue != (bitValueArgument.Bytes[0] == '1'))
+            if (storedBitValue != (bitValueArgument.ToArray()[0] == '1'))
             {
                 result = false;
                 goto returnTo;
@@ -85,7 +85,7 @@ namespace Garnet
                 goto returnTo;
             }
             api.GET(destinationKeyBitOp, out var valueData);
-            var actualResultBitOp = BitConverter.ToInt64(valueData.Bytes, 0);
+            var actualResultBitOp = BitConverter.ToInt64(valueData.ToArray(), 0);
 
             long expectedResultBitOp = ~src;
             if (expectedResultBitOp != actualResultBitOp)
@@ -108,7 +108,7 @@ namespace Garnet
                     goto returnTo;
                 }
                 api.GET(destinationKeyBitOp, out valueData);
-                actualResultBitOp = BitConverter.ToInt64(valueData.Bytes, 0);
+                actualResultBitOp = BitConverter.ToInt64(valueData.ToArray(), 0);
                 switch (bitwiseOps[i])
                 {
                     case BitmapOperation.AND:

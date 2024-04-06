@@ -21,10 +21,8 @@ namespace Garnet.server
         private unsafe bool GeoAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 12;
-
             // validate the number of parameters
-            if (count < 5)
+            if (count < 4)
             {
                 return AbortWithWrongNumberOfArguments("GEOADD", count);
             }
@@ -48,7 +46,7 @@ namespace Garnet.server
                 // Save old values on buffer for possible revert
                 var save = *inputPtr;
 
-                var inputCount = count - 2;
+                var inputCount = count - 1;
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
@@ -106,24 +104,20 @@ namespace Garnet.server
             switch (op)
             {
                 case SortedSetOperation.GEODIST:
-                    ptr += 13;
-                    paramsRequiredInCommand = 4;
+                    paramsRequiredInCommand = 3;
                     cmd = "GEODIST";
                     responseWhenNotFound = CmdStrings.RESP_ERRNOTFOUND;
                     break;
                 case SortedSetOperation.GEOHASH:
-                    paramsRequiredInCommand = 2;
-                    ptr += 13;
+                    paramsRequiredInCommand = 1;
                     cmd = "GEOHASH";
                     break;
                 case SortedSetOperation.GEOPOS:
-                    paramsRequiredInCommand = 2;
-                    ptr += 12;
+                    paramsRequiredInCommand = 1;
                     cmd = "GEOPOS";
                     break;
                 case SortedSetOperation.GEOSEARCH:
-                    paramsRequiredInCommand = 4;
-                    ptr += 15;
+                    paramsRequiredInCommand = 3;
                     cmd = "GEOSEARCH";
                     break;
             }
@@ -153,7 +147,7 @@ namespace Garnet.server
                 // Save old values for possible revert
                 var save = *inputPtr;
 
-                var inputCount = count - 2;
+                var inputCount = count - 1;
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
@@ -185,7 +179,7 @@ namespace Garnet.server
                         ptr += objOutputHeader.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(responseWhenNotFound, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(responseWhenNotFound, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }

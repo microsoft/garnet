@@ -181,6 +181,7 @@ namespace Garnet.server
                 (byte)SetOperation.SREM => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SCARD => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
+                (byte)SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
                 _ => -1
             };
         }
@@ -200,7 +201,7 @@ namespace Garnet.server
             if (!success) return -2;
             SaveKeyEntryToLock(key, isObject, type);
             SaveKeyArgSlice(key);
-            return 1 + arg;
+            return arg;
         }
 
         /// <summary>
@@ -208,7 +209,7 @@ namespace Garnet.server
         /// </summary>
         private int ListKeys(int inputCount, bool isObject, LockType type)
         {
-            for (int i = 1; i < inputCount; i++)
+            for (int i = 0; i < inputCount; i++)
             {
                 var key = respSession.GetCommandAsArgSlice(out bool success);
                 if (!success) return -2;
@@ -223,7 +224,7 @@ namespace Garnet.server
         /// </summary>
         private int MSETKeys(int inputCount, bool isObject, LockType type)
         {
-            for (int i = 1; i < inputCount; i += 2)
+            for (int i = 0; i < inputCount; i += 2)
             {
                 var key = respSession.GetCommandAsArgSlice(out bool success);
                 if (!success) return -2;

@@ -1,18 +1,23 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using Garnet.common;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
     /// <summary>
     /// Basic RESP command enum
     /// </summary>
-    enum RespCommand : byte
+    public enum RespCommand : byte
     {
-        NONE,
+        NONE = 0x0,
 
-        //Read Only Commands
+        // Read-only commands
         GET = (0x40 | 0x0),
         GETRANGE = (0x40 | 0x1),
         MGET = (0x40 | 0x2),
@@ -27,7 +32,7 @@ namespace Garnet.server
         STRLEN = 0x26,
         COSCAN = 0x27,
 
-        //Upsert or RMW Commands
+        // Upsert or RMW commands
         SET = (0x80 | 0x0),
         MSET = (0x80 | 0x1),
         PSETEX = (0x80 | 0x2),
@@ -55,14 +60,14 @@ namespace Garnet.server
         MSETNX = (0x80 | 0x18),
         APPEND = (0x80 | 0x19),
 
-        //Object Store Commands
+        // Object store commands
         SortedSet = (0xC0 | 0x0),
         List = (0xC0 | 0x1),
         Hash = (0xC0 | 0x2),
         Set = (0xC0 | 0x3),
         All = (0xC0 | 0x26),
 
-        //Admin commands
+        // Admin commands
         PING = 0x1,
         QUIT = 0x2,
         AUTH = 0x3,
@@ -89,7 +94,7 @@ namespace Garnet.server
         MODULE = 0x25,
         REGISTERCS = 0x28,
 
-        //Txn Commands
+        // Transaction commands
         MULTI = 0x14,
         EXEC = 0x15,
         DISCARD = 0x16,
@@ -99,11 +104,33 @@ namespace Garnet.server
         UNWATCH = 0x1A,
         RUNTXP = 0x1B,
 
-        //Cluster commands
+        // Cluster commands
         READONLY = 0x1C,
         READWRITE = 0x1D,
         REPLICAOF = 0x1E,
-        SECONDARYOF = 0x1F
+        SECONDARYOF = 0x1F,
+
+        // Misc. commands
+        INFO = 0x31,
+        CLUSTER = 0x32,
+        LATENCY = 0x33,
+        TIME = 0x34,
+        RESET = 0x35,
+        SAVE = 0x36,
+        LASTSAVE = 0x37,
+        BGSAVE = 0x38,
+        COMMITAOF = 0x39,
+        FLUSHDB = 0x3A,
+        FORCEGC = 0x3B,
+        FAILOVER = 0x3C,
+        ACL = 0x3D,
+
+        // Custom commands
+        CustomTxn = 0x29,
+        CustomCmd = 0x2A,
+        CustomObjCmd = 0x2B,
+
+        INVALID = 0xFF
     }
 
     /// <summary>
@@ -120,605 +147,1056 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// Fast-parses for command type
+        /// Fast-parses command type for inline RESP commands, starting at the current read head in the receive buffer
+        /// and advances read head.
         /// </summary>
+        /// <param name="count">Outputs the number of arguments stored with the command.</param>
+        /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand FastParseCommand(byte* ptr)
+        private RespCommand FastParseInlineCommand(out int count)
         {
-            // TODO: make sure this condition is appropriate per command
-            if (bytesRead - readHead >= 19)
-            {
-                // GET key1 value1 => [*2\r\n$3\r\nGET\r\n$]3\r\nkey\r\n
-                if (*(long*)ptr == 724291344956994090L && *(2 + (int*)ptr) == 223626567 && *(ushort*)(12 + ptr) == 9226)
-                    return RespCommand.GET;
-
-                // SET key1 value1 => [*3\r\n$3\r\nSET\r\n$]3\r\nkey\r\n$5\r\nvalue\r\n
-                if (*(long*)ptr == 724291344956994346L && *(2 + (int*)ptr) == 223626579 && *(ushort*)(12 + ptr) == 9226)
-                    return RespCommand.SET;
-
-                // setrange key offset value => [*4\r\n$8\r\nSETRANGE\r\nkey\r\noffset\r\nvalue]
-                if (*(long*)ptr == 724296842515133482L && *(long*)(ptr + 8) == 4992044754424579411L && *(ushort*)(ptr + 16) == 2573)
-                    return RespCommand.SETRANGE;
-
-                // GETRANGE key start length [*4\r\n$8\r\n GETSLICE \r\n key start legth]
-                if (*(long*)ptr == 724296842515133482L && *(long*)(ptr + 8) == 4992044754424579399L && *(ushort*)(ptr + 16) == 2573)
-                    return RespCommand.GETRANGE;
-
-                // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n
-                if (*(long*)ptr == 724295743003505450L && *(2 + (int*)ptr) == 1279415632 && *(ushort*)(16 + ptr) == 9226)
-                    return RespCommand.PUBLISH;
-
-                // Single Key DEL key1 [*2\r\n$3\r\nDEL\r\n$]3\r\nkey\r\n
-                if (*(long*)ptr == 724291344956994090L && *(2 + (int*)ptr) == 223102276 && *(ushort*)(12 + ptr) == 9226)
-                    return RespCommand.DEL;
-
-                // INCR key1 ==> [*2\r\n$4\r\nINCR\r\n$]3\r\nkey\r\n
-                if (*(long*)ptr == 724292444468621866L && *(12 + (byte*)ptr) == 0x0d
-                    && *(2 + (int*)ptr) == 0x52434e49 && *(ushort*)(13 + ptr) == 9226)
-                    return RespCommand.INCR;
-
-                // Fast path for transactions with few arguments (command array size < 10)
-                // RUNTXP ==> [*X\r\n$6\r\nRUNTXP\r\n]
-                if (*(long*)(ptr + 4) == 6074886758213695012 && *(int*)(ptr + 12) == 168644696)
-                {
-                    if (*ptr == '*' && *(ushort*)(ptr + 2) == 2573 && *(ptr + 1) >= '0' && *(ptr + 1) <= '9')
-                    {
-                        return RespCommand.RUNTXP;
-                    }
-                }
-
-                // EXPIRE key time => [*3\r\n$6\r\nEXPIRE\r\n$]
-                if ((*(long*)ptr == 724294643491877674L || *(long*)ptr == 724294643491877930L) && *(1 + (long*)ptr) == 724311334796154949 && *(ushort*)(15 + ptr) == 9226)
-                    return RespCommand.EXPIRE;
-
-                // PEXPIRE key time => [*3\r\n$7\r\nPEXPIRE\r\n$]
-                if ((*(long*)ptr == 724295743003505706L || *(long*)ptr == 724295743003505450L) && *(1 + (long*)ptr) == 956260970720150864 && *(ptr + 16) == 10)
-                    return RespCommand.PEXPIRE;
-
-                // PERSIST key => [*2\r\n$7\r\n PERSIST\r \n]
-                if (*(long*)ptr == 724295743003505194L && *(long*)(ptr + 8) == 960484194932376912L && *(ptr + 16) == 10)
-                    return RespCommand.PERSIST;
-
-                // TTL key => [*2\r\n$3\r\n TTL\r \n]
-                if (*(long*)ptr == 724291344956994090L && *(int*)(ptr + 8) == 223106132 && *(ptr + 12) == 10)
-                    return RespCommand.TTL;
-
-                // PTTL key => [*2\r\n$4\r\nPTTL\r\n]
-                if (*(long*)ptr == 724292444468621866L && *(int*)(ptr + 8) == 1280595024 && *(ptr + 13) == 10)
-                    return RespCommand.PTTL;
-
-                // [| *3\r\n$5\r\n | PFADD\r\n$ | 3\r\nkey\r\n$]
-                if (*(long*)ptr == 724293543980249898L && *(long*)(ptr + 8) == 2596902721986578000L)
-                    return RespCommand.PFADD;
-
-                //[ *2\r\n$7\r\n | PFCOUNT\r | \n$3\r\nkey ]
-                if (*(long*)ptr == 724295743003505194L && *(long*)(ptr + 8) == 960478748845753936L)
-                    return RespCommand.PFCOUNT;
-
-                //[ *2\r\n$7\r\n | PFMERGE\r | \n$3\r\nkey ]
-                if (*(long*)ptr == 724295743003505450L && *(long*)(ptr + 8) == 956248914561680976)
-                    return RespCommand.PFMERGE;
-
-                // INCRBY key 1000 ==> [*3\r\n$6\r\nINCRBY\r\n$]4\r\nkey\r\n4\r\1000\r\n => Increment the key by 1000
-                if (*(long*)ptr == 0x0a0d36240a0d332a && *((long*)ptr + 1) == 0x0a0d594252434e49 && 0x24 == *(16 + (byte*)ptr))
-                    return RespCommand.INCRBY;
-
-                // DECR key1 ==> [*2\r\n$4\r\nDECR\r\n$]3\r\nkey\r\n
-                if (*(long*)ptr == 724292444468621866L && *(12 + (byte*)ptr) == 0x0d
-                               && *(2 + (int*)ptr) == 0x52434544 && *(ushort*)(13 + ptr) == 9226)
-                    return RespCommand.DECR;
-
-                // DECRBY key 1000 ==> [*3\r\n$6\r\nDECRBY\r\n$]4\r\nkey\r\n4\r\1000\r\n => Decrement the key by 1000
-                if (*(long*)ptr == 0x0a0d36240a0d332a && *((long*)ptr + 1) == 0x0a0d594252434544 && 0x24 == *(16 + (byte*)ptr))
-                    return RespCommand.DECRBY;
-
-                // EXISTS key1 ==> [*2\r\n$6\r\nEXISTS\r\n$]4\r\nkey1\r\n => Does key1 exist in the store
-                if (*(long*)ptr == 0x0a0d36240a0d322a && *((long*)ptr + 1) == 0x0a0d535453495845 && 0x24 == *(16 + (byte*)ptr))
-                    return RespCommand.EXISTS;
-
-                // SETEX
-                if (*(long*)ptr == 724293543980250154L && *(1 + (long*)ptr) == 2596902807903946067L)
-                    return RespCommand.SETEX;
-
-                // PSETEX
-                if (*(long*)ptr == 724294643491877930L && *(1 + (long*)ptr) == 724332169866335056L)
-                    return RespCommand.PSETEX;
-
-                // SET [EX KEEPTTL] [NX XX] [GET]
-                if ((*(long*)ptr == 724291344956994602L || // *4
-                    *(long*)ptr == 724291344956994858L ||  // *5
-                    *(long*)ptr == 724291344956995114L ||  // *6
-                    *(long*)ptr == 724291344956995370L)    // *7
-                    && *(2 + (int*)ptr) == 223626579 && *(ushort*)(12 + ptr) == 9226)
-                    return RespCommand.SETEXNX;
-
-                // RENAME key1 key2 ==> [*3\r\n$6\r\nRENAME\r\n$]4\r\nkey1\r\n$4\r\nkey2\r\n => Rename key1 to key2 in the store
-                if (*(long*)ptr == 0x0a0d36240a0d332a && *((long*)ptr + 1) == 0x0a0d454d414e4552 && 0x24 == *(16 + (byte*)ptr))
-                    return RespCommand.RENAME;
-
-                // *4\r\n$6\r\n | SETBIT\r\n | $3\r\nkey\r\n $4\r\n4444\r\n $1\r\n [1|0]\r\n
-                if (*(long*)ptr == 724294643491877930L && *(long*)(ptr + 8) == 724327788698682707L)
-                    return RespCommand.SETBIT;
-
-                // *3\r\n$6\r\n | GETBIT\r\n | $3\r\nkey\r\n $4\r\n4444\r\n
-                if (*(long*)ptr == 724294643491877674L && *(long*)(ptr + 8) == 724327788698682695L)
-                    return RespCommand.GETBIT;
-
-                // *2\r\n$8\r\n | BITCOUNT | \r\n | $3\r\nkey\r\n \\ without [start end] offsets
-                // *3\r\n$8\r\n | BITCOUNT | \r\n | $3\r\nkey\r\n | $4\r\n4444\r\n \\ with start offset only
-                // *4\r\n$8\r\n | BITCOUNT | \r\n | $3\r\nkey\r\n | $4\r\n4444\r\n | $4\r\n8888\r\n \\ with start and end offsets
-                // *5\r\n$8\r\n | BITCOUNT | \r\n | $3\r\nkey\r\n | $4\r\n4444\r\n | $4\r\n8888\r\n | $[3|4]\r\n[BIT|BYTE]\r\n \\ with start and end offsets
-                if ((*(long*)ptr == 724296842515132970L ||
-                    *(long*)ptr == 724296842515133226L ||
-                    *(long*)ptr == 724296842515133482L ||
-                    *(long*)ptr == 724296842515133738L) &&
-                    *(long*)(ptr + 8) == 6074886746289752386L && *(ushort*)(ptr + 16) == 2573)
-                    return RespCommand.BITCOUNT;
-
-                // *3\r\n$6\r\n | BITPOS\r\n | $3\r\nkey\r\n | $1\r\n[1|0]\r\n
-                // *4\r\n$6\r\n | BITPOS\r\n | $3\r\nkey\r\n | $1\r\n[1|0]\r\n | $4\r\n4444\r\n
-                // *5\r\n$6\r\n | BITPOS\r\n | $3\r\nkey\r\n | $1\r\n[1|0]\r\n | $4\r\n4444\r\n | $4\r\n8888\r\n
-                // *6\r\n$6\r\n | BITPOS\r\n | $3\r\nkey\r\n | $1\r\n[1|0]\r\n | $4\r\n4444\r\n | $4\r\n8888\r\n | $[3|4]\r\n[BIT|BYTE]\r\n
-                if ((*(long*)ptr == 724294643491877674L ||
-                    *(long*)ptr == 724294643491877930L ||
-                    *(long*)ptr == 724294643491878186L ||
-                    *(long*)ptr == 724294643491878442L) &&
-                    *(long*)(ptr + 8) == 724326715191740738L)
-                    return RespCommand.BITPOS;
-
-                // *2\r\n$6\r\n | GETDEL\r\n | $3\r\nkey\r\n
-                if (*(long*)ptr == 0x0a0d36240a0d322a && *(long*)(ptr + 8) == 0x0a0d4c4544544547)
-                    return RespCommand.GETDEL;
-
-                // 2a 33 0d 0a 24 36 0d 0a
-                // 41 50 50 45 4e 44 0d 0a
-                // *3..$6..APPEND..$2..k1..$4..val1..
-                if (*(long*)ptr == 0x0a0d36240a0d332a && *(long*)(ptr + 8) == 0x0a0d444e45505041)
-                    return RespCommand.APPEND;
-            }
+            byte* ptr = recvBufferPtr + readHead;
+            count = 0;
 
             if (bytesRead - readHead >= 6)
             {
-                // PING => [PING\r\n]
-                if (*(int*)ptr == 1196312912 && *(ushort*)(4 + ptr) == 2573)
-                    return RespCommand.PING;
-                //*1\r\n$4\r\n PING\r\n
-                if (*(long*)ptr == 724292444468621610L && *(int*)(ptr + 8) == 1196312912 && *(ushort*)(ptr + 12) == 2573)
-                    return RespCommand.PING;
+                if ((*(ushort*)(ptr + 4) == MemoryMarshal.Read<ushort>("\r\n"u8)))
+                {
+                    // Optimistically increase read head
+                    readHead += 6;
 
-                // QUIT => [QUIT\r\n]
-                if (*(int*)ptr == 1414092113 && *(ushort*)(4 + ptr) == 2573)
-                    return RespCommand.QUIT;
+                    if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("PING"u8))
+                    {
+                        return RespCommand.PING;
+                    }
 
-                //*1\r\n$6\r\n ASKING\r\n
-                if (*(long*)ptr == 724294643491877162L && *(long*)(ptr + 8) == 724313516639212353L)
-                    return RespCommand.ASKING;
+                    if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("QUIT"u8))
+                    {
+                        return RespCommand.QUIT;
+                    }
 
-                //*1\r\n$8\r\n READONLY \r\n
-                if (*(long*)ptr == 724296842515132714L && *(long*)(ptr + 8) == 6434604069960107346L && *(short*)(ptr + 16) == 2573)
-                    return RespCommand.READONLY;
-
-                //*1\r\n$9\r\n READWRIT E\r\n
-                if (*(long*)ptr == 724297942026760490L && *(long*)(ptr + 8) == 6073476107246585170L && *(short*)(ptr + 16) == 3397)
-                    return RespCommand.READWRITE;
-
-                // MULTI => *1\r\n$5\r\nMULTI\r\n
-                if (*(long*)ptr == 724293543980249386L && *(2 + (int*)ptr) == 1414288717 && *(ushort*)(12 + ptr) == 3401 && *(14 + ptr) == 10)
-                    return RespCommand.MULTI;
-
-                // DISCARD => *1\r\n$7\r\nDISCARD\r\n
-                if (*(long*)ptr == 724295743003504938L && *(1 + (long*)ptr) == 955979461165271364L && *(16 + ptr) == 10)
-                    return RespCommand.DISCARD;
-
-                // EXEC => *1\r\n$4\r\nEXEC\r\n
-                if (*(long*)ptr == 724292444468621610L && *(2 + (int*)ptr) == 1128618053 && *(ushort*)(12 + ptr) == 2573)
-                    return RespCommand.EXEC;
-
-                // UNWATCH => *1\r\n$7\r\UNWATCH\r\n
-                if (*(long*)ptr == 724295743003504938L && *(1 + (long*)ptr) == 957088949968784981L && *(16 + ptr) == 10)
-                    return RespCommand.UNWATCH;
+                    // Decrease read head, if no match was found
+                    readHead -= 6;
+                }
             }
 
-            // TODO: add other types here
             return RespCommand.NONE;
         }
 
-        private (RespCommand, byte) FastParseArrayCommand(int count, byte* ptr)
+        /// <summary>
+        /// Fast-parses for command type, starting at the current read head in the receive buffer
+        /// and advances the read head to the position after the parsed command.
+        /// </summary>
+        /// <param name="count">Outputs the number of arguments stored with the command</param>
+        /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private RespCommand FastParseCommand(out int count)
         {
-            if (bytesRead - readHead >= 10)
+            var ptr = recvBufferPtr + readHead;
+            var remainingBytes = bytesRead - readHead;
+
+            // Check if the package starts with "*_\r\n$_\r\n" (_ = masked out),
+            // i.e. an array with a single-digit length and single-digit first string length.
+            if ((remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8))
             {
-                // [$4\r\nMGET\r\n]
-                if (*(long*)ptr == 6072338068785673252L && *(ushort*)(ptr + 8) == 2573)
-                    return (RespCommand.MGET, 0);
+                // Extract total element count from the array header.
+                // NOTE: Subtracting one to account for first token being parsed.
+                count = ptr[1] - '1';
+                Debug.Assert(count is >= 0 and < 9);
 
-                // [$4\r\nMSET\r\n]
-                if (*(long*)(recvBufferPtr + readHead) == 6072351262925206564L && *(ushort*)(recvBufferPtr + readHead + 8) == 2573)
-                    return (RespCommand.MSET, 0);
+                // Extract length of the first string header
+                var length = ptr[5] - '0';
+                Debug.Assert(length is > 0 and <= 9);
 
-                // [$6\r\nMSETNX\r\n]
-                if (*(long*)ptr == 6072351262925207076L && *(int*)(ptr + 8) == 168646734)
-                    return (RespCommand.MSETNX, 0);
+                var oldReadHead = readHead;
 
-                // [$3\r\nDEL\r \n]
-                if (*(long*)ptr == 958216979251802916L && *(ptr + 8) == 10)
-                    return (RespCommand.DEL, 0);
-
-                // [$6\r\nUNLI NK\r\n]
-                if (*(long*)ptr == 5281682590146573860L && *(int*)(ptr + 8) == 168643406)
-                    return (RespCommand.UNLINK, 0);
-
-                // SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
-                if (*(int*)ptr == 168638756 && *(long*)((int*)ptr + 1) == 4776439328916264275L && 0x24 == *(15 + (byte*)ptr))
-                    return (RespCommand.SUBSCRIBE, 0);
-
-                // PSUBSCRIBE channel1 channel2.. ==> [$10\r\nPSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => PSubscribe to channel1 and channel2
-                if (*(int*)ptr == 221262116 && *(long*)(ptr + 5) == 5283359337733247824L && 0x24 == *(17 + (byte*)ptr))
-                    return (RespCommand.PSUBSCRIBE, 0);
-
-                // UNSUBSCRIBE channel1 channel2.. ==> [$11\r\nUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Unsubscribe to channel1 and channel2
-                if (*(int*)ptr == 221327652 && *(long*)((int*)ptr + 1) == 4851294157845452042L && 10 == *(17 + (byte*)ptr))
-                    return (RespCommand.UNSUBSCRIBE, 0);
-
-                // PUNSUBSCRIBE channel1 channel2.. ==> [$12\r\nPUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Punsubscribe to channel1 and channel2
-                if (*(int*)ptr == 221393188 && *(long*)(ptr + 5) == 4851294157845452112L && 10 == *(18 + (byte*)ptr))
-                    return (RespCommand.PUNSUBSCRIBE, 0);
-
-                // [$4\r\nZADD\r\n]
-                if (*(long*)ptr == 4919128547966923812L && *(ushort*)(ptr + 8) == 2573)
-                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZADD);
-
-                // [$4\r\nZREM\r\n]
-                if (*(long*)ptr == 5567947060982658084L && *(ushort*)(ptr + 8) == 2573)
-                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREM);
-
-                //  -----8----- ---4---
-                // [$5\r\nPFAD | D\r\n$]
-                if (*(long*)ptr == 4918289577645258020L && *(int*)(ptr + 8) == 604638532)
-                    return (RespCommand.PFADD, 0);
-
-                //  -----8----- ---4--- --2--
-                // [$5\r\nPFME | RGE\r | \n$]
-                if (*(long*)ptr == 4993724871403714340L && *(int*)(ptr + 8) == 222644050 && *(short*)(ptr + 8 + 4) == 9226)
-                    return (RespCommand.PFMERGE, 0);
-
-                //-----8-----  ---4---
-                //[$7\r\nPFCO | UNT\r]
-                if (*(long*)ptr == 5711486062015887140L && *(int*)(ptr + 8) == 223628885)
-                    return (RespCommand.PFCOUNT, 0);
-
-                //[$6\r\nSELECT\r]
-                if (*(long*)ptr == 4993442309800277540L && *(int*)(ptr + 8) == 168645699)
-                    return (RespCommand.SELECT, 0);
-
-                //[$4\r\nKEYS\r\n]
-                if (*(long*)ptr == 6005907766668768292L && *(ushort*)(ptr + 8) == 2573)
-                    return (RespCommand.KEYS, 0);
-
-                //[$6\r\nDBSIZE\r\n]
-                if (*(long*)ptr == 5283639647829571108L && *(ushort*)(ptr + 8) == 17754)
-                    return (RespCommand.DBSIZE, 0);
-
-                //$6\r\nEXISTS\r\n -> multiple keys exists
-                if (*(long*)ptr == 6001425031992522276L && *(ushort*)(ptr + 8) == 21332)
-                    return (RespCommand.EXISTS, 0);
-
-                //[$4\r\nSCAN\r\n]
-                if (*(long*)ptr == 5638862232374555684L && *(ushort*)(ptr + 8) == 2573)
-                    return (RespCommand.SCAN, 0);
-
-                //[$4\r\nTYPE\r\n]
-                if (*(long*)ptr == 4994590204234642468L && *(ushort*)(ptr + 8) == 2573)
-                    return (RespCommand.TYPE, 0);
-
-                //[$6\r\nMEMORY\r\n]
-                if (*(long*)ptr == 5714299699386463780L && *(ushort*)(ptr + 8) == 22866)
-                    return (RespCommand.MEMORY, 0);
-
-                //[$7\r\nMONITOR\r\n]
-                if (*(long*)ptr == 5638862232374555684L && *(ushort*)(ptr + 8) == 2573)
-                    return (RespCommand.MONITOR, 0);
-
-                // STRLEN key
-                if (*(long*)ptr == 5499550810600453668L && *(ushort*)(ptr + 8) == 20037)
-                    return (RespCommand.STRLEN, 0);
-
-                // MODULE NAMEOFMODULE
-                if (*(long*)ptr == 6144122983939913252L && *(ushort*)(ptr + 8) == 17740)
-                    return (RespCommand.MODULE, 0);
-
-                // [$16\r\nCUSTOMOBJECTSCAN\r\n$5\r\nKey\r\n$1\r\n0\r\n$4\r\nPATTERN\r\nCOUNT]
-                if (*(int*)ptr == 221655332 && *(long*)(ptr + 5) == 4778122732775888195L && 10 == *(22 + (byte*)ptr))
-                    return (RespCommand.All, (byte)RespCommand.COSCAN);
-
-                if (bytesRead - readHead >= 11)
+                // Ensure that the complete command string is contained in the package. Otherwise exit early.
+                // Include 10 bytes to account for array and command string headers, and terminator
+                // 10 bytes = "*_\r\n$_\r\n" (8 bytes) + "\r\n" (2 bytes) at end of command name
+                if (remainingBytes >= length + 10)
                 {
-                    //[$5\r\nWATCH\r\n$2\r\nOS\r\n]
-                    if (*(long*)ptr == 4851574540671464740 && *(long*)(ptr + 8) == 5695379187767577928 && *(ushort*)(ptr + 16) == 3411 && *(byte*)(ptr + 18) == 10)
-                        return (RespCommand.WATCHOS, 0);
+                    // Optimistically advance read head to the end of the command name
+                    readHead += length + 10;
 
-                    //[$5\r\nWATCH\r\n$2\r\nMS\r\n]
-                    if (*(long*)ptr == 4851574540671464740 && *(long*)(ptr + 8) == 5551263999691722056 && *(ushort*)(ptr + 16) == 3411 && *(byte*)(ptr + 18) == 10)
-                        return (RespCommand.WATCHMS, 0);
+                    // Last 8 byte word of the command name, for quick comparison
+                    var lastWord = *(ulong*)(ptr + length + 2);
 
-                    //[$5\r\nWATCH\r\n]
-                    if (*(long*)ptr == 4851574540671464740 && *(ushort*)(ptr + 8) == 3400 && *(byte*)(ptr + 10) == 10)
-                        return (RespCommand.WATCH, 0);
+                    //
+                    // Fast path for common commands with fixed numbers of arguments
+                    //
 
-                    #region SortedSet Operations
-                    //-----8-----  ---3---
-                    // [$5\r\nZCAR D\r\n]
-                    if (*(long*)ptr == 5927092638591038756L && *(ushort*)(ptr + 8) == 3396 && *(ptr + 10) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZCARD);
+                    // Only check against commands with the correct count and length.
 
-                    //-----8-----  ---5---
-                    // [$7\r\nZPOP MAX\r\n]
-                    if (*(long*)ptr == 5786932393840293668L && *(int*)(ptr + 8) == 223887693 && *(ptr + 12) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZPOPMAX);
-
-                    // [$7\r\nZSCORE\r\n]
-                    if (*(long*)ptr == 5711500398616720932L && *(int*)(ptr + 8) == 168641874)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZSCORE);
-
-                    //[$6|ZCOUNT|] = 12 bytes = 8 (long) + 2 (ushort) + 2 bytes
-                    if (*(long*)ptr == 6147206070378772004L && *(ushort*)(ptr + 8) == 21582 && *(ptr + 11) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZCOUNT);
-
-                    //[$7|ZINCRBY|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
-                    if (*(long*)ptr == 4849894499789125412L && *(ushort*)(ptr + 8) == 16978 && *(ptr + 12) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZINCRBY);
-
-                    //[$5|ZRANK|] = 11 bytes = 8 (long) + 2 (ushort) + 1 bytes
-                    if (*(long*)ptr == 5638878755113743652L && *(ushort*)(ptr + 8) == 3403 && *(ptr + 10) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANK);
-
-                    //[$6|ZRANGE|] = 12 bytes = 8 (long) + 2 (ushort) + 2 bytes
-                    if (*(long*)ptr == 5638878755113743908L && *(ushort*)(ptr + 8) == 17735 && *(ptr + 11) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANGE);
-
-                    //[$13|ZRANGEBYSCORE|] = 19 bytes = 8 (long) + 2 (ushort) + 9 bytes
-                    if (*(long*)ptr == 4706923559773221156L && *(ushort*)(ptr + 8) == 18254 && *(ptr + 19) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANGEBYSCORE);
-
-                    //[$8|ZREVRANK|] = 14 bytes = 8 (long) + 2 (ushort) + 4 bytes
-                    if (*(long*)ptr == 6216465407324010532L && *(ushort*)(ptr + 8) == 16722 && *(ptr + 13) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREVRANK);
-
-                    //[$14|ZREMRANGEBYLEX|] = 20 bytes = 8 (long) + 2 (ushort) + 10 bytes
-                    if (*(long*)ptr == 4995153935924998436L && *(ushort*)(ptr + 8) == 21069 && *(ptr + 20) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYLEX);
-
-                    //[$15|ZREMRANGEBYRANK|] = 21 bytes = 8 (long) + 2 (ushort) + 11 bytes
-                    if (*(long*)ptr == 4995153935925063972L && *(ushort*)(ptr + 8) == 21069 && *(ptr + 21) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYRANK);
-
-                    //[$16|ZREMRANGEBYSCORE|] = 22 bytes = 8 (long) + 2 (ushort) + 12 bytes
-                    if (*(long*)ptr == 4995153935925129508L && *(ushort*)(ptr + 8) == 21069 && *(ptr + 22) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYSCORE);
-
-                    //[$9|ZLEXCOUNT|] = 15 bytes = 8 (long) + 2 (ushort) + 5 bytes
-                    if (*(long*)ptr == 6360573998330100004L && *(ushort*)(ptr + 8) == 20291 && *(ptr + 14) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZLEXCOUNT);
-
-                    //[$7|ZPOPMIN|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
-                    if (*(long*)ptr == 5786932393840293668L && *(ushort*)(ptr + 8) == 18765 && *(ptr + 12) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZPOPMIN);
-
-                    //[$11|ZRANDMEMBER|] = 17 bytes = 8 (long) + 2 (ushort) + 7 bytes
-                    if (*(long*)ptr == 4706923559773090084L && *(ushort*)(ptr + 8) == 17486 && *(ptr + 17) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANDMEMBER);
-
-                    //[$5|ZDIFF|] = 11 bytes = 8 (long) + 2 (ushort) + 1 bytes
-                    if (*(long*)ptr == 5064654409461216548L && *(ushort*)(ptr + 8) == 3398 && *(ptr + 10) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZDIFF);
-
-                    //[$5|ZSCAN|] = 11 bytes = 8 (long) + 2 (ushort) + 1 bytes
-                    if (*(long*)ptr == 4702694082085729572L && *(ushort*)(ptr + 8) == 3406 && *(ptr + 10) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZSCAN);
-
-                    //[$7|ZMSCORE|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
-                    if (*(long*)ptr == 4851306272719189796L && *(int*)(ptr + 8) == 222646863 && *(ptr + 12) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZMSCORE);
-
-                    #region SortedSet Operations with Geo Commands
-                    //[$6|GEOADD|] = 12 bytes = 8 (long) + 2 (ushort) + 2 bytes
-                    if (*(long*)ptr == 4706056307039090212L && *(ushort*)(ptr + 8) == 17476 && *(ptr + 11) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOADD);
-
-                    //[$6|GEOHASH|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
-                    if (*(long*)ptr == 5210459465304586020L && *(ushort*)(ptr + 8) == 21313 && *(ptr + 12) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOHASH);
-
-                    //[$6|GEODIST|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
-                    if (*(long*)ptr == 4922229089152874276L && *(ushort*)(ptr + 8) == 21321 && *(ptr + 12) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.GEODIST);
-
-                    //[$6|GEOPOS|] = 12 bytes = 8 (long) + 2 (ushort) + 2 bytes
-                    if (*(long*)ptr == 5786920217608009252L && *(ushort*)(ptr + 8) == 21327 && *(ptr + 11) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOPOS);
-
-                    //[$6|GEOSEARCH|] = 15 bytes = 8 (long) + 2 (ushort) + 5 bytes
-                    if (*(long*)ptr == 6003092999721793828L && *(ushort*)(ptr + 8) == 16709 && *(ptr + 14) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOSEARCH);
-
-                    //[$9|ZREVRANGE|] = 15 bytes = 8 (long) + 2 (ushort) + 5 bytes
-                    if (*(long*)ptr == 6216465407324010788L && *(ushort*)(ptr + 8) == 16722 && *(ptr + 14) == 10)
-                        return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREVRANGE);
-
-                    #endregion
-
-                    #endregion
-
-                    #region List Operations
-                    //[$5\r\nLPUSH\r\n$]
-                    if (*(long*)ptr == 0x5355504c0a0d3524 && *(int*)(ptr + 8) == 0x240a0d48)
-                        return (RespCommand.List, (byte)ListOperation.LPUSH);
-                    if (*(long*)ptr == 6004793965684799012L && *(int*)(ptr + 8) == 168646728)
-                        return (RespCommand.List, (byte)ListOperation.LPUSHX);
-                    //[$4\r\nLPOP\r\n$]
-                    if (*(long*)ptr == 0x504f504c0a0d3424 && *(ushort*)(ptr + 8) == 0x0a0d && *(ptr + 10) == 0x24)
-                        return (RespCommand.List, (byte)ListOperation.LPOP);
-                    //[$5\r\nRPUSH\r\n$]
-                    if (*(long*)ptr == 0x535550520a0d3524 && *(int*)(ptr + 8) == 0x240a0d48)
-                        return (RespCommand.List, (byte)ListOperation.RPUSH);
-                    if (*(long*)ptr == 6004793991454602788L && *(int*)(ptr + 8) == 168646728)
-                        return (RespCommand.List, (byte)ListOperation.RPUSHX);
-                    //[$4\r\nRPOP\r\n$]
-                    if (*(long*)ptr == 0x504f50520a0d3424 && *(ushort*)(ptr + 8) == 0x0a0d && *(ptr + 10) == 0x24)
-                        return (RespCommand.List, (byte)ListOperation.RPOP);
-                    //[$4\r\nLLEN\r\n$]
-                    if (*(long*)ptr == 0x4e454c4c0a0d3424 && *(ushort*)(ptr + 8) == 0x0a0d && *(ptr + 10) == 0x24)
-                        return (RespCommand.List, (byte)ListOperation.LLEN);
-                    //[$5\r\nLTRIM\r\n$]
-                    if (*(long*)ptr == 0x4952544c0a0d3524 && *(int*)(ptr + 8) == 0x240a0d4d)
-                        return (RespCommand.List, (byte)ListOperation.LTRIM);
-                    //[$6\r\nLRANGE\r\n$9\r\n]
-                    if (*(long*)ptr == 0x4e41524c0a0d3624 && *(int*)(ptr + 8) == 0x0a0d4547 && *(ptr + 12) == 0x24)
-                        return (RespCommand.List, (byte)ListOperation.LRANGE);
-                    //[$6\r\nLINDEX\r\n$9\r\n$]
-                    if (*(long*)ptr == 0x444e494c0a0d3624 && *(int*)(ptr + 8) == 0x0a0d5845 && *(ptr + 12) == 0x24)
-                        return (RespCommand.List, (byte)ListOperation.LINDEX);
-                    //$7\r\nLINSERT\r\n$9\r\nList_Test\r\n$
-                    if (*(long*)ptr == 0x534e494c0a0d3724 && *(int*)(ptr + 8) == 0x0d545245 && *(ushort*)(ptr + 12) == 0x240a)
-                        return (RespCommand.List, (byte)ListOperation.LINSERT);
-                    //[$4\r\nLREM\r\n$]
-                    if (*(long*)ptr == 0x4d45524c0a0d3424 && *(ushort*)(ptr + 8) == 0x0a0d && *(ptr + 10) == 0x24)
-                        return (RespCommand.List, (byte)ListOperation.LREM);
-                    //-----8----- ---7-----
-                    //[$9\r\nRPOP LPUSH\r\n]
-                    if (*(long*)ptr == 5786932359480555812L && *(int*)(ptr + 8) == 1398100044 && *(ptr + 14) == 10)
-                        return (RespCommand.List, (byte)ListOperation.RPOPLPUSH);
-                    //-----8----- --3--
-                    //[$5\r\nLMOV E\r\n]
-                    if (*(long*)ptr == 6219274599403435300L && *(int*)(ptr + 8) == 604638533 && *(ptr + 10) == 10)
-                        return (RespCommand.List, (byte)ListOperation.LMOVE);
-                    #endregion
-
-                    #region Hash Operations
-                    //[$5|HMSET|] = 11 bytes = 8 (long) + 2 (ushort) + 1 (byte)
-                    if (*(long*)ptr == 4995421383485633828L && *(ushort*)(ptr + 8) == 3412 && *(ptr + 10) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HMSET);
-                    //[$4|HSET|] = 10 bytes = 8 (long) + 2 (ushort)
-                    if (*(long*)ptr == 6072351241450370084L && *(ushort*)(ptr + 8) == 2573)
-                        return (RespCommand.Hash, (byte)HashOperation.HSET);
-                    //[$4|HGET|$] = 10 bytes = 8 (long) + 2 (ushort)
-                    if (*(long*)ptr == 6072338047310836772L && *(ushort*)(ptr + 8) == 2573)
-                        return (RespCommand.Hash, (byte)HashOperation.HGET);
-                    //[$5|HMGET|] = 11 bytes = 8 (long) + 2 (ushort) + 1 (byte)
-                    if (*(long*)ptr == 4992043683765105956L && *(ushort*)(ptr + 8) == 3412 && *(ptr + 10) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HMGET);
-                    //[$4|HDEL|] = 10 bytes = 8 (long) + 2 (ushort)
-                    if (*(long*)ptr == 5495873996472529956L && *(ushort*)(ptr + 8) == 2573)
-                        return (RespCommand.Hash, (byte)HashOperation.HDEL);
-                    //[$4|HLEN|] = 10 bytes = 8 (long) + 2 (ushort)
-                    if (*(long*)ptr == 5639997980641408036L && *(ushort*)(ptr + 8) == 2573)
-                        return (RespCommand.Hash, (byte)HashOperation.HLEN);
-                    //[$7|HGETALL|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
-                    if (*(long*)ptr == 6072338047310837540L && *(ushort*)(ptr + 8) == 19521 && *(ptr + 12) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HGETALL);
-                    //[$7|HEXISTS|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
-                    if (*(long*)ptr == 5285050338427877156L && *(ushort*)(ptr + 8) == 21587 && *(ptr + 12) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HEXISTS);
-                    //[$5|HKEYS|] = 11 bytes = 8 (long) + 2 (ushort) + 1 byte
-                    if (*(long*)ptr == 6432630415546987812L && *(ushort*)(ptr + 8) == 3411 && *(ptr + 10) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HKEYS);
-                    //[$5|HVALS|] = 11 bytes = 8 (long) + 2 (ushort) + 1 byte
-                    if (*(long*)ptr == 5494767887774987556L && *(ushort*)(ptr + 8) == 3411 && *(ptr + 10) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HVALS);
-                    //[$7|HINCRBY|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
-                    if (*(long*)ptr == 4849894422479714084L && *(ushort*)(ptr + 8) == 16978 && *(ptr + 12) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HINCRBY);
-                    //[$12|HINCRBYFLOAT|] = 18 bytes = 8 (long) + 2 (ushort) + 7 bytes
-                    if (*(long*)ptr == 5641119216266522916L && *(ushort*)(ptr + 8) == 21059 && *(ptr + 18) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HINCRBYFLOAT);
-                    //[$6|HSETNX|] = 12 bytes = 8 (long) + 2 (ushort) + 2 bytes
-                    if (*(long*)ptr == 6072351241450370596L && *(ushort*)(ptr + 8) == 22606 && *(ptr + 11) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HSETNX);
-                    //[$10|HRANDFIELD|] = 16 bytes = 8 (long) + 2 (ushort) + 6 bytes
-                    if (*(long*)ptr == 4706903768563724580L && *(ushort*)(ptr + 8) == 17486 && *(ptr + 16) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HRANDFIELD);
-                    if (*(long*)ptr == 4702694004776318244L && *(ushort*)(ptr + 8) == 3406 && *(ptr + 10) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HSCAN);
-                    //[$7|HSTRLEN|] = 13 bytes = 8 (long) + 2 (ushort) + 3 bytes
-                    if (*(long*)ptr == 5932458178025174820L && *(ushort*)(ptr + 8) == 17740 && *(ptr + 12) == 10)
-                        return (RespCommand.Hash, (byte)HashOperation.HSTRLEN);
-                    #endregion
-
-                    #region Set Operations
-                    //[$4|SADD|] = 10 bytes = 8 (long) + 2 (ushort)
-                    if (*(long*)ptr == 4919128517902152740L && *(ushort*)(ptr + 8) == 2573 && *(ptr + 9) == 10)
-                        return (RespCommand.Set, (byte)SetOperation.SADD);
-                    //[$8|SMEMBERS|] = 14 bytes = 8 (long) + 2 (ushort) + 2 bytes
-                    if (*(long*)ptr == 5567941533359749156L && *(ushort*)(ptr + 8) == 17730 && *(ptr + 13) == 10)
-                        return (RespCommand.Set, (byte)SetOperation.SMEMBERS);
-                    //[$4|SREM|] = 10 bytes = 8 (long) + 2 (ushort)
-                    if (*(long*)ptr == 5567947030917887012L && *(ushort*)(ptr + 8) == 2573 && *(ptr + 9) == 10)
-                        return (RespCommand.Set, (byte)SetOperation.SREM);
-                    //[$5|SCARD|] = 11 bytes = 8 (long) + 2 (ushort) + 1 byte
-                    if (*(long*)ptr == 5927092608526267684L && *(ushort*)(ptr + 8) == 3396 && *(ptr + 10) == 10)
-                        return (RespCommand.Set, (byte)SetOperation.SCARD);
-                    //[$4|SPOP|] = 10 bytes = 8 (long) + 2 (ushort)
-                    if (*(long*)ptr == 5786932363775521828L && *(ushort*)(ptr + 8) == 2573 && *(ptr + 9) == 10)
-                        return (RespCommand.Set, (byte)SetOperation.SPOP);
-                    //[$5|SSCAN|] = 14 bytes = 8 (long) + 2 (ushort)
-                    if (*(long*)ptr == 4702694052020958500L && *(uint*)(ptr + 8) == 3406 && *(ptr + 10) == 10)
-                        return (RespCommand.Set, (byte)SetOperation.SSCAN);
-                    //[$6|SUNION|] = 12 bytes = 8 (long) + 4 (uint)
-                    if (*(long*)ptr == 5282253228091455012L && *(uint*)(ptr + 8) == 168644175)
-                        return (RespCommand.Set, (byte)SetOperation.SUNION);
-                    #endregion
-                }
-
-                if (bytesRead - readHead >= 20)
-                {
-                    // -----8-----  --4--  --2--
-                    // [$8\r\nBITF | IELD | \r\n]
-                    if (*(long*)ptr == 5067756028683958308L && *(int*)(ptr + 8) == 1145849161 && *(short*)(ptr + 8 + 4) == 2573)
-                        return (RespCommand.BITFIELD, 0);
-
-                    // -----8-----  ---8---  --2--
-                    // [$11\r\nBIT | FIELD_RO | \r\n$]
-                    if (*(long*)ptr == 6073458183424258340L && *(long*)(ptr + 8) == 5715735624028604742L && *(short*)(ptr + 8 + 8) == 2573)
-                        return (RespCommand.BITFIELD_RO, 0);
-
-                    // $5\r\nBITO | P\r\n$ | [2|3]\r\n[AND|OR|XOR|NOT|]\r\n | $4\r\ndest $4\r\nsrc1\r\n $4\r\nsrc2\r\n
-                    if (*(long*)ptr == 5716274375025308964L)
+                    return ((count << 4) | length) switch
                     {
-                        // ----8----    -----8-----   ---4---
-                        // $5\r\nBITO | P\r\n$3\r\nA | ND\r\n
-                        // $5\r\nBITO | P\r\n$3\r\na | nd\r\n
-                        if ((*(long*)(ptr + 8) == 4686572875531554128L && *(int*)(ptr + 16) == 168641614) ||
-                            (*(long*)(ptr + 8) == 6992415884745248080L && *(int*)(ptr + 16) == 168649838))
-                            return (RespCommand.BITOP, (byte)BitmapOperation.AND);
+                        // Commands without arguments
+                        4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPING\r\n"u8) => RespCommand.PING,
+                        4 when lastWord == MemoryMarshal.Read<ulong>("\r\nEXEC\r\n"u8) => RespCommand.EXEC,
+                        5 when lastWord == MemoryMarshal.Read<ulong>("\nMULTI\r\n"u8) => RespCommand.MULTI,
+                        6 when lastWord == MemoryMarshal.Read<ulong>("ASKING\r\n"u8) => RespCommand.ASKING,
+                        7 when lastWord == MemoryMarshal.Read<ulong>("ISCARD\r\n"u8) && ptr[8] == 'D' => RespCommand.DISCARD,
+                        7 when lastWord == MemoryMarshal.Read<ulong>("NWATCH\r\n"u8) && ptr[8] == 'U' => RespCommand.UNWATCH,
+                        8 when lastWord == MemoryMarshal.Read<ulong>("ADONLY\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.READONLY,
+                        9 when lastWord == MemoryMarshal.Read<ulong>("DWRITE\r\n"u8) && *(uint*)(ptr + 8) == MemoryMarshal.Read<uint>("READ"u8) => RespCommand.READWRITE,
 
-                        // ----8----    -----8-----   ---4---
-                        // $5\r\nBITO | P\r\n$2\r\nO | R\r\n$
-                        // $5\r\nBITO | P\r\n$2\r\no | r\r\n$
-                        if ((*(long*)(ptr + 8) == 5695379187767577936L && *(int*)(ptr + 16) == 604638546) ||
-                            (*(long*)(ptr + 8) == 8001222196981271888L && *(int*)(ptr + 16) == 604638578))
-                            return (RespCommand.BITOP, (byte)BitmapOperation.OR);
+                        // Commands with fixed number of arguments
+                        (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nGET\r\n"u8) => RespCommand.GET,
+                        (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nDEL\r\n"u8) => RespCommand.DEL,
+                        (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nTTL\r\n"u8) => RespCommand.TTL,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nINCR\r\n"u8) => RespCommand.INCR,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPTTL\r\n"u8) => RespCommand.PTTL,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDECR\r\n"u8) => RespCommand.DECR,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("EXISTS\r\n"u8) => RespCommand.EXISTS,
+                        (1 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETDEL\r\n"u8) => RespCommand.GETDEL,
+                        (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ERSIST\r\n"u8) && ptr[8] == 'P' => RespCommand.PERSIST,
+                        (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("PFCOUNT\r\n"u8) && ptr[8] == 'P' => RespCommand.PFCOUNT,
+                        (2 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SET,
+                        (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nPFADD\r\n"u8) => RespCommand.PFADD,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("INCRBY\r\n"u8) => RespCommand.INCRBY,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("DECRBY\r\n"u8) => RespCommand.DECRBY,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8) => RespCommand.RENAME,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETBIT\r\n"u8) => RespCommand.GETBIT,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("APPEND\r\n"u8) => RespCommand.APPEND,
+                        (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && ptr[8] == 'P' => RespCommand.PUBLISH,
+                        (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("FMERGE\r\n"u8) && ptr[8] == 'P' => RespCommand.PFMERGE,
+                        (3 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETEX\r\n"u8) => RespCommand.SETEX,
+                        (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("PSETEX\r\n"u8) => RespCommand.PSETEX,
+                        (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SETBIT\r\n"u8) => RespCommand.SETBIT,
+                        (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SE"u8) => RespCommand.SETRANGE,
+                        (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("GE"u8) => RespCommand.GETRANGE,
 
-                        // ----8----    -----8-----   ---4---
-                        // $5\r\nBITO | P\r\n$3\r\nX | OR\r\n
-                        // $5\r\nBITO | P\r\n$3\r\nx | or\r\n
-                        if ((*(long*)(ptr + 8) == 6343897538403896656L && *(int*)(ptr + 16) == 168645199) ||
-                            (*(long*)(ptr + 8) == 8649740547617590608L && *(int*)(ptr + 16) == 168653423))
-                            return (RespCommand.BITOP, (byte)BitmapOperation.XOR);
+                        _ => ((length << 4) | count) switch
+                        {
+                            // Commands with dynamic number of arguments
+                            >= ((3 << 4) | 3) and <= ((3 << 4) | 6) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
+                            >= ((6 << 4) | 0) and <= ((6 << 4) | 9) when lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8) => RespCommand.RUNTXP,
+                            >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) => RespCommand.EXPIRE,
+                            >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
+                            >= ((7 << 4) | 2) and <= ((7 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) && ptr[8] == 'P' => RespCommand.PEXPIRE,
+                            >= ((8 << 4) | 1) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("TCOUNT\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("BI"u8) => RespCommand.BITCOUNT,
 
-                        // ----8----    -----8-----   ---4---
-                        // $5\r\nBITO | P\r\n$3\r\nN | OT\r\n
-                        if ((*(long*)(ptr + 8) == 5623321598024617296L && *(int*)(ptr + 16) == 168645711) ||
-                            (*(long*)(ptr + 8) == 7929164607238311248L && *(int*)(ptr + 16) == 168653935))
-                            return (RespCommand.BITOP, (byte)BitmapOperation.NOT);
+                            _ => MatchedNone(this, oldReadHead)
+                        }
+                    };
+
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    static RespCommand MatchedNone(RespServerSession session, int oldReadHead)
+                    {
+                        // Backup the read head, if we didn't find a command and need to continue in the more expensive parsing loop
+                        session.readHead = oldReadHead;
+
+                        return RespCommand.NONE;
                     }
+                }
+            }
+            else
+            {
+                return FastParseInlineCommand(out count);
+            }
 
-                    // [$10\r\nREGISTERCS\r\n$3\r\n]
-                    if (*(long*)ptr == 5135601153210331428L && *(long*)(ptr + 8) == 960185166189581129L && *(int*)(ptr + 16) == 221455370 && *(ptr + 20) == 10)
-                        return (RespCommand.REGISTERCS, 0);
+            // Couldn't find a matching command in this pass
+            count = -1;
+            return RespCommand.NONE;
+        }
+
+        /// <summary>
+        /// Fast parsing function for common command names.
+        /// Parses the receive buffer starting from the current read head and advances it to the end of
+        /// the parsed command/subcommand name.
+        /// </summary>
+        /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
+        /// <returns>The parsed command name and (optional) subcommand name.</returns>
+        private (RespCommand, byte) FastParseArrayCommand(ref int count)
+        {
+            // Bytes remaining in the read buffer
+            int remainingBytes = bytesRead - readHead;
+
+            // The current read head to continue reading from
+            byte* ptr = recvBufferPtr + readHead;
+
+            //
+            // Fast-path parsing by (1) command string length, (2) First character of command name (optional) and (3) priority (manual order)
+            //
+
+            // NOTE: A valid RESP string is at a minimum 7 characters long "$_\r\n_\r\n"
+            if (remainingBytes >= 7)
+            {
+                var oldReadHead = readHead;
+
+                // Check if this is a string with a single-digit length ("$_\r\n" -> _ omitted)
+                if ((*(uint*)ptr & 0xFFFF00FF) == MemoryMarshal.Read<uint>("$\0\r\n"u8))
+                {
+                    // Extract length from string header
+                    var length = ptr[1] - '0';
+                    Debug.Assert(length is > 0 and <= 9);
+
+                    // Ensure that the complete command string is contained in the package. Otherwise exit early.
+                    // Include 6 bytes to account for command string header and name terminator.
+                    // 6 bytes = "$_\r\n" (4 bytes) + "\r\n" (2 bytes) at end of command name
+                    if (remainingBytes >= length + 6)
+                    {
+                        // Optimistically increase read head and decrease the number of remaining elements
+                        readHead += length + 6;
+                        count -= 1;
+
+                        switch (length)
+                        {
+                            case 3:
+                                if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("3\r\nDEL\r\n"u8))
+                                {
+                                    return (RespCommand.DEL, 0);
+                                }
+
+                                break;
+
+                            case 4:
+                                switch ((ushort)ptr[4])
+                                {
+                                    case 'H':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHSET\r\n"u8))
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HSET);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHGET\r\n"u8))
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HGET);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHDEL\r\n"u8))
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HDEL);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHLEN\r\n"u8))
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HLEN);
+                                        }
+                                        break;
+
+                                    case 'K':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nKEYS\r\n"u8))
+                                        {
+                                            return (RespCommand.KEYS, 0);
+                                        }
+                                        break;
+
+                                    case 'L':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLPOP\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LPOP);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLLEN\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LLEN);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLREM\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LREM);
+                                        }
+                                        break;
+
+                                    case 'M':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nMGET\r\n"u8))
+                                        {
+                                            return (RespCommand.MGET, 0);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nMSET\r\n"u8))
+                                        {
+                                            return (RespCommand.MSET, 0);
+                                        }
+                                        break;
+
+                                    case 'R':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nRPOP\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.RPOP);
+                                        }
+                                        break;
+
+                                    case 'S':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSCAN\r\n"u8))
+                                        {
+                                            return (RespCommand.SCAN, 0);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSADD\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SADD);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSREM\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SREM);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSPOP\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SPOP);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSUNION\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SUNION);
+                                        }
+                                        break;
+
+                                    case 'T':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nTYPE\r\n"u8))
+                                        {
+                                            return (RespCommand.TYPE, 0);
+                                        }
+                                        break;
+
+                                    case 'Z':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZADD\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZADD);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZREM\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREM);
+                                        }
+                                        break;
+                                }
+                                break;
+
+                            case 5:
+                                switch ((ushort)ptr[4])
+                                {
+                                    case 'B':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBITOP\r\n"u8))
+                                        {
+                                            // Check for matching bit-operation
+                                            if (remainingBytes > length + 6 + 8)
+                                            {
+                                                // 2-character operations
+                                                if (*(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("$2\r\n"u8))
+                                                {
+                                                    if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nOR\r\n"u8) || *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nor\r\n"u8))
+                                                    {
+                                                        readHead += 8;
+                                                        count -= 1;
+                                                        return (RespCommand.BITOP, (byte)BitmapOperation.OR);
+                                                    }
+                                                }
+                                                // 3-character operations
+                                                else if (remainingBytes > length + 6 + 9)
+                                                {
+                                                    if (*(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("$3\r\n"u8))
+                                                    {
+                                                        // Optimistically adjust read head and count
+                                                        readHead += 9;
+                                                        count -= 1;
+
+                                                        if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nAND\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nand\r\n"u8))
+                                                        {
+                                                            return (RespCommand.BITOP, (byte)BitmapOperation.AND);
+                                                        }
+                                                        else if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nXOR\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nxor\r\n"u8))
+                                                        {
+                                                            return (RespCommand.BITOP, (byte)BitmapOperation.XOR);
+                                                        }
+                                                        else if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nNOT\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nnot\r\n"u8))
+                                                        {
+                                                            return (RespCommand.BITOP, (byte)BitmapOperation.NOT);
+                                                        }
+
+                                                        // Reset read head and count if we didn't match operator.
+                                                        readHead -= 9;
+                                                        count += 1;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        break;
+
+                                    case 'H':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHMSET\r\n"u8))
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HMSET);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHMGET\r\n"u8))
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HMGET);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHKEYS\r\n"u8))
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HKEYS);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHVALS\r\n"u8))
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HVALS);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHSCAN\r\n"u8))
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HSCAN);
+                                        }
+                                        break;
+
+                                    case 'L':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nLPUSH\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LPUSH);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nLTRIM\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LTRIM);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nLMOVE\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LMOVE);
+                                        }
+                                        break;
+
+                                    case 'P':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nPFADD\r\n"u8))
+                                        {
+                                            return (RespCommand.PFADD, 0);
+                                        }
+                                        break;
+
+                                    case 'R':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nRPUSH\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.RPUSH);
+                                        }
+                                        break;
+
+                                    case 'S':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSCARD\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SCARD);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSSCAN\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SSCAN);
+                                        }
+                                        break;
+
+                                    case 'W':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nWATCH\r\n"u8))
+                                        {
+                                            // Check for invocations with subcommand
+                                            if (remainingBytes > length + 6 + 4)
+                                            {
+                                                if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nOS\r\n"u8) || *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nos\r\n"u8))
+                                                {
+                                                    // Account for parsed subcommand
+                                                    readHead += 4;
+                                                    count -= 1;
+
+                                                    return (RespCommand.WATCHOS, 0);
+                                                }
+                                                else if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nMS\r\n"u8) || *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nms\r\n"u8))
+                                                {
+                                                    // Account for parsed subcommand
+                                                    readHead += 4;
+                                                    count -= 1;
+
+                                                    return (RespCommand.WATCHMS, 0);
+                                                }
+                                            }
+
+                                            return (RespCommand.WATCH, 0);
+                                        }
+                                        break;
+
+                                    case 'Z':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZCARD\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZCARD);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZRANK\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANK);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZDIFF\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZDIFF);
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZSCAN\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZSCAN);
+                                        }
+                                        break;
+                                }
+                                break;
+
+                            case 6:
+                                switch ((ushort)ptr[4])
+                                {
+                                    case 'D':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("DBSIZE\r\n"u8))
+                                        {
+                                            return (RespCommand.DBSIZE, 0);
+                                        }
+                                        break;
+
+                                    case 'E':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("EXISTS\r\n"u8))
+                                        {
+                                            return (RespCommand.EXISTS, 0);
+                                        }
+                                        break;
+
+                                    case 'G':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEOADD\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOADD);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEOPOS\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOPOS);
+                                        }
+                                        break;
+
+                                    case 'H':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HSETNX\r\n"u8))
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HSETNX);
+                                        }
+                                        break;
+
+                                    case 'L':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("LPUSHX\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LPUSHX);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("LRANGE\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LRANGE);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("LINDEX\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LINDEX);
+                                        }
+                                        break;
+
+                                    case 'M':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("MSETNX\r\n"u8))
+                                        {
+                                            return (RespCommand.MSETNX, 0);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("MEMORY\r\n"u8))
+                                        {
+                                            return (RespCommand.MEMORY, 0);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("MODULE\r\n"u8))
+                                        {
+                                            return (RespCommand.MODULE, 0);
+                                        }
+                                        break;
+
+                                    case 'R':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPUSHX\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.RPUSHX);
+                                        }
+                                        break;
+
+                                    case 'S':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SELECT\r\n"u8))
+                                        {
+                                            return (RespCommand.SELECT, 0);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("STRLEN\r\n"u8))
+                                        {
+                                            return (RespCommand.STRLEN, 0);
+                                        }
+                                        break;
+
+                                    case 'U':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("UNLINK\r\n"u8))
+                                        {
+                                            return (RespCommand.UNLINK, 0);
+                                        }
+                                        break;
+
+                                    case 'Z':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZCOUNT\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZCOUNT);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZRANGE\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANGE);
+                                        }
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZSCORE\r\n"u8))
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZSCORE);
+                                        }
+                                        break;
+                                }
+
+                                break;
+                            case 7:
+                                switch ((ushort)ptr[4])
+                                {
+                                    case 'G':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEOHASH\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOHASH);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEODIST\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.GEODIST);
+                                        }
+                                        break;
+
+                                    case 'H':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HGETALL\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HGETALL);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXISTS\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HEXISTS);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HINCRBY\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HINCRBY);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HSTRLEN\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.Hash, (byte)HashOperation.HSTRLEN);
+                                        }
+                                        break;
+
+                                    case 'L':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("LINSERT\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LINSERT);
+                                        }
+                                        break;
+
+                                    case 'M':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("MONITOR\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.MONITOR, 0);
+                                        }
+                                        break;
+
+                                    case 'P':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("PFCOUNT\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.PFCOUNT, 0);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("PFMERGE\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.PFMERGE, 0);
+                                        }
+                                        break;
+
+                                    case 'Z':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPOPMIN\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZPOPMIN);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPOPMAX\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZPOPMAX);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZINCRBY\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZINCRBY);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZMSCORE\r"u8) && *(byte*)(ptr + 12) == '\n')
+                                        {
+                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZMSCORE);
+                                        }
+                                        break;
+                                }
+                                break;
+                            case 8:
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZREVRANK"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREVRANK);
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SMEMBERS"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return (RespCommand.Set, (byte)SetOperation.SMEMBERS);
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BITFIELD"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return (RespCommand.BITFIELD, 0);
+                                }
+                                break;
+                            case 9:
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUBSCRIB"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
+                                {
+                                    return (RespCommand.SUBSCRIBE, 0);
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SISMEMBE"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("ER\r\n"u8))
+                                {
+                                    return (RespCommand.Set, (byte)SetOperation.SISMEMBER);
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZLEXCOUN"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("NT\r\n"u8))
+                                {
+                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZLEXCOUNT);
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEOSEARC"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("CH\r\n"u8))
+                                {
+                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOSEARCH);
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZREVRANG"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("GE\r\n"u8))
+                                {
+                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREVRANGE);
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPOPLPUS"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("SH\r\n"u8))
+                                {
+                                    return (RespCommand.List, (byte)ListOperation.RPOPLPUSH);
+                                }
+                                break;
+                        }
+
+                        // Reset optimistically changed state, if no matching command was found
+                        count += 1;
+                        readHead = oldReadHead;
+                    }
+                }
+                // Check if this is a string with a double-digit length ("$__\r" -> _ omitted)
+                else if ((*(uint*)ptr & 0xFF0000FF) == MemoryMarshal.Read<uint>("$\0\0\r"u8))
+                {
+                    // Extract length from string header
+                    var length = ptr[2] - '0' + 10;
+                    Debug.Assert(length is >= 10 and <= 19);
+
+                    // Ensure that the complete command string is contained in the package. Otherwise exit early.
+                    // Include 7 bytes to account for command string header and name terminator.
+                    // 7 bytes = "$__\r\n" (5 bytes) + "\r\n" (2 bytes) at end of command name
+                    if (remainingBytes >= length + 7)
+                    {
+                        // Optimistically increase read head and decrease the number of remaining elements
+                        readHead += length + 7;
+                        count -= 1;
+
+                        // Match remaining character by length
+                        // NOTE: Check should include the remaining array length terminator '\n'
+                        switch (length)
+                        {
+                            case 10:
+                                if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nPSUB"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("SCRIBE\r\n"u8))
+                                {
+                                    return (RespCommand.PSUBSCRIBE, 0);
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nHRAN"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("DFIELD\r\n"u8))
+                                {
+                                    return (RespCommand.Hash, (byte)HashOperation.HRANDFIELD);
+                                }
+                                break;
+
+                            case 11:
+                                if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nUNSUB"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("SCRIBE\r\n"u8))
+                                {
+                                    return (RespCommand.UNSUBSCRIBE, 0);
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZRAND"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("MEMBER\r\n"u8))
+                                {
+                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANDMEMBER);
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nBITFI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("ELD_RO\r\n"u8))
+                                {
+                                    return (RespCommand.BITFIELD_RO, 0);
+                                }
+                                break;
+
+                            case 12:
+                                if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nPUNSUB"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("SCRIBE\r\n"u8))
+                                {
+                                    return (RespCommand.PUNSUBSCRIBE, 0);
+                                }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nHINCRB"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
+                                {
+                                    return (RespCommand.Hash, (byte)HashOperation.HINCRBYFLOAT);
+                                }
+                                break;
+
+                            case 13:
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZRANGEB"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("YSCORE\r\n"u8))
+                                {
+                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANGEBYSCORE);
+                                }
+                                break;
+
+                            case 14:
+                                if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYLEX);
+                                }
+                                break;
+
+                            case 15:
+                                if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZREMRAN"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("GEBYRANK"u8) && *(ushort*)(ptr + 20) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYRANK);
+                                }
+                                break;
+
+                            case 16:
+                                if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nCUSTOM"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("OBJECTSC"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("AN\r\n"u8))
+                                {
+                                    return (RespCommand.All, (byte)RespCommand.COSCAN);
+                                }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYSCO"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("RE\r\n"u8))
+                                {
+                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYSCORE);
+                                }
+                                break;
+                        }
+
+                        // Reset optimistically changed state, if no matching command was found
+                        count += 1;
+                        readHead = oldReadHead;
+                    }
                 }
             }
 
-            // TODO: add other types here
+
+            // No matching command name found in this pass
             return (RespCommand.NONE, 0);
+        }
+
+        /// <summary>
+        /// Parses the receive buffer, starting from the current read head, for all command names that are
+        /// not covered by FastParseArrayCommand() and advances the read head to the end of the command name.
+        /// 
+        /// NOTE: Assumes the input command names have already been converted to upper-case.
+        /// </summary>
+        /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
+        /// <param name="success">True if the input RESP string was completely included in the buffer, false if we couldn't read the full command name.</param>
+        /// <returns>The parsed command name and (optional) subcommand name.</returns>
+        private (RespCommand, byte) SlowParseCommand(ref int count, out bool success)
+        {
+            // Try to extract the current string from the front of the read head
+            ReadOnlySpan<byte> bufSpan = new(recvBufferPtr, bytesRead);
+            var command = GetCommand(bufSpan, out success);
+
+            if (!success)
+            {
+                return (RespCommand.INVALID, (byte)RespCommand.INVALID);
+            }
+
+            // Account for the command name being taken off the read head
+            count -= 1;
+
+            if (command.SequenceEqual(CmdStrings.SUBSCRIBE))
+            {
+                return (RespCommand.SUBSCRIBE, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.RUNTXP))
+            {
+                return (RespCommand.RUNTXP, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.ECHO))
+            {
+                return (RespCommand.ECHO, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.REPLICAOF))
+            {
+                return (RespCommand.REPLICAOF, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.SECONDARYOF))
+            {
+                return (RespCommand.SECONDARYOF, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.CONFIG))
+            {
+                return (RespCommand.CONFIG, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.CLIENT))
+            {
+                return (RespCommand.CLIENT, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.AUTH))
+            {
+                return (RespCommand.AUTH, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.INFO))
+            {
+                return (RespCommand.INFO, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.COMMAND))
+            {
+                return (RespCommand.COMMAND, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.PING))
+            {
+                return (RespCommand.PING, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.CLUSTER))
+            {
+                return (RespCommand.CLUSTER, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.LATENCY))
+            {
+                return (RespCommand.LATENCY, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.TIME))
+            {
+                return (RespCommand.TIME, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.QUIT))
+            {
+                return (RespCommand.QUIT, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.SAVE))
+            {
+                return (RespCommand.SAVE, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.LASTSAVE))
+            {
+                return (RespCommand.LASTSAVE, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.BGSAVE))
+            {
+                return (RespCommand.BGSAVE, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.COMMITAOF))
+            {
+                return (RespCommand.COMMITAOF, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.FLUSHDB))
+            {
+                return (RespCommand.FLUSHDB, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.FORCEGC))
+            {
+                return (RespCommand.FORCEGC, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.MIGRATE))
+            {
+                return (RespCommand.MIGRATE, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.FAILOVER))
+            {
+                return (RespCommand.FAILOVER, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.MEMORY))
+            {
+                return (RespCommand.MEMORY, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.MONITOR))
+            {
+                return (RespCommand.MONITOR, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.ACL))
+            {
+                return (RespCommand.ACL, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.REGISTERCS))
+            {
+                return (RespCommand.REGISTERCS, 0);
+            }
+            else
+            {
+                // Custom commands should have never been set when we reach this point
+                // (they should have been executed and reset)
+                Debug.Assert(currentCustomTransaction == null);
+                Debug.Assert(currentCustomCommand == null);
+                Debug.Assert(currentCustomObjectCommand == null);
+
+                if (storeWrapper.customCommandManager.Match(command, out currentCustomTransaction))
+                {
+                    return (RespCommand.CustomTxn, 0);
+                }
+                else if (storeWrapper.customCommandManager.Match(command, out currentCustomCommand))
+                {
+                    return (RespCommand.CustomCmd, 0);
+                }
+                else if (storeWrapper.customCommandManager.Match(command, out currentCustomObjectCommand))
+                {
+                    return (RespCommand.CustomObjCmd, 0);
+                }
+            }
+
+            // If this command name was not known to the slow pass, we are out of options and the command is unknown.
+            // Drain the commands to advance the read head to the end of the command.
+            if (!DrainCommands(bufSpan, count))
+            {
+                success = false;
+            }
+
+            return (RespCommand.INVALID, (byte)RespCommand.INVALID);
+        }
+
+        /// <summary>
+        /// Attempts to skip to the end of the line ("\r\n") under the current read head.
+        /// </summary>
+        /// <returns>True if string terminator was found and readHead was changed, otherwise false. </returns>
+        private bool AttemptSkipLine()
+        {
+            // We might have received an inline command package.Try to find the end of the line.
+            logger?.LogWarning("Received malformed input message. Trying to skip line.");
+
+            for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
+            {
+                if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n')
+                {
+                    // Skip to the end of the string
+                    readHead = stringEnd + 2;
+                    return true;
+                }
+            }
+
+            // We received an incomplete string and require more input.
+            return false;
+        }
+
+        /// <summary>
+        /// Parses the command and subcommand from the given input buffer.
+        /// </summary>
+        /// <param name="ptr">Pointer to the beginning of the input buffer.</param>
+        /// <param name="count">Returns the number of unparsed arguments of the command (including any unparsed subcommands).</param>
+        /// <param name="success">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
+        /// <returns>Tuple of command and subcommand parsed from the input buffer.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private (RespCommand, byte) ParseCommand(out int count, byte* ptr, out bool success)
+        {
+            RespCommand cmd = RespCommand.INVALID;
+            byte subCmd = 0;
+
+            // Initialize count as -1 (i.e., read head has not been advanced)
+            count = -1;
+            success = true;
+
+            // Attempt parsing using fast parse pass for most common operations
+            cmd = FastParseCommand(out count);
+
+            if (cmd == RespCommand.NONE)
+            {
+                // See if input command is all upper-case. If not, convert and try fast parse pass again.
+                if (MakeUpperCase(ptr))
+                {
+                    cmd = FastParseCommand(out count);
+                }
+
+                // If we have not found a command, continue parsing for array commands
+                if (cmd == RespCommand.NONE)
+                {
+                    // Ensure we are attempting to read a RESP array header
+                    if (recvBufferPtr[readHead] != '*')
+                    {
+                        // We might have received an inline command package. Skip until the end of the line in the input package.
+                        success = AttemptSkipLine();
+
+                        return (RespCommand.INVALID, 0);
+                    }
+
+                    // ... and read the array length; Move the read head
+                    var tmp = recvBufferPtr + readHead;
+                    if (!RespReadUtils.ReadArrayLength(out count, ref tmp, recvBufferPtr + bytesRead))
+                    {
+                        success = false;
+                        return (RespCommand.INVALID, subCmd);
+                    }
+
+                    readHead += (int)(tmp - (recvBufferPtr + readHead));
+
+                    // Try parsing the most important variable-length commands
+                    (cmd, subCmd) = FastParseArrayCommand(ref count);
+
+                    if (cmd == RespCommand.NONE)
+                    {
+                        (cmd, subCmd) = SlowParseCommand(ref count, out success);
+                    }
+                }
+            }
+
+            return (cmd, subCmd);
         }
     }
 }

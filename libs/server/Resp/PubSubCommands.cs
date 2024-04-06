@@ -31,10 +31,7 @@ namespace Garnet.server
             while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
                 SendAndReset();
 
-            string messageLowerStr = "message";
-            byte[] messageLowerBytes = Encoding.ASCII.GetBytes(messageLowerStr);
-
-            while (!RespWriteUtils.WriteBulkString(messageLowerBytes, ref dcurr, dend))
+            while (!RespWriteUtils.WriteBulkString("message"u8, ref dcurr, dend))
                 SendAndReset();
             while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)), ref dcurr, dend))
                 SendAndReset();
@@ -55,10 +52,7 @@ namespace Garnet.server
 
             RespWriteUtils.WriteArrayLength(4, ref dcurr, dend);
 
-            string messageLowerStr = "pmessage";
-            byte[] messageLowerBytes = Encoding.ASCII.GetBytes(messageLowerStr);
-
-            while (!RespWriteUtils.WriteBulkString(messageLowerBytes, ref dcurr, dend))
+            while (!RespWriteUtils.WriteBulkString("pmessage"u8, ref dcurr, dend))
                 SendAndReset();
             while (!RespWriteUtils.WriteBulkString(new Span<byte>(patternPtr + sizeof(int), patternLength - sizeof(int)), ref dcurr, dend))
                 SendAndReset();
@@ -78,8 +72,6 @@ namespace Garnet.server
             Debug.Assert(isSubscriptionSession == false);
             // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n
 
-            ptr += 17;
-
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -94,7 +86,7 @@ namespace Garnet.server
             if (subscribeBroker == null)
             {
                 ReadOnlySpan<byte> resp = "-ERR PUBLISH is disabled, enable it with --pubsub option.\r\n"u8;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;
@@ -115,10 +107,8 @@ namespace Garnet.server
         {
             // SUBSCRIBE channel1 channel2.. ==> [$9\r\nSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
 
-            ptr += 15;
-
             bool disabledBroker = subscribeBroker == null;
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -133,9 +123,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
                     SendAndReset();
 
-                string commandLowerStr = "subscribe";
-                byte[] commandLowerBytes = Encoding.ASCII.GetBytes(commandLowerStr);
-                while (!RespWriteUtils.WriteBulkString(commandLowerBytes, ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString("subscribe"u8, ref dcurr, dend))
                     SendAndReset();
                 while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), ksize), ref dcurr, dend))
                     SendAndReset();
@@ -152,7 +140,7 @@ namespace Garnet.server
             if (disabledBroker)
             {
                 ReadOnlySpan<byte> resp = "-ERR SUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;
@@ -167,10 +155,8 @@ namespace Garnet.server
             // PSUBSCRIBE channel1 channel2.. ==> [$10\r\nPSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => PSubscribe to channel1 and channel2
             Debug.Assert(subscribeBroker != null);
 
-            ptr += 17;
-
             bool disabledBroker = subscribeBroker == null;
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -185,9 +171,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
                     SendAndReset();
 
-                string commandLowerStr = "psubscribe";
-                byte[] commandLowerBytes = Encoding.ASCII.GetBytes(commandLowerStr);
-                while (!RespWriteUtils.WriteBulkString(commandLowerBytes, ref dcurr, dend))
+                while (!RespWriteUtils.WriteBulkString("psubscribe"u8, ref dcurr, dend))
                     SendAndReset();
                 while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), ksize), ref dcurr, dend))
                     SendAndReset();
@@ -204,7 +188,7 @@ namespace Garnet.server
             if (disabledBroker)
             {
                 ReadOnlySpan<byte> resp = "-ERR SUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;
@@ -219,14 +203,12 @@ namespace Garnet.server
             // UNSUBSCRIBE channel1 channel2.. ==> [$11\r\nUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             Debug.Assert(subscribeBroker != null);
 
-            ptr += 18;
-
-            if (count == 1)
+            if (count == 0)
             {
                 if (subscribeBroker == null)
                 {
                     ReadOnlySpan<byte> resp = "-ERR UNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -236,9 +218,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
-                    string commandLowerStr = "unsubscribe";
-                    byte[] commandLowerBytes = Encoding.ASCII.GetBytes(commandLowerStr);
-                    while (!RespWriteUtils.WriteBulkString(commandLowerBytes, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
 
                     var channelsize = channel.Length - sizeof(int);
@@ -274,7 +254,7 @@ namespace Garnet.server
                 return true;
             }
 
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -287,9 +267,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
-                    string commandLowerStr = "unsubscribe";
-                    byte[] commandLowerBytes = Encoding.ASCII.GetBytes(commandLowerStr);
-                    while (!RespWriteUtils.WriteBulkString(commandLowerBytes, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteBulkString("unsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
                     while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), ksize), ref dcurr, dend))
                         SendAndReset();
@@ -307,7 +285,7 @@ namespace Garnet.server
             if (subscribeBroker == null)
             {
                 ReadOnlySpan<byte> resp = "-ERR UNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -318,14 +296,12 @@ namespace Garnet.server
             // PUNSUBSCRIBE channel1 channel2.. ==> [$11\r\nPUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
             Debug.Assert(subscribeBroker != null);
 
-            ptr += 19;
-
-            if (count == 1)
+            if (count == 0)
             {
                 if (subscribeBroker == null)
                 {
                     ReadOnlySpan<byte> resp = "-ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                    while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -335,9 +311,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
-                    string commandLowerStr = "punsubscribe";
-                    byte[] commandLowerBytes = Encoding.ASCII.GetBytes(commandLowerStr);
-                    while (!RespWriteUtils.WriteBulkString(commandLowerBytes, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteBulkString("punsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
 
                     var channelsize = channel.Length - sizeof(int);
@@ -361,7 +335,7 @@ namespace Garnet.server
                 return true;
             }
 
-            for (int c = 0; c < count - 1; c++)
+            for (int c = 0; c < count; c++)
             {
                 byte* keyPtr = null;
                 int ksize = 0;
@@ -374,9 +348,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
                         SendAndReset();
-                    string commandLowerStr = "punsubscribe";
-                    byte[] commandLowerBytes = Encoding.ASCII.GetBytes(commandLowerStr);
-                    while (!RespWriteUtils.WriteBulkString(commandLowerBytes, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteBulkString("punsubscribe"u8, ref dcurr, dend))
                         SendAndReset();
                     while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), ksize), ref dcurr, dend))
                         SendAndReset();
@@ -394,7 +366,7 @@ namespace Garnet.server
             if (subscribeBroker == null)
             {
                 ReadOnlySpan<byte> resp = "-ERR PUNSUBSCRIBE is disabled, enable it with --pubsub option.\r\n"u8;
-                while (!RespWriteUtils.WriteResponse(resp, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
             }
             return true;

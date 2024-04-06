@@ -40,6 +40,19 @@ namespace Garnet.server
         /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
         private bool AbortWithWrongNumberOfArguments(string cmdName, int count)
         {
+            var errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.ErrWrongNumArgs, cmdName));
+
+            return AbortWithErrorMessage(count, errorMessage);
+        }
+
+        /// <summary>
+        /// Aborts the execution of the current object store command and outputs a given error message
+        /// </summary>
+        /// <param name="count">Number of remaining tokens belonging to this command on the receive buffer.</param>
+        /// <param name="errorMessage">Error message to print to result stream</param>
+        /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
+        private bool AbortWithErrorMessage(int count, ReadOnlySpan<byte> errorMessage)
+        {
             // Abort command and discard any remaining tokens on the input buffer
             var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
 
@@ -47,8 +60,7 @@ namespace Garnet.server
                 return false;
 
             // Print error message to result stream
-            var errorMessage = Encoding.ASCII.GetBytes($"-ERR wrong number of arguments for {cmdName} command.\r\n");
-            while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
                 SendAndReset();
 
             return true;

@@ -38,11 +38,11 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice member, out int zremCount)
-            => storageSession.SortedSetRemove(key.Bytes, member, out zremCount, ref objectContext);
+            => storageSession.SortedSetRemove(key.ToArray(), member, out zremCount, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice[] members, out int zaddCount)
-            => storageSession.SortedSetRemove(key.Bytes, members, out zaddCount, ref objectContext);
+            => storageSession.SortedSetRemove(key.ToArray(), members, out zaddCount, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRemove(byte[] key, ArgSlice input, out ObjectOutputHeader output)
@@ -279,6 +279,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SetMembers(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.SetMembers(key, input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SetIsMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SetIsMember(key, input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetPop(ArgSlice key, out ArgSlice member)

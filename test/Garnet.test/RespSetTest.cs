@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -48,6 +49,27 @@ namespace Garnet.test
             var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = 272;
             Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanCheckIfMemberExistsInSet()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = new RedisKey("user1:set");
+
+            db.KeyDelete(key);
+
+            db.SetAdd(key, new RedisValue[] { "Hello", "World" });
+
+            var existingMemberExists = db.SetContains(key, "Hello");
+            Assert.IsTrue(existingMemberExists);
+
+            var nonExistingMemberExists = db.SetContains(key, "NonExistingMember");
+            Assert.IsFalse(nonExistingMemberExists);
+
+            var setDoesNotExist = db.SetContains("NonExistingSet", "AnyMember");
+            Assert.IsFalse(setDoesNotExist);
         }
 
 
@@ -95,6 +117,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var result = db.SetAdd(new RedisKey("user1:set"), new RedisValue[] { "ItemOne", "ItemTwo", "ItemThree", "ItemFour" });
             Assert.AreEqual(4, result);
+
+            var existingMemberExists = db.SetContains(new RedisKey("user1:set"), "ItemOne");
+            Assert.IsTrue(existingMemberExists, "Existing member 'ItemOne' does not exist in the set.");
 
             var memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
             var actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
@@ -317,6 +342,46 @@ namespace Garnet.test
 
         }
 
+        [Test]
+        public void CanCheckIfMemberExistsInSetLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand("SADD myset \"Hello\"");
+            var expectedResponse = ":1\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SADD myset \"World\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SISMEMBER myset \"Hello\"");
+            expectedResponse = ":1\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SISMEMBER myset \"NonExistingMember\"");
+            expectedResponse = ":0\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SISMEMBER NonExistingSet \"AnyMember\"");
+            expectedResponse = ":0\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            // Missing arguments
+            response = lightClientRequest.SendCommand("SISMEMBER myset");
+            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "SISMEMBER");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            // Extra arguments
+            response = lightClientRequest.SendCommand("SISMEMBER myset \"Hello\" \"ExtraArg\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
 
         [Test]
         public void CanDoSCARDCommandLC()
@@ -404,26 +469,37 @@ namespace Garnet.test
         [Test]
         public void CanDoSPOPWithCountCommandLC()
         {
-            var myset = new HashSet<string>();
-            myset.Add("one");
-            myset.Add("two");
-            myset.Add("three");
-            myset.Add("four");
-            myset.Add("five");
-
             CreateLongSet();
 
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommand("SPOP myset 3", 4);
-            var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
-            Assert.AreEqual(3, Int32.Parse(strLen));
+            var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SPOP myset 3", 3);
+            var strResponse = Encoding.ASCII.GetString(response);
+            Assert.AreEqual('*', strResponse[0]);
+
+            var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+            Assert.IsTrue(arrLenEndIdx > 1);
+
+            var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            Assert.IsTrue(int.TryParse(strArrLen, out var arrLen));
+            Assert.AreEqual(3, arrLen);
 
             var secondResponse = lightClientRequest.SendCommands("SCARD myset", "PING", 1, 1);
             var expectedResponse = ":2\r\n+PONG\r\n";
-            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            strResponse = Encoding.ASCII.GetString(secondResponse).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
-        }
 
+            // Test for popping set until empty
+            response = lightClientRequest.SendCommand("SPOP myset 2", 2);
+            strResponse = Encoding.ASCII.GetString(response);
+            Assert.AreEqual('*', strResponse[0]);
+
+            arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+            Assert.IsTrue(arrLenEndIdx > 1);
+
+            strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            Assert.IsTrue(int.TryParse(strArrLen, out arrLen));
+            Assert.AreEqual(2, arrLen);
+        }
 
         [Test]
         public void MultiWithNonExistingSet()
