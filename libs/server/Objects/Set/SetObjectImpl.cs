@@ -93,6 +93,43 @@ namespace Garnet.server
             }
         }
 
+        private void SetIsMember(byte* input, int length, ref SpanByteAndMemory output)
+        {
+            byte* input_startptr = input + sizeof(ObjectInputHeader);
+            byte* input_currptr = input_startptr;
+
+            bool isMemory = false;
+            MemoryHandle ptrHandle = default;
+            byte* ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input + length))
+                    return;
+
+                bool isMember = set.Contains(member);
+
+                while (!RespWriteUtils.WriteInteger(isMember ? 1 : 0, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                _output.opsDone = 1;
+                _output.bytesDone = (int)(input_currptr - input_startptr);
+                _output.countDone = 1;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
         private void SetRemove(byte* input, int length, byte* output)
         {
             var _input = (ObjectInputHeader*)input;
@@ -176,7 +213,7 @@ namespace Garnet.server
                     for (int i = 0; i < countParameter; i++)
                     {
                         // Generate a new index based on the elements left in the set
-                        var index = RandomNumberGenerator.GetInt32(0, set.Count - 1);
+                        var index = RandomNumberGenerator.GetInt32(0, set.Count);
                         var item = set.ElementAt(index);
                         set.Remove(item);
                         this.UpdateSize(item, false);
@@ -200,7 +237,7 @@ namespace Garnet.server
                     else
                     {
                         // If set empty return nil
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     countDone++;

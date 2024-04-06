@@ -82,7 +82,7 @@ namespace Garnet.test
             // 10 entries are added
             var result = await db.ExecuteForMemoryResultAsync(ZCARD, "leaderboard");
 
-            Assert.AreEqual("10", Encoding.ASCII.GetString(result.Span.ToArray()));
+            Assert.AreEqual("10", Encoding.ASCII.GetString(result.Span));
 
             // disposing MR
             result.Dispose();
@@ -141,7 +141,7 @@ namespace Garnet.test
             Memory<byte> ZCARD = Encoding.ASCII.GetBytes("$5\r\nZCARD\r\n");
             var result = await db.ExecuteForMemoryResultAsync(ZCARD, "myzset1");
 
-            Assert.AreEqual("2", Encoding.ASCII.GetString(result.Span.ToArray()));
+            Assert.AreEqual("2", Encoding.ASCII.GetString(result.Span));
 
             //Dispose
             result.Dispose();
@@ -528,7 +528,7 @@ namespace Garnet.test
             }
 
             var added = await db.ExecuteForMemoryResultAsync("ZADD", parameters);
-            Assert.AreEqual("10", Encoding.ASCII.GetString(added.Span.ToArray()));
+            Assert.AreEqual("10", Encoding.ASCII.GetString(added.Span));
 
             //ZCARD async
             len = await db.SortedSetLengthAsync("leaderboard");
