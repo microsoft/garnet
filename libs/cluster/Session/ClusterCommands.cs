@@ -148,7 +148,7 @@ namespace Garnet.cluster
             {
                 if (!DrainCommands(bufSpan, count))
                     return false;
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_CLUSTER, ref dcurr, dend))
+                while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_CLUSTER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -229,7 +229,7 @@ namespace Garnet.cluster
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_CONFIG_UPDATE, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_CONFIG_UPDATE, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -773,7 +773,7 @@ namespace Garnet.cluster
 
                     if (ClusterConfig.OutOfRange(slot))
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
                             SendAndReset();
                     }
                     else if (!current.IsLocal((ushort)slot))
@@ -975,7 +975,7 @@ namespace Garnet.cluster
 
                     if (ClusterConfig.OutOfRange(slot))
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
                             SendAndReset();
                     }
                     else if (!current.IsLocal((ushort)slot))
@@ -1497,7 +1497,7 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
                         SendAndReset();
                 }
             }
