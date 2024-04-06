@@ -56,10 +56,13 @@ namespace Garnet.server
         public RespCommandsInfo[]? SubCommands { get; init; }
 
         [JsonIgnore]
-        public string RespFormat => this.respFormat ??= GetRespFormat();
+        internal string RespFormat => this.respFormat ??= GetRespFormat();
+
+        internal static int RespCommandsInfoCount => allRespCommandsInfo.Count;
+
+        internal static IEnumerable<RespCommandsInfo> AllRespCommandsInfo => allRespCommandsInfo.Values;
 
         private static IReadOnlyDictionary<string, RespCommandsInfo> allRespCommandsInfo;
-
         private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> basicRespCommandsInfo;
         private static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>> arrayRespCommandsInfo;
 
@@ -121,11 +124,6 @@ namespace Garnet.server
             arrayRespCommandsInfo = new ReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>(tmpArrayRespCommandsInfo
                 .ToDictionary(kvp => kvp.Key, 
                     kvp => (IReadOnlyDictionary<byte, RespCommandsInfo>)new ReadOnlyDictionary<byte, RespCommandsInfo>(kvp.Value)));
-        }
-
-        public static IEnumerable<RespCommandsInfo> GetRespCommandsInfo()
-        {
-            return allRespCommandsInfo.Values;
         }
 
         public static RespCommandsInfo GetRespCommandInfo(string cmdName)

@@ -22,6 +22,9 @@ namespace Garnet.server
         internal int ObjectTypeId = 0;
         internal int TransactionProcId = 0;
 
+        internal int CustomCommandsInfoCount => this.customCommandsInfo.Count;
+        internal IEnumerable<RespCommandsInfo> CustomCommandsInfo => this.customCommandsInfo.Values;
+
         private readonly Dictionary<string, RespCommandsInfo> customCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
@@ -176,11 +179,6 @@ namespace Garnet.server
         internal RespCommandsInfo GetCustomCommandInfo(string cmdName)
         {
             return this.customCommandsInfo.ContainsKey(cmdName) ? this.customCommandsInfo[cmdName] : null;
-        }
-
-        internal IEnumerable<RespCommandsInfo> GetCustomCommandsInfo()
-        {
-            return this.customCommandsInfo.Values;
         }
     }
 }

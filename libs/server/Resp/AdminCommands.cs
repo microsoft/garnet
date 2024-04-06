@@ -251,32 +251,51 @@ namespace Garnet.server
             }
             else if (command == RespCommand.COMMAND)
             {
-                var notSupported = false;
+                var subCommand = ReadOnlySpan<byte>.Empty;
+
                 if (count > 0)
                 {
-                    var param = GetCommand(bufSpan, out var success);
-                    if (!success) return false;
-
-                    if (param.SequenceEqual(CmdStrings.DOCS) && param.SequenceEqual(CmdStrings.docs))
-                    {
-                        while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
-                            SendAndReset();
-                        notSupported = true;
-                    }
-
-                    if (!param.SequenceEqual(CmdStrings.INFO) && !param.SequenceEqual(CmdStrings.info))
-                    {
-                        if (!DrainCommands(bufSpan, count - 1))
-                            return false;
-                        errorFlag = true;
-                        errorCmd = "command";
-                    }
+                    subCommand = GetCommand(bufSpan, out var success);
+                    if (!success)
+                        return false;
                 }
 
-                if (!notSupported && !errorFlag)
+                // Handle COMMAND COUNT
+                if (count > 0 && (subCommand.SequenceEqual(CmdStrings.COUNT) || subCommand.SequenceEqual(CmdStrings.count)))
                 {
-                    // More than one command names were specified, return specified commands info
-                    if (count > 1)
+                    var commandCount = storeWrapper.customCommandManager.CustomCommandsInfoCount +
+                                       RespCommandsInfo.RespCommandsInfoCount;
+                    while (!RespWriteUtils.WriteInteger(commandCount, ref dcurr, dend))
+                        SendAndReset();
+                }
+                // Handle COMMAND and COMMAND INFO
+                else if (count == 0 || subCommand.SequenceEqual(CmdStrings.INFO) || subCommand.SequenceEqual(CmdStrings.info))
+                {
+                    // Handle COMMAND and COMMAND INFO without command names - return all commands
+                    if (count < 2)
+                    {
+                        var resultSb = new StringBuilder();
+                        var cmdCount = 0;
+
+                        foreach (var customCmd in storeWrapper.customCommandManager.CustomCommandsInfo)
+                        {
+                            cmdCount++;
+                            resultSb.Append(customCmd.RespFormat);
+                        }
+
+                        foreach (var cmd in RespCommandsInfo.AllRespCommandsInfo)
+                        {
+                            cmdCount++;
+                            resultSb.Append(cmd.RespFormat);
+                        }
+
+                        while (!RespWriteUtils.WriteArrayLength(cmdCount, ref dcurr, dend))
+                            SendAndReset();
+                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(resultSb.ToString()), ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    // Handle COMMAND INFO with command names - return all commands specified
+                    else
                     {
                         RespWriteUtils.WriteArrayLength(count - 1, ref dcurr, dend);
 
@@ -302,29 +321,23 @@ namespace Garnet.server
 
                         readHead = (int)(ptr - recvBufferPtr);
                     }
-                    // No commands were specified, return all commands info
-                    else
-                    {
-                        var resultSb = new StringBuilder();
-                        var cmdCount = 0;
+                }
+                // Placeholder for handling DOCS sub-command - returning Nil in the meantime.
+                else if (count > 0 && (subCommand.SequenceEqual(CmdStrings.DOCS) || subCommand.SequenceEqual(CmdStrings.docs)))
+                {
+                    if (!DrainCommands(bufSpan, count - 1))
+                        return false;
 
-                        foreach (var customCmd in storeWrapper.customCommandManager.GetCustomCommandsInfo())
-                        {
-                            cmdCount++;
-                            resultSb.Append(customCmd.RespFormat);
-                        }
-
-                        foreach (var cmd in RespCommandsInfo.GetRespCommandsInfo())
-                        {
-                            cmdCount++;
-                            resultSb.Append(cmd.RespFormat);
-                        }
-
-                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"*{cmdCount}\r\n"), ref dcurr, dend))
-                            SendAndReset();
-                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(resultSb.ToString()), ref dcurr, dend))
-                            SendAndReset();
-                    }
+                    while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
+                }
+                // Unsupported COMMAND subcommand
+                else
+                {
+                    if (!DrainCommands(bufSpan, count - 1))
+                        return false;
+                    errorFlag = true;
+                    errorCmd = "command";
                 }
             }
             else if (command == RespCommand.PING)
