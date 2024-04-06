@@ -92,7 +92,6 @@ namespace Garnet.cluster
         /// Response strings
         /// </summary>
         public static ReadOnlySpan<byte> RESP_OK => "+OK\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_NOAUTH => "-NOAUTH Authentication required.\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_1 => ":1\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_0 => ":0\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_N1 => ":-1\r\n"u8;
@@ -100,36 +99,37 @@ namespace Garnet.cluster
         /// <summary>
         /// Response string templates
         /// </summary>
-        public const string GenericErrMissingParam = "wrong number of arguments for '{0}' command";
+        public const string GenericErrMissingParam = "ERR wrong number of arguments for '{0}' command";
 
         /// <summary>
         /// Generic error respone strings, i.e. these are sent in the form "-ERR responseString\r\n"
         /// </summary>
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CLUSTER => "This instance has cluster support disabled"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE => "Slot out of range"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CONFIG_UPDATE => "Updating the config epoch"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CONFIG_EPOCH_ASSIGNMENT => "The user can assign a config epoch only when the node does not know any other node."u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF => "Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option."u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SLOTSTATE_TRANSITION => "Slot already in that state"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF => "Can't replicate myself"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS => "Primary has been assigned slots and cannot be a replica"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_FORGET_MYSELF => "I tried hard but I can't forget myself"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_FORGET_MY_PRIMARY => "Can't forget my primary"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_FAILOVER_FROM_NON_MASTER => "Cannot failover a non-master node"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UNKNOWN_ENDPOINT => "Unknown endpoint"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CLUSTER => "ERR This instance has cluster support disabled"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE => "ERR Slot out of range"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CONFIG_UPDATE => "ERR Updating the config epoch"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CONFIG_EPOCH_ASSIGNMENT => "ERR The user can assign a config epoch only when the node does not know any other node."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF => "ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SLOTSTATE_TRANSITION => "ERR Slot already in that state"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_FORGET_MYSELF => "ERR I tried hard but I can't forget myself"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_FORGET_MY_PRIMARY => "ERR Can't forget my primary"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_FAILOVER_FROM_NON_MASTER => "ERR Cannot failover a non-master node"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UNKNOWN_ENDPOINT => "ERR Unknown endpoint"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS => "ERR Primary has been assigned slots and cannot be a replica"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF => "ERR Can't replicate myself"u8;
 
         /// <summary>
         /// Generic error response strings for <c>MIGRATE</c> command
         /// </summary>
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MIGRATE_TO_MYSELF => "Can't MIGRATE to myself"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INCOMPLETESLOTSRANGE => "incomplete slotrange"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_PARSING => "Parsing error"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MIGRATE_TO_MYSELF => "ERR Can't MIGRATE to myself"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INCOMPLETESLOTSRANGE => "ERR incomplete slotrange"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_PARSING => "ERR Parsing error"u8;
 
-        #region RespSlotValidation
-        public static ReadOnlySpan<byte> RESP_CROSSLOT_ERROR => "-CROSSSLOT Keys in request do not hash to the same slot\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_CLUSTERDOWN_ERROR => "-CLUSTERDOWN Hash slot not served\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_MIGRATING_ERROR => "-MIGRATING\r\n"u8;
-        #endregion
-
+        /// <summary>
+        /// Simple error respone strings, i.e. these are of the form "-errorString\r\n"
+        /// </summary>
+        public static ReadOnlySpan<byte> RESP_ERR_NOAUTH => "NOAUTH Authentication required."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_CROSSLOT => "CROSSSLOT Keys in request do not hash to the same slot"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_CLUSTERDOWN => "CLUSTERDOWN Hash slot not served"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_MIGRATING => "MIGRATING"u8;
     }
 }

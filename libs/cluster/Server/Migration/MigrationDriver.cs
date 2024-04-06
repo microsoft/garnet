@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
@@ -13,11 +12,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Begin migration task
         /// </summary>
-        /// <param name="resp"></param>
+        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool StartMigrationTask(out ReadOnlySpan<byte> resp)
+        public bool TryStartMigrationTask(out ReadOnlySpan<byte> errorMessage)
         {
-            resp = CmdStrings.RESP_OK;
+            errorMessage = default;
             if (_keysWithSize != null)
             {
                 try
@@ -25,7 +24,7 @@ namespace Garnet.cluster
                     // This executes synchronously and serves the keys variant of resp command
                     if (!MigrateKeys())
                     {
-                        resp = "-IOERR Migrate keys failed.\r\n"u8;
+                        errorMessage = "IOERR Migrate keys failed."u8;
                         Status = MigrateState.FAIL;
                         return false;
                     }

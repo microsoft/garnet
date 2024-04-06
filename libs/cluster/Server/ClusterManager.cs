@@ -221,7 +221,7 @@ namespace Garnet.cluster
         /// Attempts to update config epoch of local worker
         /// </summary>
         /// <param name="configEpoch"></param>
-        /// <param name="errorMessage">The ASCII encoded error message if the method return <c>false</c>; otherwise <c>default</c></param>
+        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
         public bool TrySetLocalConfigEpoch(long configEpoch, out ReadOnlySpan<byte> errorMessage)
         {
@@ -231,14 +231,14 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 if (current.NumWorkers == 0)
                 {
-                    errorMessage = "workers not initialized."u8;
+                    errorMessage = "ERR workers not initialized."u8;
                     return false;
                 }
 
                 var newConfig = currentConfig.SetLocalWorkerConfigEpoch(configEpoch);
                 if (newConfig == null)
                 {
-                    errorMessage = "Node config epoch was not set due to invalid epoch specified."u8;
+                    errorMessage = "ERR Node config epoch was not set due to invalid epoch specified."u8;
                     return false;
                 }
 

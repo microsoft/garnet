@@ -69,7 +69,7 @@ namespace Garnet.cluster
 
             if (clusterProvider.clusterManager.CurrentConfig.GetLocalNodeRole() != NodeRole.PRIMARY)
             {
-                while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_CANNOT_FAILOVER_FROM_NON_MASTER, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_FAILOVER_FROM_NON_MASTER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -80,7 +80,7 @@ namespace Garnet.cluster
                 var replicaNodeId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(replicaAddress, replicaPort);
                 if (replicaNodeId == null)
                 {
-                    while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_UNKNOWN_ENDPOINT, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNKNOWN_ENDPOINT, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -88,14 +88,14 @@ namespace Garnet.cluster
                 var worker = clusterProvider.clusterManager.CurrentConfig.GetWorkerFromNodeId(replicaNodeId);
                 if (worker.role != NodeRole.REPLICA)
                 {
-                    while (!RespWriteUtils.WriteGenericError($"Node @{replicaAddress}:{replicaPort} is not a replica.", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR Node @{replicaAddress}:{replicaPort} is not a replica.", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
 
                 if (worker.replicaOfNodeId != clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId())
                 {
-                    while (!RespWriteUtils.WriteGenericError($"Node @{replicaAddress}:{replicaPort} is not my replica.", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR Node @{replicaAddress}:{replicaPort} is not my replica.", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }

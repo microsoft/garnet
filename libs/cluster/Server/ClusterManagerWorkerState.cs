@@ -46,7 +46,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeid"></param>
         /// <param name="expirySeconds"></param>
-        /// <param name="errorMessage">The ASCII encoded error message if the method return <c>false</c>; otherwise <c>default</c></param>
+        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         public bool TryRemoveWorker(string nodeid, int expirySeconds, out ReadOnlySpan<byte> errorMessage)
         {
             try
@@ -65,7 +65,7 @@ namespace Garnet.cluster
 
                     if (current.GetNodeRoleFromNodeId(nodeid) == NodeRole.UNASSIGNED)
                     {
-                        errorMessage = Encoding.ASCII.GetBytes($"I don't know about node {nodeid}.");
+                        errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}.");
                         return false;
                     }
 
@@ -146,7 +146,7 @@ namespace Garnet.cluster
         /// <param name="nodeid"></param>
         /// <param name="force">Check if node is clean (i.e. is PRIMARY without any assigned nodes)</param>
         /// <param name="recovering"></param>
-        /// <param name="errorMessage">The ASCII encoded error message if the method return <c>false</c>; otherwise <c>default</c></param>
+        /// <param name="errorMessage">The ASCII encoded error response if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <param name="logger"></param>
         public bool TryAddReplica(string nodeid, bool force, ref bool recovering, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
         {
@@ -154,24 +154,23 @@ namespace Garnet.cluster
             while (true)
             {
                 var current = CurrentConfig;
-                //(error) ERR Can't replicate myself
                 if (current.GetLocalNodeId().Equals(nodeid))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF;
-                    logger?.LogError("{msg}", Encoding.ASCII.GetString(errorMessage));
+                    logger?.LogError("-{msg}", Encoding.ASCII.GetString(errorMessage));
                     return false;
                 }
 
                 if (!force && current.GetLocalNodeRole() != NodeRole.PRIMARY)
                 {
                     logger?.LogError("-ERR I am already replica of {localNodePrimaryId}", current.GetLocalNodePrimaryId());
-                    errorMessage = Encoding.ASCII.GetBytes($"I am already replica of {current.GetLocalNodePrimaryId()}.");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR I am already replica of {current.GetLocalNodePrimaryId()}.");
                     return false;
                 }
 
                 if (!force && current.HasAssignedSlots(1))
                 {
-                    logger?.LogError("-ERR {msg}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS));
+                    logger?.LogError("{msg}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS));
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS;
                     return false;
                 }
@@ -180,14 +179,14 @@ namespace Garnet.cluster
                 if (workerId == 0)
                 {
                     logger?.LogError("-ERR I don't know about node {nodeid}.", nodeid);
-                    errorMessage = Encoding.ASCII.GetBytes($"I don't know about node {nodeid}.");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}.");
                     return false;
                 }
 
                 if (current.GetNodeRoleFromNodeId(nodeid) != NodeRole.PRIMARY)
                 {
                     logger?.LogError("-ERR Trying to replicate node ({nodeid}) that is not a primary.", nodeid);
-                    errorMessage = Encoding.ASCII.GetBytes($"Trying to replicate node ({nodeid}) that is not a primary.");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR Trying to replicate node ({nodeid}) that is not a primary.");
                     return false;
                 }
 

@@ -28,14 +28,14 @@ namespace Garnet.cluster
         /// <param name="nodeid">Node-id to replicate.</param>
         /// <param name="background">If replication sync will run in the background.</param>
         /// <param name="force">Force adding this node as replica.</param>
-        /// <param name="errorMessage">The ASCII encoded error message if the method return <c>false</c>; otherwise <c>default</c></param>
+        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns>A boolean indicating whether replication initiation was successful.</returns>
         public bool TryBeginReplicate(ClusterSession session, string nodeid, bool background, bool force, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
             if (!replicateLock.TryWriteLock())
             {
-                errorMessage = "Replicate already in progress"u8;
+                errorMessage = "ERR Replicate already in progress"u8;
                 return false;
             }
 
@@ -110,6 +110,10 @@ namespace Garnet.cluster
             return true;
         }
 
+        /// <summary>
+        /// Try to initiate replica
+        /// </summary>
+        /// <returns>A string representing the error message if error occurred; otherwise <see langword="null"/>.</returns>
         private async Task<string> InitiateReplicaSync()
         {
             //1. Send request to primary
@@ -123,7 +127,7 @@ namespace Garnet.cluster
 
             if (address == null || port == -1)
             {
-                var errorMsg = $"don't have primary";
+                var errorMsg = $"ERR don't have primary";
                 logger?.LogError(errorMsg);
                 return errorMsg;
             }

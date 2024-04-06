@@ -33,7 +33,7 @@ namespace Garnet.cluster
                 if (!int.TryParse(portStr, out var port))
                 {
                     logger?.LogWarning("TryREPLICAOF failed to parse port {port}", portStr);
-                    while (!RespWriteUtils.WriteGenericError($"REPLICAOF failed to parse port '{portStr}'", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR REPLICAOF failed to parse port '{portStr}'", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -41,7 +41,7 @@ namespace Garnet.cluster
                 var primaryId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(address, port);
                 if (primaryId == null)
                 {
-                    while (!RespWriteUtils.WriteGenericError($"I don't know about node {address}:{port}.", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR I don't know about node {address}:{port}.", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -49,7 +49,7 @@ namespace Garnet.cluster
                 {
                     if (!clusterProvider.replicationManager.TryBeginReplicate(this, primaryId, background: false, force: true, out var errorMessage))
                     {
-                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                             SendAndReset();
                     }
                     else

@@ -41,7 +41,7 @@ namespace Garnet.cluster
         /// <param name="nodeid"></param>
         /// <param name="startAddress"></param>
         /// <param name="aofSyncTaskInfo"></param>
-        /// <param name="errorMessage">The ASCII encoded error message if the method return <c>false</c>; otherwise <c>default</c></param>
+        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
         public bool TryConnectToReplica(string nodeid, long startAddress, AofSyncTaskInfo aofSyncTaskInfo, out ReadOnlySpan<byte> errorMessage)
         {
@@ -50,7 +50,7 @@ namespace Garnet.cluster
             {
                 aofTaskStore.TryRemove(aofSyncTaskInfo);
 
-                errorMessage = "Replication Manager Disposed"u8;
+                errorMessage = "ERR Replication Manager Disposed"u8;
                 logger?.LogError(Encoding.ASCII.GetString(errorMessage));
                 return false;
             }
@@ -61,7 +61,7 @@ namespace Garnet.cluster
             if (address == null)
             {
                 aofTaskStore.TryRemove(aofSyncTaskInfo);
-                var msg = $"unknown endpoint for {nodeid}";
+                var msg = $"ERR unknown endpoint for {nodeid}";
                 logger.LogError(msg);
                 errorMessage = Encoding.ASCII.GetBytes(msg);
                 return false;
@@ -79,7 +79,7 @@ namespace Garnet.cluster
                 {
                     aofTaskStore.TryRemove(aofSyncTaskInfo);
                     logger?.LogError("AOF sync task failed to start. Requested address {startAddress} unavailable. Local primary tail address {tailAddress}", startAddress, tailAddress);
-                    errorMessage = Encoding.ASCII.GetBytes($"requested AOF address: {startAddress} goes beyond, primary tail address: {tailAddress}");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR requested AOF address: {startAddress} goes beyond, primary tail address: {tailAddress}");
                     return false;
                 }
             }
