@@ -219,32 +219,5 @@ namespace Garnet.server
                 output.Length = (int)(curr - ptr);
             }
         }
-
-        private void SetMove(byte* input, int length, byte* output)
-        {
-            var _input = (ObjectInputHeader*)input;
-            var _output = (ObjectOutputHeader*)output;
-
-            int count = _input->count;
-            *_output = default;
-            byte* startptr = input + sizeof(ObjectInputHeader);
-            byte* ptr = startptr;
-            byte* end = input + length;
-
-            if(!RespReadUtils.ReadByteArrayWithLengthHeader(out var otherKey, ref ptr, end))
-                return;
-
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref ptr, end))
-                return;
-
-            var removalSuccess = set.Remove(member);
-
-            if(!removalSuccess)
-            {
-                return;
-            }
-
-            
-        }
     }
 }

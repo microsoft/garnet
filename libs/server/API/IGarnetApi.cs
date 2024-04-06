@@ -528,10 +528,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="sourceKey"></param>
         /// <param name="destinationKey"></param>
-        /// <param name="sourceMember"></param>
+        /// <param name="member"></param>
         /// <param name="smoveResult"></param>
         /// <returns></returns>
-        GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice sourceMember, out int smoveResult);
+        GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult);
 
         #endregion
 

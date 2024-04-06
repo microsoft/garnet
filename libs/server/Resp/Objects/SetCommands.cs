@@ -485,9 +485,8 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.NOTFOUND)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(sourceKey.ToArray(), ref dcurr, dend))
                         SendAndReset();
-                    ReadLeftToken(count - 1, ref ptr);
                 }
                 else
                 {
