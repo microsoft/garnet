@@ -559,11 +559,12 @@ namespace Garnet.cluster
                     }
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    var resp = CmdStrings.RESP_OK;
                     if (clusterProvider.serverOptions.EnableAOF)
                     {
                         if (failoverOption == FailoverOption.ABORT)
+                        {
                             clusterProvider.failoverManager.TryAbortReplicaFailover();
+                        }
                         else
                         {
                             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -571,17 +572,27 @@ namespace Garnet.cluster
                             if (nodeRole == NodeRole.REPLICA)
                             {
                                 if (!clusterProvider.failoverManager.TryStartReplicaFailover(failoverOption, failoverTimeout))
-                                    resp = Encoding.ASCII.GetBytes($"-ERR failed to start failover for primary({current.GetLocalNodePrimaryAddress()})");
+                                {
+                                    while (!RespWriteUtils.WriteGenericError($"failed to start failover for primary({current.GetLocalNodePrimaryAddress()})", ref dcurr, dend))
+                                        SendAndReset();
+                                    return true;
+                                }
                             }
                             else
-                                resp = Encoding.ASCII.GetBytes($"-ERR Node is not a {NodeRole.REPLICA} ~{nodeRole}~");
+                            {
+                                while (!RespWriteUtils.WriteGenericError($"Node is not a {NodeRole.REPLICA} ~{nodeRole}~", ref dcurr, dend))
+                                    SendAndReset();
+                                return true;
+                            }
                         }
                     }
                     else
                     {
-                        resp = CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF;
+                        while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
                     }
-                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -1306,7 +1317,7 @@ namespace Garnet.cluster
                     else
                     {
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                            SendAndReset();
                     }
 
                     migrateSetCount = 0;
