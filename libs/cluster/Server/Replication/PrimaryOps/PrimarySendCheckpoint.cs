@@ -3,7 +3,6 @@
 
 using System;
 using System.Text;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -25,26 +24,25 @@ namespace Garnet.cluster
         {
             if (!replicaSyncSessionTaskStore.TryAddReplicaSyncSession(remoteNodeId, remote_primary_replid, remoteEntry, replicaAofBeginAddress, replicaAofTailAddress))
             {
-                var message = "-PRIMARY-ERR: failed creating replica sync session task.\r\n"u8;
-                logger?.LogError(Encoding.ASCII.GetString(message));
-                return message;
+                logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(CmdStrings.RESP_CREATE_SYNC_SESSION_ERROR));
+                return CmdStrings.RESP_CREATE_SYNC_SESSION_ERROR;
             }
 
-            var errorMsg = ReplicaSyncSessionBackgroundTask(remoteNodeId).GetAwaiter().GetResult();
-            return errorMsg.Length > 0 ? Encoding.ASCII.GetBytes(errorMsg) : CmdStrings.RESP_OK;
+            return ReplicaSyncSessionBackgroundTask(remoteNodeId);
         }
 
-        private async Task<string> ReplicaSyncSessionBackgroundTask(string replicaId)
+        private ReadOnlySpan<byte> ReplicaSyncSessionBackgroundTask(string replicaId)
         {
             try
             {
                 if (!replicaSyncSessionTaskStore.TryGetSession(replicaId, out var session))
                 {
-                    var msg = "-PRIMARY-ERR Failed retrieving replica sync session.\r\n";
-                    logger?.LogError(msg);
-                    return msg;
+                    logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(CmdStrings.RESP_RETRIEVE_SYNC_SESSION_ERROR));
+                    return CmdStrings.RESP_RETRIEVE_SYNC_SESSION_ERROR;
                 }
-                return await session.SendCheckpoint();
+
+                var resp = session.SendCheckpoint().GetAwaiter().GetResult();
+                return Encoding.ASCII.GetBytes(resp);
             }
             finally
             {

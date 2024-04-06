@@ -118,6 +118,10 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_CANNOT_FORGET_MY_PRIMARY_ERROR => "-ERR Can't forget my primary\r\n"u8;
         public static ReadOnlySpan<byte> RESP_CANNOT_FAILOVER_FROM_NON_MASTER => "-ERR Cannot failover a non-master node\r\n"u8;
         public static ReadOnlySpan<byte> RESP_UNKNOWN_ENDPOINT_ERROR => "-ERR Unknown endpoint\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_REPLICATION_AOF_DISABLED_ERROR => "-ERR Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_NOT_ASSIGNED_PRIMARY_ERROR => "-ERR don't have primary\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_CREATE_SYNC_SESSION_ERROR => "-PRIMARY-ERR: failed creating replica sync session task.\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_RETRIEVE_SYNC_SESSION_ERROR => "-PRIMARY-ERR Failed retrieving replica sync session.\r\n"u8;
 
         #region RespSlotValidation
         public static ReadOnlySpan<byte> RESP_CROSSLOT_ERROR => "-CROSSSLOT Keys in request do not hash to the same slot\r\n"u8;
