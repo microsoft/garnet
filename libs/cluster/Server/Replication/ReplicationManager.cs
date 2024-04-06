@@ -233,9 +233,8 @@ namespace Garnet.cluster
             {
                 clusterProvider.replicationManager.recovering = true;
                 clusterProvider.WaitForConfigTransition();
-                var resp = TryReplicateFromPrimary();
-                if (!resp.SequenceEqual(CmdStrings.RESP_OK))
-                    logger?.LogError("An error occurred at ReplicationManager.Recover {error}", Encoding.ASCII.GetString(resp));
+                if (!TryReplicateFromPrimary(out var errorMessage))
+                    logger?.LogError("An error occurred at ReplicationManager.Recover {error}", Encoding.ASCII.GetString(errorMessage));
             }
             else if (localNodeRole == NodeRole.PRIMARY && replicaOfNodeId == null)
             {

@@ -52,7 +52,7 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    var resp = clusterProvider.replicationManager.BeginReplicate(this, primaryId, background: false, force: true);
+                    var resp = clusterProvider.replicationManager.TryBeginReplicate(this, primaryId, background: false, force: true);
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;

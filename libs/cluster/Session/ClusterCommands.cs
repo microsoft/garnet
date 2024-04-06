@@ -1378,14 +1378,21 @@ namespace Garnet.cluster
 
                 if (!clusterProvider.serverOptions.EnableAOF)
                 {
-                    while (!RespWriteUtils.WriteGenericError("Replica AOF is switched off. Replication unavailable. Please restart replica with --aof option."u8, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    var resp = clusterProvider.replicationManager.BeginReplicate(this, nodeid, background, false);
-                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                        SendAndReset();
+                    if (!clusterProvider.replicationManager.TryBeginReplicate(this, nodeid, background, false, out var errorMessage))
+                    {
+                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
             }
             else if (param.SequenceEqual(CmdStrings.aofsync))
