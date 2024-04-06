@@ -293,7 +293,7 @@ namespace Garnet.server
             int offset = NumUtils.BytesToInt(offsetSize, offsetPtr);
             if (offset < 0)
             {
-                while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -550,7 +550,7 @@ namespace Garnet.server
 
             if (error)
             {
-                while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -614,7 +614,7 @@ namespace Garnet.server
                     break;
             }
 
-            while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();
             return true;
         }

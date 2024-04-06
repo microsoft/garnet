@@ -665,7 +665,7 @@ namespace Garnet.server
                         if (output.countDone == Int32.MaxValue)
                         {
                             // Error in arguments
-                            while (!RespWriteUtils.WriteGenericError("max or min value is not a float value."u8, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteError("ERR max or min value is not a float value."u8, ref dcurr, dend))
                                 SendAndReset();
                         }
                         else if (output.countDone == Int32.MinValue)  // command partially executed
@@ -757,7 +757,7 @@ namespace Garnet.server
                         if (output.countDone == Int32.MaxValue)
                         {
                             // Error in arguments
-                            while (!RespWriteUtils.WriteGenericError("max or min value not in a valid range."u8, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteError("ERR max or min value not in a valid range."u8, ref dcurr, dend))
                                 SendAndReset();
                         }
                         else if (output.countDone == Int32.MinValue)  // command partially executed
@@ -845,7 +845,7 @@ namespace Garnet.server
                             var tokens = ReadLeftToken(count - 1, ref ptr);
                             if (tokens < count - 1)
                                 return false;
-                            errorMessage = "wrong key type used in ZINCRBY command."u8;
+                            errorMessage = "ERR wrong key type used in ZINCRBY command."u8;
                         }
                         else
                         {
@@ -855,7 +855,7 @@ namespace Garnet.server
                             if (objOutputHeader.countDone == int.MinValue)
                                 return false;
                             else if (objOutputHeader.countDone == int.MaxValue)
-                                errorMessage = "increment value is not valid."u8;
+                                errorMessage = "ERR increment value is not valid."u8;
                             ptr += objOutputHeader.bytesDone;
                         }
                         break;
@@ -867,7 +867,7 @@ namespace Garnet.server
 
                 if (errorMessage != default)
                 {
-                    while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -1009,17 +1009,17 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        if (output.countDone == Int32.MaxValue)
+                        if (output.countDone == int.MaxValue)
                         {
                             var errorMessage = op == SortedSetOperation.ZREMRANGEBYRANK ?
-                                "start or stop value is not in an integer or out of range."u8 :
-                                "max or min value is not a float value."u8;
+                                "ERR start or stop value is not in an integer or out of range."u8 :
+                                "ERR max or min value is not a float value."u8;
 
                             // Error in arguments
-                            while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                                 SendAndReset();
                         }
-                        else if (output.countDone == Int32.MinValue)  // command partially executed
+                        else if (output.countDone == int.MinValue)  // command partially executed
                             return false;
                         else
                             while (!RespWriteUtils.WriteInteger(output.opsDone, ref dcurr, dend))

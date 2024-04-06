@@ -418,7 +418,7 @@ namespace Garnet.server
 
                     if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) | !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
                     {
-                        while (!RespWriteUtils.WriteGenericError("max or min value is not a float value."u8, ref curr, end))
+                        while (!RespWriteUtils.WriteError("ERR max or min value is not a float value."u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone = _input->count;
                         count = 0;
@@ -450,7 +450,7 @@ namespace Garnet.server
                         int minIndex = (int)minValue, maxIndex = (int)maxValue;
                         if (options.ValidLimit)
                         {
-                            while (!RespWriteUtils.WriteGenericError("syntax error, LIMIT is only supported in BYSCORE or BYLEX."u8, ref curr, end))
+                            while (!RespWriteUtils.WriteError("ERR syntax error, LIMIT is only supported in BYSCORE or BYLEX."u8, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             countDone = _input->count;
                             count = 0;
@@ -511,7 +511,7 @@ namespace Garnet.server
 
                     if (errorCode == int.MaxValue)
                     {
-                        while (!RespWriteUtils.WriteGenericError("max or min value not valid string range."u8, ref curr, end))
+                        while (!RespWriteUtils.WriteError("ERR max or min value not valid string range."u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone = _input->count;
                         count = 0;

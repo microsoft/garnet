@@ -44,7 +44,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -252,7 +252,7 @@ namespace Garnet.server
 
             if (invalidOption)
             {
-                while (!RespWriteUtils.WriteGenericError($"Unsupported option {optionStr}", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }

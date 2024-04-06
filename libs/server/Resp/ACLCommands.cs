@@ -31,7 +31,7 @@ namespace Garnet.server
             {
                 if (!DrainCommands(bufSpan, count))
                     return false;
-                while (!RespWriteUtils.WriteGenericError($"ACL commands are not supported by the configured authenticator.", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError($"ERR ACL commands are not supported by the configured authenticator.", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -43,7 +43,7 @@ namespace Garnet.server
                     return false;
 
                 var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "ACL");
-                while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
 
                 return true;
@@ -145,7 +145,7 @@ namespace Garnet.server
                     // Abort command execution
                     if (!DrainCommands(bufSpan, count - opsParsed - 3))
                         return false;
-                    while (!RespWriteUtils.WriteGenericError(exception.Message, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR {exception.Message}", ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -186,7 +186,7 @@ namespace Garnet.server
                     // Abort command execution
                     if (!DrainCommands(bufSpan, count - attemptedDeletes - 2))
                         return false;
-                    while (!RespWriteUtils.WriteGenericError(exception.Message, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR {exception.Message}", ref dcurr, dend))
                         SendAndReset();
 
                     return true;
@@ -228,7 +228,7 @@ namespace Garnet.server
                 }
                 catch (ACLException exception)
                 {
-                    while (!RespWriteUtils.WriteGenericError(exception.Message, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR {exception.Message}", ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -238,7 +238,7 @@ namespace Garnet.server
                 if (!DrainCommands(bufSpan, count - 1))
                     return false;
 
-                while (!RespWriteUtils.WriteGenericError($"Unknown subcommand or wrong number of arguments for ACL command '{subcommand}'.", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL command '{subcommand}'.", ref dcurr, dend))
                     SendAndReset();
             }
 

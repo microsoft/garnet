@@ -295,7 +295,7 @@ namespace Garnet.server
                     if (success)
                     {
                         // Return "Unknown RESP Command" message
-                        while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -555,7 +555,7 @@ namespace Garnet.server
 
                 if (count != currentCustomTransaction.NumParams)
                 {
-                    while (!RespWriteUtils.WriteGenericError($"Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}", ref dcurr, dend))
                         SendAndReset();
 
                     currentCustomTransaction = null;
@@ -581,7 +581,7 @@ namespace Garnet.server
 
                 if (count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
                 {
-                    while (!RespWriteUtils.WriteGenericError($"Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}", ref dcurr, dend))
                         SendAndReset();
 
                     currentCustomCommand = null;
@@ -607,7 +607,7 @@ namespace Garnet.server
 
                 if (count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
                 {
-                    while (!RespWriteUtils.WriteGenericError($"Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}", ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}", ref dcurr, dend))
                         SendAndReset();
 
                     currentCustomObjectCommand = null;

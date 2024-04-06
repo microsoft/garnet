@@ -33,7 +33,7 @@ namespace Garnet.server
                         return false;
                     errorCmd = "auth";
                     var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, errorCmd);
-                    while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -55,7 +55,7 @@ namespace Garnet.server
                     // NOTE: Some authenticators cannot accept username/password pairs
                     if (!_authenticator.CanAuthenticate)
                     {
-                        while (!RespWriteUtils.WriteGenericError("Client sent AUTH, but configured authenticator does not accept passwords"u8, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError("ERR Client sent AUTH, but configured authenticator does not accept passwords"u8, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -71,12 +71,12 @@ namespace Garnet.server
                         {
                             if (username.IsEmpty)
                             {
-                                while (!RespWriteUtils.WriteDirect("-WRONGPASS Invalid password\r\n"u8, ref dcurr, dend))
+                                while (!RespWriteUtils.WriteError("WRONGPASS Invalid password"u8, ref dcurr, dend))
                                     SendAndReset();
                             }
                             else
                             {
-                                while (!RespWriteUtils.WriteDirect("-WRONGPASS Invalid username/password combination\r\n"u8, ref dcurr, dend))
+                                while (!RespWriteUtils.WriteError("WRONGPASS Invalid username/password combination"u8, ref dcurr, dend))
                                     SendAndReset();
                             }
                         }
@@ -91,7 +91,7 @@ namespace Garnet.server
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_NOAUTH, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command == RespCommand.CONFIG)
@@ -139,7 +139,7 @@ namespace Garnet.server
                     {
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;
-                        while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_WRONG_ARGUMENTS, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_WRONG_ARGUMENTS, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -185,24 +185,24 @@ namespace Garnet.server
                                 storeWrapper.clusterProvider?.UpdateClusterAuth(clusterUsername, clusterPassword);
                             else
                             {
-                                if (errorMsg == null) errorMsg = "Cluster is disabled.";
-                                else errorMsg += " " + "Cluster is disabled.";
+                                if (errorMsg == null) errorMsg = "ERR Cluster is disabled.";
+                                else errorMsg += " Cluster is disabled.";
                             }
                         }
                         if (certFileName != null || certPassword != null)
                         {
                             if (storeWrapper.serverOptions.TlsOptions != null)
                             {
-                                if (!storeWrapper.serverOptions.TlsOptions.UpdateCertFile(certFileName, certPassword, out var _errorMsg))
+                                if (!storeWrapper.serverOptions.TlsOptions.UpdateCertFile(certFileName, certPassword, out var certErrorMessage))
                                 {
-                                    if (errorMsg == null) errorMsg = _errorMsg;
-                                    else errorMsg += " " + _errorMsg;
+                                    if (errorMsg == null) errorMsg = "ERR " + certErrorMessage;
+                                    else errorMsg += " " + certErrorMessage;
                                 }
                             }
                             else
                             {
-                                if (errorMsg == null) errorMsg = "TLS is disabled.";
-                                else errorMsg += " " + "TLS is disabled.";
+                                if (errorMsg == null) errorMsg = "ERR TLS is disabled.";
+                                else errorMsg += " TLS is disabled.";
                             }
                         }
                     }
@@ -213,7 +213,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -308,7 +308,7 @@ namespace Garnet.server
                 {
                     if (!DrainCommands(bufSpan, count))
                         return false;
-                    while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -359,7 +359,7 @@ namespace Garnet.server
 
                 if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
                 {
-                    while (!RespWriteUtils.WriteGenericError("checkpoint already in progress"u8, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -401,7 +401,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteGenericError("checkpoint already in progress"u8, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -456,7 +456,7 @@ namespace Garnet.server
 
                     if (generation < 0 || generation > GC.MaxGeneration)
                     {
-                        while (!RespWriteUtils.WriteGenericError("Invalid GC generation."u8, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError("ERR Invalid GC generation."u8, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -506,14 +506,14 @@ namespace Garnet.server
                 // Unknown RESP Command
                 if (!DrainCommands(bufSpan, count))
                     return false;
-                while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
             }
 
             if (errorFlag && !string.IsNullOrWhiteSpace(errorCmd))
             {
                 var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, errorCmd);
-                while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -549,7 +549,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_NOAUTH, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
                         SendAndReset();
                     processingCompleted = true;
                 }

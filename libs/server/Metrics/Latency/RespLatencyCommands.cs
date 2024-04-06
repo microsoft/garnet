@@ -56,7 +56,7 @@ namespace Garnet.server
 
                     if (invalid)
                     {
-                        while (!RespWriteUtils.WriteGenericError($"Invalid event {invalidEvent}. Try LATENCY HELP", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError($"ERR Invalid event {invalidEvent}. Try LATENCY HELP", ref dcurr, dend))
                             SendAndReset();
                     }
                     else
@@ -114,7 +114,7 @@ namespace Garnet.server
 
                         if (invalid)
                         {
-                            while (!RespWriteUtils.WriteGenericError($"Invalid type {invalidEvent}", ref dcurr, dend))
+                            while (!RespWriteUtils.WriteError($"ERR Invalid type {invalidEvent}", ref dcurr, dend))
                                 SendAndReset();
                         }
                         else
@@ -149,7 +149,7 @@ namespace Garnet.server
                     if (!DrainCommands(bufSpan, count - 1))
                         return false;
                     string paramStr = Encoding.ASCII.GetString(param);
-                    while (!RespWriteUtils.WriteGenericError("Unknown subcommand. Try LATENCY HELP."u8, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError("ERR Unknown subcommand. Try LATENCY HELP."u8, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -162,7 +162,7 @@ namespace Garnet.server
             if (errorFlag && !string.IsNullOrWhiteSpace(errorCmd))
             {
                 var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, errorCmd);
-                while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
 
