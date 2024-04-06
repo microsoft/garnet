@@ -256,7 +256,7 @@ namespace Garnet.cluster
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
                 clusterProvider.replicationManager.TryAddReplicationTask(remoteNodeId, syncFromAofAddress, out aofSyncTaskInfo);
-                clusterProvider.replicationManager.TryConnectToReplica(remoteNodeId, syncFromAofAddress, aofSyncTaskInfo);
+                clusterProvider.replicationManager.TryConnectToReplica(remoteNodeId, syncFromAofAddress, aofSyncTaskInfo, out _);
             }
             catch (Exception ex)
             {

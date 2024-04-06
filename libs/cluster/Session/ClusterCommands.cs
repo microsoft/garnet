@@ -58,10 +58,14 @@ namespace Garnet.cluster
             return keys;
         }
 
-        private bool ParseSlots(int count, ref byte* ptr, out HashSet<int> slots, out ReadOnlySpan<byte> resp, bool range)
+        /// <summary>
+        /// Try to parse slots
+        /// </summary>
+        /// <param name="errorMessage">The ASCII encoded error message if the method return <c>false</c>; otherwise <c>default</c></param>
+        private bool TryParseSlots(int count, ref byte* ptr, out HashSet<int> slots, out ReadOnlySpan<byte> errorMessage, bool range)
         {
             slots = new();
-            resp = CmdStrings.RESP_OK;
+            errorMessage = default;
             bool mRef = false;
             bool outOfRange = false;
             bool invalidRange = false;
@@ -97,7 +101,7 @@ namespace Garnet.cluster
 
                 if (ClusterConfig.OutOfRange(slotStart) || ClusterConfig.OutOfRange(slotEnd))
                 {
-                    resp = CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE;
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE;
                     outOfRange = true;
                 }
 
@@ -107,7 +111,7 @@ namespace Garnet.cluster
                         continue;
                     if (!slots.Add(slot))
                     {
-                        resp = Encoding.ASCII.GetBytes($"-ERR Slot {slot} specified multiple times\r\n");
+                        errorMessage = Encoding.ASCII.GetBytes($"Slot {slot} specified multiple times");
                         mRef = true;
                     }
                 }
@@ -648,19 +652,26 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: false))
-                        return false;
-                    readHead = (int)(ptr - recvBufferPtr);
-
-                    if (resp.SequenceEqual(CmdStrings.RESP_OK))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out var _, range: false))
                     {
+                        return false;
+                    }
+                    else
+                    {
+                        readHead = (int)(ptr - recvBufferPtr);
+
                         clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n");
+                        {
+                            while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already busy", ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
-
-                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                        SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.ADDSLOTSRANGE) || param.SequenceEqual(CmdStrings.addslotsrange))
@@ -680,19 +691,26 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: true))
-                        return false;
-                    readHead = (int)(ptr - recvBufferPtr);
-
-                    if (resp.SequenceEqual(CmdStrings.RESP_OK))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out var resp, range: true))
                     {
+                        return false;
+                    }
+                    else
+                    {
+                        readHead = (int)(ptr - recvBufferPtr);
+
                         clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already busy\r\n");
+                        {
+                            while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already busy", ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
-
-                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                        SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.BANLIST) || param.SequenceEqual(CmdStrings.banlist))
@@ -769,7 +787,7 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: false))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out var resp, range: false))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
@@ -801,7 +819,7 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: true))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out var resp, range: true))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
@@ -864,7 +882,7 @@ namespace Garnet.cluster
                     var ptr = recvBufferPtr + readHead;
 
                     // Parse slot ranges
-                    if (!ParseSlots(count, ref ptr, out var slots, out var resp, range: true))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out var resp, range: true))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
@@ -1072,7 +1090,7 @@ namespace Garnet.cluster
                     }
 
                     //Parse slot ranges
-                    if (!ParseSlots(_count, ref ptr, out var slots, out var resp, range: true))
+                    if (!TryParseSlots(_count, ref ptr, out var slots, out var resp, range: true))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
