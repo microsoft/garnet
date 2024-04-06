@@ -477,7 +477,7 @@ namespace Garnet.server
                     if (opts.ByRadius)
                     {
                         // Not supported in Garnet: ByRadius
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
+                        while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -538,7 +538,7 @@ namespace Garnet.server
                 // Not supported options in Garnet: FROMLONLAT BYBOX BYRADIUS 
                 if (opts.FromLonLat)
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
+                    while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 // Write bytes parsed from input and count done, into output footer

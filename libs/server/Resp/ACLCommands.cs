@@ -43,9 +43,8 @@ namespace Garnet.server
                     return false;
 
                 var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, "ACL");
-                var bresp_ERRMISSINGPARAM = Encoding.ASCII.GetBytes(errorMsg);
-                bresp_ERRMISSINGPARAM.CopyTo(new Span<byte>(dcurr, bresp_ERRMISSINGPARAM.Length));
-                dcurr += bresp_ERRMISSINGPARAM.Length;
+                while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
+                    SendAndReset();
 
                 return true;
             }

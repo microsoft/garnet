@@ -719,7 +719,7 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND), $"-{rse.Message}\r\n");
+                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND), rse.Message);
             }
             Assert.IsNull(resp);
 
@@ -734,7 +734,7 @@ namespace Garnet.test
             }
             catch (RedisServerException rse)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND), $"-{rse.Message}\r\n");
+                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND), rse.Message);
             }
             Assert.IsNull(resp);
 

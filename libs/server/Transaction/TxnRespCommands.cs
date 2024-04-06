@@ -21,7 +21,7 @@ namespace Garnet.server
         {
             if (txnManager.state != TxnState.None)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_NESTED_MULTI, ref dcurr, dend))
+                while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_NESTED_MULTI, ref dcurr, dend))
                     SendAndReset();
                 txnManager.Abort();
                 return true;
@@ -87,7 +87,7 @@ namespace Garnet.server
                 return true;
             }
             // EXEC without MULTI command
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_EXEC_WO_MULTI, ref dcurr, dend))
+            while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_EXEC_WO_MULTI, ref dcurr, dend))
                 SendAndReset();
             return true;
 
@@ -104,7 +104,7 @@ namespace Garnet.server
             RespCommandsInfo commandInfo = RespCommandsInfo.findCommand(cmd, subCommand);
             if (commandInfo == null)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
                 txnManager.Abort();
                 if (!DrainCommands(bufSpan, count))
@@ -123,13 +123,13 @@ namespace Garnet.server
             {
                 if (isWatch)
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_WATCH_IN_MULTI, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_WATCH_IN_MULTI, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
                     string err = string.Format(CmdStrings.ErrWrongNumArgs, commandInfo.nameStr);
-                    while (!RespWriteUtils.WriteAsciiDirect(err, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError(err, ref dcurr, dend))
                         SendAndReset();
                     txnManager.Abort();
                 }
@@ -149,7 +149,7 @@ namespace Garnet.server
                 if (skipped == -2) return false;
 
                 // We found an unsupported command, abort
-                while (!RespWriteUtils.WriteDirect(error, ref dcurr, dend))
+                while (!RespWriteUtils.WriteGenericError(error, ref dcurr, dend))
                     SendAndReset();
 
                 txnManager.Abort();
@@ -183,7 +183,7 @@ namespace Garnet.server
         {
             if (txnManager.state == TxnState.None)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI, ref dcurr, dend))
+                while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }

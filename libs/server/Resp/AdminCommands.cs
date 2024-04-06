@@ -33,9 +33,8 @@ namespace Garnet.server
                         return false;
                     errorCmd = "auth";
                     var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, errorCmd);
-                    var bresp_ERRMISSINGPARAM = Encoding.ASCII.GetBytes(errorMsg);
-                    bresp_ERRMISSINGPARAM.CopyTo(new Span<byte>(dcurr, bresp_ERRMISSINGPARAM.Length));
-                    dcurr += bresp_ERRMISSINGPARAM.Length;
+                    while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
+                        SendAndReset();
                 }
                 else
                 {
@@ -140,7 +139,7 @@ namespace Garnet.server
                     {
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_WRONG_ARGUMENTS, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_WRONG_ARGUMENTS, ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -309,7 +308,7 @@ namespace Garnet.server
                 {
                     if (!DrainCommands(bufSpan, count))
                         return false;
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -502,14 +501,14 @@ namespace Garnet.server
                 // Unknown RESP Command
                 if (!DrainCommands(bufSpan, count))
                     return false;
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                while (!RespWriteUtils.WriteGenericError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
             }
 
             if (errorFlag && !string.IsNullOrWhiteSpace(errorCmd))
             {
                 var errorMsg = string.Format(CmdStrings.ErrWrongNumArgs, errorCmd);
-                while (!RespWriteUtils.WriteAsciiDirect(errorMsg, ref dcurr, dend))
+                while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
             return true;

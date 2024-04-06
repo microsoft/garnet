@@ -227,7 +227,7 @@ namespace Garnet.server
             var classInstances = new Dictionary<string, object>();
             // Get all binary file paths from inputs binary paths
             if (!FileUtils.TryGetFiles(binaryPaths, out var files, out _, new[] { ".dll", ".exe" },
-                    SearchOption.AllDirectories)) return CmdStrings.RESP_ERR_GENERIC_GETTING_BINARY_FILES;
+                    SearchOption.AllDirectories)) something to cause error here, continue tomorrow//return CmdStrings.RESP_ERR_GENERIC_GETTING_BINARY_FILES; // TODO(GENERIC-ERROR)
 
             // Check that all binary files are contained in allowed binary paths
             var binaryFiles = files.ToArray();
@@ -331,10 +331,10 @@ namespace Garnet.server
             // Custom class name to arguments read from each sub-command
             var classNameToRegisterArgs = new Dictionary<string, List<RegisterArgsBase>>();
 
-            ReadOnlySpan<byte> response = null;
+            ReadOnlySpan<byte> errorMsg = null;
 
             if (leftTokens == 0)
-                response = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
+                errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
             // Parse the REGISTERCS command - list of registration sub-commands followed by a list of paths to binary files / folders
             // Syntax - REGISTERCS cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...] SRC path [path ...]
@@ -377,7 +377,7 @@ namespace Garnet.server
                     // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
                     if (classNameToRegisterArgs.Count == 0)
                     {
-                        response = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
+                        errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                         break;
                     }
 
@@ -403,7 +403,7 @@ namespace Garnet.server
                     }
 
                     // Unexpected token
-                    response = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
+                    errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                     break;
                 }
 
@@ -444,13 +444,17 @@ namespace Garnet.server
             }
 
             // If no error is found, continue to register commands in the server
-            if (response == null)
+            if (errorMsg == null)
             {
-                response = this.RegisterCustomCommands(binaryPaths, classNameToRegisterArgs, customCommandManager);
+                ReadOnlySpan<byte> commandResponse = RegisterCustomCommands(binaryPaths, classNameToRegisterArgs, customCommandManager);
+                while (!RespWriteUtils.WriteDirect(commandResponse, ref dcurr, dend))
+                    SendAndReset();
             }
-
-            while (!RespWriteUtils.WriteDirect(response, ref dcurr, dend))
-                SendAndReset();
+            else
+            {
+                while (!RespWriteUtils.WriteGenericError(errorMsg, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             readHead = (int)(ptr - recvBufferPtr);
 
