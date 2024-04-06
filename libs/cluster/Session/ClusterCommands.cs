@@ -1298,12 +1298,16 @@ namespace Garnet.cluster
                         throw new Exception("CLUSTER MIGRATE STORE TYPE ERROR!");
                     }
 
-                    var resp = CmdStrings.RESP_OK;
                     if (migrateState == 1)
-                        resp = "-ERR Node not in IMPORTING state.\r\n"u8;
-
-                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
+                    {
+                        while (!RespWriteUtils.WriteGenericError("Node not in IMPORTING state."u8, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
+                    }
 
                     migrateSetCount = 0;
                     migrateState = 0;
