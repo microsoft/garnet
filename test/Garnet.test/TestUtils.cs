@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -10,6 +11,8 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json.Serialization;
+using System.Text.Json;
 using System.Threading;
 using Garnet.client;
 using Garnet.common;
@@ -37,6 +40,7 @@ namespace Garnet.test
         public static int Port = 33278;
 
         private static int procId = Process.GetCurrentProcess().Id;
+        private static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
 
         internal static string AzureTestContainer
         {
@@ -65,6 +69,28 @@ namespace Garnet.test
                 return false;
             }
         }
+
+        internal static IReadOnlyDictionary<string, RespCommandsInfo> CustomCommandsInfo =>
+            LazyCustomCommandsInfo.Value;
+
+        private static readonly Lazy<IReadOnlyDictionary<string, RespCommandsInfo>> LazyCustomCommandsInfo = new(() =>
+        {
+            var serializerOptions = new JsonSerializerOptions
+            {
+                WriteIndented = true, Converters = { new JsonStringEnumConverter(), new KeySpecConverter() }
+            };
+
+            using var fileStream = File.OpenRead(CustomRespCommandInfoJsonPath)!;
+            var respCommands = JsonSerializer.Deserialize<RespCommandsInfo[]>(fileStream, serializerOptions)!;
+
+            var respCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
+            foreach (var respCommand in respCommands)
+            {
+                respCommandsInfo.Add(respCommand.Name, respCommand);
+            }
+
+            return new ReadOnlyDictionary<string, RespCommandsInfo>(respCommandsInfo);
+        });
 
         static bool IsAzuriteRunning()
         {

@@ -526,8 +526,8 @@ namespace Garnet.test
             // create a custom object
             var factory = new MyDictFactory();
 
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, TestUtils.CustomCommandsInfo["MYDICTSET"]);
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, TestUtils.CustomCommandsInfo["MYDICTGET"]);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

@@ -101,7 +101,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
 
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
-            var commandInfo = RespCommandsInfo.FindCommand(cmd, subCommand);
+            var commandInfo = RespCommandsInfo.GetRespCommandInfo(cmd, subCommand, true);
             if (commandInfo == null)
             {
                 while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref dcurr, dend))

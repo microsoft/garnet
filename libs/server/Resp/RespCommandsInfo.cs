@@ -58,26 +58,26 @@ namespace Garnet.server
         [JsonIgnore]
         public string RespFormat => this.respFormat ??= GetRespFormat();
 
-        public static IReadOnlyDictionary<string, RespCommandsInfo> AllRespCommands;
+        private static IReadOnlyDictionary<string, RespCommandsInfo> allRespCommandsInfo;
 
-        public static IReadOnlyDictionary<RespCommand, RespCommandsInfo> AllTxnBasicRespCommands;
-        public static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>> AllTxnArrayRespCommands;
+        private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> basicRespCommandsInfo;
+        private static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>> arrayRespCommandsInfo;
 
         private const string RespCommandsEmbeddedFileName = @"RespCommandsInfo.json";
 
         private readonly RespCommandFlags flags;
         private readonly RespAclCategories aclCategories;
 
-        private string? respFormat;
+        private string respFormat;
         private readonly string[] respFormatFlags;
         private readonly string[] respFormatAclCategories;
 
         static RespCommandsInfo()
         {
-            InitRespCommands();
+            InitRespCommandsInfo();
         }
 
-        private static void InitRespCommands()
+        private static void InitRespCommandsInfo()
         {
             var assembly = Assembly.GetExecutingAssembly();
             var resourceName = assembly.GetManifestResourceNames().FirstOrDefault(rn => rn.EndsWith(RespCommandsEmbeddedFileName))!;
@@ -91,47 +91,57 @@ namespace Garnet.server
             using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)!;
             var respCommands = JsonSerializer.Deserialize<RespCommandsInfo[]>(stream, serializerOptions)!;
 
-            var allRespCommands = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
+            var tmpRespCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
             foreach (var respCommandsInfo in respCommands)
             {
-                allRespCommands.Add(respCommandsInfo.Name, respCommandsInfo);
+                tmpRespCommandsInfo.Add(respCommandsInfo.Name, respCommandsInfo);
             }
 
-            AllRespCommands = new ReadOnlyDictionary<string, RespCommandsInfo>(allRespCommands);
+            allRespCommandsInfo = new ReadOnlyDictionary<string, RespCommandsInfo>(tmpRespCommandsInfo);
 
-            var allTxnBasicRespCommands = new Dictionary<RespCommand, RespCommandsInfo>();
-            var allTxnArrayRespCommands = new Dictionary<RespCommand, Dictionary<byte, RespCommandsInfo>>();
-            foreach (var respCommandInfo in AllRespCommands.Values)
+            var tmpBasicRespCommandsInfo = new Dictionary<RespCommand, RespCommandsInfo>();
+            var tmpArrayRespCommandsInfo = new Dictionary<RespCommand, Dictionary<byte, RespCommandsInfo>>();
+            foreach (var respCommandInfo in allRespCommandsInfo.Values)
             {
-                if (respCommandInfo.Flags.HasFlag(RespCommandFlags.NoMulti)) continue;
+                if (respCommandInfo.Command == RespCommand.NONE) continue;
 
                 if (respCommandInfo.ArrayCommand.HasValue)
                 {
-                    if (!allTxnArrayRespCommands.ContainsKey(respCommandInfo.Command))
-                        allTxnArrayRespCommands.Add(respCommandInfo.Command, new Dictionary<byte, RespCommandsInfo>());
-                    allTxnArrayRespCommands[respCommandInfo.Command].Add(respCommandInfo.ArrayCommand.Value, respCommandInfo);
+                    if (!tmpArrayRespCommandsInfo.ContainsKey(respCommandInfo.Command))
+                        tmpArrayRespCommandsInfo.Add(respCommandInfo.Command, new Dictionary<byte, RespCommandsInfo>());
+                    tmpArrayRespCommandsInfo[respCommandInfo.Command].Add(respCommandInfo.ArrayCommand.Value, respCommandInfo);
                 }
                 else
                 {
-                    allTxnBasicRespCommands.Add(respCommandInfo.Command, respCommandInfo);
+                    tmpBasicRespCommandsInfo.Add(respCommandInfo.Command, respCommandInfo);
                 }
             }
 
-            AllTxnBasicRespCommands = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(allTxnBasicRespCommands);
-            AllTxnArrayRespCommands =
-                new ReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>(allTxnArrayRespCommands.ToDictionary(kvp => kvp.Key,
-                        kvp => (IReadOnlyDictionary<byte, RespCommandsInfo>)new ReadOnlyDictionary<byte, RespCommandsInfo>(kvp.Value)));
+            basicRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpBasicRespCommandsInfo);
+            arrayRespCommandsInfo = new ReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>(tmpArrayRespCommandsInfo
+                .ToDictionary(kvp => kvp.Key, 
+                    kvp => (IReadOnlyDictionary<byte, RespCommandsInfo>)new ReadOnlyDictionary<byte, RespCommandsInfo>(kvp.Value)));
         }
 
-        public static RespCommandsInfo FindCommand(RespCommand cmd, byte subCmd = 0)
+        public static IEnumerable<RespCommandsInfo> GetRespCommandsInfo()
         {
-            if (AllTxnArrayRespCommands.ContainsKey(cmd) && AllTxnArrayRespCommands[cmd].ContainsKey(subCmd))
-                return AllTxnArrayRespCommands[cmd][subCmd];
+            return allRespCommandsInfo.Values;
+        }
 
-            if (AllTxnBasicRespCommands.ContainsKey(cmd))
-                return AllTxnBasicRespCommands[cmd];
+        public static RespCommandsInfo GetRespCommandInfo(string cmdName)
+        {
+            return allRespCommandsInfo.ContainsKey(cmdName) ? allRespCommandsInfo[cmdName] : null;
+        }
 
-            return null;
+        public static RespCommandsInfo GetRespCommandInfo(RespCommand cmd, byte subCmd = 0, bool txnOnly = false)
+        { 
+            RespCommandsInfo result = null;
+            if (arrayRespCommandsInfo.ContainsKey(cmd) && arrayRespCommandsInfo[cmd].ContainsKey(subCmd))
+                result = arrayRespCommandsInfo[cmd][subCmd];
+            else if (basicRespCommandsInfo.ContainsKey(cmd))
+                result = basicRespCommandsInfo[cmd];
+
+            return !txnOnly || (result != null && !result.Flags.HasFlag(RespCommandFlags.NoMulti)) ? result : null;
         }
 
         private string GetRespFormat()

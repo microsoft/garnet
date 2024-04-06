@@ -49,6 +49,12 @@
 		<Compile Include="..\..\main\GarnetServer\Extensions\SetWPIfPGT.cs" Link="SetWPIFPGT.cs" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <Content Include="..\..\main\GarnetServer\CustomRespCommandsInfo.json" Link="CustomRespCommandsInfo.json">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </Content>
+	</ItemGroup>
+
   <ItemGroup>
 	  <None Include="..\testcerts\testcert.pfx" Link="testcert.pfx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

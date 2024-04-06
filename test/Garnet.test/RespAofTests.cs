@@ -408,8 +408,8 @@ namespace Garnet.test
             void RegisterCustomCommand(GarnetServer gServer)
             {
                 var factory = new MyDictFactory();
-                gServer.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
-                gServer.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
+                gServer.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, TestUtils.CustomCommandsInfo["MYDICTSET"]);
+                gServer.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, TestUtils.CustomCommandsInfo["MYDICTGET"]);
             }
 
             server.Dispose(false);

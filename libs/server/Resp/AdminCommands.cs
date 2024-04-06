@@ -251,13 +251,20 @@ namespace Garnet.server
             }
             else if (command == RespCommand.COMMAND)
             {
+                var notSupported = false;
                 if (count > 0)
                 {
                     var param = GetCommand(bufSpan, out var success);
                     if (!success) return false;
 
-                    if (!param.SequenceEqual(CmdStrings.INFO) && !param.SequenceEqual(CmdStrings.info)
-                        && !param.SequenceEqual(CmdStrings.DOCS) && !param.SequenceEqual(CmdStrings.docs))
+                    if (param.SequenceEqual(CmdStrings.DOCS) && param.SequenceEqual(CmdStrings.docs))
+                    {
+                        while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                        notSupported = true;
+                    }
+
+                    if (!param.SequenceEqual(CmdStrings.INFO) && !param.SequenceEqual(CmdStrings.info))
                     {
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;
@@ -266,60 +273,58 @@ namespace Garnet.server
                     }
                 }
 
-                // More than one command names were specified, return specified commands info
-                if (count > 1)
+                if (!notSupported && !errorFlag)
                 {
-                    RespWriteUtils.WriteArrayLength(count - 1, ref dcurr, dend);
-
-                    var ptr = recvBufferPtr + readHead;
-
-                    for (var i = 0; i < count - 1; i++)
+                    // More than one command names were specified, return specified commands info
+                    if (count > 1)
                     {
-                        if (!RespReadUtils.ReadStringWithLengthHeader(out var cmdName, ref ptr, recvBufferPtr + bytesRead))
-                            return false;
+                        RespWriteUtils.WriteArrayLength(count - 1, ref dcurr, dend);
 
-                        if (RespCommandsInfo.AllRespCommands.ContainsKey(cmdName))
+                        var ptr = recvBufferPtr + readHead;
+
+                        for (var i = 0; i < count - 1; i++)
                         {
-                            while (!RespWriteUtils.WriteDirect(
-                                       Encoding.ASCII.GetBytes(RespCommandsInfo.AllRespCommands[cmdName].RespFormat),
-                                       ref dcurr, dend))
-                                SendAndReset();
+                            if (!RespReadUtils.ReadStringWithLengthHeader(out var cmdName, ref ptr, recvBufferPtr + bytesRead))
+                                return false;
+
+                            var cmdInfo = RespCommandsInfo.GetRespCommandInfo(cmdName) ?? storeWrapper.customCommandManager.GetCustomCommandInfo(cmdName);
+                            if (cmdInfo != null)
+                            {
+                                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(cmdInfo.RespFormat), ref dcurr, dend))
+                                    SendAndReset();
+                            }
+                            else
+                            {
+                                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                                    SendAndReset();
+                            }
                         }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteNull(ref dcurr, dend))
-                                SendAndReset();
-                        }
+
+                        readHead = (int)(ptr - recvBufferPtr);
                     }
-
-                    readHead = (int)(ptr - recvBufferPtr);
-                }
-                // No commands were specified, return all commands info
-                else
-                {
-                    var resultSb = new StringBuilder();
-                    int cnt = 0;
-                    for (int i = 0; i < storeWrapper.customCommandManager.CommandId; i++)
+                    // No commands were specified, return all commands info
+                    else
                     {
-                        var cmd = storeWrapper.customCommandManager.commandMap[i];
-                        if (cmd != null)
+                        var resultSb = new StringBuilder();
+                        var cmdCount = 0;
+
+                        foreach (var customCmd in storeWrapper.customCommandManager.GetCustomCommandsInfo())
                         {
-                            cnt++;
-                            resultSb.Append(
-                                $"*6\r\n${cmd.nameStr.Length}\r\n{cmd.nameStr}\r\n:{1 + cmd.NumKeys + cmd.NumParams}\r\n*1\r\n+fast\r\n:1\r\n:1\r\n:1\r\n");
+                            cmdCount++;
+                            resultSb.Append(customCmd.RespFormat);
                         }
-                    }
 
-                    foreach (var cmd in RespCommandsInfo.AllRespCommands.Values)
-                    {
-                        cnt++;
-                        resultSb.Append(cmd.RespFormat);
-                    }
+                        foreach (var cmd in RespCommandsInfo.GetRespCommandsInfo())
+                        {
+                            cmdCount++;
+                            resultSb.Append(cmd.RespFormat);
+                        }
 
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"*{cnt}\r\n"), ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(resultSb.ToString()), ref dcurr, dend))
-                        SendAndReset();
+                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes($"*{cmdCount}\r\n"), ref dcurr, dend))
+                            SendAndReset();
+                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(resultSb.ToString()), ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
             }
             else if (command == RespCommand.PING)
