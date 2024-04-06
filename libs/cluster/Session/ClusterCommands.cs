@@ -653,24 +653,20 @@ namespace Garnet.cluster
                 {
                     var ptr = recvBufferPtr + readHead;
                     if (!TryParseSlots(count, ref ptr, out var slots, out var _, range: false))
-                    {
                         return false;
+
+                    readHead = (int)(ptr - recvBufferPtr);
+
+                    clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
+                    if (slotIndex != -1)
+                    {
+                        while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already busy", ref dcurr, dend))
+                            SendAndReset();
                     }
                     else
                     {
-                        readHead = (int)(ptr - recvBufferPtr);
-
-                        clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
-                        if (slotIndex != -1)
-                        {
-                            while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already busy", ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
-                        }
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
                     }
                 }
             }
@@ -691,25 +687,21 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!TryParseSlots(count, ref ptr, out var slots, out var resp, range: true))
-                    {
+                    if (!TryParseSlots(count, ref ptr, out var slots, out _, range: true))
                         return false;
+
+                    readHead = (int)(ptr - recvBufferPtr);
+
+                    clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
+                    if (slotIndex != -1)
+                    {
+                        while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already busy", ref dcurr, dend))
+                            SendAndReset();
                     }
                     else
                     {
-                        readHead = (int)(ptr - recvBufferPtr);
-
-                        clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
-                        if (slotIndex != -1)
-                        {
-                            while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already busy", ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
-                        }
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
                     }
                 }
             }
@@ -787,25 +779,21 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!TryParseSlots(count, ref ptr, out var slots, out var resp, range: false))
-                    {
+                    if (!TryParseSlots(count, ref ptr, out var slots, out _, range: false))
                         return false;
+
+                    readHead = (int)(ptr - recvBufferPtr);
+
+                    clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
+                    if (slotIndex != -1)
+                    {
+                        while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already not assigned", ref dcurr, dend))
+                            SendAndReset();
                     }
                     else
                     {
-                        readHead = (int)(ptr - recvBufferPtr);
-
-                        clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
-                        if (slotIndex != -1)
-                        {
-                            while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already not assigned", ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
-                        }
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
                     }
                 }
             }
@@ -827,25 +815,21 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!TryParseSlots(count, ref ptr, out var slots, out var resp, range: true))
-                    {
+                    if (!TryParseSlots(count, ref ptr, out var slots, out _, range: true))
                         return false;
+
+                    readHead = (int)(ptr - recvBufferPtr);
+
+                    clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
+                    if (slotIndex != -1)
+                    {
+                        while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already not assigned", ref dcurr, dend))
+                            SendAndReset();
                     }
                     else
                     {
-                        readHead = (int)(ptr - recvBufferPtr);
-
-                        clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
-                        if (slotIndex != -1)
-                        {
-                            while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already not assigned", ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                                SendAndReset();
-                        }
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
                     }
                 }
             }
@@ -898,19 +882,14 @@ namespace Garnet.cluster
                     var ptr = recvBufferPtr + readHead;
 
                     // Parse slot ranges
-                    if (!TryParseSlots(count, ref ptr, out var slots, out var resp, range: true))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out _, range: true))
                         return false;
+
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    if (resp.SequenceEqual(CmdStrings.RESP_OK))
-                    {
-                        ClusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
-                        if (!clusterProvider.serverOptions.DisableObjects)
-                            ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
-                    }
-
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    ClusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
+                    if (!clusterProvider.serverOptions.DisableObjects)
+                        ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
                 }
             }
             else if (param.SequenceEqual(CmdStrings.GETKEYSINSLOT) || param.SequenceEqual(CmdStrings.getkeysinslot))
@@ -1106,32 +1085,32 @@ namespace Garnet.cluster
                     }
 
                     //Parse slot ranges
-                    if (!TryParseSlots(_count, ref ptr, out var slots, out var resp, range: true))
+                    if (!TryParseSlots(_count, ref ptr, out var slots, out var errorMessage, range: true))
+                    {
+                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                            SendAndReset();
                         return false;
+                    }
                     readHead = (int)(ptr - recvBufferPtr);
 
                     //Execute
-                    ReadOnlySpan<byte> errorMessage = default;
-                    if (resp.SequenceEqual(CmdStrings.RESP_OK))
+                    switch (slotState)
                     {
-                        switch (slotState)
-                        {
-                            case SlotState.STABLE:
-                                _ = clusterProvider.clusterManager.TryResetSlotsState(slots, out errorMessage);
-                                break;
-                            case SlotState.IMPORTING:
-                                _ = clusterProvider.clusterManager.TryPrepareSlotsForImport(slots, nodeid, out errorMessage);
-                                break;
-                            case SlotState.MIGRATING:
-                                _ = clusterProvider.clusterManager.TryPrepareSlotsForMigration(slots, nodeid, out errorMessage);
-                                break;
-                            case SlotState.NODE:
-                                _ = clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(slots, nodeid, out errorMessage);
-                                break;
-                            default:
-                                errorMessage = Encoding.ASCII.GetBytes($"Slot state {subcommand} not supported.");
-                                break;
-                        }
+                        case SlotState.STABLE:
+                            _ = clusterProvider.clusterManager.TryResetSlotsState(slots, out errorMessage);
+                            break;
+                        case SlotState.IMPORTING:
+                            _ = clusterProvider.clusterManager.TryPrepareSlotsForImport(slots, nodeid, out errorMessage);
+                            break;
+                        case SlotState.MIGRATING:
+                            _ = clusterProvider.clusterManager.TryPrepareSlotsForMigration(slots, nodeid, out errorMessage);
+                            break;
+                        case SlotState.NODE:
+                            _ = clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(slots, nodeid, out errorMessage);
+                            break;
+                        default:
+                            errorMessage = Encoding.ASCII.GetBytes($"Slot state {subcommand} not supported.");
+                            break;
                     }
 
                     if (errorMessage == default)
