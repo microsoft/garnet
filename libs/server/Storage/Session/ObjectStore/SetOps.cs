@@ -382,36 +382,27 @@ namespace Garnet.server
             if (sourceKey.Length == 0 || destinationKey.Length == 0 || destinationKey.Length == 0)
                 return GarnetStatus.OK;
 
+            // If the keys are the same, no operation is performed.
             var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
-
             if(sameKey)
             {
-                smoveResult = 1;
                 return GarnetStatus.OK;
             }
 
-            var deleteStatus = SetRemove(sourceKey, member, out _, ref objectStoreContext);
-            var addStatus = SetAdd(destinationKey, member, out _, ref objectStoreContext);
+            SetLength(sourceKey, out var initCount, ref objectStoreContext);
+            SetRemove(sourceKey, member, out _, ref objectStoreContext);
+            SetLength(sourceKey, out var endCount, ref objectStoreContext);
+            
+            SetLength(destinationKey, out var destinationCount, ref objectStoreContext);
 
-/*            var deleteInput = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
-            var deleteRmwInput = (ObjectInputHeader*)deleteInput.ptr;
-            deleteRmwInput->header.type = GarnetObjectType.Set;
-            deleteRmwInput->header.SetOp = SetOperation.SREM;
-            deleteRmwInput->count = 1;
-            deleteRmwInput->done = 0;
+            if(initCount == endCount || destinationCount == 0)
+            {
+                return GarnetStatus.OK;
+            }
+            
+            SetAdd(destinationKey, member, out _, ref objectStoreContext);
 
-            var deleteStatus = RMWObjectStoreOperation(sourceKey.ToArray(), deleteInput, out var deleteOutput, ref objectStoreContext);
-            smoveResult = deleteOutput.opsDone;
-
-            var addInput = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
-            var addRmwInput = (ObjectInputHeader*)addInput.ptr;
-            addRmwInput->header.type = GarnetObjectType.Set;
-            addRmwInput->header.SetOp = SetOperation.SADD;
-            addRmwInput->count = 1;
-            addRmwInput->done = 0;
-
-            var addStatus = RMWObjectStoreOperation(destinationKey.ToArray(), addInput, out var addOutput, ref objectStoreContext);
-            smoveResult = addOutput.opsDone;*/
+            smoveResult = 1;
 
             return GarnetStatus.OK;
         }

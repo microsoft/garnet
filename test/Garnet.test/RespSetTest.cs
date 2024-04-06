@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -386,6 +387,88 @@ namespace Garnet.test
             var expectedResponse = ":2\r\n+PONG\r\n";
             var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
+        }
+
+        [Test]
+        public void CanDoSMOVECommandLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            
+            // source set
+            lightClientRequest.SendCommand("SADD \"mySourceSet\" \"oneS\"");
+            lightClientRequest.SendCommand("SADD \"mySourceSet\" \"twoS\"");
+            lightClientRequest.SendCommand("SADD \"mySourceSet\" \"threeS\"");
+            lightClientRequest.SendCommand("SADD \"mySourceSet\" \"fourS\"");
+            lightClientRequest.SendCommand("SADD \"mySourceSet\" \"common\"");
+
+            // destination set
+            lightClientRequest.SendCommand("SADD \"myDestinationSet\" \"oneS\"");
+            lightClientRequest.SendCommand("SADD \"myDestinationSet\" \"twoS\"");
+            lightClientRequest.SendCommand("SADD \"myDestinationSet\" \"threeS\"");
+            lightClientRequest.SendCommand("SADD \"myDestinationSet\" \"fourS\"");
+            lightClientRequest.SendCommand("SADD \"myDestinationSet\" \"common\"");
+
+            var expectedSuccessfulResponse = ":1\r\n";
+            var expectedFailureResponse = ":0\r\n";
+
+            // Successful move
+            var response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"myDestinationSet\" \"oneS\"");
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedSuccessfulResponse.Length);
+            Assert.AreEqual(expectedSuccessfulResponse, strResponse);
+
+            // Source set doesn't exist
+            response = lightClientRequest.SendCommand("SMOVE \"someRandomSet\" \"mySourceSet\" \"twoS\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedFailureResponse.Length);
+            Assert.AreEqual(expectedFailureResponse, strResponse);
+
+            // Destination set doesn't exist
+            response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"someRandomSet\" \"twoS\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedFailureResponse.Length);
+            Assert.AreEqual(expectedFailureResponse, strResponse);
+
+            // Value not in source
+            response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"mySourceSet\" \"notAValue\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedFailureResponse.Length);
+            Assert.AreEqual(expectedFailureResponse, strResponse);
+
+            // Move into self
+            response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"mySourceSet\" \"twoS\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedFailureResponse.Length);
+            Assert.AreEqual(expectedFailureResponse, strResponse);
+
+            // Common value
+            response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"myDestinationSet\" \"common\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedSuccessfulResponse.Length);
+            Assert.AreEqual(expectedSuccessfulResponse, strResponse);
+        }
+
+        [Test]
+        public async Task CanDoSMOVECommandGC()
+        {
+            using var db = TestUtils.GetGarnetClient();
+            db.Connect();
+
+            //If set doesn't exist, then return 0.
+            var response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "destinationSet", "value" });
+            Assert.AreEqual(response, 0);
+            await db.ExecuteForStringResultAsync("SADD", new string[] { "sourceSet", "sourceValue", "commonValue" });
+            await db.ExecuteForStringResultAsync("SADD", new string[] { "destinationSet", "destinationValue", "commonValue" });
+            
+            //Same key.
+            response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "sourceSet", "sourceValue" });
+            Assert.AreEqual(response, 0);
+
+            //Move non-common member.
+            response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "destinationSet", "sourceValue" });
+            Assert.AreEqual(response, 1);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "sourceSet" }), 1);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "destinationSet" }), 3);
+
+            //Move common member.
+            response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "destinationSet", "commonValue" });
+            Assert.AreEqual(response, 1);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "sourceSet" }), 0);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "destinationSet" }), 3);
         }
 
 

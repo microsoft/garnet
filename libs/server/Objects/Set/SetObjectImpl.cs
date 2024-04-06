@@ -231,8 +231,20 @@ namespace Garnet.server
             byte* ptr = startptr;
             byte* end = input + length;
 
-            int prevDone = _input->done;
-            int countDone = 0;
+            if(!RespReadUtils.ReadByteArrayWithLengthHeader(out var otherKey, ref ptr, end))
+                return;
+
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref ptr, end))
+                return;
+
+            var removalSuccess = set.Remove(member);
+
+            if(!removalSuccess)
+            {
+                return;
+            }
+
+            
         }
     }
 }
