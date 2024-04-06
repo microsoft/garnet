@@ -54,16 +54,19 @@ namespace Garnet.server
                     else
                         events = GarnetLatencyMetrics.defaultLatencyTypes.ToHashSet();
 
-                    byte[] response = null;
                     if (invalid)
-                        response = Encoding.ASCII.GetBytes($"-ERR Invalid event {invalidEvent}. Try LATENCY HELP\r\n");
+                    {
+                        while (!RespWriteUtils.WriteGenericError($"Invalid event {invalidEvent}. Try LATENCY HELP", ref dcurr, dend))
+                            SendAndReset();
+                    }
                     else
                     {
                         var garnetLatencyMetrics = storeWrapper.monitor?.GlobalMetrics.globalLatencyMetrics;
-                        response = Encoding.ASCII.GetBytes(garnetLatencyMetrics != null ? garnetLatencyMetrics.GetRespHistograms(events) : "*0\r\n");
+                        string response = garnetLatencyMetrics != null ? garnetLatencyMetrics.GetRespHistograms(events) : "*0\r\n";
+                        while (!RespWriteUtils.WriteAsciiDirect(response, ref dcurr, dend))
+                            SendAndReset();
                     }
-                    while (!RespWriteUtils.WriteDirect(response, ref dcurr, dend))
-                        SendAndReset();
+                    
                     readHead = (int)(ptr - recvBufferPtr);
                 }
                 else if (param.SequenceEqual(CmdStrings.RESET) || param.SequenceEqual(CmdStrings.reset))
