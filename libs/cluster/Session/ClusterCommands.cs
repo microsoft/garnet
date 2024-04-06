@@ -788,17 +788,25 @@ namespace Garnet.cluster
                 {
                     var ptr = recvBufferPtr + readHead;
                     if (!TryParseSlots(count, ref ptr, out var slots, out var resp, range: false))
-                        return false;
-                    readHead = (int)(ptr - recvBufferPtr);
-                    if (resp.SequenceEqual(CmdStrings.RESP_OK))
                     {
+                        return false;
+                    }
+                    else
+                    {
+                        readHead = (int)(ptr - recvBufferPtr);
+
                         clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n");
+                        {
+                            while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already not assigned", ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
-
-                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                        SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.DELSLOTSRANGE) || param.SequenceEqual(CmdStrings.delslotsrange))
@@ -820,17 +828,25 @@ namespace Garnet.cluster
                 {
                     var ptr = recvBufferPtr + readHead;
                     if (!TryParseSlots(count, ref ptr, out var slots, out var resp, range: true))
-                        return false;
-                    readHead = (int)(ptr - recvBufferPtr);
-                    if (resp.SequenceEqual(CmdStrings.RESP_OK))
                     {
+                        return false;
+                    }
+                    else
+                    {
+                        readHead = (int)(ptr - recvBufferPtr);
+
                         clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
                         if (slotIndex != -1)
-                            resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotIndex} is already not assigned\r\n");
+                        {
+                            while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already not assigned", ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
-
-                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                        SendAndReset();
                 }
             }
             else if (param.SequenceEqual(CmdStrings.DELKEYSINSLOT) || param.SequenceEqual(CmdStrings.delkeysinslot))
