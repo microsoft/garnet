@@ -33,40 +33,23 @@ namespace Garnet.cluster
 
         private bool HandleCommandParsingErrors(MigrateCmdParseState mpState, string targetAddress, int targetPort, int slotMultiRef)
         {
-            ReadOnlySpan<byte> resp;
-            switch (mpState)
+            if (mpState is MigrateCmdParseState.SUCCESS)
+                return true;
+
+            var errorMessage = mpState switch
             {
-                case MigrateCmdParseState.SUCCESS:
-                    return true;
-                case MigrateCmdParseState.CLUSTERDOWN:
-                    resp = CmdStrings.RESP_ERR_GENERIC_CLUSTER;
-                    break;
-                case MigrateCmdParseState.UNKNOWNTARGET:
-                    resp = CmdStrings.RESP_ERR_GENERIC_UNKNOWN_ENDPOINT;
-                    break;
-                case MigrateCmdParseState.MULTISLOTREF:
-                    resp = Encoding.ASCII.GetBytes($"Slot {slotMultiRef} specified multiple times.");
-                    break;
-                case MigrateCmdParseState.SLOTNOTLOCAL:
-                    resp = Encoding.ASCII.GetBytes($"slot {slotMultiRef} not owned by current node.");
-                    break;
-                case MigrateCmdParseState.CROSSSLOT:
-                    resp = CmdStrings.RESP_CROSSLOT_ERROR;
-                    break;
-                case MigrateCmdParseState.TARGETNODENOTMASTER:
-                    resp = Encoding.ASCII.GetBytes($"Cannot initiate migration, target node ({targetAddress}:{targetPort}) is not a primary.");
-                    break;
-                case MigrateCmdParseState.INCOMPLETESLOTSRANGE:
-                    resp = CmdStrings.RESP_ERR_GENERIC_INCOMPLETESLOTSRANGE;
-                    break;
-                case MigrateCmdParseState.SLOTOUTOFRANGE:
-                    resp = Encoding.ASCII.GetBytes($"Slot {slotMultiRef} out of range.");
-                    break;
-                default:
-                    resp = CmdStrings.RESP_ERR_GENERIC_PARSING;
-                    break;
-            }
-            while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
+                MigrateCmdParseState.CLUSTERDOWN => CmdStrings.RESP_ERR_GENERIC_CLUSTER,
+                MigrateCmdParseState.UNKNOWNTARGET => CmdStrings.RESP_ERR_GENERIC_UNKNOWN_ENDPOINT,
+                MigrateCmdParseState.MULTISLOTREF => Encoding.ASCII.GetBytes($"Slot {slotMultiRef} specified multiple times."),
+                MigrateCmdParseState.SLOTNOTLOCAL => Encoding.ASCII.GetBytes($"slot {slotMultiRef} not owned by current node."),
+                MigrateCmdParseState.CROSSSLOT => CmdStrings.RESP_CROSSLOT_ERROR,
+                MigrateCmdParseState.TARGETNODENOTMASTER => Encoding.ASCII.GetBytes($"Cannot initiate migration, target node ({targetAddress}:{targetPort}) is not a primary."),
+                MigrateCmdParseState.INCOMPLETESLOTSRANGE => CmdStrings.RESP_ERR_GENERIC_INCOMPLETESLOTSRANGE,
+                MigrateCmdParseState.SLOTOUTOFRANGE => Encoding.ASCII.GetBytes($"Slot {slotMultiRef} out of range."),
+                
+                _ => CmdStrings.RESP_ERR_GENERIC_PARSING,
+            };
+            while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
                 SendAndReset();
             return false;
         }
