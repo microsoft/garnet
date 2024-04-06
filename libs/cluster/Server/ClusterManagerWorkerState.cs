@@ -42,28 +42,38 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Remove worker through the forget command.
+        /// Try remove worker through the forget command.
         /// </summary>
         /// <param name="nodeid"></param>
         /// <param name="expirySeconds"></param>
-        public ReadOnlySpan<byte> TryRemoveWorker(string nodeid, int expirySeconds)
+        /// <param name="errorMessage">The ASCII encoded error message if the method return <c>false</c>; otherwise <c>default</c></param>
+        public bool TryRemoveWorker(string nodeid, int expirySeconds, out ReadOnlySpan<byte> errorMessage)
         {
             try
             {
                 PauseConfigMerge();
-                var resp = CmdStrings.RESP_OK;
+                errorMessage = default;
                 while (true)
                 {
                     var current = currentConfig;
 
                     if (current.GetLocalNodeId().Equals(nodeid))
-                        return CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MYSELF;
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MYSELF;
+                        return false;
+                    }
 
                     if (current.GetNodeRoleFromNodeId(nodeid) == NodeRole.UNASSIGNED)
-                        return Encoding.ASCII.GetBytes($"-ERR I don't know about node {nodeid}.\r\n");
+                    {
+                        errorMessage = Encoding.ASCII.GetBytes($"I don't know about node {nodeid}.");
+                        return false;
+                    }
 
                     if (current.GetLocalNodeRole() == NodeRole.REPLICA && current.GetLocalNodePrimaryId().Equals(nodeid))
-                        return CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MY_PRIMARY;
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MY_PRIMARY;
+                        return false;
+                    }
 
                     var newConfig = current.RemoveWorker(nodeid);
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
@@ -72,7 +82,7 @@ namespace Garnet.cluster
                         break;
                 }
                 FlushConfig();
-                return resp;
+                return true;
             }
             finally
             {
