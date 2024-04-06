@@ -973,7 +973,7 @@ namespace Garnet.cluster
                         switch (slotState)
                         {
                             case SlotState.STABLE:
-                                _ = clusterProvider.clusterManager.ResetSlotState(slot, out resp);
+                                _ = clusterProvider.clusterManager.TryResetSlotState(slot, out resp);
                                 break;
                             case SlotState.IMPORTING:
                                 _ = clusterProvider.clusterManager.PrepareSlotForImport(slot, nodeid, out resp);
@@ -1060,33 +1060,41 @@ namespace Garnet.cluster
                     readHead = (int)(ptr - recvBufferPtr);
 
                     //Execute
+                    ReadOnlySpan<byte> errorMessage = default;
                     if (resp.SequenceEqual(CmdStrings.RESP_OK))
                     {
                         switch (slotState)
                         {
                             case SlotState.STABLE:
-                                _ = clusterProvider.clusterManager.ResetSlotsState(slots, out resp);
+                                _ = clusterProvider.clusterManager.TryResetSlotsState(slots, out errorMessage);
                                 break;
                             case SlotState.IMPORTING:
-                                _ = clusterProvider.clusterManager.PrepareSlotsForImport(slots, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.TryPrepareSlotsForImport(slots, nodeid, out errorMessage);
                                 break;
                             case SlotState.MIGRATING:
-                                _ = clusterProvider.clusterManager.PrepareSlotsForMigration(slots, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.TryPrepareSlotsForMigration(slots, nodeid, out errorMessage);
                                 break;
                             case SlotState.NODE:
-                                _ = clusterProvider.clusterManager.PrepareSlotsForOwnershipChange(slots, nodeid, out resp);
+                                _ = clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(slots, nodeid, out errorMessage);
                                 break;
                             default:
-                                resp = Encoding.ASCII.GetBytes($"-ERR Slot state {subcommand} not supported.\r\n");
-                                while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                                    SendAndReset();
+                                errorMessage = Encoding.ASCII.GetBytes($"Slot state {subcommand} not supported.");
                                 break;
                         }
                     }
 
-                    if (resp.SequenceEqual(CmdStrings.RESP_OK)) UnsafeWaitForConfigTransition();
-                    while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                        SendAndReset();
+                    if (errorMessage == default)
+                    {
+                        UnsafeWaitForConfigTransition();
+
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
             }
             else if (param.SequenceEqual(CmdStrings.SLOTS) || param.SequenceEqual(CmdStrings.slots))

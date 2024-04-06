@@ -252,7 +252,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryResetLocalSlot()
         {
-            if (!clusterProvider.clusterManager.ResetSlotsState(_sslots, out var resp))
+            if (!clusterProvider.clusterManager.TryResetSlotsState(_sslots, out var resp))
             {
                 Status = MigrateState.FAIL;
                 logger?.LogError("{resp}", Encoding.ASCII.GetString(resp));
@@ -267,7 +267,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryPrepareLocalForMigration()
         {
-            if (!clusterProvider.clusterManager.PrepareSlotsForMigration(_sslots, _targetNodeId, out var resp))
+            if (!clusterProvider.clusterManager.TryPrepareSlotsForMigration(_sslots, _targetNodeId, out var resp))
             {
                 Status = MigrateState.FAIL;
                 logger?.LogError("{resp}", Encoding.ASCII.GetString(resp));
@@ -282,7 +282,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool RelinquishOwnership()
         {
-            if (!clusterProvider.clusterManager.PrepareSlotsForOwnershipChange(_sslots, _targetNodeId, out var _))
+            if (!clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(_sslots, _targetNodeId, out var _))
                 return false;
             return true;
         }
