@@ -61,12 +61,26 @@ namespace Garnet.cluster
         /// <summary>
         /// Try to parse slots
         /// </summary>
-        /// <param name="errorMessage">The ASCII encoded error message if the method return <c>false</c>; otherwise <c>default</c></param>
+        /// <param name="errorMessage">
+        /// The ASCII encoded error message if there one of the following conditions is true
+        /// <list type="bullet">
+        ///   <item>If the same slot is specified multiple times.</item>
+        ///   <item>If the slot is out of range.</item>
+        /// </list>
+        /// otherwise <see langword="default" />
+        /// </param>
+        /// <returns>A boolean indicating that there was error in parsing of the arguments.</returns>
+        /// <remarks>
+        /// The error handling is little special for this method because we need to drain all arguments even in the case of error.
+        /// <para/>
+        /// The <paramref name="errorMessage"/> will only have a generic error message set in the event of duplicate or out of range slot. 
+        /// The method will still return <see langword="true" /> in case of such error.
+        /// </remarks>
         private bool TryParseSlots(int count, ref byte* ptr, out HashSet<int> slots, out ReadOnlySpan<byte> errorMessage, bool range)
         {
             slots = new();
             errorMessage = default;
-            bool mRef = false;
+            bool duplicate = false;
             bool outOfRange = false;
             bool invalidRange = false;
             int slotStart;
@@ -90,7 +104,7 @@ namespace Garnet.cluster
                     slotEnd = slotStart;
                 }
 
-                if (mRef || outOfRange || invalidRange)
+                if (duplicate || outOfRange || invalidRange)
                     continue;
 
                 if (slotStart > slotEnd)
@@ -105,14 +119,12 @@ namespace Garnet.cluster
                     outOfRange = true;
                 }
 
-                for (int slot = slotStart; slot <= slotEnd; slot++)
+                for (int slot = slotStart; slot <= slotEnd && !duplicate; slot++)
                 {
-                    if (mRef)
-                        continue;
                     if (!slots.Add(slot))
                     {
                         errorMessage = Encoding.ASCII.GetBytes($"Slot {slot} specified multiple times");
-                        mRef = true;
+                        duplicate = true;
                     }
                 }
             }
@@ -663,20 +675,26 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!TryParseSlots(count, ref ptr, out var slots, out var _, range: false))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out var errorMessage, range: false))
                         return false;
 
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
-                    if (slotIndex != -1)
+                    if (errorMessage == default)
                     {
-                        while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already busy", ref dcurr, dend))
+                        clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
+                        if (slotIndex != -1)
+                            errorMessage = Encoding.ASCII.GetBytes($"Slot {slotIndex} is already busy");
+                    }
+                    
+                    if (errorMessage == default)
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -698,20 +716,26 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!TryParseSlots(count, ref ptr, out var slots, out _, range: true))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out var errorMessage, range: true))
                         return false;
 
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
-                    if (slotIndex != -1)
+                    if (errorMessage == default)
                     {
-                        while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already busy", ref dcurr, dend))
+                        clusterProvider.clusterManager.TryAddSlots(slots.ToList(), out var slotIndex);
+                        if (slotIndex != -1)
+                            errorMessage = Encoding.ASCII.GetBytes($"Slot {slotIndex} is already busy");
+                    }
+
+                    if (errorMessage == default)
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -790,20 +814,26 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!TryParseSlots(count, ref ptr, out var slots, out _, range: false))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out var errorMessage, range: false))
                         return false;
 
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
-                    if (slotIndex != -1)
+                    if (errorMessage == default)
                     {
-                        while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already not assigned", ref dcurr, dend))
+                        clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
+                        if (slotIndex != -1)
+                            errorMessage = Encoding.ASCII.GetBytes($"Slot {slotIndex} is already not assigned");
+                    }
+
+                    if (errorMessage == default)
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -826,20 +856,26 @@ namespace Garnet.cluster
                 else
                 {
                     var ptr = recvBufferPtr + readHead;
-                    if (!TryParseSlots(count, ref ptr, out var slots, out _, range: true))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out var errorMessage, range: true))
                         return false;
 
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
-                    if (slotIndex != -1)
+                    if (errorMessage == default)
                     {
-                        while (!RespWriteUtils.WriteGenericError($"Slot {slotIndex} is already not assigned", ref dcurr, dend))
+                        clusterProvider.clusterManager.TryRemoveSlots(slots.ToList(), out var slotIndex);
+                        if (slotIndex != -1)
+                            errorMessage = Encoding.ASCII.GetBytes($"Slot {slotIndex} is already not assigned");
+                    }
+
+                    if (errorMessage == default)
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -863,6 +899,7 @@ namespace Garnet.cluster
                     var ptr = recvBufferPtr + readHead;
                     if (!RespReadUtils.ReadIntWithLengthHeader(out int slot, ref ptr, recvBufferPtr + bytesRead))
                         return false;
+
                     readHead = (int)(ptr - recvBufferPtr);
 
                     var slots = new HashSet<int>() { slot };
@@ -893,14 +930,25 @@ namespace Garnet.cluster
                     var ptr = recvBufferPtr + readHead;
 
                     // Parse slot ranges
-                    if (!TryParseSlots(count, ref ptr, out var slots, out _, range: true))
+                    if (!TryParseSlots(count, ref ptr, out var slots, out var errorMessage, range: true))
                         return false;
 
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    ClusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
-                    if (!clusterProvider.serverOptions.DisableObjects)
-                        ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
+                    if (errorMessage == default)
+                    {
+                        ClusterManager.DeleteKeysInSlotsFromMainStore(basicGarnetApi, slots);
+                        if (!clusterProvider.serverOptions.DisableObjects)
+                            ClusterManager.DeleteKeysInSlotsFromObjectStore(basicGarnetApi, slots);
+
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
             }
             else if (param.SequenceEqual(CmdStrings.GETKEYSINSLOT) || param.SequenceEqual(CmdStrings.getkeysinslot))
@@ -1006,7 +1054,7 @@ namespace Garnet.cluster
 
                     if (!ClusterConfig.OutOfRange(slot))
                     {
-                        ReadOnlySpan<byte> errorMessage = default;
+                        ReadOnlySpan<byte> errorMessage;
                         switch (slotState)
                         {
                             case SlotState.STABLE:
@@ -1097,31 +1145,31 @@ namespace Garnet.cluster
 
                     //Parse slot ranges
                     if (!TryParseSlots(_count, ref ptr, out var slots, out var errorMessage, range: true))
-                    {
-                        while (!RespWriteUtils.WriteGenericError(errorMessage, ref dcurr, dend))
-                            SendAndReset();
                         return false;
-                    }
+                    
                     readHead = (int)(ptr - recvBufferPtr);
 
                     //Execute
-                    switch (slotState)
+                    if (errorMessage == default)
                     {
-                        case SlotState.STABLE:
-                            _ = clusterProvider.clusterManager.TryResetSlotsState(slots, out errorMessage);
-                            break;
-                        case SlotState.IMPORTING:
-                            _ = clusterProvider.clusterManager.TryPrepareSlotsForImport(slots, nodeid, out errorMessage);
-                            break;
-                        case SlotState.MIGRATING:
-                            _ = clusterProvider.clusterManager.TryPrepareSlotsForMigration(slots, nodeid, out errorMessage);
-                            break;
-                        case SlotState.NODE:
-                            _ = clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(slots, nodeid, out errorMessage);
-                            break;
-                        default:
-                            errorMessage = Encoding.ASCII.GetBytes($"Slot state {subcommand} not supported.");
-                            break;
+                        switch (slotState)
+                        {
+                            case SlotState.STABLE:
+                                _ = clusterProvider.clusterManager.TryResetSlotsState(slots, out errorMessage);
+                                break;
+                            case SlotState.IMPORTING:
+                                _ = clusterProvider.clusterManager.TryPrepareSlotsForImport(slots, nodeid, out errorMessage);
+                                break;
+                            case SlotState.MIGRATING:
+                                _ = clusterProvider.clusterManager.TryPrepareSlotsForMigration(slots, nodeid, out errorMessage);
+                                break;
+                            case SlotState.NODE:
+                                _ = clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(slots, nodeid, out errorMessage);
+                                break;
+                            default:
+                                errorMessage = Encoding.ASCII.GetBytes($"Slot state {subcommand} not supported.");
+                                break;
+                        }
                     }
 
                     if (errorMessage == default)
