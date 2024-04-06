@@ -228,32 +228,32 @@ namespace Garnet.cluster
                 var importingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
                 if (importingWorkerId == 0)
                 {
-                    errorMessage = Encoding.ASCII.GetBytes($"I don't know about node {nodeid}");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}");
                     return false;
                 }
 
                 if (current.GetLocalNodeRole() != NodeRole.PRIMARY)
                 {
-                    errorMessage = Encoding.ASCII.GetBytes($"Importing node {current.GetLocalNodeRole()} is not a master node.");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR Importing node {current.GetLocalNodeRole()} is not a master node.");
                     return false;
                 }
 
                 if (current.IsLocal((ushort)slot, readCommand: false))
                 {
-                    errorMessage = Encoding.ASCII.GetBytes($"This is a local hash slot {slot} and is already imported");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR This is a local hash slot {slot} and is already imported");
                     return false;
                 }
 
                 string sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
                 if (sourceNodeId == null || !sourceNodeId.Equals(nodeid))
                 {
-                    errorMessage = Encoding.ASCII.GetBytes($"Slot {slot} is not owned by {nodeid}");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR Slot {slot} is not owned by {nodeid}");
                     return false;
                 }
 
                 if (current.GetState((ushort)slot) != SlotState.STABLE)
                 {
-                    errorMessage = Encoding.ASCII.GetBytes($"Slot already scheduled for import from {nodeid}");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR Slot already scheduled for import from {nodeid}");
                     return false;
                 }
 

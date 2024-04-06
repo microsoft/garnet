@@ -1167,7 +1167,7 @@ namespace Garnet.cluster
                                 _ = clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(slots, nodeid, out errorMessage);
                                 break;
                             default:
-                                errorMessage = Encoding.ASCII.GetBytes($"Slot state {subcommand} not supported.");
+                                errorMessage = Encoding.ASCII.GetBytes($"ERR Slot state {subcommand} not supported.");
                                 break;
                         }
                     }
