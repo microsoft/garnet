@@ -100,7 +100,7 @@ namespace Garnet.cluster
 
                 if (current.GetLocalNodeId().Equals(nodeid))
                 {
-                    resp = CmdStrings.RESP_MIGRATE_TO_MYSELF_ERROR;
+                    resp = CmdStrings.RESP_ERR_GENERIC_MIGRATE_TO_MYSELF;
                     return false;
                 }
 
@@ -130,7 +130,7 @@ namespace Garnet.cluster
                 var newConfig = current.UpdateSlotState(slot, migratingWorkerId, SlotState.MIGRATING);
                 if (newConfig == null)
                 {
-                    resp = CmdStrings.RESP_SLOTSTATE_TRANSITION_ERROR;
+                    resp = CmdStrings.RESP_ERR_GENERIC_SLOTSTATE_TRANSITION;
                     return false;
                 }
 
@@ -168,7 +168,7 @@ namespace Garnet.cluster
                 //Check if nodeid is different from local node
                 if (current.GetLocalNodeId().Equals(nodeid))
                 {
-                    resp = CmdStrings.RESP_MIGRATE_TO_MYSELF_ERROR;
+                    resp = CmdStrings.RESP_ERR_GENERIC_MIGRATE_TO_MYSELF;
                     return false;
                 }
 

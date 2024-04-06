@@ -39,10 +39,10 @@ namespace Garnet.cluster
                 case MigrateCmdParseState.SUCCESS:
                     return true;
                 case MigrateCmdParseState.CLUSTERDOWN:
-                    resp = CmdStrings.RESP_ERRCLUSTER;
+                    resp = CmdStrings.RESP_ERR_GENERIC_CLUSTER;
                     break;
                 case MigrateCmdParseState.UNKNOWNTARGET:
-                    resp = CmdStrings.RESP_UNKNOWN_ENDPOINT_ERROR;
+                    resp = CmdStrings.RESP_ERR_GENERIC_UNKNOWN_ENDPOINT;
                     break;
                 case MigrateCmdParseState.MULTISLOTREF:
                     resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotMultiRef} specified multiple times\r\n");
@@ -57,13 +57,13 @@ namespace Garnet.cluster
                     resp = Encoding.ASCII.GetBytes($"-ERR Cannot initiate migration, target node ({targetAddress}:{targetPort}) is not a primary.\r\n");
                     break;
                 case MigrateCmdParseState.INCOMPLETESLOTSRANGE:
-                    resp = CmdStrings.RESP_INCOMPLETESLOTSRANGE_ERROR;
+                    resp = CmdStrings.RESP_ERR_GENERIC_INCOMPLETESLOTSRANGE;
                     break;
                 case MigrateCmdParseState.SLOTOUTOFRANGE:
                     resp = Encoding.ASCII.GetBytes($"-ERR Slot {slotMultiRef} out of range\r\n");
                     break;
                 default:
-                    resp = CmdStrings.RESP_PARSING_ERROR;
+                    resp = CmdStrings.RESP_ERR_GENERIC_PARSING;
                     break;
             }
             while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))

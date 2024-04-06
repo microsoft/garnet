@@ -70,7 +70,7 @@ namespace Garnet.cluster
 
             if (clusterProvider.clusterManager.CurrentConfig.GetLocalNodeRole() != NodeRole.PRIMARY)
             {
-                var resp = CmdStrings.RESP_CANNOT_FAILOVER_FROM_NON_MASTER;
+                var resp = CmdStrings.RESP_ERR_GENERIC_CANNOT_FAILOVER_FROM_NON_MASTER;
                 while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                     SendAndReset();
                 return true;
@@ -82,7 +82,7 @@ namespace Garnet.cluster
                 var replicaNodeId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(replicaAddress, replicaPort);
                 if (replicaNodeId == null)
                 {
-                    var resp = CmdStrings.RESP_UNKNOWN_ENDPOINT_ERROR;
+                    var resp = CmdStrings.RESP_ERR_GENERIC_UNKNOWN_ENDPOINT;
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
                     return true;

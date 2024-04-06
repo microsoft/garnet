@@ -97,7 +97,7 @@ namespace Garnet.cluster
 
                 if (ClusterConfig.OutOfRange(slotStart) || ClusterConfig.OutOfRange(slotEnd))
                 {
-                    resp = CmdStrings.RESP_SLOT_OUT_OFF_RANGE;
+                    resp = CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE;
                     outOfRange = true;
                 }
 
@@ -132,7 +132,7 @@ namespace Garnet.cluster
             {
                 if (!DrainCommands(bufSpan, count))
                     return false;
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRCLUSTER, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_CLUSTER, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -172,7 +172,7 @@ namespace Garnet.cluster
         checkErrorFlags:
             if (errorFlag && !string.IsNullOrWhiteSpace(errorCmd))
             {
-                var errorMsg = string.Format(CmdStrings.ErrMissingParam, errorCmd);
+                var errorMsg = string.Format(CmdStrings.GenericErrMissingParam, errorCmd);
                 var bresp_ERRMISSINGPARAM = Encoding.ASCII.GetBytes(errorMsg);
                 bresp_ERRMISSINGPARAM.CopyTo(new Span<byte>(dcurr, bresp_ERRMISSINGPARAM.Length));
                 dcurr += bresp_ERRMISSINGPARAM.Length;
@@ -213,7 +213,7 @@ namespace Garnet.cluster
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_CONFIG_UPDATE_ERROR, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_CONFIG_UPDATE, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -379,7 +379,7 @@ namespace Garnet.cluster
                     readHead = (int)(ptr - recvBufferPtr);
                     if (clusterProvider.clusterManager.CurrentConfig.NumWorkers > 2)
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_CONFIG_EPOCH_ASSIGNMENT_ERROR, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_ASSIGNMENT, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
@@ -562,7 +562,7 @@ namespace Garnet.cluster
                     }
                     else
                     {
-                        resp = CmdStrings.RESP_REPLICATION_AOF_TURNEDOFF_ERROR;
+                        resp = CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF;
                     }
                     while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                         SendAndReset();
@@ -715,7 +715,7 @@ namespace Garnet.cluster
 
                     if (ClusterConfig.OutOfRange(slot))
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
                             SendAndReset();
                     }
                     else if (!current.IsLocal((ushort)slot))
@@ -890,7 +890,7 @@ namespace Garnet.cluster
 
                     if (ClusterConfig.OutOfRange(slot))
                     {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE, ref dcurr, dend))
                             SendAndReset();
                     }
                     else if (!current.IsLocal((ushort)slot))
@@ -998,7 +998,7 @@ namespace Garnet.cluster
                     }
                     else
                     {
-                        resp = CmdStrings.RESP_SLOT_OUT_OFF_RANGE;
+                        resp = CmdStrings.RESP_ERR_GENERIC_SLOT_OUT_OFF_RANGE;
                         while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
                             SendAndReset();
                     }
@@ -1382,7 +1382,7 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_REPLICATION_AOF_TURNEDOFF_ERROR, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
                         SendAndReset();
                 }
             }
