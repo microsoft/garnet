@@ -176,9 +176,13 @@ namespace Garnet.server
             return false;
         }
 
-        internal RespCommandsInfo GetCustomCommandInfo(string cmdName)
+        internal bool TryGetCustomCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo)
         {
-            return this.customCommandsInfo.ContainsKey(cmdName) ? this.customCommandsInfo[cmdName] : null;
+            respCommandsInfo = default;
+            if (!this.customCommandsInfo.ContainsKey(cmdName)) return false;
+
+            respCommandsInfo = this.customCommandsInfo[cmdName];
+            return true;
         }
     }
 }

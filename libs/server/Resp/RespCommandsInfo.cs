@@ -4,9 +4,11 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.Json.Serialization;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Garnet.server
@@ -56,13 +58,10 @@ namespace Garnet.server
         [JsonIgnore]
         internal string RespFormat => this.respFormat ??= GetRespFormat();
 
-        internal static int RespCommandsInfoCount => allRespCommandsInfo.Count;
-
-        internal static IEnumerable<RespCommandsInfo> AllRespCommandsInfo => allRespCommandsInfo.Values;
-
-        private static IReadOnlyDictionary<string, RespCommandsInfo> allRespCommandsInfo;
-        private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> basicRespCommandsInfo;
-        private static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>> arrayRespCommandsInfo;
+        private static bool isInitialized = false;
+        private static IReadOnlyDictionary<string, RespCommandsInfo> allRespCommandsInfo = null;
+        private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> basicRespCommandsInfo = null;
+        private static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>> arrayRespCommandsInfo = null;
 
         private const string RespCommandsEmbeddedFileName = @"RespCommandsInfo.json";
 
@@ -73,24 +72,19 @@ namespace Garnet.server
         private readonly string[] respFormatFlags;
         private readonly string[] respFormatAclCategories;
 
-        static RespCommandsInfo()
+        private static bool TryInitializeRespCommandsInfo(ILogger logger)
         {
-            InitRespCommandsInfo();
-        }
-
-        private static void InitRespCommandsInfo()
-        {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource);
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, Assembly.GetExecutingAssembly());
             var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
 
             var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(RespCommandsEmbeddedFileName,
-                streamProvider, NullLogger.Instance, out allRespCommandsInfo);
+                streamProvider, logger, out var tmpAllRespCommandsInfo);
 
-            if (!importSucceeded) return;
-
+            if (!importSucceeded) return false;
+            
             var tmpBasicRespCommandsInfo = new Dictionary<RespCommand, RespCommandsInfo>();
             var tmpArrayRespCommandsInfo = new Dictionary<RespCommand, Dictionary<byte, RespCommandsInfo>>();
-            foreach (var respCommandInfo in allRespCommandsInfo.Values)
+            foreach (var respCommandInfo in tmpAllRespCommandsInfo.Values)
             {
                 if (respCommandInfo.Command == RespCommand.NONE) continue;
 
@@ -106,26 +100,58 @@ namespace Garnet.server
                 }
             }
 
+            allRespCommandsInfo = tmpAllRespCommandsInfo;
             basicRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpBasicRespCommandsInfo);
             arrayRespCommandsInfo = new ReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>(tmpArrayRespCommandsInfo
-                .ToDictionary(kvp => kvp.Key, 
+                .ToDictionary(kvp => kvp.Key,
                     kvp => (IReadOnlyDictionary<byte, RespCommandsInfo>)new ReadOnlyDictionary<byte, RespCommandsInfo>(kvp.Value)));
+
+            return true;
         }
 
-        public static RespCommandsInfo GetRespCommandInfo(string cmdName)
+        internal static bool TryGetRespCommandsInfoCount(ILogger logger, out int count)
         {
-            return allRespCommandsInfo.ContainsKey(cmdName) ? allRespCommandsInfo[cmdName] : null;
+            count = -1;
+            if (!isInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
+
+            count = allRespCommandsInfo!.Count;
+            return true;
         }
 
-        public static RespCommandsInfo GetRespCommandInfo(RespCommand cmd, byte subCmd = 0, bool txnOnly = false)
-        { 
-            RespCommandsInfo result = null;
-            if (arrayRespCommandsInfo.ContainsKey(cmd) && arrayRespCommandsInfo[cmd].ContainsKey(subCmd))
-                result = arrayRespCommandsInfo[cmd][subCmd];
-            else if (basicRespCommandsInfo.ContainsKey(cmd))
-                result = basicRespCommandsInfo[cmd];
+        internal static bool TryGetRespCommandsInfo(ILogger logger, out IEnumerable<RespCommandsInfo> respCommandsInfo)
+        {
+            respCommandsInfo = default;
+            if (!isInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
 
-            return !txnOnly || (result != null && !result.Flags.HasFlag(RespCommandFlags.NoMulti)) ? result : null;
+            respCommandsInfo = allRespCommandsInfo!.Values;
+            return true;
+        }
+
+        internal static bool TryGetRespCommandInfo(string cmdName, ILogger logger, out RespCommandsInfo respCommandsInfo)
+        {
+            respCommandsInfo = default;
+            if ((!isInitialized && !TryInitializeRespCommandsInfo(logger)) || !allRespCommandsInfo.ContainsKey(cmdName)) return false;
+
+            respCommandsInfo = allRespCommandsInfo[cmdName];
+            return true;
+        }
+
+        internal static bool TryGetRespCommandInfo(RespCommand cmd, ILogger logger, out RespCommandsInfo respCommandsInfo, byte subCmd = 0, bool txnOnly = false)
+        {
+            respCommandsInfo = default;
+            if ((!isInitialized && !TryInitializeRespCommandsInfo(logger))) return false;
+
+            RespCommandsInfo tmpRespCommandInfo = default;
+            if (arrayRespCommandsInfo.ContainsKey(cmd) && arrayRespCommandsInfo[cmd].ContainsKey(subCmd))
+                tmpRespCommandInfo = arrayRespCommandsInfo[cmd][subCmd];
+            else if (basicRespCommandsInfo.ContainsKey(cmd))
+                tmpRespCommandInfo = basicRespCommandsInfo[cmd];
+
+            if (tmpRespCommandInfo == default ||
+                (txnOnly && tmpRespCommandInfo.Flags.HasFlag(RespCommandFlags.NoMulti))) return false;
+
+            respCommandsInfo = tmpRespCommandInfo;
+            return true;
         }
 
         private string GetRespFormat()

@@ -19,7 +19,7 @@ namespace Garnet
     /// <summary>
     /// Interface for importing / exporting resp commands info from different file types
     /// </summary>
-    internal interface IRespCommandsInfoProvider
+    public interface IRespCommandsInfoProvider
     {
         /// <summary>
         /// Import resp commands info from path using a stream provider
@@ -42,7 +42,7 @@ namespace Garnet
         bool TryExportRespCommandsInfo(string path, IStreamProvider streamProvider, IDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger);
     }
 
-    internal class RespCommandsInfoProviderFactory
+    public class RespCommandsInfoProviderFactory
     {
         /// <summary>
         /// Get an IRespCommandsInfoProvider instance based on its file type
@@ -139,7 +139,7 @@ namespace Garnet
     /// <summary>
     /// Current supported resp commands info file types
     /// </summary>
-    internal enum RespCommandsObjectFileType
+    public enum RespCommandsObjectFileType
     {
         // Default file format (JSON serialized array of RespCommandsInfo objects)
         Default = 0,

@@ -238,7 +238,9 @@ Please check the syntax of your command. For detailed usage information run with
         /// <returns>True if import succeeded</returns>
         private static bool TryImportServerOptions(string path, ConfigFileType configFileType, Options options, ILogger logger, FileLocationType fileLocationType, string connString = null)
         {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString);
+            var assembly = fileLocationType == FileLocationType.EmbeddedResource ? Assembly.GetExecutingAssembly() : null;
+
+            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString, assembly);
             var configProvider = ConfigProviderFactory.GetConfigProvider(configFileType);
 
             using var stream = streamProvider.Read(path);
@@ -270,7 +272,9 @@ Please check the syntax of your command. For detailed usage information run with
         /// <returns>True if export succeeded</returns>
         private static bool TryExportServerOptions(string path, ConfigFileType configFileType, Options options, ILogger logger, FileLocationType fileLocationType, string connString = null)
         {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString);
+            var assembly = fileLocationType == FileLocationType.EmbeddedResource ? Assembly.GetExecutingAssembly() : null;
+
+            var streamProvider = StreamProviderFactory.GetStreamProvider(fileLocationType, connString, assembly);
             var configProvider = ConfigProviderFactory.GetConfigProvider(configFileType);
 
             var exportSucceeded = configProvider.TryExportOptions(path, streamProvider, options, logger);

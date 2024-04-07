@@ -119,8 +119,9 @@ namespace Garnet.common
         /// </summary>
         /// <param name="locationType">Type of location of files the stream provider reads from / writes to</param>
         /// <param name="connectionString">Connection string to Azure Storage, if applicable</param>
+        /// <param name="resourceAssembly">Assembly from which to load the embedded resource, if applicable</param>
         /// <returns>StreamProvider instance</returns>
-        public static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null)
+        public static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null, Assembly resourceAssembly = null)
         {
             switch (locationType)
             {
@@ -131,7 +132,7 @@ namespace Garnet.common
                 case FileLocationType.Local:
                     return new LocalFileStreamProvider();
                 case FileLocationType.EmbeddedResource:
-                    return new EmbeddedResourceStreamProvider();
+                    return new EmbeddedResourceStreamProvider(resourceAssembly);
                 default:
                     throw new NotImplementedException();
             }
@@ -199,22 +200,27 @@ namespace Garnet.common
     /// </summary>
     internal class EmbeddedResourceStreamProvider : IStreamProvider
     {
+        private readonly Assembly assembly;
+
+        public EmbeddedResourceStreamProvider(Assembly assembly)
+        {
+            this.assembly = assembly;
+        }
+
         public Stream Read(string path)
         {
-            var assembly = Assembly.GetExecutingAssembly();
             var resourceName = assembly.GetManifestResourceNames().FirstOrDefault(rn => rn.EndsWith(path));
             if (resourceName == null) return null;
 
-            return Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
+            return assembly.GetManifestResourceStream(resourceName);
         }
 
         public void Write(string path, byte[] data)
         {
-            var assembly = Assembly.GetExecutingAssembly();
             var resourceName = assembly.GetManifestResourceNames().FirstOrDefault(rn => rn.EndsWith(path));
             if (resourceName == null) return;
 
-            using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
+            using var stream = assembly.GetManifestResourceStream(resourceName);
             if (stream != null)
                 stream.Write(data, 0, data.Length);
         }

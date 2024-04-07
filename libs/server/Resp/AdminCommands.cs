@@ -263,8 +263,13 @@ namespace Garnet.server
                 // Handle COMMAND COUNT
                 if (count > 0 && (subCommand.SequenceEqual(CmdStrings.COUNT) || subCommand.SequenceEqual(CmdStrings.count)))
                 {
-                    var commandCount = storeWrapper.customCommandManager.CustomCommandsInfoCount +
-                                       RespCommandsInfo.RespCommandsInfoCount;
+                    if (!RespCommandsInfo.TryGetRespCommandsInfoCount(logger, out var respCommandCount))
+                    {
+                        respCommandCount = 0;
+                    }
+
+                    var commandCount = storeWrapper.customCommandManager.CustomCommandsInfoCount + respCommandCount;
+
                     while (!RespWriteUtils.WriteInteger(commandCount, ref dcurr, dend))
                         SendAndReset();
                 }
@@ -283,10 +288,13 @@ namespace Garnet.server
                             resultSb.Append(customCmd.RespFormat);
                         }
 
-                        foreach (var cmd in RespCommandsInfo.AllRespCommandsInfo)
+                        if (RespCommandsInfo.TryGetRespCommandsInfo(logger, out var respCommandsInfo))
                         {
-                            cmdCount++;
-                            resultSb.Append(cmd.RespFormat);
+                            foreach (var cmd in respCommandsInfo)
+                            {
+                                cmdCount++;
+                                resultSb.Append(cmd.RespFormat);
+                            }
                         }
 
                         while (!RespWriteUtils.WriteArrayLength(cmdCount, ref dcurr, dend))
@@ -306,8 +314,8 @@ namespace Garnet.server
                             if (!RespReadUtils.ReadStringWithLengthHeader(out var cmdName, ref ptr, recvBufferPtr + bytesRead))
                                 return false;
 
-                            var cmdInfo = RespCommandsInfo.GetRespCommandInfo(cmdName) ?? storeWrapper.customCommandManager.GetCustomCommandInfo(cmdName);
-                            if (cmdInfo != null)
+                            if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, logger, out var cmdInfo) || 
+                                storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                             {
                                 while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(cmdInfo.RespFormat), ref dcurr, dend))
                                     SendAndReset();
