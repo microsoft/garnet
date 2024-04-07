@@ -1,15 +1,13 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Reflection;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Garnet.server
 {
@@ -82,25 +80,13 @@ namespace Garnet.server
 
         private static void InitRespCommandsInfo()
         {
-            var assembly = Assembly.GetExecutingAssembly();
-            var resourceName = assembly.GetManifestResourceNames().FirstOrDefault(rn => rn.EndsWith(RespCommandsEmbeddedFileName))!;
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource);
+            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
 
-            var serializerOptions = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                Converters = { new JsonStringEnumConverter(), new KeySpecConverter() }
-            };
+            var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(RespCommandsEmbeddedFileName,
+                streamProvider, NullLogger.Instance, out allRespCommandsInfo);
 
-            using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName)!;
-            var respCommands = JsonSerializer.Deserialize<RespCommandsInfo[]>(stream, serializerOptions)!;
-
-            var tmpRespCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
-            foreach (var respCommandsInfo in respCommands)
-            {
-                tmpRespCommandsInfo.Add(respCommandsInfo.Name, respCommandsInfo);
-            }
-
-            allRespCommandsInfo = new ReadOnlyDictionary<string, RespCommandsInfo>(tmpRespCommandsInfo);
+            if (!importSucceeded) return;
 
             var tmpBasicRespCommandsInfo = new Dictionary<RespCommand, RespCommandsInfo>();
             var tmpArrayRespCommandsInfo = new Dictionary<RespCommand, Dictionary<byte, RespCommandsInfo>>();

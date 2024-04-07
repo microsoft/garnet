@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -11,8 +10,6 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
-using System.Text.Json.Serialization;
-using System.Text.Json;
 using System.Threading;
 using Garnet.client;
 using Garnet.common;
@@ -24,6 +21,7 @@ using NUnit.Framework;
 using StackExchange.Redis;
 using Tsavorite.core;
 using Tsavorite.devices;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Garnet.test
 {
@@ -70,26 +68,19 @@ namespace Garnet.test
             }
         }
 
-        internal static IReadOnlyDictionary<string, RespCommandsInfo> CustomCommandsInfo =>
-            LazyCustomCommandsInfo.Value;
+        internal static IReadOnlyDictionary<string, RespCommandsInfo> CustomCommandsInfo => LazyCustomCommandsInfo.Value;
 
         private static readonly Lazy<IReadOnlyDictionary<string, RespCommandsInfo>> LazyCustomCommandsInfo = new(() =>
         {
-            var serializerOptions = new JsonSerializerOptions
-            {
-                WriteIndented = true, Converters = { new JsonStringEnumConverter(), new KeySpecConverter() }
-            };
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource);
+            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
 
-            using var fileStream = File.OpenRead(CustomRespCommandInfoJsonPath)!;
-            var respCommands = JsonSerializer.Deserialize<RespCommandsInfo[]>(fileStream, serializerOptions)!;
+            var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(CustomRespCommandInfoJsonPath,
+                streamProvider, NullLogger.Instance, out var allRespCommandsInfo);
 
-            var respCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
-            foreach (var respCommand in respCommands)
-            {
-                respCommandsInfo.Add(respCommand.Name, respCommand);
-            }
+            if (!importSucceeded) return null;
 
-            return new ReadOnlyDictionary<string, RespCommandsInfo>(respCommandsInfo);
+            return allRespCommandsInfo;
         });
 
         static bool IsAzuriteRunning()

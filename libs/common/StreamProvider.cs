@@ -10,9 +10,9 @@ using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 using Tsavorite.devices;
 
-namespace Garnet
+namespace Garnet.common
 {
-    internal enum FileLocationType
+    public enum FileLocationType
     {
         Local,
         AzureStorage,
@@ -22,7 +22,7 @@ namespace Garnet
     /// <summary>
     /// Interface for reading / writing into local / remote files
     /// </summary>
-    internal interface IStreamProvider
+    public interface IStreamProvider
     {
         /// <summary>
         /// Read data from file specified in path
@@ -112,7 +112,7 @@ namespace Garnet
     /// <summary>
     /// Provides a StreamProvider instance
     /// </summary>
-    internal class StreamProviderFactory
+    public class StreamProviderFactory
     {
         /// <summary>
         /// Get a StreamProvider instance
@@ -120,7 +120,7 @@ namespace Garnet
         /// <param name="locationType">Type of location of files the stream provider reads from / writes to</param>
         /// <param name="connectionString">Connection string to Azure Storage, if applicable</param>
         /// <returns>StreamProvider instance</returns>
-        internal static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null)
+        public static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null)
         {
             switch (locationType)
             {

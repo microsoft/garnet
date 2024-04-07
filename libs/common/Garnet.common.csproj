@@ -29,4 +29,9 @@
 	  <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
+    <ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+  </ItemGroup>
+
 </Project>
