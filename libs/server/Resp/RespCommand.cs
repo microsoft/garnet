@@ -428,10 +428,6 @@ namespace Garnet.server
                                         {
                                             return (RespCommand.Set, (byte)SetOperation.SPOP);
                                         }
-                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSUNION\r\n"u8))
-                                        {
-                                            return (RespCommand.Set, (byte)SetOperation.SUNION);
-                                        }
                                         break;
 
                                     case 'T':
@@ -696,6 +692,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("STRLEN\r\n"u8))
                                         {
                                             return (RespCommand.STRLEN, 0);
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSUNION\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SUNION);
                                         }
                                         break;
 

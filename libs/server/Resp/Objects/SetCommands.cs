@@ -106,22 +106,19 @@ namespace Garnet.server
         private bool SetUnion<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ptr += 12;
-
-            if (count < 3)
+            if (count < 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SUNION", count);
             }
 
             // Read all the keys
-            ArgSlice[] keys = new ArgSlice[count - 1];
+            ArgSlice[] keys = new ArgSlice[count];
 
             for (int i = 0; i < keys.Length; i++)
             {
                 keys[i] = default;
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr,
-                        recvBufferPtr + bytesRead))
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
                     return false;
             }
 

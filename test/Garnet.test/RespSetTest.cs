@@ -558,7 +558,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, strResponse);
 
             response = lightClientRequest.SendCommand("SUNION myset");
-            expectedResponse = $"-ERR wrong number of arguments for SUNION command.\r\n";
+            expectedResponse = $"-ERR wrong number of arguments for 'SUNION' command\r\n";
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
         }
