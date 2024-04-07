@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -607,7 +608,7 @@ namespace Garnet.common
                 result = 0;
                 return false;
             }
-            parsed = double.TryParse(Encoding.ASCII.GetString(resultBytes), out result);
+            parsed = Utf8Parser.TryParse(resultBytes, out result, out _, default);
             return true;
         }
 
