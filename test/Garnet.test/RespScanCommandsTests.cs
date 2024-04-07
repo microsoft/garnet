@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Garnet.server;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -15,11 +16,14 @@ namespace Garnet.test
     public class RespScanCommandsTests
     {
         GarnetServer server;
+        private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            Assert.IsTrue(TestUtils.TryGetCommandsInfo(NullLogger.Instance, out respCustomCommandsInfo));
+            Assert.IsNotNull(respCustomCommandsInfo);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
         }
@@ -526,8 +530,8 @@ namespace Garnet.test
             // create a custom object
             var factory = new MyDictFactory();
 
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, TestUtils.CustomCommandsInfo["MYDICTSET"]);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, TestUtils.CustomCommandsInfo["MYDICTGET"]);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, respCustomCommandsInfo["MYDICTSET"]);
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, respCustomCommandsInfo["MYDICTGET"]);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

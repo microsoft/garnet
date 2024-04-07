@@ -209,7 +209,8 @@ namespace Garnet.common
 
         public Stream Read(string path)
         {
-            var resourceName = assembly.GetManifestResourceNames().FirstOrDefault(rn => rn.EndsWith(path));
+            var resourceName = assembly.GetManifestResourceNames()
+                .FirstOrDefault(rn => rn.EndsWith($".{path}"));
             if (resourceName == null) return null;
 
             return assembly.GetManifestResourceStream(resourceName);
@@ -217,7 +218,8 @@ namespace Garnet.common
 
         public void Write(string path, byte[] data)
         {
-            var resourceName = assembly.GetManifestResourceNames().FirstOrDefault(rn => rn.EndsWith(path));
+            var resourceName = assembly.GetManifestResourceNames()
+                .FirstOrDefault(rn => rn.EndsWith($".{path}"));
             if (resourceName == null) return;
 
             using var stream = assembly.GetManifestResourceStream(resourceName);

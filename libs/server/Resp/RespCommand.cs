@@ -443,6 +443,10 @@ namespace Garnet.server
                             {
                                 return RespCommand.PEXPIRE;
                             }
+                            else if (lastWord == MemoryMarshal.Read<ulong>("OMMAND\r\n"u8) && ptr[8] == 'C')
+                            {
+                                return RespCommand.COMMAND;
+                            }
                             break;
 
                         case 8:
