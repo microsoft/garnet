@@ -3,6 +3,8 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Text;
+using System.Diagnostics;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -395,52 +397,45 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
 
             // This value is used to indicate partial command execution
-            _output.opsDone = Int32.MinValue;
+            _output.opsDone = int.MinValue;
 
             try
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input + length))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input + length) ||
+                    !RespReadUtils.ReadByteArrayWithLengthHeader(out var incr, ref input_currptr, input + length))
                     return;
 
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var incr, ref input_currptr, input + length))
-                    return;
-
-                if (hash.TryGetValue(key, out var _value))
+                if (hash.TryGetValue(key, out var value))
                 {
-                    if (Single.TryParse(Encoding.ASCII.GetString(_value), out var result))
+                    if (Utf8Parser.TryParse(value, out float result, out _, default) &&
+                        Utf8Parser.TryParse(incr, out float resultIncr, out _, default))
                     {
-                        if (Single.TryParse(Encoding.ASCII.GetString(incr), out var resultIncr))
+                        result += resultIncr;
+
+                        if (op == HashOperation.HINCRBY)
                         {
-                            result += resultIncr;
+                            Span<byte> resultBytes = stackalloc byte[NumUtils.MaximumFormatInt64Length];
+                            bool success = Utf8Formatter.TryFormat((long)result, resultBytes, out int bytesWritten, format: default);
+                            Debug.Assert(success);
 
-                            if (op == HashOperation.HINCRBY)
-                            {
-                                int numDigits = NumUtils.NumDigitsInLong((long)result);
-                                byte sign = (byte)(result < 0 ? 1 : 0);
-                                var resultBytes = new byte[sign + numDigits];
+                            resultBytes = resultBytes.Slice(0, bytesWritten);
 
-                                fixed (byte* resultBytesPtr = &resultBytes[0])
-                                {
-                                    byte* resultRef = resultBytesPtr;
-                                    NumUtils.LongToBytes((long)result, numDigits, ref resultRef);
+                            hash[key] = resultBytes.ToArray();
+                            Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) - Utility.RoundUp(value.Length, IntPtr.Size);
 
-                                    hash[key] = resultBytes;
-                                    this.Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) - Utility.RoundUp(_value.Length, IntPtr.Size);
-
-                                    while (!RespWriteUtils.WriteIntegerFromBytes(resultBytesPtr, sign + numDigits, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
-                            }
-                            else
-                            {
-                                var resultBytes = Encoding.ASCII.GetBytes(result.ToString());
-                                hash[key] = resultBytes;
-                                this.Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) - Utility.RoundUp(_value.Length, IntPtr.Size);
-
-                                while (!RespWriteUtils.WriteBulkString(resultBytes, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
+                            while (!RespWriteUtils.WriteIntegerFromBytes(resultBytes, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
+                        else
+                        {
+                            var resultBytes = Encoding.ASCII.GetBytes(result.ToString());
+                            hash[key] = resultBytes;
+                            Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) - Utility.RoundUp(value.Length, IntPtr.Size);
+
+                            while (!RespWriteUtils.WriteBulkString(resultBytes, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+
                     }
                     else
                     {
@@ -451,7 +446,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (!Single.TryParse(Encoding.ASCII.GetString(incr), out var resultIncr))
+                    if (!Utf8Parser.TryParse(incr, out float resultIncr, out _, default))
                     {
                         ReadOnlySpan<byte> errorMessage = "-ERR field value is not a number\r\n"u8;
                         while (!RespWriteUtils.WriteDirect(errorMessage, ref curr, end))
@@ -460,7 +455,7 @@ namespace Garnet.server
                     else
                     {
                         hash.Add(key, incr);
-                        this.UpdateSize(key, incr);
+                        UpdateSize(key, incr);
                         if (op == HashOperation.HINCRBY)
                         {
                             while (!RespWriteUtils.WriteInteger((long)resultIncr, ref curr, end))

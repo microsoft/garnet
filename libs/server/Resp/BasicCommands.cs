@@ -301,13 +301,12 @@ namespace Garnet.server
             var key = new ArgSlice(keyPtr, ksize);
             var value = new ArgSlice(valPtr, vsize);
 
-            const int maxOutputSize = 20; // max byte length to store length of appended string in ASCII byte values
-            byte* pbOutput = stackalloc byte[maxOutputSize];
-            var output = new ArgSlice(pbOutput, maxOutputSize);
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
+            var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             var status = storageApi.SETRANGE(key, value, offset, ref output);
 
-            while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+            while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -771,12 +770,12 @@ namespace Garnet.server
 
             var key = new ArgSlice(keyPtr, ksize);
 
-            byte* pbOutput = stackalloc byte[20];
-            var output = new ArgSlice(pbOutput, 20);
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
+            var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             var status = storageApi.Increment(key, input, ref output);
 
-            while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+            while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -802,19 +801,17 @@ namespace Garnet.server
             if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
                 return true;
 
-            const int maxOutputSize = 20; // max byte length to store length of appended string in ASCII byte values
-            byte* pbOutput = stackalloc byte[maxOutputSize];
-
             keyPtr -= sizeof(int);
             valPtr -= sizeof(int);
             *(int*)keyPtr = ksize;
             *(int*)valPtr = vsize;
 
-            var output = new SpanByteAndMemory(pbOutput, maxOutputSize);
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
+            var output = SpanByteAndMemory.FromFixedSpan(outputBuffer);
 
             var status = storageApi.APPEND(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr), ref output);
 
-            while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+            while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
 
             return true;

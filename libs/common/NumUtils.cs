@@ -13,6 +13,8 @@ namespace Garnet.common
     /// </summary>
     public static unsafe class NumUtils
     {
+        public const int MaximumFormatInt64Length = 20;   // 19 + sign (i.e. -9223372036854775808)
+
         /// <summary>
         /// Convert long number into sequence of ASCII bytes
         /// </summary>
