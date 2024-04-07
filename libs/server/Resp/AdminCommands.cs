@@ -420,11 +420,12 @@ namespace Garnet.server
                     {
                         var param = GetCommand(bufSpan, out bool success1);
                         if (!success1) return false;
-                        if (Encoding.ASCII.GetString(param).ToUpper() == "UNSAFETRUNCATELOG")
+                        string paramStr = Encoding.ASCII.GetString(param);
+                        if (paramStr.Equals("UNSAFETRUNCATELOG", StringComparison.OrdinalIgnoreCase))
                             unsafeTruncateLog = true;
-                        if (Encoding.ASCII.GetString(param).ToUpper() == "ASYNC")
+                        else if (paramStr.Equals("ASYNC", StringComparison.OrdinalIgnoreCase))
                             async = true;
-                        if (Encoding.ASCII.GetString(param).ToUpper() == "SYNC")
+                        else if (paramStr.Equals("SYNC", StringComparison.OrdinalIgnoreCase))
                             async = false;
                         count--;
                     }
@@ -579,7 +580,7 @@ namespace Garnet.server
             var status = GarnetStatus.OK;
             long memoryUsage = default;
 
-            if (memoryOption.ToUpperInvariant().Equals("USAGE"))
+            if (memoryOption.Equals("USAGE", StringComparison.OrdinalIgnoreCase))
             {
                 // read key
                 byte* keyPtr = null;

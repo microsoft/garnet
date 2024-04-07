@@ -32,7 +32,7 @@ namespace Garnet.server
 
         public RespCommandsInfo(string name, RespCommand command, int arity, HashSet<RespCommandOption> options)
         {
-            nameStr = name.ToUpper();
+            nameStr = name.ToUpperInvariant();
             this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);
             this.command = command;
             this.arity = arity;
@@ -240,7 +240,7 @@ namespace Garnet.server
 
         public RespCommandsOptionInfo(string name, RespCommandOption opt, int ariry)
         {
-            nameStr = name.ToUpper();
+            nameStr = name.ToUpperInvariant();
             this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);
             this.option = opt;
             this.arity = ariry;

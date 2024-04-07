@@ -16,7 +16,7 @@ namespace Garnet.server
 
         internal CustomCommand(string name, byte id, int numKeys, int numParams, CommandType type, CustomRawStringFunctions functions, long expirationTicks)
         {
-            nameStr = name.ToUpper();
+            nameStr = name.ToUpperInvariant();
             this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);
             this.id = id;
             NumKeys = numKeys;

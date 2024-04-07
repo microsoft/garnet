@@ -473,7 +473,7 @@ namespace Garnet.cluster
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    if (option.ToUpper().Equals("HARD"))
+                    if (option.Equals("HARD", StringComparison.OrdinalIgnoreCase))
                         soft = false;
                 }
 
@@ -1336,10 +1336,9 @@ namespace Garnet.cluster
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var backgroundFlag, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    backgroundFlag = backgroundFlag.ToUpper();
-                    if (backgroundFlag.Equals("SYNC"))
+                    if (backgroundFlag.Equals("SYNC", StringComparison.OrdinalIgnoreCase))
                         background = false;
-                    else if (backgroundFlag.Equals("ASYNC"))
+                    else if (backgroundFlag.Equals("ASYNC", StringComparison.OrdinalIgnoreCase))
                         background = true;
                     else
                     {
