@@ -249,7 +249,7 @@ namespace Garnet.server
                         if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var withValuesByteArray, ref input_currptr, input + length))
                             return;
 
-                        if (String.Compare(Encoding.ASCII.GetString(withValuesByteArray), "WITHVALUES", StringComparison.InvariantCultureIgnoreCase) == 0)
+                        if (string.Equals(Encoding.ASCII.GetString(withValuesByteArray), "WITHVALUES", StringComparison.OrdinalIgnoreCase))
                         {
                             withValues = true;
                         }
@@ -259,7 +259,7 @@ namespace Garnet.server
                     countDone = count;
 
                     // Prepare response
-                    if (!Int32.TryParse(Encoding.ASCII.GetString(countParameterByteArray), out var countParameter))
+                    if (!Utf8Parser.TryParse(countParameterByteArray, out int countParameter, out _, default))
                     {
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

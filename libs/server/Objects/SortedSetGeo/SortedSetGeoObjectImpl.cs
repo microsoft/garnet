@@ -389,7 +389,7 @@ namespace Garnet.server
                     if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var tokenByteArray, ref input_currptr, input + length))
                         return;
                     var stringToken = Encoding.ASCII.GetString(tokenByteArray).ToUpperInvariant();
-                    if (opsStr.IndexOf(stringToken) != -1)
+                    if (opsStr.Contains(stringToken, StringComparison.OrdinalIgnoreCase))
                     {
                         switch (stringToken)
                         {

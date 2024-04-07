@@ -3,8 +3,8 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Text;
 using System.Collections.Generic;
-using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -78,7 +78,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
 
             // This value is used to indicate partial command execution
-            _output.countDone = Int32.MinValue;
+            _output.countDone = int.MinValue;
             bytesDone = 0;
 
             while (leftTokens > 0)
@@ -100,7 +100,7 @@ namespace Garnet.server
                     if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterValue, ref input_currptr, input + length))
                         return false;
 
-                    int.TryParse(Encoding.ASCII.GetString(countParameterValue), out countInInput);
+                    _ = Utf8Parser.TryParse(countParameterValue, out countInInput, out _, default);
 
                     // Limiting number of items to send to the output
                     if (countInInput > limitCountInOutput)

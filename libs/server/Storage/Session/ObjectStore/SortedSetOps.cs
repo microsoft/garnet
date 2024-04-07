@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
@@ -370,7 +371,7 @@ namespace Garnet.server
                     if (error == default)
                     {
                         // get the new score
-                        double.TryParse(Encoding.ASCII.GetString(result?[0].ToArray()), out newScore);
+                        _ = Utf8Parser.TryParse(result[0].ReadOnlySpan, out newScore, out _, default);
                     }
                 }
             }

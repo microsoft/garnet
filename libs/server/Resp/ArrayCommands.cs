@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -743,7 +744,7 @@ namespace Garnet.server
                 {
                     if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterValue, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    long.TryParse(Encoding.ASCII.GetString(countParameterValue), out countValue);
+                    _ = Utf8Parser.TryParse(countParameterValue, out countValue, out _, default);
                     leftTokens--;
                 }
                 else if (parameterSB.SequenceEqual(CmdStrings.TYPE) || parameterSB.SequenceEqual(CmdStrings.type))
@@ -755,13 +756,11 @@ namespace Garnet.server
                 leftTokens--;
             }
 
-            long cursorFromInput = 0;
-            long.TryParse(Encoding.ASCII.GetString(cursorParameterByte), out cursorFromInput);
+            _ = Utf8Parser.TryParse(cursorParameterByte, out long cursorFromInput, out _, default);
 
             var patternAS = new ArgSlice(pattern, psize);
 
-            long cursor = 0;
-            storageApi.DbScan(patternAS, allKeys, cursorFromInput, out cursor, out var keys, typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
+            storageApi.DbScan(patternAS, allKeys, cursorFromInput, out long cursor, out var keys, typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
 
             // Prepare values for output
             if (keys.Count == 0)

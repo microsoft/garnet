@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -280,7 +281,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
 
             //to validate partial execution
-            _output.countDone = Int32.MinValue;
+            _output.countDone = int.MinValue;
             try
             {
                 // read increment
@@ -292,9 +293,9 @@ namespace Garnet.server
                     return;
 
                 //check if increment value is valid
-                if (!double.TryParse(Encoding.ASCII.GetString(incrementByteArray), out var incrValue))
+                if (!Utf8Parser.TryParse(incrementByteArray, out double incrValue, out _, default))
                 {
-                    countDone = Int32.MaxValue;
+                    countDone = int.MaxValue;
                 }
                 else
                 {
@@ -1046,12 +1047,12 @@ namespace Garnet.server
         {
             exclusive = false;
             var strVal = Encoding.ASCII.GetString(val);
-            if (string.Compare("+inf", strVal, StringComparison.InvariantCultureIgnoreCase) == 0)
+            if (string.Equals("+inf", strVal, StringComparison.OrdinalIgnoreCase))
             {
                 valueDouble = double.PositiveInfinity;
                 return true;
             }
-            else if (string.Compare("-inf", strVal, StringComparison.InvariantCultureIgnoreCase) == 0)
+            else if (string.Equals("-inf", strVal, StringComparison.OrdinalIgnoreCase))
             {
                 valueDouble = double.NegativeInfinity;
                 return true;
