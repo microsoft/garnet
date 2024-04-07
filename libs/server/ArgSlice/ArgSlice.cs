@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Tsavorite.core;
@@ -72,5 +73,16 @@ namespace Garnet.server
         /// <returns>A string ASCII decoded string from the slice.</returns>
         public override readonly string ToString()
             => Encoding.ASCII.GetString(ReadOnlySpan);
+
+        /// <summary>
+        /// Create a <see cref="ArgSlice"/> from the given <paramref name="span"/>.
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The <paramref name="span"/> MUST point to pinned memory.
+        /// </remarks>
+        internal static ArgSlice FromPinnedSpan(ReadOnlySpan<byte> span)
+        {
+            return new ArgSlice((byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)), span.Length);
+        }
     }
 }
