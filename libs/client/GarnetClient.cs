@@ -259,15 +259,13 @@ namespace Garnet.client
                 IAsyncResult result = socket.BeginConnect(endPoint, null, null);
                 result.AsyncWaitHandle.WaitOne(millisecondsTimeout, true);
 
-                if (socket.Connected)
-                {
-                    socket.EndConnect(result);
-                }
-                else
+                if (!socket.Connected)
                 {
                     socket.Close();
                     throw new Exception($"Failed to connect server {address}:{port}.");
                 }
+
+                socket.EndConnect(result);
             }
             else
             {

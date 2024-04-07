@@ -29,17 +29,18 @@ namespace Garnet.client
                 if (char.IsDigit(c))
                 {
                     result = result * 10 + (byte)c - '0';
+                    continue;
                 }
-                else
+
+                for (int i = 0; i < suffix.Length; i++)
                 {
-                    for (int i = 0; i < suffix.Length; i++)
+                    if (char.ToLower(c) != suffix[i])
                     {
-                        if (char.ToLower(c) == suffix[i])
-                        {
-                            result *= (long)Math.Pow(1024, i + 1);
-                            return result;
-                        }
+                        continue;
                     }
+
+                    result *= (long)Math.Pow(1024, i + 1);
+                    return result;
                 }
             }
             return result;
@@ -179,7 +180,8 @@ namespace Garnet.client
             {
                 return task;
             }
-            else if (token.IsCancellationRequested)
+            
+            if (token.IsCancellationRequested)
             {
                 return Task.FromCanceled<T>(token);
             }
