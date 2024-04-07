@@ -33,7 +33,7 @@ namespace Garnet.test
         public void DefaultConfigurationOptionsCoverage()
         {
             string json;
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource);
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, Assembly.GetExecutingAssembly());
             using (var stream = streamProvider.Read(ServerSettingsManager.DefaultOptionsEmbeddedFileName))
             {
                 using (var streamReader = new StreamReader(stream))

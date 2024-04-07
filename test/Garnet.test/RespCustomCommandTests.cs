@@ -34,7 +34,7 @@ namespace Garnet.test
             _extTestDir1 = Path.Combine(TestUtils.MethodTestDir, "test1");
             _extTestDir2 = Path.Combine(TestUtils.MethodTestDir, "test2");
 
-            Assert.IsTrue(TestUtils.TryGetCommandsInfo(NullLogger.Instance, out respCustomCommandsInfo));
+            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(NullLogger.Instance, out respCustomCommandsInfo));
             Assert.IsNotNull(respCustomCommandsInfo);
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
