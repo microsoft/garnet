@@ -22,7 +22,7 @@ namespace Garnet.cluster
             readHead = (int)(ptr - recvBufferPtr);
 
             //Turn of replication and make replica into a primary but do not delete data
-            if (address.Equals("NO", StringComparison.OrdinalIgnoreCase) && 
+            if (address.Equals("NO", StringComparison.OrdinalIgnoreCase) &&
                 portStr.Equals("ONE", StringComparison.OrdinalIgnoreCase))
             {
                 clusterProvider.clusterManager?.TryResetReplica();
