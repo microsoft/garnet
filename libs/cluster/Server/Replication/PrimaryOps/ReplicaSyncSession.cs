@@ -263,7 +263,7 @@ namespace Garnet.cluster
                 logger?.LogError(ex, "An error occurred at ReplicationManager.SendCheckpointTask");
                 if (localEntry != default) logger?.LogError("{cEntryDump}", localEntry.GetCheckpointEntryDump());
                 if (aofSyncTaskInfo != null) clusterProvider.replicationManager.TryRemoveReplicationTask(aofSyncTaskInfo);
-                return "ERR " + ex.Message; // this is response sent to remote client
+                return "ERR " + ex.Message; // this is error sent to remote client
             }
             finally
             {
