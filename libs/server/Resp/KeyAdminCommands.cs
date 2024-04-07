@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -238,12 +239,7 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadStringWithLengthHeader(out optionStr, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                optionStr = optionStr.ToUpper();
-                try
-                {
-                    expireOption = (ExpireOption)Enum.Parse(typeof(ExpireOption), optionStr);
-                }
-                catch
+                if (!Enum.TryParse(optionStr, ignoreCase: true, out expireOption))
                 {
                     invalidOption = true;
                 }

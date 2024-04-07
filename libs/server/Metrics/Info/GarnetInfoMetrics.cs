@@ -11,7 +11,7 @@ namespace Garnet.server
 {
     class GarnetInfoMetrics
     {
-        public static readonly InfoMetricsType[] defaultInfo = Enum.GetValues(typeof(InfoMetricsType)).Cast<InfoMetricsType>()
+        public static readonly InfoMetricsType[] defaultInfo = Enum.GetValues<InfoMetricsType>()
             .Where(e => e switch
             {
                 InfoMetricsType.STOREHASHTABLE => false,

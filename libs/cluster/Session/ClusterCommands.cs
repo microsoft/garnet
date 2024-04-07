@@ -522,11 +522,8 @@ namespace Garnet.cluster
                     {
                         if (!RespReadUtils.ReadStringWithLengthHeader(out var failoverOptionStr, ref ptr, recvBufferPtr + bytesRead))
                             return false;
-                        try
-                        {
-                            failoverOption = (FailoverOption)Enum.Parse(typeof(FailoverOption), failoverOptionStr.ToUpper());
-                        }
-                        catch
+
+                        if (!Enum.TryParse(failoverOptionStr, ignoreCase: true, out failoverOption))
                         {
                             while (!RespWriteUtils.WriteAsciiDirect($"-ERR Failover option ({failoverOptionStr}) not supported\r\n", ref dcurr, dend))
                                 SendAndReset();
@@ -955,9 +952,8 @@ namespace Garnet.cluster
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var subcommand, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    SlotState slotState = SlotState.STABLE;
-                    try { slotState = (SlotState)Enum.Parse(typeof(SlotState), subcommand); }
-                    catch { }
+                    if (!Enum.TryParse(subcommand, out SlotState slotState))
+                        slotState = SlotState.STABLE;
 
                     string nodeid = null;
                     if (count > 2)
@@ -1025,7 +1021,6 @@ namespace Garnet.cluster
                     // CLUSTER SETSLOTRANGE NODE <node-id> <slot-start> <slot-end> [slot-start slot-end]
                     // CLUSTER SETSLOTRANGE STABLE <slot-start> <slot-end> [slot-start slot-end]
 
-                    SlotState slotState;
                     string nodeid = default;
                     var _count = count - 1;
                     var ptr = recvBufferPtr + readHead;
@@ -1033,12 +1028,11 @@ namespace Garnet.cluster
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var subcommand, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    // Parse slot state
-                    try { slotState = (SlotState)Enum.Parse(typeof(SlotState), subcommand); }
-                    catch (Exception ex)
+                    // Try parse slot state
+                    if (!Enum.TryParse(subcommand, out SlotState slotState))
                     {
                         // Log error for invalid slot state option
-                        logger?.LogError(ex, "");
+                        logger?.LogError($"The given {nameof(SlotState)} is invalid.");
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;
                         errorFlag = true;

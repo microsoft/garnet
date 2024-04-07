@@ -39,12 +39,12 @@ namespace Garnet.server
                         {
                             if (!RespReadUtils.ReadStringWithLengthHeader(out var eventStr, ref ptr, recvBufferPtr + bytesRead))
                                 return false;
-                            try
+
+                            if (Enum.TryParse(eventStr, ignoreCase: true, out LatencyMetricsType eventType))
                             {
-                                var eventType = (LatencyMetricsType)Enum.Parse(typeof(LatencyMetricsType), eventStr.ToUpper());
                                 events.Add(eventType);
                             }
-                            catch
+                            else
                             {
                                 invalid = true;
                                 invalidEvent = eventStr;
@@ -94,12 +94,11 @@ namespace Garnet.server
                                 if (!RespReadUtils.ReadStringWithLengthHeader(out var eventStr, ref ptr, recvBufferPtr + bytesRead))
                                     return false;
 
-                                try
+                                if (Enum.TryParse(eventStr, ignoreCase: true, out LatencyMetricsType eventType))
                                 {
-                                    var eventType = (LatencyMetricsType)Enum.Parse(typeof(LatencyMetricsType), eventStr.ToUpper());
                                     events.Add(eventType);
                                 }
-                                catch
+                                else
                                 {
                                     invalid = true;
                                     invalidEvent = eventStr;

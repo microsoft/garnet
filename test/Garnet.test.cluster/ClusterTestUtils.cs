@@ -1989,7 +1989,7 @@ namespace Garnet.test.cluster
                             nodeid = (string)node[1],
                             port = (int)node[3],
                             address = (string)node[5],
-                            role = (Role)Enum.Parse(typeof(Role), (string)node[7]),
+                            role = Enum.Parse<Role>((string)node[7]),
                             replicationOffset = (long)node[9]
                         };
                         shardInfo.nodes.Add(nodeInfo);

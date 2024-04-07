@@ -41,7 +41,7 @@ namespace Garnet.server
                         default:
                             try
                             {
-                                var sectionType = (InfoMetricsType)Enum.Parse(typeof(InfoMetricsType), section);
+                                var sectionType = Enum.Parse<InfoMetricsType>(section);
                                 sections.Add(sectionType);
                             }
                             catch
