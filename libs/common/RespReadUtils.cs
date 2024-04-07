@@ -514,47 +514,6 @@ namespace Garnet.common
         /// <summary>
         /// Read string array with length header
         /// </summary>
-        public static bool ReadPtrArrayWithLengthHeader(out List<Tuple<long, long>> result, ref byte* ptr, byte* end)
-        {
-            result = null;
-            if (ptr + 3 >= end)
-                return false;
-
-            Debug.Assert(*ptr == '*');
-            ptr++;
-            bool neg = *ptr == '-';
-            int asize = *ptr++ - '0';
-            while (*ptr != '\r')
-            {
-                Debug.Assert(*ptr >= '0' && *ptr <= '9');
-                asize = asize * 10 + *ptr++ - '0';
-                if (ptr >= end)
-                    return false;
-            }
-            ptr += 2;  // for \r\n
-            if (ptr > end)
-                return false;
-
-            if (neg)
-                return true;
-
-            result = new();
-
-            for (int z = 0; z < asize; z++)
-            {
-                byte* keyPtr = null;
-                int ksize = 0;
-                if (!ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, end))
-                    return false;
-                result.Add(new Tuple<long, long>(((IntPtr)keyPtr).ToInt64(), ksize));
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Read string array with length header
-        /// </summary>
         public static bool ReadStringArrayWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte>[] result, ref byte* ptr, byte* end)
         {
             result = null;
