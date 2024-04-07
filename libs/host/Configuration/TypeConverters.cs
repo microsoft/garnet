@@ -53,7 +53,7 @@ namespace Garnet
 
             if (destinationType == typeof(string))
             {
-                return rbValue.ToString().ToLower();
+                return rbValue.ToString().ToLowerInvariant();
             }
 
             throw new NotImplementedException();
@@ -130,7 +130,7 @@ namespace Garnet
 
             if (destinationType == typeof(string))
             {
-                return rbValue.ToString().ToLower();
+                return rbValue.ToString().ToLowerInvariant();
             }
 
             throw new NotSupportedException();
@@ -178,7 +178,7 @@ namespace Garnet
 
             if (destinationType == typeof(string))
             {
-                return rtacValue.ToString().ToLower();
+                return rtacValue.ToString().ToLowerInvariant();
             }
 
             throw new NotSupportedException();

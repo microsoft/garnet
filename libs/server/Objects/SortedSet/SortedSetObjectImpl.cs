@@ -380,7 +380,7 @@ namespace Garnet.server
                     {
                         if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var token, ref input_currptr, input + length))
                             return;
-                        switch (Encoding.ASCII.GetString(token).ToLower())
+                        switch (Encoding.ASCII.GetString(token).ToLowerInvariant())
                         {
                             case "byscore":
                                 options.ByScore = true;
