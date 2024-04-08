@@ -195,19 +195,19 @@ namespace Garnet.cluster
             return ClusterInfo;
         }
 
-        private static string GetRange(List<int> slots)
+        private static string GetRange(int[] slots)
         {
             var range = "> ";
             var start = slots[0];
             var end = slots[0];
-            for (var i = 1; i < slots.Count + 1; i++)
+            for (var i = 1; i < slots.Length + 1; i++)
             {
-                if (i < slots.Count && slots[i] == end + 1)
+                if (i < slots.Length && slots[i] == end + 1)
                     end = slots[i];
                 else
                 {
                     range += $"{start}-{end} ";
-                    if (i < slots.Count)
+                    if (i < slots.Length)
                     {
                         start = slots[i];
                         end = slots[i];

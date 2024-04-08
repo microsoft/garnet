@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -21,12 +22,12 @@ namespace Garnet.cluster
     internal sealed partial class ClusterManager : IDisposable
     {
         /// <summary>
-        /// Add slots to local worker
+        /// Try to add slots to local worker
         /// </summary>
         /// <param name="slots">Slot list</param>
         /// <param name="slotAssigned">Slot number of already assigned slot</param>
         /// <returns>True on success, false otherwise</returns>
-        public bool TryAddSlots(List<int> slots, out int slotAssigned)
+        public bool TryAddSlots(HashSet<int> slots, out int slotAssigned)
         {
             slotAssigned = -1;
             while (true)
@@ -34,8 +35,7 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 if (current.NumWorkers == 0) return false;
 
-                var newConfig = currentConfig.AddSlots(slots, out var slot);
-                if (slot != -1)
+                if (!currentConfig.TryAddSlots(slots, out var slot, out var newConfig))
                 {
                     slotAssigned = slot;
                     return false;
@@ -44,17 +44,17 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
-            logger?.LogTrace("ADD SLOTS {slots}", GetRange(slots));
+            logger?.LogTrace("ADD SLOTS {slots}", GetRange(slots.ToArray()));
             return true;
         }
 
         /// <summary>
-        /// Remove ownernship of slots. Slot state transition to OFFLINE.
+        /// Try to remove ownernship of slots. Slot state transition to OFFLINE.
         /// </summary>
         /// <param name="slots">Slot list</param>
-        /// <param name="notLocalSlot">Slot number of slot that is not local</param>
-        /// <returns>True on success, false otherwise</returns>
-        public bool TryRemoveSlots(List<int> slots, out int notLocalSlot)
+        /// <param name="notLocalSlot">The slot number that is not local.</param>
+        /// <returns><see langword="false"/> if a slot provided is not local; otherwise <see langword="true"/>.</returns>
+        public bool TryRemoveSlots(HashSet<int> slots, out int notLocalSlot)
         {
             notLocalSlot = -1;
 
@@ -63,8 +63,8 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 if (current.NumWorkers == 0) return false;
 
-                var newConfig = currentConfig.RemoveSlots(slots, out var slot);
-                if (slot != -1)
+                if (!currentConfig.TryRemoveSlots(slots, out var slot, out var newConfig) &&
+                    slot != -1)
                 {
                     notLocalSlot = slot;
                     return false;
@@ -79,7 +79,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Prepare node for migration of slot to node with specified node Id.
+        /// Try to prepare node for migration of slot to node with specified node Id.
         /// </summary>
         /// <param name="slot">Slot to change state</param>
         /// <param name="nodeid">Migration target node-id</param>
@@ -145,7 +145,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Change list of slots to migrating state
+        /// Try to change list of slots to migrating state
         /// </summary>
         /// <param name="slots">Slot list</param>
         /// <param name="nodeid">Migration target node-id</param>
@@ -213,7 +213,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Prepare node for import of slot from node with specified nodeid.
+        /// Try to prepare node for import of slot from node with specified nodeid.
         /// </summary>
         /// <param name="slot">Slot list</param>
         /// <param name="nodeid">Importing source node-id</param>
@@ -268,7 +268,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Prepare node for import of slots from node with specified nodeid.
+        /// Try to prepare node for import of slots from node with specified nodeid.
         /// </summary>
         /// <param name="slots">Slot list</param>
         /// <param name="nodeid">Migration target node-id</param>
@@ -331,7 +331,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Change ownership of slot to node.
+        /// Try to change ownership of slot to node.
         /// </summary>
         /// <param name="slot">Slot list</param>
         /// <param name="nodeid">Importing source node-id</param>
@@ -388,10 +388,10 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Change ownership of slots to node.
+        /// Try to change ownership of slots to node.
         /// </summary>
         /// <param name="slots">SLot list</param>
-        /// <param name="nodeid">Node-i to make owner of slots</param>
+        /// <param name="nodeid">The id of the new owner node.</param>
         /// <param name="errorMessage">Error message</param>
         /// <returns>True on success, false otherwise</returns>
         public bool TryPrepareSlotsForOwnershipChange(HashSet<int> slots, string nodeid, out ReadOnlySpan<byte> errorMessage)
@@ -419,14 +419,12 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Reset slot state to stable
+        /// Try to reset slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
-        /// <param name="slot">Slot id to reset state</param>       
-        /// <param name="errorMessage"></param>
+        /// <param name="slot">Slot id to reset state</param>
         /// <returns>True on success, false otherwise</returns>
-        public bool TryResetSlotState(int slot, out ReadOnlySpan<byte> errorMessage)
+        public bool TryResetSlotState(int slot)
         {
-            errorMessage = default;
             var current = currentConfig;
             var slotState = current.GetState((ushort)slot);
             if (slotState is SlotState.MIGRATING or SlotState.IMPORTING)
@@ -446,7 +444,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Reset local slot state to stable
+        /// Try to reset local slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slots">Slot list</param>
         /// <param name="errorMessage">Error message</param>
@@ -455,8 +453,13 @@ namespace Garnet.cluster
         {
             errorMessage = default;
             foreach (var slot in slots)
-                if (!TryResetSlotState(slot, out errorMessage))
+            {
+                if (!TryResetSlotState(slot))
+                {
+                    errorMessage = "ERR Failed to reset local slot state"u8;
                     return false;
+                }
+            }
             return true;
         }
 

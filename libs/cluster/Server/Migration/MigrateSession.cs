@@ -255,7 +255,7 @@ namespace Garnet.cluster
             if (!clusterProvider.clusterManager.TryResetSlotsState(_sslots, out var resp))
             {
                 Status = MigrateState.FAIL;
-                logger?.LogError("{resp}", Encoding.ASCII.GetString(resp));
+                logger?.LogError(Encoding.ASCII.GetString(resp));
                 return false;
             }
             return true;
@@ -270,7 +270,7 @@ namespace Garnet.cluster
             if (!clusterProvider.clusterManager.TryPrepareSlotsForMigration(_sslots, _targetNodeId, out var resp))
             {
                 Status = MigrateState.FAIL;
-                logger?.LogError("{resp}", Encoding.ASCII.GetString(resp));
+                logger?.LogError(Encoding.ASCII.GetString(resp));
                 return false;
             }
             return true;
