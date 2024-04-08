@@ -14,35 +14,43 @@ namespace Garnet.cluster
         /// <summary>
         /// Begin background replica sync session
         /// </summary>
-        /// <param name="remoteNodeId"></param>
-        /// <param name="remote_primary_replid"></param>
-        /// <param name="remoteEntry"></param>
-        /// <param name="replicaAofBeginAddress"></param>
-        /// <param name="replicaAofTailAddress"></param>
-        /// <returns></returns>
-        public ReadOnlySpan<byte> BeginReplicaSyncSession(string remoteNodeId, string remote_primary_replid, CheckpointEntry remoteEntry, long replicaAofBeginAddress, long replicaAofTailAddress)
+        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
+        public bool TryBeginReplicaSyncSession(string remoteNodeId, string remote_primary_replid, CheckpointEntry remoteEntry, long replicaAofBeginAddress, long replicaAofTailAddress, out ReadOnlySpan<byte> errorMessage)
         {
+            errorMessage = default;
             if (!replicaSyncSessionTaskStore.TryAddReplicaSyncSession(remoteNodeId, remote_primary_replid, remoteEntry, replicaAofBeginAddress, replicaAofTailAddress))
             {
-                logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(CmdStrings.RESP_CREATE_SYNC_SESSION_ERROR));
-                return CmdStrings.RESP_CREATE_SYNC_SESSION_ERROR;
+                errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR;
+                logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
+                return false;
             }
 
-            return ReplicaSyncSessionBackgroundTask(remoteNodeId);
+            if (!ReplicaSyncSessionBackgroundTask(remoteNodeId, out errorMessage))
+            {
+                return false;
+            }
+            return true;
         }
 
-        private ReadOnlySpan<byte> ReplicaSyncSessionBackgroundTask(string replicaId)
+        private bool ReplicaSyncSessionBackgroundTask(string replicaId, out ReadOnlySpan<byte> errorMessage)
         {
             try
             {
                 if (!replicaSyncSessionTaskStore.TryGetSession(replicaId, out var session))
                 {
-                    logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(CmdStrings.RESP_RETRIEVE_SYNC_SESSION_ERROR));
-                    return CmdStrings.RESP_RETRIEVE_SYNC_SESSION_ERROR;
+                    errorMessage = CmdStrings.RESP_ERR_RETRIEVE_SYNC_SESSION_ERROR;
+                    logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
+                    return false;
                 }
 
-                var resp = session.SendCheckpoint().GetAwaiter().GetResult();
-                return Encoding.ASCII.GetBytes(resp);
+                if (!session.SendCheckpoint().GetAwaiter().GetResult())
+                {
+                    errorMessage = Encoding.ASCII.GetBytes(session.errorMsg);
+                    return false;
+                }
+
+                errorMessage = CmdStrings.RESP_OK;
+                return true;
             }
             finally
             {

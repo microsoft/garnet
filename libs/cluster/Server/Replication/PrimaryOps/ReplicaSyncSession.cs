@@ -4,10 +4,10 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -31,6 +31,8 @@ namespace Garnet.cluster
 
         private readonly ILogger logger = logger;
 
+        public string errorMsg = default;
+
         public void Dispose()
         {
             ctsCheckpointRetrievalSession.Cancel();
@@ -42,9 +44,9 @@ namespace Garnet.cluster
         /// <summary>
         /// Start sending the latest checkpoint to replica
         /// </summary>
-        public async Task<string> SendCheckpoint()
+        public async Task<bool> SendCheckpoint()
         {
-            var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_OK);
+            errorMsg = default;
             var storeCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main);
             var objectStoreCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object);
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -52,9 +54,9 @@ namespace Garnet.cluster
 
             if (address == null || port == -1)
             {
-                errorMsg = $"-PRIMARY-ERR don't know about replicaId: {remoteNodeId}";
+                errorMsg = $"PRIMARY-ERR don't know about replicaId: {remoteNodeId}";
                 logger?.LogError("{errorMsg}", errorMsg);
-                return errorMsg + "\r\n";
+                return false;
             }
 
             GarnetClientSession gcs = new(address, port, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, bufferSize: 1 << 20, logger: logger);
@@ -266,14 +268,17 @@ namespace Garnet.cluster
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
-                _ = clusterProvider.replicationManager.TryAddReplicationTask(remoteNodeId, syncFromAofAddress, out aofSyncTaskInfo);
-                _ = clusterProvider.replicationManager.TryConnectToReplica(remoteNodeId, syncFromAofAddress, aofSyncTaskInfo);
+                if (!clusterProvider.replicationManager.TryAddReplicationTask(remoteNodeId, syncFromAofAddress, out aofSyncTaskInfo))
+                    throw new GarnetException("Failed trying to try update replication task");
+                if (!clusterProvider.replicationManager.TryConnectToReplica(remoteNodeId, syncFromAofAddress, aofSyncTaskInfo, out _))
+                    throw new GarnetException("Failed connecting to replica for aofSync");
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "acquiredEntry: {cEntryDump}", localEntry.GetCheckpointEntryDump());
-                if (aofSyncTaskInfo != null) clusterProvider.replicationManager.TryRemoveReplicationTask(aofSyncTaskInfo);
-                return "-ERR " + ex.Message; // this is response sent to remote client
+                if (aofSyncTaskInfo != null) _ = clusterProvider.replicationManager.TryRemoveReplicationTask(aofSyncTaskInfo);
+                errorMsg = "ERR " + ex.Message;// this is error sent to remote client
+                return false;
             }
             finally
             {
@@ -282,7 +287,7 @@ namespace Garnet.cluster
                 localEntry.RemoveReader();
                 gcs.Dispose();
             }
-            return errorMsg;
+            return true;
         }
 
         public void AcquireCheckpointEntry(out CheckpointEntry cEntry, out AofSyncTaskInfo aofSyncTaskInfo)
@@ -492,8 +497,7 @@ namespace Garnet.cluster
         /// <param name="segmentId"></param>
         private unsafe (SectorAlignedMemory, int) ReadInto(IDevice device, ulong address, int size, int segmentId = -1)
         {
-            if (bufferPool == null)
-                bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
 
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
@@ -511,7 +515,7 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                string errorMessage = new Win32Exception((int)errorCode).Message;
+                var errorMessage = new Win32Exception((int)errorCode).Message;
                 logger.LogError("[Primary] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             semaphore.Release();

@@ -70,7 +70,7 @@ namespace Garnet.server
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
@@ -136,7 +136,7 @@ namespace Garnet.server
             var status = storageApi.HyperLogLogLength(keys, ref Unsafe.AsRef<SpanByte>(pbCmdInput), out long cardinality, out bool error);
             if (error)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -173,7 +173,7 @@ namespace Garnet.server
             //Invalid Type
             if (error)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_HLL_TYPE_ERROR, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
