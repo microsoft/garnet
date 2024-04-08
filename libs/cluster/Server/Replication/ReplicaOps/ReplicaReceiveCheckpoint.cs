@@ -126,7 +126,7 @@ namespace Garnet.cluster
 
             if (address == null || port == -1)
             {
-                var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_NOT_ASSIGNED_PRIMARY_ERROR);
+                var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
                 logger?.LogError("{msg}", errorMsg);
                 return errorMsg;
             }

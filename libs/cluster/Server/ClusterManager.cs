@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -222,14 +221,14 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 if (current.NumWorkers == 0)
                 {
-                    errorMessage = "ERR workers not initialized."u8;
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_WORKERS_NOT_INITIALIZED;
                     return false;
                 }
 
                 var newConfig = currentConfig.SetLocalWorkerConfigEpoch(configEpoch);
                 if (newConfig == null)
                 {
-                    errorMessage = "ERR Node config epoch was not set due to invalid epoch specified."u8;
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_NOT_SET;
                     return false;
                 }
 

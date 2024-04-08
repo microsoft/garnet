@@ -1388,7 +1388,7 @@ namespace Garnet.cluster
 
                     if (migrateState == 1)
                     {
-                        while (!RespWriteUtils.WriteError("ERR Node not in IMPORTING state."u8, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE, ref dcurr, dend))
                             SendAndReset();
                     }
                     else

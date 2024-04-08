@@ -101,8 +101,6 @@ namespace Garnet.cluster
         /// </summary>
         public const string GenericErrMissingParam = "ERR wrong number of arguments for '{0}' command";
 
-        public static ReadOnlySpan<byte> RESP_NOT_ASSIGNED_PRIMARY_ERROR => "ERR Don't have primary"u8;
-
         /// <summary>
         /// Generic error respone strings, i.e. these are sent in the form "-ERR responseString\r\n"
         /// </summary>
@@ -117,8 +115,11 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_FAILOVER_FROM_NON_MASTER => "ERR Cannot failover a non-master node"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UNKNOWN_ENDPOINT => "ERR Unknown endpoint"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS => "ERR Primary has been assigned slots and cannot be a replica"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF => "ERR Can't replicate myself."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF => "ERR Can't replicate myself"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR => "ERR Don't have primary"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WORKERS_NOT_INITIALIZED => "ERR workers not initialized"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CONFIG_EPOCH_NOT_SET => "ERR Node config epoch was not set due to invalid epoch specified"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE => "ERR Node not in IMPORTING state"u8;
 
         /// <summary>
         /// Generic error response strings for <c>MIGRATE</c> command
@@ -136,5 +137,6 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_MIGRATING => "MIGRATING"u8;
         public static ReadOnlySpan<byte> RESP_ERR_CREATE_SYNC_SESSION_ERROR => "PRIMARY-ERR Failed creating replica sync session task"u8;
         public static ReadOnlySpan<byte> RESP_ERR_RETRIEVE_SYNC_SESSION_ERROR => "PRIMARY-ERR Failed retrieving replica sync session"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_IOERR => "IOERR Migrate keys failed"u8;
     }
 }
