@@ -60,7 +60,7 @@ namespace Garnet.server
                 return false;
 
             // Print error message to result stream
-            while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
                 SendAndReset();
 
             return true;
