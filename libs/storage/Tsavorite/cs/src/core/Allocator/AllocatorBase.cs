@@ -312,7 +312,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         public abstract ref Value GetValue(long physicalAddress);
         /// <summary>
-        /// Get value from address range. For SpanByte this will also initialize the value.
+        /// Get value from address range. For <see cref="SpanByte"/> this will also initialize the value.
         /// </summary>
         /// <param name="physicalAddress"></param>
         /// <param name="endPhysicalAddress"></param>

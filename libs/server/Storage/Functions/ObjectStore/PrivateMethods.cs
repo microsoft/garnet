@@ -28,8 +28,8 @@ namespace Garnet.server
             {
                 fixed (byte* valPtr = valueBytes)
                 {
-                    var keySB = SpanByte.FromPointer(ptr, key.Length);
-                    var valSB = SpanByte.FromPointer(valPtr, valueBytes.Length);
+                    var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
+                    var valSB = SpanByte.FromPinnedPointer(valPtr, valueBytes.Length);
                     functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreUpsert, version = version, sessionID = sessionID }, ref keySB, ref input, ref valSB, out _);
                 }
             }
@@ -49,7 +49,7 @@ namespace Garnet.server
 
             fixed (byte* ptr = key)
             {
-                var keySB = SpanByte.FromPointer(ptr, key.Length);
+                var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
                 functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreRMW, version = version, sessionID = sessionID }, ref keySB, ref input, out _);
             }
         }
@@ -64,7 +64,7 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             fixed (byte* ptr = key)
             {
-                var keySB = SpanByte.FromPointer(ptr, key.Length);
+                var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
                 SpanByte valSB = default;
                 functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, version = version, sessionID = sessionID }, ref keySB, ref valSB, out _);
             }

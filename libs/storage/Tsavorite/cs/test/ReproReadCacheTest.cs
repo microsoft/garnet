@@ -143,8 +143,8 @@ namespace Tsavorite.test.ReadCacheTests
                 fixed (byte* kptr = key, iptr = input)
                 {
                     var context = new Context();
-                    var sbKey = SpanByte.FromFixedSpan(key);
-                    var sbInput = SpanByte.FromFixedSpan(input);
+                    var sbKey = SpanByte.FromPinnedSpan(key);
+                    var sbInput = SpanByte.FromPinnedSpan(input);
                     SpanByteAndMemory output = default;
 
                     var status = sessionContext.Read(ref sbKey, ref sbInput, ref output, context);
@@ -189,8 +189,8 @@ namespace Tsavorite.test.ReadCacheTests
                     var value = MemoryMarshal.Cast<char, byte>(valueString.AsSpan());
                     fixed (byte* k = key, v = value)
                     {
-                        var sbKey = SpanByte.FromFixedSpan(key);
-                        var sbValue = SpanByte.FromFixedSpan(value);
+                        var sbKey = SpanByte.FromPinnedSpan(key);
+                        var sbValue = SpanByte.FromPinnedSpan(value);
                         var status = session.Upsert(sbKey, sbValue);
                         Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                     }

@@ -286,13 +286,7 @@ namespace Tsavorite.core
             if (overflowPagePool.TryGet(out var item))
                 return item;
 
-            Record<Key, Value>[] tmp;
-            if (PageSize % RecordSize == 0)
-                tmp = new Record<Key, Value>[PageSize / RecordSize];
-            else
-                tmp = new Record<Key, Value>[1 + (PageSize / RecordSize)];
-            Array.Clear(tmp, 0, tmp.Length);
-            return tmp;
+            return new Record<Key, Value>[(PageSize + RecordSize - 1) / RecordSize];
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

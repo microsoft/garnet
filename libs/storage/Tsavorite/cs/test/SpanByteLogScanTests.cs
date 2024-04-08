@@ -79,8 +79,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-
-        public void SpanByteScanCursorTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public unsafe void SpanByteScanCursorTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             const long PageSize = 1L << PageSizeBits;
 
@@ -93,7 +92,12 @@ namespace Tsavorite.test
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
-                session.Upsert(key, value);
+
+                fixed (byte* keyPtr = key)
+                fixed (byte* valuePtr = value)
+                {
+                    session.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                }
             }
 
             var scanCursorFuncs = new ScanCursorFuncs(store);
@@ -132,7 +136,12 @@ namespace Tsavorite.test
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i + totalRecords}".AsSpan());
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i + totalRecords}".AsSpan());
-                session.Upsert(key, value);
+
+                fixed (byte* keyPtr = key)
+                fixed (byte* valuePtr = value)
+                {
+                    session.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                }
             }
             scanCursorFuncs.Initialize(verifyKeys);
             Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 2");
@@ -172,8 +181,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-
-        public void SpanByteScanCursorFilterTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public unsafe void SpanByteScanCursorFilterTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
 
@@ -184,7 +192,12 @@ namespace Tsavorite.test
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
-                session.Upsert(key, value);
+
+                fixed (byte* keyPtr = key)
+                fixed (byte* valuePtr = value)
+                {
+                    session.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                }
             }
 
             var scanCursorFuncs = new ScanCursorFuncs(store);
@@ -208,9 +221,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "hashMod is used by Setup")]
-        public void SpanByteScanCursorWithRCUTest([Values(RCULocation.RCUBefore, RCULocation.RCUAfter)] RCULocation rcuLocation, [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public unsafe void SpanByteScanCursorWithRCUTest([Values(RCULocation.RCUBefore, RCULocation.RCUAfter)] RCULocation rcuLocation, [Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
 
@@ -221,7 +232,12 @@ namespace Tsavorite.test
                 var valueFill = new string('x', rng.Next(120));  // Make the record lengths random
                 var key = MemoryMarshal.Cast<char, byte>($"key_{i}".AsSpan());
                 var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{i}".AsSpan());
-                session.Upsert(key, value);
+
+                fixed (byte* keyPtr = key)
+                fixed (byte* valuePtr = value)
+                {
+                    session.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                }
             }
 
             var scanCursorFuncs = new ScanCursorFuncs(store)
@@ -278,7 +294,7 @@ namespace Tsavorite.test
                 this.filter = filter;
             }
 
-            void CheckForRCU()
+            unsafe void CheckForRCU()
             {
                 if (rcuLocation == RCULocation.RCUBefore && rcuRecord == numRecords + 1
                     || rcuLocation == RCULocation.RCUAfter && rcuRecord == numRecords - 1)
@@ -291,7 +307,12 @@ namespace Tsavorite.test
                         var valueFill = new string('x', 220);   // Update the specified key with a longer value that requires RCU.
                         var key = MemoryMarshal.Cast<char, byte>($"key_{rcuRecord}".AsSpan());
                         var value = MemoryMarshal.Cast<char, byte>($"v{valueFill}_{rcuRecord}".AsSpan());
-                        session.Upsert(key, value);
+
+                        fixed (byte* keyPtr = key)
+                        fixed (byte* valuePtr = value)
+                        {
+                            session.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                        }
                     }).Wait();
 
                     // If we RCU before Scan arrives at the record, then we won't see it and the values will be off by one (higher).
@@ -364,7 +385,12 @@ namespace Tsavorite.test
 
                 var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
                 var value = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
-                session.Upsert(key, value);
+
+                fixed (byte* keyPtr = key)
+                fixed (byte* valuePtr = value)
+                {
+                    session.Upsert(SpanByte.FromPinnedPointer(keyPtr, key.Length), SpanByte.FromPinnedPointer(valuePtr, value.Length));
+                }
             }
 
             using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress);

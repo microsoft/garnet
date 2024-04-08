@@ -441,7 +441,7 @@ namespace Tsavorite.test.Revivification
                     var compareLength = Math.Min(functionsKey.Length, valueLengthRemaining);
                     Span<byte> valueSpan = functionsValue.AsSpan().Slice(valueOffset, compareLength);
                     Span<byte> keySpan = functionsKey.AsSpan()[..compareLength];
-                    Assert.IsTrue(valueSpan.SequenceEqual(keySpan), $"functionsValue (offset {valueOffset}, len {compareLength}: {SpanByte.FromFixedSpan(valueSpan)}) does not match functionsKey ({SpanByte.FromFixedSpan(keySpan)})");
+                    Assert.IsTrue(valueSpan.SequenceEqual(keySpan), $"functionsValue (offset {valueOffset}, len {compareLength}: {SpanByte.FromPinnedSpan(valueSpan)}) does not match functionsKey ({SpanByte.FromPinnedSpan(keySpan)})");
                     valueLengthRemaining -= compareLength;
                 }
             }
@@ -671,10 +671,10 @@ namespace Tsavorite.test.Revivification
         void Populate(int from, int to)
         {
             Span<byte> keyVec = stackalloc byte[KeyLength];
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
 
             functions.expectedSingleFullValueLength = functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(input);
 
@@ -705,7 +705,7 @@ namespace Tsavorite.test.Revivification
             Span<byte> keyVec = stackalloc byte[KeyLength];
             byte fillByte = 42;
             keyVec.Fill(fillByte);
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             // Do NOT delete; this is a no-reviv test of lengths
 
@@ -723,7 +723,7 @@ namespace Tsavorite.test.Revivification
             functions.expectedConcurrentFullValueLength = RoundUpSpanByteFullValueLength(InitialLength);
 
             Span<byte> inputVec = stackalloc byte[functions.expectedInputLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
             inputVec.Fill(fillByte);
 
             // For Grow, we won't be able to satisfy the request with a revivification, and the new value length will be GrowLength
@@ -746,7 +746,7 @@ namespace Tsavorite.test.Revivification
 
                 // Now let's see if we have the correct expected extra length in the destination.
                 inputVec = stackalloc byte[InitialLength / 2];  // Grow this from ShrinkLength to InitialLength
-                input = SpanByte.FromFixedSpan(inputVec);
+                input = SpanByte.FromPinnedSpan(inputVec);
                 inputVec.Fill(fillByte);
 
                 functions.expectedInputLength = InitialLength / 2;
@@ -776,7 +776,7 @@ namespace Tsavorite.test.Revivification
             Span<byte> keyVec = stackalloc byte[KeyLength];
             byte fillByte = 42;
             keyVec.Fill(fillByte);
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             var status = session.Delete(ref key);
@@ -785,7 +785,7 @@ namespace Tsavorite.test.Revivification
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
             inputVec.Fill(fillByte);
 
             SpanByteAndMemory output = new();
@@ -819,10 +819,10 @@ namespace Tsavorite.test.Revivification
             Span<byte> keyVec = stackalloc byte[KeyLength];
             byte fillByte = 42;
             keyVec.Fill(fillByte);
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             Span<byte> inputVec = stackalloc byte[GrowLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
             inputVec.Fill(fillByte);
 
             SpanByteAndMemory output = new();
@@ -858,7 +858,7 @@ namespace Tsavorite.test.Revivification
 
             // Get a new key and shrink the requested length so we revivify the free record from the failed IPU.
             keyVec.Fill(numRecords + 1);
-            input = SpanByte.FromFixedSpan(inputVec.Slice(0, InitialLength));
+            input = SpanByte.FromPinnedSpan(inputVec.Slice(0, InitialLength));
 
             functions.expectedInputLength = InitialLength;
             functions.expectedSingleDestLength = InitialLength;
@@ -896,7 +896,7 @@ namespace Tsavorite.test.Revivification
             Span<byte> keyVec = stackalloc byte[KeyLength];
             byte fillByte = 42;
             keyVec.Fill(fillByte);
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             var status = session.Delete(ref key);
@@ -906,7 +906,7 @@ namespace Tsavorite.test.Revivification
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
             inputVec.Fill(fillByte);
 
             SpanByteAndMemory output = new();
@@ -941,7 +941,7 @@ namespace Tsavorite.test.Revivification
             // Delete key below (what will be) the readonly line. This is for a target for the test; the record should not be revivified.
             Span<byte> keyVecDelBelowRO = stackalloc byte[KeyLength];
             keyVecDelBelowRO.Fill(delBelowRO);
-            var delKeyBelowRO = SpanByte.FromFixedSpan(keyVecDelBelowRO);
+            var delKeyBelowRO = SpanByte.FromPinnedSpan(keyVecDelBelowRO);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             var status = session.Delete(ref delKeyBelowRO);
@@ -960,7 +960,7 @@ namespace Tsavorite.test.Revivification
             // If not stayInChain, this also puts two elements in the free list; one should be skipped over on Take() as it is below readonly.
             Span<byte> keyVecDelAboveRO = stackalloc byte[KeyLength];
             keyVecDelAboveRO.Fill(delAboveRO);
-            var delKeyAboveRO = SpanByte.FromFixedSpan(keyVecDelAboveRO);
+            var delKeyAboveRO = SpanByte.FromPinnedSpan(keyVecDelAboveRO);
 
             if (!stayInChain && collisionRange == CollisionRange.None)  // CollisionRange.Ten has a valid .PreviousAddress so won't be moved to FreeList
                 RevivificationTestUtils.AssertElidable(store, ref delKeyAboveRO);
@@ -1008,12 +1008,12 @@ namespace Tsavorite.test.Revivification
             long tailAddress = PrepareDeletes(stayInChain, delAboveRO, FlushMode.ReadOnly, collisionRange);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
 
             SpanByteAndMemory output = new();
 
             Span<byte> keyVecToTest = stackalloc byte[KeyLength];
-            var keyToTest = SpanByte.FromFixedSpan(keyVecToTest);
+            var keyToTest = SpanByte.FromPinnedSpan(keyVecToTest);
 
             bool expectReviv;
             if (updateKey == UpdateKey.Unfound || updateKey == UpdateKey.CopiedBelowRO)
@@ -1085,7 +1085,7 @@ namespace Tsavorite.test.Revivification
             byte chainKey = numRecords / 2 - 1;
             Span<byte> keyVec = stackalloc byte[KeyLength];
             keyVec.Fill(chainKey);
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
             if (!stayInChain)
                 RevivificationTestUtils.AssertElidable(store, ref key);
 
@@ -1096,7 +1096,7 @@ namespace Tsavorite.test.Revivification
             var tailAddress = store.Log.TailAddress;
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
             inputVec.Fill(chainKey);
 
             SpanByteAndMemory output = new();
@@ -1128,7 +1128,7 @@ namespace Tsavorite.test.Revivification
             byte chainKey = 5;
             Span<byte> keyVec = stackalloc byte[KeyLength];
             keyVec.Fill(chainKey);
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
             var hash = comparer.GetHashCode64(ref key);
 
             List<byte> deletedSlots = new();
@@ -1153,7 +1153,7 @@ namespace Tsavorite.test.Revivification
             var tailAddress = store.Log.TailAddress;
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
             inputVec.Fill(chainKey);
 
             SpanByteAndMemory output = new();
@@ -1185,7 +1185,7 @@ namespace Tsavorite.test.Revivification
             long tailAddress = store.Log.TailAddress;
 
             Span<byte> keyVec = stackalloc byte[KeyLength];
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             // "sizeof(int) +" because SpanByte has an int length prefix
             var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + keyVec.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
@@ -1203,7 +1203,7 @@ namespace Tsavorite.test.Revivification
             Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, numRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({numRecords}) free records");
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
 
             SpanByteAndMemory output = new();
 
@@ -1256,7 +1256,7 @@ namespace Tsavorite.test.Revivification
             Populate();
 
             Span<byte> keyVec = stackalloc byte[KeyLength];
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             // Delete
             for (var ii = 0; ii < numRecords; ++ii)
@@ -1281,7 +1281,7 @@ namespace Tsavorite.test.Revivification
             Populate();
 
             Span<byte> keyVec = stackalloc byte[KeyLength];
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             // Delete
             for (var ii = 0; ii < numRecords; ++ii)
@@ -1397,10 +1397,10 @@ namespace Tsavorite.test.Revivification
             FreeRecordPool<SpanByte, SpanByte> pool = store.RevivificationManager.FreeRecordPool;
 
             Span<byte> keyVec = stackalloc byte[KeyLength];
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
 
             // "sizeof(int) +" because SpanByte has an int length prefix.
             var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + keyVec.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
@@ -1480,10 +1480,10 @@ namespace Tsavorite.test.Revivification
             Populate();
 
             Span<byte> keyVec = stackalloc byte[KeyLength];
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
 
             for (var iter = 0; iter < 100; ++iter)
             {
@@ -1533,10 +1533,10 @@ namespace Tsavorite.test.Revivification
 
             byte chainKey = numRecords + 1;
             Span<byte> keyVec = stackalloc byte[KeyLength];
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             Span<byte> inputVec = stackalloc byte[OversizeLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
 
             SpanByteAndMemory output = new();
 
@@ -1602,12 +1602,12 @@ namespace Tsavorite.test.Revivification
 
             // Use a different key below RO than we deleted; this will go pending to retrieve it
             Span<byte> keyVec = stackalloc byte[KeyLength];
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             if (pendingOp == PendingOp.Read)
             {
                 Span<byte> inputVec = stackalloc byte[InitialLength];
-                var input = SpanByte.FromFixedSpan(inputVec);
+                var input = SpanByte.FromPinnedSpan(inputVec);
 
                 keyVec.Fill(targetRO);
                 inputVec.Fill(targetRO);
@@ -1617,7 +1617,7 @@ namespace Tsavorite.test.Revivification
                 functions.expectedConcurrentDestLength = InitialLength;
 
                 var spanSlice = inputVec[..InitialLength];
-                var inputSlice = SpanByte.FromFixedSpan(spanSlice);
+                var inputSlice = SpanByte.FromPinnedSpan(spanSlice);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 var status = session.Read(ref key, ref inputSlice, ref output);
@@ -1628,7 +1628,7 @@ namespace Tsavorite.test.Revivification
             else if (pendingOp == PendingOp.RMW)
             {
                 Span<byte> inputVec = stackalloc byte[InitialLength];
-                var input = SpanByte.FromFixedSpan(inputVec);
+                var input = SpanByte.FromPinnedSpan(inputVec);
 
                 keyVec.Fill(targetRO);
                 inputVec.Fill(targetRO);
@@ -1775,7 +1775,7 @@ namespace Tsavorite.test.Revivification
                     var compareLength = Math.Min(functionsKey.Length, valueLengthRemaining);
                     Span<byte> valueSpan = functionsValue.AsSpan().Slice(valueOffset, compareLength);
                     Span<byte> keySpan = functionsKey.AsSpan()[..compareLength];
-                    Assert.IsTrue(valueSpan.SequenceEqual(keySpan), $"functionsValue (offset {valueOffset}, len {compareLength}: {SpanByte.FromFixedSpan(valueSpan)}) does not match functionsKey ({SpanByte.FromFixedSpan(keySpan)})");
+                    Assert.IsTrue(valueSpan.SequenceEqual(keySpan), $"functionsValue (offset {valueOffset}, len {compareLength}: {SpanByte.FromPinnedSpan(valueSpan)}) does not match functionsKey ({SpanByte.FromPinnedSpan(keySpan)})");
                     valueOffset += compareLength;
                     valueLengthRemaining -= compareLength;
                 }
@@ -1874,10 +1874,10 @@ namespace Tsavorite.test.Revivification
         unsafe void Populate()
         {
             Span<byte> keyVec = stackalloc byte[KeyLength];
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             Span<byte> inputVec = stackalloc byte[InitialLength];
-            var input = SpanByte.FromFixedSpan(inputVec);
+            var input = SpanByte.FromPinnedSpan(inputVec);
 
             SpanByteAndMemory output = new();
 
@@ -2227,7 +2227,7 @@ namespace Tsavorite.test.Revivification
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(new RevivificationStressFunctions(keyComparer: null));
 
                 Span<byte> keyVec = stackalloc byte[KeyLength];
-                var key = SpanByte.FromFixedSpan(keyVec);
+                var key = SpanByte.FromPinnedSpan(keyVec);
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -2243,10 +2243,10 @@ namespace Tsavorite.test.Revivification
             unsafe void runUpdateThread(int tid)
             {
                 Span<byte> keyVec = stackalloc byte[KeyLength];
-                var key = SpanByte.FromFixedSpan(keyVec);
+                var key = SpanByte.FromPinnedSpan(keyVec);
 
                 Span<byte> inputVec = stackalloc byte[InitialLength];
-                var input = SpanByte.FromFixedSpan(inputVec);
+                var input = SpanByte.FromPinnedSpan(inputVec);
 
                 Random rng = new(tid * 101);
 
@@ -2313,7 +2313,7 @@ namespace Tsavorite.test.Revivification
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(new RevivificationStressFunctions(keyComparer: null));
 
                 Span<byte> keyVec = stackalloc byte[KeyLength];
-                var key = SpanByte.FromFixedSpan(keyVec);
+                var key = SpanByte.FromPinnedSpan(keyVec);
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -2329,10 +2329,10 @@ namespace Tsavorite.test.Revivification
             unsafe void runUpdateThread(int tid)
             {
                 Span<byte> keyVec = stackalloc byte[KeyLength];
-                var key = SpanByte.FromFixedSpan(keyVec);
+                var key = SpanByte.FromPinnedSpan(keyVec);
 
                 Span<byte> inputVec = stackalloc byte[InitialLength];
-                var input = SpanByte.FromFixedSpan(inputVec);
+                var input = SpanByte.FromPinnedSpan(inputVec);
 
                 Random rng = new(tid * 101);
 
@@ -2398,7 +2398,7 @@ namespace Tsavorite.test.Revivification
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(new RevivificationStressFunctions(keyComparer: null));
 
                 Span<byte> keyVec = stackalloc byte[KeyLength];
-                var key = SpanByte.FromFixedSpan(keyVec);
+                var key = SpanByte.FromPinnedSpan(keyVec);
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -2413,10 +2413,10 @@ namespace Tsavorite.test.Revivification
             unsafe void runUpdateThread(int tid)
             {
                 Span<byte> keyVec = stackalloc byte[KeyLength];
-                var key = SpanByte.FromFixedSpan(keyVec);
+                var key = SpanByte.FromPinnedSpan(keyVec);
 
                 Span<byte> inputVec = stackalloc byte[InitialLength];
-                var input = SpanByte.FromFixedSpan(inputVec);
+                var input = SpanByte.FromPinnedSpan(inputVec);
 
                 RevivificationStressFunctions localFunctions = new RevivificationStressFunctions(keyComparer: null);
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(localFunctions);

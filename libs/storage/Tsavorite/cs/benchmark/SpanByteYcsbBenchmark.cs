@@ -137,9 +137,9 @@ namespace Tsavorite.benchmark
             Span<byte> input = stackalloc byte[kValueSize];
             Span<byte> output = stackalloc byte[kValueSize];
 
-            SpanByte _value = SpanByte.FromFixedSpan(value);
-            SpanByte _input = SpanByte.FromFixedSpan(input);
-            SpanByteAndMemory _output = SpanByteAndMemory.FromFixedSpan(output);
+            SpanByte _value = SpanByte.FromPinnedSpan(value);
+            SpanByte _input = SpanByte.FromPinnedSpan(input);
+            SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
 
             long reads_done = 0;
             long writes_done = 0;
@@ -254,9 +254,9 @@ namespace Tsavorite.benchmark
             Span<byte> input = stackalloc byte[kValueSize];
             Span<byte> output = stackalloc byte[kValueSize];
 
-            SpanByte _value = SpanByte.FromFixedSpan(value);
-            SpanByte _input = SpanByte.FromFixedSpan(input);
-            SpanByteAndMemory _output = SpanByteAndMemory.FromFixedSpan(output);
+            SpanByte _value = SpanByte.FromPinnedSpan(value);
+            SpanByte _input = SpanByte.FromPinnedSpan(input);
+            SpanByteAndMemory _output = SpanByteAndMemory.FromPinnedSpan(output);
 
             long reads_done = 0;
             long writes_done = 0;
