@@ -1656,8 +1656,12 @@ namespace Garnet.test
             Assert.IsTrue(time.Value.TotalSeconds > 0);
         }
 
+        [TestCase("INCR")]
+        [TestCase("DECR")]
+        [TestCase("INCRBY")]
+        [TestCase("DECRBY")]
         [Test]
-        public void IncrNonNumber()
+        public void IncrementNonNumber(string command)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1666,7 +1670,24 @@ namespace Garnet.test
             _ = db.StringSet(key, "foo");
             try
             {
-                _ = db.StringIncrement(key);
+                switch (command)
+                {
+                    case "INCR":
+                        _ = db.StringIncrement(key);
+                        break;
+                    case "DECR":
+                        _ = db.StringDecrement(key);
+                        break;
+                    case "INCRBY":
+                        _ = db.StringIncrement(key, 60);
+                        break;
+                    case "DECRBY":
+                        _ = db.StringDecrement(key, 60);
+                        break;
+                    default:
+                        break;
+                }
+                Assert.Fail();
             }
             catch (Exception e)
             {
@@ -1674,17 +1695,99 @@ namespace Garnet.test
             }
         }
 
+        [TestCase("INCR")]
+        [TestCase("DECR")]
+        [TestCase("INCRBY")]
+        [TestCase("DECRBY")]
         [Test]
-        public void IncrNonNumberLC()
+        public void IncrementNonNumberLC(string command)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
 
-            _ = lightClientRequest.SendCommand("set key 'foo'");
-            var result = lightClientRequest.SendCommand("incr key");
+            _ = lightClientRequest.SendCommand("set key foo");
+            var result = lightClientRequest.SendCommand(buildCommand(command));
             var expectedResponse = "-ERR value is not an integer or out of range.\r\n";
             Assert.AreEqual(expectedResponse, Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length));
+
+            static string buildCommand(string command)
+            {
+                if (command is "INCR" or "DECR")
+                {
+                    return $"{command} key";
+                }
+                else if (command is "INCRBY" or "DECRBY")
+                {
+                    return $"{command} key 60";
+                }
+                return string.Empty;
+            }
         }
 
+        [TestCase("INCR", long.MaxValue, 1)]
+        [TestCase("DECR", long.MinValue, 1)]
+        [TestCase("INCRBY", long.MaxValue - 38, 39)]
+        [TestCase("DECRBY", long.MinValue + 38, 39)]
+        [Test]
+        public void IncrementOverflow(string command, long initialNum, long increment)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
 
+            var key = "key";
+            _ = db.StringSet(key, initialNum);
+
+            try
+            {
+                switch (command)
+                {
+                    case "INCR":
+                        _ = db.StringIncrement(key);
+                        break;
+                    case "DECR":
+                        _ = db.StringDecrement(key);
+                        break;
+                    case "INCRBY":
+                        _ = db.StringIncrement(key, increment);
+                        break;
+                    case "DECRBY":
+                        _ = db.StringDecrement(key, increment);
+                        break;
+                    default:
+                        break;
+                }
+                Assert.Fail();
+            }
+            catch (Exception e)
+            {
+                Assert.AreEqual(e.Message, "ERR value is not an integer or out of range.");
+            }
+        }
+
+        [TestCase("INCR", long.MaxValue, null)]
+        [TestCase("DECR", long.MinValue, null)]
+        [TestCase("INCRBY", long.MaxValue - 38, 39)]
+        [TestCase("DECRBY", long.MinValue + 38, 39)]
+        [Test]
+        public void IncrementOverflowLC(string command, long initialNum, long? increment)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            _ = lightClientRequest.SendCommand($"set key {initialNum}");
+            var result = lightClientRequest.SendCommand(buildCommand(command, increment));
+            var expectedResponse = "-ERR value is not an integer or out of range.\r\n";
+            Assert.AreEqual(expectedResponse, Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length));
+
+            static string buildCommand(string command, long? increment)
+            {
+                if (increment.HasValue)
+                {
+                    return $"{command} key {increment.Value}";
+                }
+                else
+                {
+                    return $"{command} key";
+                }
+            }
+        }
     }
 }

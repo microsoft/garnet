@@ -771,13 +771,13 @@ namespace Garnet.server
 
             var key = new ArgSlice(keyPtr, ksize);
 
-            byte* pbOutput = stackalloc byte[20];
-            var output = new ArgSlice(pbOutput, 20);
+            byte* pbOutput = stackalloc byte[100];
+            var output = new ArgSlice(pbOutput, 100);
 
             var status = storageApi.Increment(key, input, ref output);
-            if (output.ToArray()[0] == (byte)0xFF)
+            if (status == GarnetStatus.ERROR)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                while (!RespWriteUtils.WriteResponse(output.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
             }
             else

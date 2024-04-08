@@ -514,7 +514,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// 
+        /// Try to parse from bytes to integer
         /// </summary>
         /// <param name="source"></param>
         /// <param name="v"></param>
@@ -526,22 +526,6 @@ namespace Garnet.common
             fixed (byte* ptr = source)
             {
                 bool fNeg = (*ptr == '-');
-
-                // check range
-                if (fNeg)
-                {
-                    if (length - 1 > 19)
-                    {
-                        return false;
-                    }
-                }
-                else
-                {
-                    if (length > 19)
-                    {
-                        return false;
-                    }
-                }
 
                 var beg = fNeg ? ptr + 1 : ptr;
                 var end = ptr + length;

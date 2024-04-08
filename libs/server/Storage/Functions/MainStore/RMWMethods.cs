@@ -292,10 +292,9 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.INCR:
-                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var val))
+                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var val) || val == long.MaxValue)
                     {
-                        *output.SpanByte.ToPointer() = 0xFF;    // -1
-                        // skip
+                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
 
@@ -303,10 +302,9 @@ namespace Garnet.server
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECR:
-                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out val))
+                    if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out val) || val == long.MinValue)
                     {
-                        *output.SpanByte.ToPointer() = 0xFF;    // -1
-                        // skip
+                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
 
@@ -316,23 +314,37 @@ namespace Garnet.server
                 case RespCommand.INCRBY:
                     if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out val))
                     {
-                        *output.SpanByte.ToPointer() = 0xFF;    // -1
-                        // skip
+                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
 
-                    val += NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                    var increment = NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                    var able = long.MaxValue - val;
+                    if (able < increment)
+                    {
+                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
+                        return true;
+                    }
+
+                    val += increment;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECRBY:
                     if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out val))
                     {
-                        *output.SpanByte.ToPointer() = 0xFF;    // -1
-                        // skip
+                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
 
-                    val -= NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                    var decrement = NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                    able = long.MinValue + val;
+                    if (able < decrement)
+                    {
+                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
+                        return true;
+                    }
+
+                    val -= decrement;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.SETBIT:

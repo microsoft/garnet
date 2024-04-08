@@ -819,7 +819,7 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus Increment<TContext>(ArgSlice key, ArgSlice input, ref ArgSlice output, ref TContext context)
+        public unsafe GarnetStatus Increment<TContext>(ArgSlice key, ArgSlice input, ref ArgSlice output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {
             var _key = key.SpanByte;
@@ -829,8 +829,12 @@ namespace Garnet.server
             var status = context.RMW(ref _key, ref _input, ref _output);
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref _output, ref context);
-            Debug.Assert(_output.IsSpanByte);
+
             output.length = _output.Length;
+            if (*_output.SpanByte.ToPointer() == (byte)'-')
+            {
+                return GarnetStatus.ERROR;
+            }
             return GarnetStatus.OK;
         }
 
