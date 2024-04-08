@@ -57,7 +57,7 @@ namespace Garnet.server
 
             if (invalid)
             {
-                while (!RespWriteUtils.WriteAsciiDirect($"-ERR Invalid section {invalidSection}. Try INFO HELP\r\n", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError($"ERR Invalid section {invalidSection}. Try INFO HELP", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }

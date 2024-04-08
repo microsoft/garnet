@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -21,18 +22,22 @@ namespace Garnet.cluster
         CheckpointEntry cEntry;
 
         /// <summary>
-        /// Initiate replication
+        /// Try to initiate replication
         /// </summary>
         /// <param name="session">ClusterSession for this connection.</param>
         /// <param name="nodeid">Node-id to replicate.</param>
         /// <param name="background">If replication sync will run in the background.</param>
         /// <param name="force">Force adding this node as replica.</param>
-        /// <returns>Return resp span with success or otherwise any err.</returns>
-        public ReadOnlySpan<byte> BeginReplicate(ClusterSession session, string nodeid, bool background, bool force)
+        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
+        /// <returns>A boolean indicating whether replication initiation was successful.</returns>
+        public bool TryBeginReplicate(ClusterSession session, string nodeid, bool background, bool force, out ReadOnlySpan<byte> errorMessage)
         {
-            ReadOnlySpan<byte> resp = CmdStrings.RESP_OK;
+            errorMessage = default;
             if (!replicateLock.TryWriteLock())
-                return Encoding.ASCII.GetBytes("-ERR Replicate already in progress\r\n");
+            {
+                errorMessage = "ERR Replicate already in progress"u8;
+                return false;
+            }
 
             try
             {
@@ -40,29 +45,30 @@ namespace Garnet.cluster
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeid);
 
                 // TryAddReplica will set the recovering boolean
-                if (clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, ref recovering, out resp))
+                if (clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, ref recovering, out errorMessage))
                 {
                     // Wait for threads to agree
                     session.UnsafeWaitForConfigTransition();
 
                     //TODO: We should not be resetting this, need to decide where to start syncing from
                     clusterProvider.replicationManager.ReplicationOffset = 0;
-                    resp = clusterProvider.replicationManager.TryReplicateFromPrimary(background);
+                    return clusterProvider.replicationManager.TryReplicateFromPrimary(out errorMessage, background);
                 }
             }
             finally
             {
                 replicateLock.WriteUnlock();
             }
-            return resp;
+            return true;
         }
 
         /// <summary>
-        /// Attach to primary for replication, recover checkpoint and initiate task for aof streaming
+        /// Try to attach to primary for replication, recover checkpoint and initiate task for aof streaming
         /// </summary>
         /// <returns></returns>
-        public ReadOnlySpan<byte> TryReplicateFromPrimary(bool background = false)
+        public bool TryReplicateFromPrimary(out ReadOnlySpan<byte> errorMessage, bool background = false)
         {
+            errorMessage = default;
             Debug.Assert(recovering);
 
             // The caller should have stopped accepting AOF records from old primary at this point
@@ -95,12 +101,19 @@ namespace Garnet.cluster
                 logger?.LogInformation("Initiating foreground checkpoint retrieval");
                 var resp = InitiateReplicaSync().GetAwaiter().GetResult();
                 if (resp != null)
-                    return Encoding.ASCII.GetBytes($"-{resp}\r\n");
+                {
+                    errorMessage = Encoding.ASCII.GetBytes(resp);
+                    return false;
+                }
             }
 
-            return CmdStrings.RESP_OK;
+            return true;
         }
 
+        /// <summary>
+        /// Try to initiate replica
+        /// </summary>
+        /// <returns>A string representing the error message if error occurred; otherwise <see langword="null"/>.</returns>
         private async Task<string> InitiateReplicaSync()
         {
             //1. Send request to primary
@@ -114,7 +127,7 @@ namespace Garnet.cluster
 
             if (address == null || port == -1)
             {
-                var errorMsg = $"-ERR don't have primary\r\n";
+                var errorMsg = $"ERR don't have primary";
                 logger?.LogError(errorMsg);
                 return errorMsg;
             }

@@ -56,7 +56,7 @@ namespace Garnet.cluster
         /// </summary>
         public async Task<string> SendCheckpoint()
         {
-            string errorMsg = string.Empty;
+            string errorMsg = null;
             var storeCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main);
             var objectStoreCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object);
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -64,9 +64,9 @@ namespace Garnet.cluster
 
             if (address == null || port == -1)
             {
-                errorMsg = $"-PRIMARY-ERR don't know about replicaId: {remoteNodeId}";
+                errorMsg = $"PRIMARY-ERR don't know about replicaId: {remoteNodeId}";
                 logger?.LogError(errorMsg);
-                return errorMsg + "\r\n";
+                return errorMsg;
             }
 
             GarnetClientSession gcs = new(address, port, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, bufferSize: 1 << 20, logger: logger);
@@ -256,14 +256,14 @@ namespace Garnet.cluster
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
                 clusterProvider.replicationManager.TryAddReplicationTask(remoteNodeId, syncFromAofAddress, out aofSyncTaskInfo);
-                clusterProvider.replicationManager.TryConnectToReplica(remoteNodeId, syncFromAofAddress, aofSyncTaskInfo);
+                clusterProvider.replicationManager.TryConnectToReplica(remoteNodeId, syncFromAofAddress, aofSyncTaskInfo, out _);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error occurred at ReplicationManager.SendCheckpointTask");
                 if (localEntry != default) logger?.LogError("{cEntryDump}", localEntry.GetCheckpointEntryDump());
                 if (aofSyncTaskInfo != null) clusterProvider.replicationManager.TryRemoveReplicationTask(aofSyncTaskInfo);
-                return "-ERR " + ex.Message; // this is response sent to remote client
+                return "ERR " + ex.Message; // this is error sent to remote client
             }
             finally
             {

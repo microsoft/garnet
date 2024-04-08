@@ -133,7 +133,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write error
+        /// Write simple error
         /// </summary>
         /// <param name="errorString">An ASCII encoded error string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
         public static bool WriteError(ReadOnlySpan<byte> errorString, ref byte* curr, byte* end)
@@ -150,7 +150,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Write error
+        /// Write simple error
         /// </summary>
         /// <param name="errorString">An ASCII error string. The string mustn't contain a CR (\r) or LF (\n) characters.</param>
         public static bool WriteError(ReadOnlySpan<char> errorString, ref byte* curr, byte* end)
