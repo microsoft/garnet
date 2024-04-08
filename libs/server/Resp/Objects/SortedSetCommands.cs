@@ -577,7 +577,7 @@ namespace Garnet.server
                 inputPtr->done = zaddDoneCount;
 
                 // Prepare output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPointer(dcurr, (int)(dend - dcurr))) };
+                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(SpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr))) };
 
                 var status = storageApi.SortedSetPop(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
 
