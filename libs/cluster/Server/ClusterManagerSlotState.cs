@@ -419,11 +419,10 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Try to reset slot state to <see cref="SlotState.STABLE"/>
+        /// Reset slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slot">Slot id to reset state</param>
-        /// <returns>True on success, false otherwise</returns>
-        public bool TryResetSlotState(int slot)
+        public void ResetSlotState(int slot)
         {
             var current = currentConfig;
             var slotState = current.GetState((ushort)slot);
@@ -440,27 +439,18 @@ namespace Garnet.cluster
                 }
                 FlushConfig();
             }
-            return true;
         }
 
         /// <summary>
-        /// Try to reset local slot state to <see cref="SlotState.STABLE"/>
+        /// Reset local slot state to <see cref="SlotState.STABLE"/>
         /// </summary>
         /// <param name="slots">Slot list</param>
-        /// <param name="errorMessage">Error message</param>
-        /// <returns>True on success, false otherwise</returns>
-        public bool TryResetSlotsState(HashSet<int> slots, out ReadOnlySpan<byte> errorMessage)
+        public void ResetSlotsState(HashSet<int> slots)
         {
-            errorMessage = default;
             foreach (var slot in slots)
             {
-                if (!TryResetSlotState(slot))
-                {
-                    errorMessage = "ERR Failed to reset local slot state"u8;
-                    return false;
-                }
+                ResetSlotState(slot);
             }
-            return true;
         }
 
         /// <summary>

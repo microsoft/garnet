@@ -60,7 +60,7 @@ namespace Garnet.cluster
                 if (!TrySetSlotRanges(GetSourceNodeId, MigrateState.IMPORT))
                 {
                     logger?.LogError("Failed to set remote slots {slots} to import state", string.Join(',', GetSlots));
-                    RecoverFromFailure();
+                    TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
                 }
@@ -70,7 +70,7 @@ namespace Garnet.cluster
                 if (!TryPrepareLocalForMigration())
                 {
                     logger?.LogError("Failed to set local slots {slots} to migrate state", string.Join(',', GetSlots));
-                    RecoverFromFailure();
+                    TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
                 }
@@ -83,7 +83,7 @@ namespace Garnet.cluster
                 if (!MigrateSlotsDataDriver())
                 {
                     logger?.LogError($"MigrateSlotsDriver failed");
-                    RecoverFromFailure();
+                    TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
                 }
@@ -94,7 +94,7 @@ namespace Garnet.cluster
                 if (!RelinquishOwnership())
                 {
                     logger?.LogError($"Failed to relinquish ownerhsip to target node");
-                    RecoverFromFailure();
+                    TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
                 }
@@ -103,7 +103,7 @@ namespace Garnet.cluster
                 if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
                 {
                     logger?.LogError($"Failed to assign ownerhsip to target node");
-                    RecoverFromFailure();
+                    TryRecoverFromFailure();
                     Status = MigrateState.FAIL;
                     return;
                 }

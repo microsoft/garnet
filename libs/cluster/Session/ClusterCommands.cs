@@ -1075,21 +1075,28 @@ namespace Garnet.cluster
                     if (!ClusterConfig.OutOfRange(slot))
                     {
                         // Try to set slot state
+                        bool setSlotsSucceeded;
                         ReadOnlySpan<byte> errorMessage = default;
-                        var setSlotsSucceeded = slotState switch
+                        switch (slotState)
                         {
-                            SlotState.STABLE => clusterProvider.clusterManager.TryResetSlotState(slot),
-                            SlotState.IMPORTING => clusterProvider.clusterManager.TryPrepareSlotForImport(slot, nodeid, out errorMessage),
-                            SlotState.MIGRATING => clusterProvider.clusterManager.TryPrepareSlotForMigration(slot, nodeid, out errorMessage),
-                            SlotState.NODE => clusterProvider.clusterManager.TryPrepareSlotForOwnershipChange(slot, nodeid, out errorMessage),
-
-                            _ => false
-                        };
-
-                        // Handle the case where the operation failed but we didn't get an error message.
-                        // This means that given input was not supported state (i.e. the switch expression above returned false).
-                        if (!setSlotsSucceeded && errorMessage == default)
-                            errorMessage = Encoding.ASCII.GetBytes($"ERR Slot state {subcommand} not supported.");
+                            case SlotState.STABLE:
+                                setSlotsSucceeded = true;
+                                clusterProvider.clusterManager.ResetSlotState(slot);
+                                break;
+                            case SlotState.IMPORTING:
+                                setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotForImport(slot, nodeid, out errorMessage);
+                                break;
+                            case SlotState.MIGRATING:
+                                setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotForMigration(slot, nodeid, out errorMessage);
+                                break;
+                            case SlotState.NODE:
+                                setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotForOwnershipChange(slot, nodeid, out errorMessage);
+                                break;
+                            default:
+                                setSlotsSucceeded = false;
+                                errorMessage = Encoding.ASCII.GetBytes($"ERR Slot state {subcommand} not supported.");
+                                break;
+                        }
 
                         if (setSlotsSucceeded)
                         {
@@ -1174,20 +1181,27 @@ namespace Garnet.cluster
                     readHead = (int)(ptr - recvBufferPtr);
 
                     // Try to set slot states
-                    var setSlotsSucceeded = slotState switch
+                    bool setSlotsSucceeded;
+                    switch (slotState)
                     {
-                        SlotState.STABLE => clusterProvider.clusterManager.TryResetSlotsState(slots, out errorMessage),
-                        SlotState.IMPORTING => clusterProvider.clusterManager.TryPrepareSlotsForImport(slots, nodeid, out errorMessage),
-                        SlotState.MIGRATING => clusterProvider.clusterManager.TryPrepareSlotsForMigration(slots, nodeid, out errorMessage),
-                        SlotState.NODE => clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(slots, nodeid, out errorMessage),
-
-                        _ => false
-                    };
-
-                    // Handle the case where the operation failed but we didn't get an error message.
-                    // This means that given input was not supported state (i.e. the switch expression above returned false).
-                    if (!setSlotsSucceeded && errorMessage == default)
-                        errorMessage = Encoding.ASCII.GetBytes($"ERR Slot state {subcommand} not supported.");
+                        case SlotState.STABLE:
+                            setSlotsSucceeded = true;
+                            clusterProvider.clusterManager.ResetSlotsState(slots);
+                            break;
+                        case SlotState.IMPORTING:
+                            setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotsForImport(slots, nodeid, out errorMessage);
+                            break;
+                        case SlotState.MIGRATING:
+                            setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotsForMigration(slots, nodeid, out errorMessage);
+                            break;
+                        case SlotState.NODE:
+                            setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(slots, nodeid, out errorMessage);
+                            break;
+                        default:
+                            setSlotsSucceeded = false;
+                            errorMessage = Encoding.ASCII.GetBytes($"ERR Slot state {subcommand} not supported.");
+                            break;
+                    }
 
                     if (setSlotsSucceeded)
                     {
