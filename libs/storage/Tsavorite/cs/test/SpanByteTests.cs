@@ -34,8 +34,15 @@ namespace Tsavorite.test
                 var value1 = MemoryMarshal.Cast<char, byte>("value1".AsSpan());
                 var output1 = SpanByteAndMemory.FromPinnedSpan(output);
 
-                s.Upsert(key1, value1);
-                s.Read(key1, ref input, ref output1);
+                fixed (byte* key1Ptr = key1)
+                fixed (byte* value1Ptr = value1)
+                {
+                    var key1SpanByte = SpanByte.FromPinnedPointer(key1Ptr, key1.Length);
+                    var value1SpanByte = SpanByte.FromPinnedPointer(value1Ptr, value1.Length);
+
+                    s.Upsert(key1SpanByte, value1SpanByte);
+                    s.Read(ref key1SpanByte, ref input, ref output1);
+                }
 
                 Assert.IsTrue(output1.IsSpanByte);
                 Assert.IsTrue(output1.SpanByte.AsReadOnlySpan().SequenceEqual(value1));
@@ -44,8 +51,15 @@ namespace Tsavorite.test
                 var value2 = MemoryMarshal.Cast<char, byte>("value2value2value2".AsSpan());
                 var output2 = SpanByteAndMemory.FromPinnedSpan(output);
 
-                s.Upsert(key2, value2);
-                s.Read(key2, ref input, ref output2);
+                fixed (byte* key2Ptr = key2)
+                fixed (byte* value2Ptr = value2)
+                {
+                    var key2SpanByte = SpanByte.FromPinnedPointer(key2Ptr, key2.Length);
+                    var value2SpanByte = SpanByte.FromPinnedPointer(value2Ptr, value2.Length);
+
+                    s.Upsert(key2SpanByte, value2SpanByte);
+                    s.Read(ref key2SpanByte, ref input, ref output2);
+                }
 
                 Assert.IsTrue(!output2.IsSpanByte);
                 Assert.IsTrue(output2.Memory.Memory.Span.Slice(0, output2.Length).SequenceEqual(value2));
