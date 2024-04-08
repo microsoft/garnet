@@ -157,35 +157,35 @@ namespace Garnet.cluster
                 if (current.GetLocalNodeId().Equals(nodeid))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF;
-                    logger?.LogError("-{msg}", Encoding.ASCII.GetString(errorMessage));
+                    logger?.LogError(Encoding.ASCII.GetString(errorMessage));
                     return false;
                 }
 
                 if (!force && current.GetLocalNodeRole() != NodeRole.PRIMARY)
                 {
-                    logger?.LogError("-ERR I am already replica of {localNodePrimaryId}", current.GetLocalNodePrimaryId());
+                    logger?.LogError("ERR I am already replica of {localNodePrimaryId}", current.GetLocalNodePrimaryId());
                     errorMessage = Encoding.ASCII.GetBytes($"ERR I am already replica of {current.GetLocalNodePrimaryId()}.");
                     return false;
                 }
 
                 if (!force && current.HasAssignedSlots(1))
                 {
-                    logger?.LogError("{msg}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS));
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_MAKE_REPLICA_WITH_ASSIGNED_SLOTS;
+                    logger?.LogError(Encoding.ASCII.GetString(errorMessage));
                     return false;
                 }
 
                 var workerId = current.GetWorkerIdFromNodeId(nodeid);
                 if (workerId == 0)
                 {
-                    logger?.LogError("-ERR I don't know about node {nodeid}.", nodeid);
                     errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}.");
+                    logger?.LogError("ERR I don't know about node {nodeid}.", nodeid);
                     return false;
                 }
 
                 if (current.GetNodeRoleFromNodeId(nodeid) != NodeRole.PRIMARY)
                 {
-                    logger?.LogError("-ERR Trying to replicate node ({nodeid}) that is not a primary.", nodeid);
+                    logger?.LogError("ERR Trying to replicate node ({nodeid}) that is not a primary.", nodeid);
                     errorMessage = Encoding.ASCII.GetBytes($"ERR Trying to replicate node ({nodeid}) that is not a primary.");
                     return false;
                 }
