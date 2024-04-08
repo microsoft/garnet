@@ -952,7 +952,7 @@ namespace Tsavorite.test.ReadCacheTests
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
 
             Span<byte> keyVec = stackalloc byte[sizeof(long)];
-            var key = SpanByte.FromFixedSpan(keyVec);
+            var key = SpanByte.FromPinnedSpan(keyVec);
 
             for (long ii = 0; ii < numKeys; ii++)
             {
@@ -1000,7 +1000,7 @@ namespace Tsavorite.test.ReadCacheTests
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
 
                 Span<byte> keyVec = stackalloc byte[sizeof(long)];
-                var key = SpanByte.FromFixedSpan(keyVec);
+                var key = SpanByte.FromPinnedSpan(keyVec);
 
                 Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
@@ -1035,9 +1035,9 @@ namespace Tsavorite.test.ReadCacheTests
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new RmwSpanByteFunctions());
 
                 Span<byte> keyVec = stackalloc byte[sizeof(long)];
-                var key = SpanByte.FromFixedSpan(keyVec);
+                var key = SpanByte.FromPinnedSpan(keyVec);
                 Span<byte> inputVec = stackalloc byte[sizeof(long)];
-                var input = SpanByte.FromFixedSpan(inputVec);
+                var input = SpanByte.FromPinnedSpan(inputVec);
 
                 Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
