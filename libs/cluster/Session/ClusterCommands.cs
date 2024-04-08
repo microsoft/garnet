@@ -1032,7 +1032,7 @@ namespace Garnet.cluster
                     if (!Enum.TryParse(subcommand, out SlotState slotState))
                     {
                         // Log error for invalid slot state option
-                        logger?.LogError($"The given {nameof(SlotState)} is invalid.");
+                        logger?.LogError("The given '{input}' is not a valid slot state option.", subcommand);
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;
                         errorFlag = true;
