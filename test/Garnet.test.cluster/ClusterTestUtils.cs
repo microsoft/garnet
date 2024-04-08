@@ -821,11 +821,11 @@ namespace Garnet.test.cluster
             return result;
         }
 
-        public static readonly byte[] MOVED = Encoding.ASCII.GetBytes("-MOVED");
-        public static readonly byte[] ASK = Encoding.ASCII.GetBytes("-ASK");
-        public static readonly byte[] MIGRATING = Encoding.ASCII.GetBytes("-MIGRATING");
-        public static readonly byte[] CROSSSLOT = Encoding.ASCII.GetBytes("-CROSSSLOT");
-        public static readonly byte[] CLUSTERDOWN = Encoding.ASCII.GetBytes("-CLUSTERDOWN");
+        public static ReadOnlySpan<byte> MOVED => "-MOVED"u8;
+        public static ReadOnlySpan<byte> ASK => "-ASK"u8;
+        public static ReadOnlySpan<byte> MIGRATING => "-MIGRATING"u8;
+        public static ReadOnlySpan<byte> CROSSSLOT => "-CROSSSLOT"u8;
+        public static ReadOnlySpan<byte> CLUSTERDOWN => "-CLUSTERDOWN"u8;
 
         public static ResponseState ParseResponseState(
             byte[] result,
@@ -846,25 +846,25 @@ namespace Garnet.test.cluster
                 returnValue = ParseRespToString(result, out returnValueArray);
                 return ResponseState.OK;
             }
-            else if (result.AsSpan()[..MOVED.Length].SequenceEqual(MOVED))
+            else if (result.AsSpan().StartsWith(MOVED))
             {
                 GetEndPointFromResponse(result, out slot, out address, out port);
                 return ResponseState.MOVED;
             }
-            else if (result.AsSpan()[..ASK.Length].SequenceEqual(ASK))
+            else if (result.AsSpan().StartsWith(ASK))
             {
                 GetEndPointFromResponse(result, out slot, out address, out port);
                 return ResponseState.ASK;
             }
-            else if (result.AsSpan()[..MIGRATING.Length].SequenceEqual(MIGRATING))
+            else if (result.AsSpan().StartsWith(MIGRATING))
             {
                 return ResponseState.MIGRATING;
             }
-            else if (result.AsSpan()[..CROSSSLOT.Length].SequenceEqual(CROSSSLOT))
+            else if (result.AsSpan().StartsWith(CROSSSLOT))
             {
                 return ResponseState.CROSSSLOT;
             }
-            else if (result.AsSpan()[..CLUSTERDOWN.Length].SequenceEqual(CLUSTERDOWN))
+            else if (result.AsSpan().StartsWith(CLUSTERDOWN))
             {
                 return ResponseState.CLUSTERDOWN;
             }
@@ -1319,7 +1319,7 @@ namespace Garnet.test.cluster
                 logger?.LogInformation(ex, "Exception occurred in CountKeysInSlot");
                 if (slot < 0 || slot > ushort.MaxValue - 1)
                 {
-                    Assert.AreEqual(ex.Message, "ERR Slot out of range");
+                    Assert.AreEqual("ERR Slot out of range", ex.Message);
                     return 0;
                 }
                 return 0;
@@ -1563,7 +1563,7 @@ namespace Garnet.test.cluster
         {
             var endPoint = (IPEndPoint)endpoints[nodeIndex];
             var server = redis.GetServer(endPoint);
-            var objects = ranges.SelectMany(x => new List<object> { (object)x.Item1, (object)x.Item2 }).ToList();
+            var objects = ranges.SelectMany(x => new List<object> { x.Item1, x.Item2 }).ToList();
             objects.Insert(0, addslot ? "addslotsrange" : "delslotsrange");
 
             try
