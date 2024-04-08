@@ -30,20 +30,20 @@ namespace Garnet.cluster
         private void Redirect(ushort slot, ClusterConfig config)
         {
             var (address, port) = config.GetEndpointFromSlot(slot);
-            ReadOnlySpan<byte> resp;
+            ReadOnlySpan<byte> errorMessage;
             if (port != 0)
-                resp = Encoding.ASCII.GetBytes($"-MOVED {slot} {address}:{port}\r\n");
+                errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {address}:{port}");
             else
-                resp = CmdStrings.RESP_CLUSTERDOWN_ERROR;
+                errorMessage = CmdStrings.RESP_ERR_CLUSTERDOWN;
 
-            logger?.LogDebug("SEND: {msg}", Encoding.ASCII.GetString(resp).Replace("\n", "!").Replace("\r", "|"));
-            while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
+            logger?.LogDebug("SEND: {msg}", Encoding.ASCII.GetString(errorMessage));
+            while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                 SendAndReset();
         }
 
         private void WriteClusterSlotVerificationMessage(ClusterConfig config, ClusterSlotVerificationResult vres, ref byte* dcurr, ref byte* dend)
         {
-            ReadOnlySpan<byte> resp;
+            ReadOnlySpan<byte> errorMessage;
             var state = vres.state;
             var slot = vres.slot;
             string address;
@@ -52,25 +52,25 @@ namespace Garnet.cluster
             {
                 case SlotVerifiedState.MOVED:
                     (address, port) = config.GetEndpointFromSlot(slot);
-                    resp = Encoding.ASCII.GetBytes($"-MOVED {slot} {address}:{port}\r\n");
+                    errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {address}:{port}");
                     break;
                 case SlotVerifiedState.MIGRATING:
-                    resp = CmdStrings.RESP_MIGRATING_ERROR;
+                    errorMessage = CmdStrings.RESP_ERR_MIGRATING;
                     break;
                 case SlotVerifiedState.CLUSTERDOWN:
-                    resp = CmdStrings.RESP_CLUSTERDOWN_ERROR;
+                    errorMessage = CmdStrings.RESP_ERR_CLUSTERDOWN;
                     break;
                 case SlotVerifiedState.ASK:
                     (address, port) = config.AskEndpointFromSlot(slot);
-                    resp = Encoding.ASCII.GetBytes($"-ASK {slot} {address}:{port}\r\n");
+                    errorMessage = Encoding.ASCII.GetBytes($"ASK {slot} {address}:{port}");
                     break;
                 case SlotVerifiedState.CROSSLOT:
-                    resp = CmdStrings.RESP_CROSSLOT_ERROR;
+                    errorMessage = CmdStrings.RESP_ERR_CROSSLOT;
                     break;
                 default:
                     throw new Exception($"Unknown SlotVerifiedState {state}");
             }
-            while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
+            while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                 SendAndReset(ref dcurr, ref dend);
         }
 

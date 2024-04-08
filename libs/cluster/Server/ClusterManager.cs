@@ -195,19 +195,19 @@ namespace Garnet.cluster
             return ClusterInfo;
         }
 
-        private static string GetRange(List<int> slots)
+        private static string GetRange(int[] slots)
         {
             var range = "> ";
             var start = slots[0];
             var end = slots[0];
-            for (var i = 1; i < slots.Count + 1; i++)
+            for (var i = 1; i < slots.Length + 1; i++)
             {
-                if (i < slots.Count && slots[i] == end + 1)
+                if (i < slots.Length && slots[i] == end + 1)
                     end = slots[i];
                 else
                 {
                     range += $"{start}-{end} ";
-                    if (i < slots.Count)
+                    if (i < slots.Length)
                     {
                         start = slots[i];
                         end = slots[i];
@@ -218,28 +218,36 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Update config epoch of local worker
+        /// Attempts to update config epoch of local worker
         /// </summary>
         /// <param name="configEpoch"></param>
+        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public ReadOnlySpan<byte> TrySetLocalConfigEpoch(long configEpoch)
+        public bool TrySetLocalConfigEpoch(long configEpoch, out ReadOnlySpan<byte> errorMessage)
         {
+            errorMessage = default;
             while (true)
             {
                 var current = currentConfig;
                 if (current.NumWorkers == 0)
-                    return "-ERR workers not initialized.\r\n"u8;
+                {
+                    errorMessage = "ERR workers not initialized."u8;
+                    return false;
+                }
 
                 var newConfig = currentConfig.SetLocalWorkerConfigEpoch(configEpoch);
                 if (newConfig == null)
-                    return "-ERR Node config epoch was not set due to invalid epoch specified.\r\n"u8;
+                {
+                    errorMessage = "ERR Node config epoch was not set due to invalid epoch specified."u8;
+                    return false;
+                }
 
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
             FlushConfig();
             logger?.LogTrace("SetConfigEpoch {configEpoch}", configEpoch);
-            return CmdStrings.RESP_OK;
+            return true;
         }
 
         /// <summary>
