@@ -31,7 +31,6 @@ namespace Tsavorite.core
 
             byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
             long p = (long)Unsafe.AsPointer(ref tmp[0]);
-            Array.Clear(tmp, 0, adjustedSize);
             pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
             frame[index] = tmp;
         }
