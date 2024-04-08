@@ -3,8 +3,6 @@
 
 #pragma warning disable 0162
 
-#define CALLOC
-
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -112,10 +110,6 @@ namespace Tsavorite.core
             {
                 pointers[0] = (IntPtr)(((long)Unsafe.AsPointer(ref values[0][0]) + (SectorSize - 1)) & ~(SectorSize - 1));
             }
-
-#if !(CALLOC)
-            Array.Clear(values[0], 0, PageSize);
-#endif
 
             writeCacheLevel = -1;
             Interlocked.MemoryBarrier();
@@ -236,9 +230,6 @@ namespace Tsavorite.core
                     if (IsBlittable)
                         pointers[1] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
-#if !(CALLOC)
-                    Array.Clear(tmp, 0, PageSize);
-#endif
                     values[1] = tmp;
                     Interlocked.MemoryBarrier();
                 }
@@ -287,9 +278,6 @@ namespace Tsavorite.core
                 if (IsBlittable)
                     pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
-#if !(CALLOC)
-                Array.Clear(tmp, 0, PageSize);
-#endif
                 values[newBaseAddr] = tmp;
 
                 Interlocked.MemoryBarrier();
