@@ -807,7 +807,7 @@ namespace Garnet.server
             *(int*)valPtr = vsize;
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
-            var output = SpanByteAndMemory.FromFixedSpan(outputBuffer);
+            var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);
 
             var status = storageApi.APPEND(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr), ref output);
 
