@@ -8,7 +8,7 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Callback functions for SpanByte Key, Value, Input; SpanByteAndMemory Output; and specified Context
+    /// Callback functions for <see cref="SpanByte"/> Key, Value, Input; <see cref="SpanByteAndMemory"/> Output; and specified <typeparamref name="Context"/>
     /// </summary>
     public class SpanByteFunctions<Context> : SpanByteFunctions<SpanByteAndMemory, Context>
     {
@@ -39,7 +39,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Callback functions for SpanByte key, value; specified Input, Output, and Context
+    /// Callback functions for <see cref="SpanByte"/> key, value; specified <typeparamref name="Input"/>, <typeparamref name="Output"/>, and <typeparamref name="Context"/>
     /// </summary>
     public class SpanByteFunctions<Input, Output, Context> : FunctionsBase<SpanByte, SpanByte, Input, Output, Context>
     {
@@ -52,7 +52,7 @@ namespace Tsavorite.core
             => DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
 
         /// <summary>
-        /// Utility function for SpanByte copying, Upsert version.
+        /// Utility function for <see cref="SpanByte"/> copying, Upsert version.
         /// </summary>
         public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
         {
@@ -73,7 +73,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Utility function for SpanByte copying, RMW version.
+        /// Utility function for <see cref="SpanByte"/> copying, RMW version.
         /// </summary>
         public static bool DoSafeCopy(ref SpanByte src, ref SpanByte dst, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -125,7 +125,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Callback functions for SpanByte key, value, input; specified Output and Context
+    /// Callback functions for <see cref="SpanByte"/> key, value, input; specified <typeparamref name="Output"/> and <typeparamref name="Context"/>
     /// </summary>
     public class SpanByteFunctions<Output, Context> : SpanByteFunctions<SpanByte, Output, Context>
     {
