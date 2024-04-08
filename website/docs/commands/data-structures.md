@@ -452,6 +452,18 @@ Removes and returns one or more random members from the set value stored at **ke
 
 ---
 
+### SISMEMBER
+
+#### Syntax
+
+```bash
+    SISMEMBER key member
+```
+
+Returns if **member** is a member of the set stored at **key**.
+
+---
+
 ### SREM
 
 #### Syntax
