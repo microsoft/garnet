@@ -749,7 +749,7 @@ namespace Garnet.server
 
                     //Calculate number offset from bitCount if offsetArg starts with #
                     bool offsetType = offsetArg.StartsWith("#", StringComparison.OrdinalIgnoreCase);
-                    offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg, CultureInfo.InvariantCulture);
+                    offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg);
                     offset = offsetType ? (offset * bitCount) : offset;
                 }
 
