@@ -86,7 +86,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public ref SpanByteAndMemory AsRefOutput(byte* src, int length)
         {
-            output = SpanByteAndMemory.FromFixedSpan(new Span<byte>(src, length));
+            output = SpanByteAndMemory.FromPinnedSpan(new Span<byte>(src, length));
             return ref output;
         }
 
