@@ -60,7 +60,7 @@ namespace Garnet.server
         /// <summary>
         /// Get slice as SpanByte
         /// </summary>
-        public readonly SpanByte SpanByte => SpanByte.FromPointer(ptr, length);
+        public readonly SpanByte SpanByte => SpanByte.FromPinnedPointer(ptr, length);
 
         /// <summary>
         /// Copies the contents of this slice into a new array.
