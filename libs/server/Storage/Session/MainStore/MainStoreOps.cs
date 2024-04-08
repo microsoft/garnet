@@ -831,7 +831,7 @@ namespace Garnet.server
                 CompletePendingForSession(ref status, ref _output, ref context);
 
             output.length = _output.Length;
-            if (*_output.SpanByte.ToPointer() == (byte)'-')
+            if (*_output.SpanByte.ToPointer() == (byte)'-' && _output.Length > 20)
             {
                 return GarnetStatus.ERROR;
             }
