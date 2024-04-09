@@ -48,7 +48,7 @@ namespace Garnet.server.ACL
             }
 
             // Expect keyword USER
-            if (tokens[0].ToLower() != "user")
+            if (!tokens[0].Equals("user", StringComparison.OrdinalIgnoreCase))
             {
                 throw new ACLParsingException("ACL rules need to start with the USER keyword");
             }
@@ -97,28 +97,28 @@ namespace Garnet.server.ACL
                 return;
             }
 
-            if (op == "on")
+            if (op.Equals("on", StringComparison.Ordinal))
             {
                 // Enable user
                 user.IsEnabled = true;
             }
-            else if (op == "off")
+            else if (op.Equals("off", StringComparison.Ordinal))
             {
                 // Disable user
                 user.IsEnabled = false;
             }
-            else if (op == "nopass")
+            else if (op.Equals("nopass", StringComparison.Ordinal))
             {
                 // Make account passwordless
                 user.ClearPasswords();
                 user.IsPasswordless = true;
             }
-            else if (op == "reset")
+            else if (op.Equals("reset", StringComparison.Ordinal))
             {
                 // Remove all passwords and access rights from the user
                 user.Reset();
             }
-            else if (op == "resetpass")
+            else if (op.Equals("resetpass", StringComparison.Ordinal))
             {
                 // Remove all passwords from the user
                 user.ClearPasswords();
@@ -154,7 +154,7 @@ namespace Garnet.server.ACL
                     throw new ACLParsingException($"{exception.Message}");
                 }
             }
-            else if (op.StartsWith("-@") || op.StartsWith("+@"))
+            else if (op.StartsWith("-@", StringComparison.Ordinal) || op.StartsWith("+@", StringComparison.Ordinal))
             {
                 // Parse category name
                 string categoryName = op.Substring(2);
@@ -179,11 +179,11 @@ namespace Garnet.server.ACL
                     user.AddCategory(category);
                 }
             }
-            else if ((op == "~*") || (op == "allkeys"))
+            else if (op.Equals("~*", StringComparison.OrdinalIgnoreCase) || op.Equals("allkeys", StringComparison.OrdinalIgnoreCase))
             {
                 // NOTE: No-op, because only wildcard key patterns are currently supported
             }
-            else if ((op == "resetkeys"))
+            else if (op.Equals("resetkeys", StringComparison.Ordinal))
             {
                 // NOTE: No-op, because only wildcard key patterns are currently supported
             }
