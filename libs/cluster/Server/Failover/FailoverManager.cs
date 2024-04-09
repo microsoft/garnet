@@ -2,29 +2,20 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
-using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal sealed class FailoverManager : IDisposable
+    internal sealed class FailoverManager(ClusterProvider clusterProvider, ILogger logger = null) : IDisposable
     {
         FailoverSession currentFailoverSession = null;
-        readonly ClusterProvider clusterProvider;
-        readonly TimeSpan clusterTimeout;
-        readonly ILogger logger;
+        readonly ClusterProvider clusterProvider = clusterProvider;
+        readonly TimeSpan clusterTimeout = clusterProvider.serverOptions.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(clusterProvider.serverOptions.ClusterTimeout);
+        readonly ILogger logger = logger;
         private SingleWriterMultiReaderLock failoverTaskLock;
-
-        public FailoverManager(ClusterProvider clusterProvider, GarnetServerOptions opts, TimeSpan clusterTimeout, ILoggerFactory loggerFactory)
-        {
-            this.clusterProvider = clusterProvider;
-            this.clusterTimeout = clusterTimeout;
-
-            string address = opts.Address ?? StoreWrapper.GetIp();
-            this.logger = loggerFactory?.CreateLogger($"ClusterManager-{address}:{opts.Port}");
-        }
 
         public void Dispose()
         {
