@@ -17,7 +17,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         volatile CheckpointEntry head;
         volatile CheckpointEntry tail;
-        bool safelyRemoveOutdated;
+        readonly bool safelyRemoveOutdated;
         readonly ILogger logger;
 
         public CheckpointStore(StoreWrapper storeWrapper, ClusterProvider clusterProvider, bool safelyRemoveOutdated, ILogger logger = null)
@@ -66,7 +66,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Method used at initialization to purge any orphan checkpoints except the latest checkpoint
         /// </summary>
-        /// <param name="entry"></param>
+        /// <param name="entry">CheckpointEntry</param>
         public void PurgeAllCheckpointsExceptEntry(CheckpointEntry entry = null)
         {
             entry ??= GetLatestCheckpointEntryFromDisk();
@@ -77,11 +77,17 @@ namespace Garnet.cluster
                 PurgeAllCheckpointsExceptTokens(StoreType.Object, entry.objectStoreHlogToken, entry.objectStoreIndexToken);
         }
 
+        /// <summary>
+        /// Used to purge all checkpoint tokens except the tokens provided.
+        /// </summary>
+        /// <param name="storeType">StoreType</param>
+        /// <param name="logToken">GUID token for log</param>
+        /// <param name="indexToken">GUID token for index</param>
         public void PurgeAllCheckpointsExceptTokens(StoreType storeType, Guid logToken, Guid indexToken)
         {
             var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
 
-            //Delete log checkpoints
+            // Delete log checkpoints
             foreach (var toDeletelogToken in ckptManager.GetLogCheckpointTokens())
             {
                 if (!toDeletelogToken.Equals(logToken))
@@ -91,7 +97,7 @@ namespace Garnet.cluster
                 }
             }
 
-            //Delete index checkpoints
+            // Delete index checkpoints
             foreach (var toDeleteIndexToken in ckptManager.GetIndexCheckpointTokens())
             {
                 if (!toDeleteIndexToken.Equals(indexToken))
@@ -168,11 +174,11 @@ namespace Garnet.cluster
             while (curr != null && curr != tail)
             {
                 LogCheckpointEntry("Trying to suspend readers for checkpoint entry", curr);
-                //if cannot suspend readers for this entry
+                // If cannot suspend readers for this entry
                 if (!curr.TrySuspendReaders()) break;
 
                 LogCheckpointEntry("Deleting checkpoint entry", curr);
-                //Below check each checkpoint token separately if it is eligible for deletion
+                // Below check each checkpoint token separately if it is eligible for deletion
                 if (CanDeleteToken(curr, CheckpointFileType.STORE_HLOG))
                     clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).DeleteLogCheckpoint(curr.storeHlogToken);
 
@@ -310,6 +316,11 @@ namespace Garnet.cluster
             return ckptManager.GetCheckpointCookieMetadata(fileToken, null, false, -1);
         }
 
+        /// <summary>
+        /// Logger wrapper for gathering CheckpointEntry data
+        /// </summary>
+        /// <param name="msg"></param>
+        /// <param name="entry"></param>
         public void LogCheckpointEntry(string msg, CheckpointEntry entry)
         {
             logger?.LogTrace("{msg} {storeVersion} {storeHlogToken} {storeIndexToken} {objectStoreVersion} {objectStoreHlogToken} {objectStoreIndexToken}",

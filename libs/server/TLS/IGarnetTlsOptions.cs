@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Net.Security;
 
 namespace Garnet.server.TLS
@@ -25,8 +26,8 @@ namespace Garnet.server.TLS
         /// </summary>
         /// <param name="certFileName"></param>
         /// <param name="certPassword"></param>
-        /// <param name="errorMsg"></param>
+        /// <param name="errorMessage">The ASCII error message if the method returned <see langword="false"/>; otherwise <see langword="null"/></param>
         /// <returns></returns>
-        bool UpdateCertFile(string certFileName, string certPassword, out string errorMsg);
+        bool UpdateCertFile(string certFileName, string certPassword, out string errorMessage);
     }
 }
