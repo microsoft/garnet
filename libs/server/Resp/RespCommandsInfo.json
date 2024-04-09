@@ -10,20 +10,22 @@
     "Step": 1,
     "AclCategories": "Fast, Read, String",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -37,20 +39,22 @@
     "Step": 1,
     "AclCategories": "Slow, String, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": "RW and ACCESS due to the optional \u0060GET\u0060 argument",
-      "Flags": "RW, Access, Update, VariableFlags"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": "RW and ACCESS due to the optional \u0060GET\u0060 argument",
+        "Flags": "RW, Access, Update, VariableFlags"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -64,20 +68,22 @@
     "Step": 1,
     "AclCategories": "Read, Slow, String",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -91,20 +97,22 @@
     "Step": 1,
     "AclCategories": "Slow, String, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -118,20 +126,22 @@
     "Step": 1,
     "AclCategories": "HyperLogLog, Fast, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Insert"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -145,20 +155,22 @@
     "Step": 1,
     "AclCategories": "HyperLogLog, Read, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": -1,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": "RW because it may change the internal representation of the key, and propagate to replicas",
-      "Flags": "RW, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": "RW because it may change the internal representation of the key, and propagate to replicas",
+        "Flags": "RW, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -172,20 +184,36 @@
     "Step": 1,
     "AclCategories": "HyperLogLog, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Insert"
       },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Insert"
-    },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -199,20 +227,22 @@
     "Step": 1,
     "AclCategories": "Slow, String, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "OW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -226,20 +256,22 @@
     "Step": 1,
     "AclCategories": "Slow, String, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "OW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -256,20 +288,22 @@
       "request_policy:multi_shard",
       "response_policy:agg_sum"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": -1,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RM, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RM, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -286,20 +320,22 @@
       "request_policy:multi_shard",
       "response_policy:agg_sum"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": -1,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -313,20 +349,36 @@
     "Step": 1,
     "AclCategories": "KeySpace, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
       },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Delete"
-    },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -340,20 +392,22 @@
     "Step": 1,
     "AclCategories": "Fast, String, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -367,20 +421,22 @@
     "Step": 1,
     "AclCategories": "Fast, String, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -394,20 +450,22 @@
     "Step": 1,
     "AclCategories": "Fast, String, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -421,20 +479,22 @@
     "Step": 1,
     "AclCategories": "Fast, String, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -448,20 +508,22 @@
     "Step": 1,
     "AclCategories": "Fast, KeySpace, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -475,20 +537,22 @@
     "Step": 1,
     "AclCategories": "Fast, KeySpace, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -502,20 +566,22 @@
     "Step": 1,
     "AclCategories": "Fast, KeySpace, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -531,20 +597,22 @@
     "Tips": [
       "nondeterministic_output"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -560,20 +628,22 @@
     "Tips": [
       "nondeterministic_output"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -587,20 +657,22 @@
     "Step": 1,
     "AclCategories": "Bitmap, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -614,20 +686,22 @@
     "Step": 1,
     "AclCategories": "Bitmap, Fast, Read",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -641,20 +715,22 @@
     "Step": 1,
     "AclCategories": "Bitmap, Read, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -668,20 +744,22 @@
     "Step": 1,
     "AclCategories": "Bitmap, Read, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -695,20 +773,22 @@
     "Step": 1,
     "AclCategories": "Bitmap, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": "This command allows both access and modification of the key",
-      "Flags": "RW, Access, Update, VariableFlags"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": "This command allows both access and modification of the key",
+        "Flags": "RW, Access, Update, VariableFlags"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -725,20 +805,22 @@
       "request_policy:multi_shard",
       "response_policy:all_succeeded"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": -1,
-        "KeyStep": 2,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "OW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 2,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -755,20 +837,22 @@
       "request_policy:multi_shard",
       "response_policy:agg_min"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": -1,
-        "KeyStep": 2,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "OW, Insert"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 2,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Insert"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -784,20 +868,22 @@
     "Tips": [
       "request_policy:multi_shard"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": -1,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -814,20 +900,22 @@
       "request_policy:multi_shard",
       "response_policy:agg_sum"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": -1,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RM, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RM, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -841,7 +929,7 @@
     "Step": 0,
     "AclCategories": "Fast, Transaction",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -855,7 +943,7 @@
     "Step": 0,
     "AclCategories": "Slow, Transaction",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -869,20 +957,22 @@
     "Step": 1,
     "AclCategories": "Fast, Transaction",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": -1,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -896,7 +986,7 @@
     "Step": 0,
     "AclCategories": "Fast, Transaction",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -910,7 +1000,7 @@
     "Step": 0,
     "AclCategories": "Fast, Transaction",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -924,20 +1014,22 @@
     "Step": 1,
     "AclCategories": "Fast, String, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -951,20 +1043,22 @@
     "Step": 1,
     "AclCategories": "Fast, String, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Insert"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -978,7 +1072,7 @@
     "Step": 0,
     "AclCategories": "Connection, Fast",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -992,7 +1086,7 @@
     "Step": 0,
     "AclCategories": "Admin, Dangerous, Slow",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -1006,7 +1100,7 @@
     "Step": 0,
     "AclCategories": "Admin, Dangerous, Slow",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -1020,7 +1114,7 @@
     "Step": 0,
     "AclCategories": "Slow",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -1034,7 +1128,7 @@
     "Step": 0,
     "AclCategories": "Slow",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -1048,20 +1142,22 @@
     "Step": 1,
     "AclCategories": "Fast, SortedSet, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1075,20 +1171,22 @@
     "Step": 1,
     "AclCategories": "Fast, Read, SortedSet",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1102,20 +1200,22 @@
     "Step": 1,
     "AclCategories": "Fast, SortedSet, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1129,20 +1229,22 @@
     "Step": 1,
     "AclCategories": "Fast, Read, SortedSet",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1156,20 +1258,22 @@
     "Step": 1,
     "AclCategories": "Fast, SortedSet, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1183,20 +1287,22 @@
     "Step": 1,
     "AclCategories": "Fast, Read, SortedSet",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1210,20 +1316,22 @@
     "Step": 1,
     "AclCategories": "Fast, Read, SortedSet",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1237,20 +1345,22 @@
     "Step": 1,
     "AclCategories": "Fast, SortedSet, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1264,20 +1374,22 @@
     "Step": 1,
     "AclCategories": "Fast, Read, SortedSet",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1291,20 +1403,22 @@
     "Step": 1,
     "AclCategories": "Read, SortedSet, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1318,20 +1432,22 @@
     "Step": 1,
     "AclCategories": "Read, SortedSet, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1345,20 +1461,22 @@
     "Step": 1,
     "AclCategories": "Fast, Read, SortedSet",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1372,20 +1490,22 @@
     "Step": 1,
     "AclCategories": "SortedSet, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1399,20 +1519,22 @@
     "Step": 1,
     "AclCategories": "SortedSet, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1426,20 +1548,22 @@
     "Step": 1,
     "AclCategories": "SortedSet, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1453,20 +1577,22 @@
     "Step": 1,
     "AclCategories": "Fast, Read, SortedSet",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1480,20 +1606,22 @@
     "Step": 1,
     "AclCategories": "Fast, SortedSet, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1509,20 +1637,22 @@
     "Tips": [
       "nondeterministic_output"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1536,20 +1666,22 @@
     "Step": 1,
     "AclCategories": "Geo, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1563,20 +1695,22 @@
     "Step": 1,
     "AclCategories": "Geo, Read, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1590,20 +1724,22 @@
     "Step": 1,
     "AclCategories": "Geo, Read, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1617,20 +1753,22 @@
     "Step": 1,
     "AclCategories": "Geo, Read, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1644,20 +1782,22 @@
     "Step": 1,
     "AclCategories": "Geo, Read, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1671,20 +1811,22 @@
     "Step": 1,
     "AclCategories": "Read, SortedSet, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1700,20 +1842,22 @@
     "Tips": [
       "nondeterministic_output"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1727,20 +1871,22 @@
     "Step": 1,
     "AclCategories": "Fast, List, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Insert"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1754,20 +1900,22 @@
     "Step": 1,
     "AclCategories": "Fast, List, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1781,20 +1929,22 @@
     "Step": 1,
     "AclCategories": "Fast, List, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Insert"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1808,20 +1958,22 @@
     "Step": 1,
     "AclCategories": "Fast, List, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1835,20 +1987,22 @@
     "Step": 1,
     "AclCategories": "Fast, List, Read",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1862,20 +2016,22 @@
     "Step": 1,
     "AclCategories": "List, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1889,20 +2045,22 @@
     "Step": 1,
     "AclCategories": "List, Read, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1916,20 +2074,22 @@
     "Step": 1,
     "AclCategories": "List, Read, Slow",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1943,20 +2103,22 @@
     "Step": 1,
     "AclCategories": "List, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Insert"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1970,20 +2132,22 @@
     "Step": 1,
     "AclCategories": "List, Slow, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -1997,20 +2161,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2024,20 +2190,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2051,20 +2219,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Read",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2078,20 +2248,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Read",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2107,20 +2279,22 @@
     "Tips": [
       "nondeterministic_output_order"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2134,20 +2308,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2161,20 +2337,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Read",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2188,20 +2366,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Read",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2217,20 +2397,22 @@
     "Tips": [
       "nondeterministic_output_order"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2246,20 +2428,22 @@
     "Tips": [
       "nondeterministic_output_order"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2273,20 +2457,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2300,20 +2486,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Update"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Update"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2327,20 +2515,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Insert"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2356,20 +2546,22 @@
     "Tips": [
       "nondeterministic_output"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2385,20 +2577,22 @@
     "Tips": [
       "nondeterministic_output"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2412,20 +2606,22 @@
     "Step": 1,
     "AclCategories": "Hash, Fast, Read",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2439,20 +2635,22 @@
     "Step": 1,
     "AclCategories": "Fast, Set, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Insert"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2468,20 +2666,22 @@
     "Tips": [
       "nondeterministic_output_order"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2495,20 +2695,22 @@
     "Step": 1,
     "AclCategories": "Fast, Set, Write",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2522,20 +2724,22 @@
     "Step": 1,
     "AclCategories": "Fast, Read, Set",
     "Tips": [],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2551,20 +2755,22 @@
     "Tips": [
       "nondeterministic_output"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RW, Access, Delete"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2580,20 +2786,22 @@
     "Tips": [
       "nondeterministic_output"
     ],
-    "KeySpecifications": {
-      "BeginSearch": {
-        "TypeDiscriminator": "BeginSearchIndex",
-        "Index": 1
-      },
-      "FindKeys": {
-        "TypeDiscriminator": "FindKeysRange",
-        "LastKey": 0,
-        "KeyStep": 1,
-        "Limit": 0
-      },
-      "Notes": null,
-      "Flags": "RO, Access"
-    },
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
     "SubCommands": []
   },
   {
@@ -2607,7 +2815,7 @@
     "Step": 0,
     "AclCategories": "Slow",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -2621,7 +2829,7 @@
     "Step": 0,
     "AclCategories": "Slow",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -2635,7 +2843,7 @@
     "Step": 0,
     "AclCategories": "Slow",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   },
   {
@@ -2649,7 +2857,7 @@
     "Step": 0,
     "AclCategories": "Slow",
     "Tips": [],
-    "KeySpecifications": null,
+    "KeySpecifications": [],
     "SubCommands": []
   }
 ]

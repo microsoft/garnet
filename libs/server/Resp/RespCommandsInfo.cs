@@ -6,14 +6,12 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using System.Text.Json.Serialization;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Garnet.server
 {
-    public class RespCommandsInfo
+    public class RespCommandsInfo : RespSerializableBase
     {
         public RespCommand Command { get; init; }
 
@@ -51,12 +49,9 @@ namespace Garnet.server
 
         public string[]? Tips { get; init; }
 
-        public RespCommandKeySpecifications? KeySpecifications { get; init; }
+        public RespCommandKeySpecifications[] KeySpecifications { get; init; }
 
         public RespCommandsInfo[]? SubCommands { get; init; }
-
-        [JsonIgnore]
-        internal string RespFormat => this.respFormat ??= GetRespFormat();
 
         private static bool isInitialized = false;
         private static IReadOnlyDictionary<string, RespCommandsInfo> allRespCommandsInfo = null;
@@ -68,7 +63,6 @@ namespace Garnet.server
         private readonly RespCommandFlags flags;
         private readonly RespAclCategories aclCategories;
 
-        private string respFormat;
         private readonly string[] respFormatFlags;
         private readonly string[] respFormatAclCategories;
 
@@ -154,7 +148,9 @@ namespace Garnet.server
             return true;
         }
 
-        private string GetRespFormat()
+        protected override void FromRespFormat(string respFormat) => throw new System.NotImplementedException();
+
+        protected override string ToRespFormat()
         {
             var sb = new StringBuilder();
 
@@ -186,13 +182,12 @@ namespace Garnet.server
                     sb.Append($"${tip.Length}\r\n{tip}\r\n");
             }
             // 9) Key specifications
-            if (this.KeySpecifications == null)
+            var ksCount = this.KeySpecifications?.Length ?? 0;
+            sb.Append($"*{ksCount}\r\n");
+            if (this.KeySpecifications != null && ksCount > 0)
             {
-                sb.Append("*0\r\n");
-            }
-            else
-            {
-                sb.Append(this.KeySpecifications.RespFormat);
+                foreach (var ks in this.KeySpecifications)
+                    sb.Append(ks.RespFormat);
             }
             // 10) SubCommands
             var subCommandCount = this.SubCommands?.Length ?? 0;

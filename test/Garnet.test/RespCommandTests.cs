@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -352,8 +351,8 @@ namespace Garnet.test
             {
                 string notes = null;
                 KeySpecificationFlags ksFlags = KeySpecificationFlags.None;
-                IBeginSearchKeySpec beginSearchKeySpec = null;
-                IFindKeysKeySpec findKeysKeySpec = null;
+                BeginSearchKeySpecBase beginSearchKeySpec = null;
+                FindKeysKeySpecBase findKeysKeySpec = null;
 
                 RespReadUtils.ReadArrayLength(out var ksElemCount, ref ptr, end);
                 for (var ksElemIdx = 0; ksElemIdx < ksElemCount; ksElemIdx += 2)
@@ -510,7 +509,7 @@ namespace Garnet.test
                     Step = step,
                     AclCategories = aclCategories,
                     Tips = tips,
-                    KeySpecifications = keySpecifications.Length == 0 ? null : keySpecifications[0],
+                    KeySpecifications = keySpecifications,
                     SubCommands = subCommands.ToArray()
                 };
 

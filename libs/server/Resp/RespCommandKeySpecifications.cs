@@ -3,7 +3,6 @@
 
 using System;
 using System.ComponentModel;
-using System.Formats.Asn1;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -11,11 +10,11 @@ using Garnet.common;
 
 namespace Garnet.server
 {
-    public class RespCommandKeySpecifications
+    public class RespCommandKeySpecifications : RespSerializableBase
     {
-        public IBeginSearchKeySpec? BeginSearch { get; init; }
+        public BeginSearchKeySpecBase? BeginSearch { get; init; }
 
-        public IFindKeysKeySpec? FindKeys { get; init; }
+        public FindKeysKeySpecBase? FindKeys { get; init; }
 
         public string? Notes { get; init; }
 
@@ -29,14 +28,16 @@ namespace Garnet.server
             }
         }
 
-        [JsonIgnore]
-        public string RespFormat => this._respFormat ??= this.GetRespFormat();
+        public RespCommandKeySpecifications() { }
 
-        private readonly KeySpecificationFlags _flags;
-        private string? _respFormat;
-        private readonly string[] _respFormatFlags;
+        protected RespCommandKeySpecifications(string respFormat) : base(respFormat)
+        {
+            
+        }
 
-        private string GetRespFormat()
+        protected override void FromRespFormat(string respFormat) => throw new NotImplementedException();
+
+        protected override string ToRespFormat()
         {
             var sb = new StringBuilder();
             var elemCount = 0;
@@ -60,27 +61,20 @@ namespace Garnet.server
             if (this.BeginSearch != null)
             {
                 elemCount += 2;
-                sb.Append("$12\r\nbegin_search\r\n");
-                sb.Append("*4\r\n");
-                sb.Append("$4\r\ntype\r\n");
-                sb.Append($"{this.BeginSearch.RespFormatType}\r\n");
-                sb.Append("$4\r\nspec\r\n");
-                sb.Append($"{this.BeginSearch.RespFormatSpec}\r\n");
+                sb.Append(this.BeginSearch.RespFormat);
             }
 
             if (this.FindKeys != null)
             {
                 elemCount += 2;
-                sb.Append("+find_keys\r\n");
-                sb.Append("*4\r\n");
-                sb.Append("$4\r\ntype\r\n");
-                sb.Append($"{this.FindKeys.RespFormatType}\r\n");
-                sb.Append("$4\r\nspec\r\n");
-                sb.Append($"{this.FindKeys.RespFormatSpec}\r\n");
+                sb.Append(this.FindKeys.RespFormat);
             }
 
             return $"*{elemCount}\r\n{sb}";
         }
+
+        private readonly KeySpecificationFlags _flags;
+        private readonly string[] _respFormatFlags;
     }
 
     [Flags]
@@ -113,52 +107,82 @@ namespace Garnet.server
         VariableFlags = 1 << 10,
     }
 
-    public interface IKeySpec
+    public abstract class KeySpecBase : RespSerializableBase
     {
-        string RespFormatType { get; }
+        public abstract string KeySpecName { get; }
 
-        string RespFormatSpec { get; }
+        public abstract string RespFormatType { get; }
+
+        public abstract string RespFormatSpec { get; }
+
+        protected KeySpecBase() { }
+
+        protected KeySpecBase(string respFormat) : base(respFormat){ }
+
+        protected sealed override string ToRespFormat()
+        {
+            var sb = new StringBuilder();
+            sb.Append($"${this.KeySpecName.Length}\r\n{this.KeySpecName}\r\n");
+            sb.Append("*4\r\n");
+            sb.Append("$4\r\ntype\r\n");
+            sb.Append($"{this.RespFormatType}\r\n");
+            sb.Append("$4\r\nspec\r\n");
+            sb.Append($"{this.RespFormatSpec}\r\n");
+            return sb.ToString();
+        }
     }
 
-    public interface IBeginSearchKeySpec : IKeySpec
+    public abstract class BeginSearchKeySpecBase : KeySpecBase
     {
+        public sealed override string KeySpecName => "begin_search";
 
+        protected BeginSearchKeySpecBase() { }
+
+        protected BeginSearchKeySpecBase(string respFormat) : base(respFormat) { }
     }
 
-    public class BeginSearchIndex : IBeginSearchKeySpec
+    public class BeginSearchIndex : BeginSearchKeySpecBase
     {
         public int Index { get; init; }
 
         [JsonIgnore]
-        public string RespFormatType => "$5\r\nindex";
+        public sealed override string RespFormatType => "$5\r\nindex";
 
         [JsonIgnore]
-        public string RespFormatSpec
+        public sealed override string RespFormatSpec
         {
             get { return this._respFormatSpec ??= $"*2\r\n$5\r\nindex\r\n:{this.Index}"; }
         }
 
         private string? _respFormatSpec;
 
-        public BeginSearchIndex() { }
+        public BeginSearchIndex()
+        {
+        }
 
         public BeginSearchIndex(int index) : this()
         {
             this.Index = index;
         }
+
+        protected BeginSearchIndex(string respFormat) : base(respFormat)
+        {
+        }
+
+        protected sealed override void FromRespFormat(string respFormat) => throw new NotImplementedException();
     }
 
-    public class BeginSearchKeyword : IBeginSearchKeySpec
+    public class BeginSearchKeyword : BeginSearchKeySpecBase
     {
         public string? Keyword { get; init; }
 
         public int StartFrom { get; init; }
 
         [JsonIgnore]
-        public string RespFormatType => "$7\r\nkeyword";
+        public sealed override string RespFormatType => "$7\r\nkeyword";
 
         [JsonIgnore]
-        public string RespFormatSpec
+        public sealed override string RespFormatSpec
         {
             get { return this._respFormatSpec ??= $"*4\r\n$7\r\nkeyword\r\n${this.Keyword?.Length ?? 0}\r\n{this.Keyword}\r\n$9\r\nstartfrom\r\n:{this.StartFrom}"; }
         }
@@ -172,28 +196,46 @@ namespace Garnet.server
             this.Keyword = keyword;
             this.StartFrom = startFrom;
         }
+
+        protected BeginSearchKeyword(string respFormat) : base(respFormat)
+        {
+        }
+
+        protected sealed override void FromRespFormat(string respFormat) => throw new NotImplementedException();
     }
 
-    public class BeginSearchUnknown : IBeginSearchKeySpec
+    public class BeginSearchUnknown : BeginSearchKeySpecBase
     {
         [JsonIgnore]
-        public string RespFormatType => "$7\r\nunknown";
+        public sealed override string RespFormatType => "$7\r\nunknown";
 
         [JsonIgnore]
-        public string RespFormatSpec
+        public sealed override string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*0\r\n"; }
+            get { return this._respFormatSpec ??= $"*0"; }
         }
 
         private string? _respFormatSpec;
+
+        public BeginSearchUnknown() { }
+
+        protected BeginSearchUnknown(string respFormat) : base(respFormat)
+        {
+        }
+
+        protected sealed override void FromRespFormat(string respFormat) => throw new NotImplementedException();
     }
 
-    public interface IFindKeysKeySpec : IKeySpec
+    public abstract class FindKeysKeySpecBase : KeySpecBase
     {
+        public sealed override string KeySpecName => "find_keys";
 
+        protected FindKeysKeySpecBase() { }
+
+        protected FindKeysKeySpecBase(string respFormat) : base(respFormat) { }
     }
 
-    public class FindKeysRange : IFindKeysKeySpec
+    public class FindKeysRange : FindKeysKeySpecBase
     {
         public int LastKey { get; init; }
 
@@ -202,10 +244,10 @@ namespace Garnet.server
         public int Limit { get; init; }
 
         [JsonIgnore]
-        public string RespFormatType => "$5\r\nrange";
+        public sealed override string RespFormatType => "$5\r\nrange";
 
         [JsonIgnore]
-        public string RespFormatSpec
+        public sealed override string RespFormatSpec
         {
             get { return this._respFormatSpec ??= $"*6\r\n$7\r\nlastkey\r\n:{this.LastKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}\r\n$5\r\nlimit\r\n:{this.Limit}"; }
         }
@@ -220,9 +262,13 @@ namespace Garnet.server
             this.KeyStep = keyStep;
             this.Limit = limit;
         }
+
+        protected FindKeysRange(string respFormat) : base(respFormat) { }
+
+        protected sealed override void FromRespFormat(string respFormat) => throw new NotImplementedException();
     }
 
-    public class FindKeysKeyNum : IFindKeysKeySpec
+    public class FindKeysKeyNum : FindKeysKeySpecBase
     {
         public int KeyNumIdx { get; init; }
 
@@ -231,10 +277,10 @@ namespace Garnet.server
         public int KeyStep { get; init; }
 
         [JsonIgnore]
-        public string RespFormatType => "$6\r\nkeynum";
+        public sealed override string RespFormatType => "$6\r\nkeynum";
 
         [JsonIgnore]
-        public string RespFormatSpec
+        public sealed override string RespFormatSpec
         {
             get { return this._respFormatSpec ??= $"*6\r\n$9\r\nkeynumidx\r\n:{this.KeyNumIdx}\r\n$8\r\nfirstkey\r\n:{this.FirstKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}"; }
         }
@@ -249,29 +295,39 @@ namespace Garnet.server
             this.FirstKey = firstKey;
             this.KeyStep = keyStep;
         }
+
+        protected FindKeysKeyNum(string respFormat) : base(respFormat) { }
+
+        protected sealed override void FromRespFormat(string respFormat) => throw new NotImplementedException();
     }
 
-    public class FindKeysUnknown : IFindKeysKeySpec
+    public class FindKeysUnknown : FindKeysKeySpecBase
     {
         [JsonIgnore]
-        public string RespFormatType => "$7\r\nunknown";
+        public sealed override string RespFormatType => "$7\r\nunknown";
 
         [JsonIgnore]
-        public string RespFormatSpec
+        public sealed override string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*0\r\n"; }
+            get { return this._respFormatSpec ??= $"*0"; }
         }
 
         private string? _respFormatSpec;
+
+        public FindKeysUnknown() { }
+
+        protected FindKeysUnknown(string respFormat) : base(respFormat) { }
+
+        protected sealed override void FromRespFormat(string respFormat) => throw new NotImplementedException();
     }
 
-    public class KeySpecConverter : JsonConverter<IKeySpec>
+    public class KeySpecConverter : JsonConverter<KeySpecBase>
     {
-        public override bool CanConvert(Type typeToConvert) => typeof(IKeySpec).IsAssignableFrom(typeToConvert);
+        public override bool CanConvert(Type typeToConvert) => typeof(KeySpecBase).IsAssignableFrom(typeToConvert);
 
-        public override IKeySpec Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        public override KeySpecBase Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            if (!typeof(IKeySpec).IsAssignableFrom(typeToConvert)) return null;
+            if (!typeof(KeySpecBase).IsAssignableFrom(typeToConvert)) return null;
 
             if (reader.TokenType != JsonTokenType.StartObject)
             {
@@ -386,7 +442,7 @@ namespace Garnet.server
             throw new JsonException();
         }
 
-        public override void Write(Utf8JsonWriter writer, IKeySpec keySpec, JsonSerializerOptions options)
+        public override void Write(Utf8JsonWriter writer, KeySpecBase keySpec, JsonSerializerOptions options)
         {
             writer.WriteStartObject();
 
