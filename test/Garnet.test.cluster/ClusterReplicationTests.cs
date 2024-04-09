@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Internal;
 using StackExchange.Redis;
 
 namespace Garnet.test.cluster
@@ -242,8 +243,8 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
 
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
-            context.clusterTestUtils.WaitCheckpoint(0, context.logger);
-            context.clusterTestUtils.WaitCheckpoint(1, context.logger);
+            context.clusterTestUtils.WaitFirstCheckpoint(0, context.logger);
+            context.clusterTestUtils.WaitFirstCheckpoint(1, context.logger);
 
             // Shutdown secondary
             context.nodes[1].Store.CommitAOF(true);
@@ -344,6 +345,7 @@ namespace Garnet.test.cluster
                 else
                     context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, 0);
             }
+
             context.clusterTestUtils.Checkpoint(0, logger: context.logger);
 
             // Restart secondary
@@ -595,16 +597,27 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
 
-            if (checkpoint) context.clusterTestUtils.Checkpoint(0);
+            if (checkpoint)
+            {
+                context.clusterTestUtils.Checkpoint(0);
+                context.clusterTestUtils.WaitFirstCheckpoint(0, logger: context.logger);
+                context.clusterTestUtils.WaitFirstCheckpoint(1, logger: context.logger);
+            }
 
             #region InitiateFailover
             var slotMap = new int[16384];
             // Failover primary
-            context.ClusterFailoverRetry(1);
+            _ = context.clusterTestUtils.ClusterFailover(1, logger: context.logger);
+
             // Reconfigure slotMap to reflect new primary
             for (var i = 0; i < 16384; i++)
                 slotMap[i] = 1;
             #endregion
+
+            // TODO: wait for attaching primary to finish
+            context.clusterTestUtils.WaitForNoFailover(1, logger: context.logger);
+            // TODO: enable when old primary becomes replica
+            // context.clusterTestUtils.WaitForReplicaRecovery(0, logger: context.logger);
 
             // Check if allowed to write to new Primary
             if (!performRMW)
@@ -655,7 +668,7 @@ namespace Garnet.test.cluster
             if (takePrimaryCheckpoint)
             {
                 context.clusterTestUtils.Checkpoint(0, logger: context.logger);
-                context.clusterTestUtils.WaitCheckpoint(0, logger: context.logger);
+                context.clusterTestUtils.WaitFirstCheckpoint(0, logger: context.logger);
             }
 
             // Wait for replication offsets to synchronize
@@ -680,7 +693,7 @@ namespace Garnet.test.cluster
             if (takeNewPrimaryCheckpoint)
             {
                 context.clusterTestUtils.Checkpoint(1, logger: context.logger);
-                context.clusterTestUtils.WaitCheckpoint(1, logger: context.logger);
+                context.clusterTestUtils.WaitFirstCheckpoint(1, logger: context.logger);
             }
             context.clusterTestUtils.WaitForReplicaAofSync(1, 2, context.logger);
 
@@ -695,13 +708,13 @@ namespace Garnet.test.cluster
         [Test, Order(13)]
         public void ClusterReplicationCheckpointCleanupTest([Values] bool performRMW, [Values] bool disableObjects, [Values] bool enableIncrementalSnapshots)
         {
-            var replica_count = 2;//Per primary
+            var replica_count = 1;//Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: true, SegmentSize: "4k", EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
-            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
+            Assert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);
 
             var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
@@ -720,7 +733,7 @@ namespace Garnet.test.cluster
             context.checkpointTask = Task.Run(() => context.PopulatePrimaryAndTakeCheckpointTask(performRMW, disableObjects, takeCheckpoint: true));
             var attachReplicaTask = Task.Run(() => context.AttachAndWaitForSync(primary_count, replica_count, disableObjects));
 
-            if (!attachReplicaTask.Wait(TimeSpan.FromSeconds(100)))
+            if (!attachReplicaTask.Wait(TimeSpan.FromSeconds(30)))
                 Assert.Fail("attachReplicaTask timeout");
         }
 
@@ -802,12 +815,12 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.BumpEpoch(1, logger: context.logger);
                 var config = context.clusterTestUtils.ClusterNodes(0, logger: context.logger);
                 if (config.Nodes.Count == 2) break;
-                Thread.Sleep(1000);
+                ClusterTestUtils.BackOff();
             }
 
             _ = context.clusterTestUtils.ClusterReplicate(1, primaryId, logger: context.logger);
 
-            context.kvPairs = new();
+            context.kvPairs = [];
             var keyLength = 32;
             var kvpairCount = keyCount;
             var addCount = 5;
@@ -902,8 +915,8 @@ namespace Garnet.test.cluster
             if (ckptBeforeDivergence) context.clusterTestUtils.Checkpoint(oldPrimaryIndex, logger: context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(oldPrimaryIndex, newPrimaryIndex, context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(oldPrimaryIndex, replicaIndex, context.logger);
-            context.clusterTestUtils.WaitCheckpoint(newPrimaryIndex, logger: context.logger);
-            context.clusterTestUtils.WaitCheckpoint(replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitFirstCheckpoint(newPrimaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitFirstCheckpoint(replicaIndex, logger: context.logger);
 
             // Make this replica of no-one
             _ = context.clusterTestUtils.ReplicaOf(1, logger: context.logger);

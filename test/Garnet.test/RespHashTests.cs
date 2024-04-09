@@ -681,7 +681,7 @@ namespace Garnet.test
 
             //missing paramenters
             response = lightClientRequest.SendCommand("HEXISTS foo");
-            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HEXISTS");
+            expectedResponse = FormatWrongNumOfArgsError("HEXISTS");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -715,13 +715,13 @@ namespace Garnet.test
 
             //missing paramenters
             response = lightClientRequest.SendCommand("HSTRLEN foo");
-            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HSTRLEN");
+            expectedResponse = FormatWrongNumOfArgsError("HSTRLEN");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
             //too many paramenters
             response = lightClientRequest.SendCommand("HSTRLEN foo field0 field1");
-            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HSTRLEN");
+            expectedResponse = FormatWrongNumOfArgsError("HSTRLEN");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -816,7 +816,7 @@ namespace Garnet.test
 
             // Check correct error message when incorrect number of parameters
             response = lightClientRequest.SendCommand("HRANDFIELD");
-            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "HRANDFIELD");
+            expectedResponse = FormatWrongNumOfArgsError("HRANDFIELD");
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -971,7 +971,7 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HINCRBY foo", "PING HELLO", 1, 1);
-            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "HINCRBY")}$5\r\nHELLO\r\n";
+            var expectedResponse = $"{FormatWrongNumOfArgsError("HINCRBY")}$5\r\nHELLO\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -981,13 +981,14 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommands("HINCRBYFLOAT foo", "PING HELLO", 1, 1);
-            var expectedResponse = $"{string.Format(CmdStrings.ErrWrongNumArgs, "HINCRBYFLOAT")}$5\r\nHELLO\r\n";
+            var expectedResponse = $"{FormatWrongNumOfArgsError("HINCRBYFLOAT")}$5\r\nHELLO\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
 
         #endregion
 
+        private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";
     }
 
 }

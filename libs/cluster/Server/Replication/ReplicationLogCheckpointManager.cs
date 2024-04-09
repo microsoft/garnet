@@ -10,33 +10,24 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class ReplicationLogCheckpointManager : DeviceLogCommitCheckpointManager, IDisposable
+    internal sealed class ReplicationLogCheckpointManager(
+        INamedDeviceFactory deviceFactory,
+        ICheckpointNamingScheme checkpointNamingScheme,
+        bool isMainStore,
+        bool removeOutdated = false,
+        int fastCommitThrottleFreq = 0,
+        ILogger logger = null) : DeviceLogCommitCheckpointManager(deviceFactory, checkpointNamingScheme, removeOutdated: false, fastCommitThrottleFreq, logger), IDisposable
     {
-        public long CurrentSafeAofAddress;
-        public long RecoveredSafeAofAddress;
+        public long CurrentSafeAofAddress = 0;
+        public long RecoveredSafeAofAddress = 0;
 
-        public string PrimaryReplicationId;
+        public string CurrentReplicationId = string.Empty;
+        public string RecoveredReplicationId = string.Empty;
 
-        readonly bool isMainStore;
+        readonly bool isMainStore = isMainStore;
         public Action<bool, long, long> checkpointVersionShift;
 
-        readonly bool safelyRemoveOutdated;
-
-        public ReplicationLogCheckpointManager(
-            INamedDeviceFactory deviceFactory,
-            ICheckpointNamingScheme checkpointNamingScheme,
-            bool isMainStore,
-            bool removeOutdated = false,
-            int fastCommitThrottleFreq = 0,
-            ILogger logger = null)
-            : base(deviceFactory, checkpointNamingScheme, removeOutdated: false, fastCommitThrottleFreq, logger)
-        {
-            this.isMainStore = isMainStore;
-            this.safelyRemoveOutdated = removeOutdated;
-            CurrentSafeAofAddress = 0;
-            RecoveredSafeAofAddress = 0;
-            PrimaryReplicationId = String.Empty;
-        }
+        readonly bool safelyRemoveOutdated = removeOutdated;
 
         public override void CheckpointVersionShift(long oldVersion, long newVersion)
         {
@@ -51,7 +42,7 @@ namespace Garnet.cluster
 
         public IDevice GetDevice(CheckpointFileType retStateType, Guid fileToken)
         {
-            IDevice device = retStateType switch
+            var device = retStateType switch
             {
                 CheckpointFileType.STORE_DLOG => GetDeltaLogDevice(fileToken),
                 CheckpointFileType.STORE_INDEX => GetIndexDevice(fileToken),
@@ -64,7 +55,6 @@ namespace Garnet.cluster
             };
             return device;
         }
-
 
         #region ICheckpointManager
 
@@ -79,9 +69,9 @@ namespace Garnet.cluster
         /// <returns></returns>
         private unsafe byte[] AddCookie(byte[] commitMetadata)
         {
-            int cookieSize = sizeof(long) + this.PrimaryReplicationId.Length;
-            byte[] commitMetadataWithCookie = new byte[sizeof(int) + cookieSize + commitMetadata.Length];
-            byte[] primaryReplIdBytes = Encoding.ASCII.GetBytes(PrimaryReplicationId);
+            var cookieSize = sizeof(long) + this.CurrentReplicationId.Length;
+            var commitMetadataWithCookie = new byte[sizeof(int) + cookieSize + commitMetadata.Length];
+            var primaryReplIdBytes = Encoding.ASCII.GetBytes(CurrentReplicationId);
             fixed (byte* ptr = commitMetadataWithCookie)
             fixed (byte* pridPtr = primaryReplIdBytes)
             fixed (byte* cmPtr = commitMetadata)
@@ -96,10 +86,10 @@ namespace Garnet.cluster
 
         private byte[] ExtractCookie(byte[] commitMetadataWithCookie)
         {
-            int cookieTotalSize = GetCookieData(commitMetadataWithCookie, out RecoveredSafeAofAddress, out PrimaryReplicationId);
-            int payloadSize = commitMetadataWithCookie.Length - cookieTotalSize;
+            var cookieTotalSize = GetCookieData(commitMetadataWithCookie, out RecoveredSafeAofAddress, out RecoveredReplicationId);
+            var payloadSize = commitMetadataWithCookie.Length - cookieTotalSize;
 
-            byte[] commitMetadata = new byte[payloadSize];
+            var commitMetadata = new byte[payloadSize];
             Array.Copy(commitMetadataWithCookie, cookieTotalSize, commitMetadata, 0, payloadSize);
             return commitMetadata;
         }
@@ -108,11 +98,11 @@ namespace Garnet.cluster
         {
             checkpointCoveredAddress = -1;
             primaryReplId = null;
-            int size = sizeof(int);
+            var size = sizeof(int);
             fixed (byte* ptr = commitMetadataWithCookie)
             {
                 if (commitMetadataWithCookie.Length < 4) throw new Exception($"invalid metadata length: {commitMetadataWithCookie.Length} < 4");
-                int cookieSize = *(int*)ptr;
+                var cookieSize = *(int*)ptr;
                 size += cookieSize;
 
                 if (commitMetadataWithCookie.Length < 12) throw new Exception($"invalid metadata length: {commitMetadataWithCookie.Length} < 12");
@@ -126,8 +116,8 @@ namespace Garnet.cluster
 
         public unsafe (long, string) GetCheckpointCookieMetadata(Guid logToken, DeltaLog deltaLog, bool scanDelta, long recoverTo)
         {
-            byte[] metadata = GetLogCheckpointMetadata(logToken, deltaLog, scanDelta, recoverTo, withoutCookie: false);
-            GetCookieData(metadata, out var checkpointCoveredAddress, out var primaryReplId);
+            var metadata = GetLogCheckpointMetadata(logToken, deltaLog, scanDelta, recoverTo, withoutCookie: false);
+            _ = GetCookieData(metadata, out var checkpointCoveredAddress, out var primaryReplId);
             return (checkpointCoveredAddress, primaryReplId);
         }
 
@@ -141,7 +131,7 @@ namespace Garnet.cluster
         /// <param name="commitMetadata"></param>
         public override unsafe void CommitLogCheckpoint(Guid logToken, byte[] commitMetadata)
         {
-            byte[] commitMetadataWithCookie = AddCookie(commitMetadata);
+            var commitMetadataWithCookie = AddCookie(commitMetadata);
             base.CommitLogCheckpoint(logToken, commitMetadataWithCookie);
         }
 
@@ -155,7 +145,7 @@ namespace Garnet.cluster
 
         public override unsafe void CommitLogIncrementalCheckpoint(Guid logToken, long version, byte[] commitMetadata, DeltaLog deltaLog)
         {
-            byte[] commitMetadataWithCookie = AddCookie(commitMetadata);
+            var commitMetadataWithCookie = AddCookie(commitMetadata);
             base.CommitLogIncrementalCheckpoint(logToken, version, commitMetadataWithCookie, deltaLog);
         }
 
@@ -203,7 +193,7 @@ namespace Garnet.cluster
             var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
-            int size = BitConverter.ToInt32(writePad, 0);
+            var size = BitConverter.ToInt32(writePad, 0);
 
             byte[] body;
             if (writePad.Length >= size + sizeof(int))
