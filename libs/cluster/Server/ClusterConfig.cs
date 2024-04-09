@@ -164,7 +164,7 @@ namespace Garnet.cluster
         public bool IsKnown(string nodeid)
         {
             for (int i = 1; i <= NumWorkers; i++)
-                if (workers[i].nodeid.Equals(nodeid))
+                if (workers[i].nodeid.Equals(nodeid, StringComparison.Ordinal))
                     return true;
             return false;
         }
@@ -240,7 +240,7 @@ namespace Garnet.cluster
             for (ushort i = 2; i < workers.Length; i++)
             {
                 var replicaOf = workers[i].replicaOfNodeId;
-                if (replicaOf != null && replicaOf.Equals(workers[1].nodeid))
+                if (replicaOf != null && replicaOf.Equals(workers[1].nodeid, StringComparison.Ordinal))
                     replicas.Add((workers[i].address, workers[i].port));
             }
             return replicas;
@@ -317,7 +317,7 @@ namespace Garnet.cluster
         {
             for (ushort i = 1; i <= NumWorkers; i++)
             {
-                if (workers[i].nodeid.Equals(nodeId))
+                if (workers[i].nodeid.Equals(nodeId, StringComparison.Ordinal))
                     return i;
             }
             return 0;
@@ -560,7 +560,7 @@ namespace Garnet.cluster
             for (ushort i = 1; i <= NumWorkers; i++)
             {
                 string replicaOf = workers[i].replicaOfNodeId;
-                if (replicaOf != null && replicaOf.Equals(primaryId))
+                if (replicaOf != null && replicaOf.Equals(primaryId, StringComparison.Ordinal))
                     replicaWorkerIds.Add(i);
             }
             return replicaWorkerIds;
@@ -739,7 +739,7 @@ namespace Garnet.cluster
             for (ushort i = 1; i < workers.Length; i++)
             {
                 string replicaOf = workers[i].replicaOfNodeId;
-                if (replicaOf != null && replicaOf.Equals(nodeid))
+                if (replicaOf != null && replicaOf.Equals(nodeid, StringComparison.Ordinal))
                     replicas.Add(GetNodeInfo(i));
             }
             return replicas;
@@ -756,7 +756,7 @@ namespace Garnet.cluster
             for (ushort i = 1; i < workers.Length; i++)
             {
                 string replicaOf = workers[i].replicaOfNodeId;
-                if (replicaOf != null && replicaOf.Equals(nodeid))
+                if (replicaOf != null && replicaOf.Equals(nodeid, StringComparison.Ordinal))
                     replicas.Add(workers[i].nodeid);
             }
             return replicas;
@@ -768,7 +768,7 @@ namespace Garnet.cluster
             for (ushort i = 1; i < workers.Length; i++)
             {
                 string replicaOf = workers[i].replicaOfNodeId;
-                if (replicaOf != null && replicaOf.Equals(nodeid))
+                if (replicaOf != null && replicaOf.Equals(nodeid, StringComparison.Ordinal))
                     replicaEndpoints.Add(new(workers[i].address, workers[i].port));
             }
             return replicaEndpoints;

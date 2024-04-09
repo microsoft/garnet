@@ -99,7 +99,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                if (current.GetLocalNodeId().Equals(nodeid))
+                if (current.GetLocalNodeId().Equals(nodeid, StringComparison.Ordinal))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_MIGRATE_TO_MYSELF;
                     return false;
@@ -167,7 +167,7 @@ namespace Garnet.cluster
                 }
 
                 //Check if nodeid is different from local node
-                if (current.GetLocalNodeId().Equals(nodeid))
+                if (current.GetLocalNodeId().Equals(nodeid, StringComparison.Ordinal))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_MIGRATE_TO_MYSELF;
                     return false;
@@ -245,7 +245,7 @@ namespace Garnet.cluster
                 }
 
                 string sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
-                if (sourceNodeId == null || !sourceNodeId.Equals(nodeid))
+                if (sourceNodeId == null || !sourceNodeId.Equals(nodeid, StringComparison.Ordinal))
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR Slot {slot} is not owned by {nodeid}");
                     return false;
@@ -307,7 +307,7 @@ namespace Garnet.cluster
 
                     // Check if node is owned by node
                     var sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
-                    if (sourceNodeId == null || !sourceNodeId.Equals(nodeid))
+                    if (sourceNodeId == null || !sourceNodeId.Equals(nodeid, StringComparison.Ordinal))
                     {
                         errorMessage = Encoding.ASCII.GetBytes($"ERR Slot {slot} is not owned by {nodeid}");
                         return false;
@@ -365,7 +365,7 @@ namespace Garnet.cluster
             }
             else if (current.GetState((ushort)slot) is SlotState.IMPORTING)
             {
-                if (!current.GetLocalNodeId().Equals(nodeid))
+                if (!current.GetLocalNodeId().Equals(nodeid, StringComparison.Ordinal))
                 {
                     errorMesage = Encoding.ASCII.GetBytes($"ERR Input nodeid {nodeid} different from local nodeid {CurrentConfig.GetLocalNodeId()}.");
                     return false;
@@ -408,7 +408,7 @@ namespace Garnet.cluster
                 }
 
                 var newConfig = currentConfig.UpdateMultiSlotState(slots, workerId, SlotState.STABLE);
-                if (current.GetLocalNodeId().Equals(nodeid)) newConfig = newConfig.BumpLocalNodeConfigEpoch();
+                if (current.GetLocalNodeId().Equals(nodeid, StringComparison.Ordinal)) newConfig = newConfig.BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
