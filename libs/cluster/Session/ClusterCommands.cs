@@ -1055,7 +1055,7 @@ namespace Garnet.cluster
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var subcommand, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    if (!Enum.TryParse(subcommand, out SlotState slotState))
+                    if (!Enum.TryParse(subcommand, ignoreCase: true, out SlotState slotState))
                         slotState = SlotState.STABLE;
 
                     string nodeid = null;

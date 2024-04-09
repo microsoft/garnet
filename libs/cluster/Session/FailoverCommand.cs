@@ -24,7 +24,7 @@ namespace Garnet.cluster
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                if (!Enum.TryParse(option, out FailoverOption failoverOption))
+                if (!Enum.TryParse(option, ignoreCase: true, out FailoverOption failoverOption))
                     failoverOption = FailoverOption.INVALID;
 
                 args--;
