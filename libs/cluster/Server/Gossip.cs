@@ -252,7 +252,7 @@ namespace Garnet.cluster
 
                 if (gsn == null)
                 {
-                    gsn = new GarnetServerNode(this, replicationManager, address, port, tlsOptions?.TlsClientOptions, logger: logger);
+                    gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger);
                     created = true;
                 }
 
@@ -335,7 +335,7 @@ namespace Garnet.cluster
                 // Establish new connection only if it is not in banlist and not in dictionary
                 if (!workerBanList.ContainsKey(nodeId) && !clusterConnectionStore.GetConnection(nodeId, out var _))
                 {
-                    var gsn = new GarnetServerNode(this, replicationManager, address, port, tlsOptions?.TlsClientOptions, logger: logger)
+                    var gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger)
                     {
                         nodeid = nodeId
                     };

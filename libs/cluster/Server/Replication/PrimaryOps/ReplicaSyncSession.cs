@@ -7,41 +7,31 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal sealed class ReplicaSyncSession : IDisposable
+    internal sealed class ReplicaSyncSession(StoreWrapper storeWrapper, ClusterProvider clusterProvider, string remoteNodeId, string remote_primary_replid, CheckpointEntry remoteEntry, long replicaAofBeginAddress, long replicaAofTailAddress, ILogger logger = null) : IDisposable
     {
-        readonly StoreWrapper storeWrapper;
-        readonly ClusterProvider clusterProvider;
+        readonly StoreWrapper storeWrapper = storeWrapper;
+        readonly ClusterProvider clusterProvider = clusterProvider;
         readonly CancellationTokenSource ctsCheckpointRetrievalSession = new();
         private SectorAlignedBufferPool bufferPool = null;
         private readonly SemaphoreSlim semaphore = new(0);
 
-        public readonly string remoteNodeId;
-        public readonly string remote_primary_replid;
-        private readonly long replicaAofBeginAddress;
-        private readonly long replicaAofTailAddress;
+        public readonly string remoteNodeId = remoteNodeId;
+        public readonly string remote_primary_replid = remote_primary_replid;
+        private readonly long replicaAofBeginAddress = replicaAofBeginAddress;
+        private readonly long replicaAofTailAddress = replicaAofTailAddress;
 
-        private readonly CheckpointEntry remoteEntry;
+        private readonly CheckpointEntry remoteEntry = remoteEntry;
 
-        private readonly ILogger logger;
+        private readonly ILogger logger = logger;
 
-        public ReplicaSyncSession(StoreWrapper storeWrapper, ClusterProvider clusterProvider, string remoteNodeId, string remote_primary_replid, CheckpointEntry remoteEntry, long replicaAofBeginAddress, long replicaAofTailAddress, ILogger logger = null)
-        {
-            this.storeWrapper = storeWrapper;
-            this.clusterProvider = clusterProvider;
-            this.remoteNodeId = remoteNodeId;
-            this.remote_primary_replid = remote_primary_replid;
-            this.remoteEntry = remoteEntry;
-            this.replicaAofBeginAddress = replicaAofBeginAddress;
-            this.replicaAofTailAddress = replicaAofTailAddress;
-
-            this.logger = logger;
-        }
+        public string errorMsg = default;
 
         public void Dispose()
         {
@@ -54,9 +44,9 @@ namespace Garnet.cluster
         /// <summary>
         /// Start sending the latest checkpoint to replica
         /// </summary>
-        public async Task<string> SendCheckpoint()
+        public async Task<bool> SendCheckpoint()
         {
-            string errorMsg = string.Empty;
+            errorMsg = default;
             var storeCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main);
             var objectStoreCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object);
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -64,14 +54,13 @@ namespace Garnet.cluster
 
             if (address == null || port == -1)
             {
-                errorMsg = $"-PRIMARY-ERR don't know about replicaId: {remoteNodeId}";
-                logger?.LogError(errorMsg);
-                return errorMsg + "\r\n";
+                errorMsg = $"PRIMARY-ERR don't know about replicaId: {remoteNodeId}";
+                logger?.LogError("{errorMsg}", errorMsg);
+                return false;
             }
 
             GarnetClientSession gcs = new(address, port, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, bufferSize: 1 << 20, logger: logger);
             CheckpointEntry localEntry = default;
-
             AofSyncTaskInfo aofSyncTaskInfo = null;
 
             try
@@ -80,6 +69,7 @@ namespace Garnet.cluster
                     remoteNodeId, remoteEntry.storeVersion, remoteEntry.objectStoreVersion);
                 gcs.Connect((int)clusterProvider.clusterManager.GetClusterTimeout().TotalMilliseconds);
 
+            retry:
                 logger?.LogInformation("Attempting to acquire checkpoint");
                 AcquireCheckpointEntry(out localEntry, out aofSyncTaskInfo);
                 logger?.LogInformation("Checkpoint search completed");
@@ -89,24 +79,51 @@ namespace Garnet.cluster
 
                 // If the replica does not have a checkpoint we will have to send the local if it exists
                 // Else we need to compare the checkpoint versions if replica comes from the same history as this primary
-                bool canCompareMainStoreCheckpoint = string.IsNullOrEmpty(remoteEntry.storePrimaryReplId) || remoteEntry.storePrimaryReplId.Equals(localEntry.storePrimaryReplId);
-                bool canCompareObjectStoreCheckpoint = string.IsNullOrEmpty(remoteEntry.objectStorePrimaryReplId) || remoteEntry.objectStorePrimaryReplId.Equals(localEntry.objectStorePrimaryReplId);
+                var canCompareMainStoreCheckpoint = string.IsNullOrEmpty(remoteEntry.storePrimaryReplId) || remoteEntry.storePrimaryReplId.Equals(localEntry.storePrimaryReplId);
+                var canCompareObjectStoreCheckpoint = string.IsNullOrEmpty(remoteEntry.objectStorePrimaryReplId) || remoteEntry.objectStorePrimaryReplId.Equals(localEntry.objectStorePrimaryReplId);
 
                 // We can skip sending the local checkpoint if it is of same history and version. Remote checkpoints with greater version will be ovewritten
-                bool skipSendingMainStore = localEntry.storeHlogToken == default || (canCompareMainStoreCheckpoint && localEntry.storeVersion == remoteEntry.storeVersion);
-                bool skipSendingObjectStore = clusterProvider.serverOptions.DisableObjects || localEntry.objectStoreHlogToken == default || (canCompareObjectStoreCheckpoint && localEntry.objectStoreVersion == remoteEntry.objectStoreVersion);
+                var skipSendingMainStore = localEntry.storeHlogToken == default || (canCompareMainStoreCheckpoint && localEntry.storeVersion == remoteEntry.storeVersion);
+                var skipSendingObjectStore = clusterProvider.serverOptions.DisableObjects || localEntry.objectStoreHlogToken == default || (canCompareObjectStoreCheckpoint && localEntry.objectStoreVersion == remoteEntry.objectStoreVersion);
+
+                LogFileInfo hlog_size = default;
+                long index_size = -1;
+                if (!skipSendingMainStore)
+                {
+                    // Try to acquire metadata because checkpoint might not have completed and we have to spinWait
+                    // TODO: maybe try once and then go back to acquire new checkpoint or limit retries to avoid getting stuck
+                    if (!clusterProvider.replicationManager.TryAcquireSettledMetadataForMainStore(localEntry, out hlog_size, out index_size))
+                    {
+                        localEntry.RemoveReader();
+                        _ = Thread.Yield();
+                        goto retry;
+                    }
+                }
+
+                LogFileInfo obj_hlog_size = default;
+                long obj_index_size = -1;
+                if (!skipSendingObjectStore)
+                {
+                    // Try to acquire metadata because checkpoint might not have completed and we have to spinWait
+                    // TODO: maybe try once and then go back to acquire new checkpoint or limit retries to avoid getting stuck
+                    if (!clusterProvider.replicationManager.TryAcquireSettledMetadataForObjectStore(localEntry, out obj_hlog_size, out obj_index_size))
+                    {
+                        localEntry.RemoveReader();
+                        _ = Thread.Yield();
+                        goto retry;
+                    }
+                }
 
                 if (!skipSendingMainStore)
                 {
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.storeVersion, localEntry.storeHlogToken, localEntry.storeIndexToken);
-                    var hlog_size = storeWrapper.store.GetLogFileSize(localEntry.storeHlogToken);
 
                     // 1. send hlog file segments
                     if (clusterProvider.serverOptions.EnableStorageTier && hlog_size.hybridLogFileEndAddress > 64)
                         await SendFileSegments(gcs, localEntry.storeHlogToken, CheckpointFileType.STORE_HLOG, hlog_size.hybridLogFileStartAddress, hlog_size.hybridLogFileEndAddress);
 
                     // 2.Send index file segments
-                    var index_size = storeWrapper.store.GetIndexFileSize(localEntry.storeIndexToken);
+                    //var index_size = storeWrapper.store.GetIndexFileSize(localEntry.storeIndexToken);
                     await SendFileSegments(gcs, localEntry.storeIndexToken, CheckpointFileType.STORE_INDEX, 0, index_size);
 
                     // 3. Send snapshot file segments
@@ -126,8 +143,6 @@ namespace Garnet.cluster
                 if (!skipSendingObjectStore)
                 {
                     logger?.LogInformation("Sending object store checkpoint {version} {objectStoreHlogToken} {objectStoreIndexToken} to replica", localEntry.objectStoreVersion, localEntry.objectStoreHlogToken, localEntry.objectStoreIndexToken);
-
-                    var obj_hlog_size = storeWrapper.objectStore.GetLogFileSize(localEntry.objectStoreHlogToken);
 
                     // 1. send hlog file segments
                     if (clusterProvider.serverOptions.EnableStorageTier && obj_hlog_size.hybridLogFileEndAddress > 24)
@@ -151,7 +166,6 @@ namespace Garnet.cluster
                     }
 
                     // 3. Send object store index file segments
-                    var obj_index_size = storeWrapper.objectStore.GetIndexFileSize(localEntry.objectStoreIndexToken);
                     if (obj_index_size > 0)
                         await SendFileSegments(gcs, localEntry.objectStoreIndexToken, CheckpointFileType.OBJ_STORE_INDEX, 0, obj_index_size);
 
@@ -167,8 +181,8 @@ namespace Garnet.cluster
                     await SendCheckpointMetadata(gcs, objectStoreCkptManager, CheckpointFileType.OBJ_STORE_SNAPSHOT, localEntry.objectStoreHlogToken);
                 }
 
-                bool recoverFromRemote = !skipSendingMainStore || !skipSendingObjectStore;
-                bool replayAOF = false;
+                var recoverFromRemote = !skipSendingMainStore || !skipSendingObjectStore;
+                var replayAOF = false;
                 var RecoveredReplicationOffset = localEntry.GetMinAofCoveredAddress();
                 var beginAddress = RecoveredReplicationOffset;
                 if (!recoverFromRemote)
@@ -192,8 +206,8 @@ namespace Garnet.cluster
                         }
 
                         // If we are behind this primary we need to decide until where to replay
-                        long replayUntilAddress = replicaAofTailAddress;
-                        //Replica tail is further ahead than committed address of primary
+                        var replayUntilAddress = replicaAofTailAddress;
+                        // Replica tail is further ahead than committed address of primary
                         if (storeWrapper.appendOnlyFile.CommittedUntilAddress < replayUntilAddress)
                         {
                             replayUntilAddress = storeWrapper.appendOnlyFile.CommittedUntilAddress;
@@ -224,11 +238,11 @@ namespace Garnet.cluster
                     localEntry.ToByteArray(),
                     beginAddress,
                     RecoveredReplicationOffset).ConfigureAwait(false);
-                long syncFromAofAddress = long.Parse(resp);
+                var syncFromAofAddress = long.Parse(resp);
 
                 // Assert that AOF address the replica will be requesting can be served, except in case of:
                 // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
-                bool possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
+                var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
                     (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint);
 
                 if (!possibleAofDataLoss)
@@ -236,7 +250,6 @@ namespace Garnet.cluster
                     if (syncFromAofAddress < storeWrapper.appendOnlyFile.BeginAddress)
                     {
                         logger?.LogError("syncFromAofAddress: {syncFromAofAddress} < beginAofAddress: {storeWrapper.appendOnlyFile.BeginAddress}", syncFromAofAddress, storeWrapper.appendOnlyFile.BeginAddress);
-                        logger?.LogError("acquiredEntry:{cEntryDump}", localEntry.GetCheckpointEntryDump());
                         var tailEntry = clusterProvider.replicationManager.GetLatestCheckpointEntryFromMemory();
                         logger?.LogError("tailEntry:{tailEntry}", tailEntry.GetCheckpointEntryDump());
                         tailEntry.RemoveReader();
@@ -255,15 +268,17 @@ namespace Garnet.cluster
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
-                clusterProvider.replicationManager.TryAddReplicationTask(remoteNodeId, syncFromAofAddress, out aofSyncTaskInfo);
-                clusterProvider.replicationManager.TryConnectToReplica(remoteNodeId, syncFromAofAddress, aofSyncTaskInfo);
+                if (!clusterProvider.replicationManager.TryAddReplicationTask(remoteNodeId, syncFromAofAddress, out aofSyncTaskInfo))
+                    throw new GarnetException("Failed trying to try update replication task");
+                if (!clusterProvider.replicationManager.TryConnectToReplica(remoteNodeId, syncFromAofAddress, aofSyncTaskInfo, out _))
+                    throw new GarnetException("Failed connecting to replica for aofSync");
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error occurred at ReplicationManager.SendCheckpointTask");
-                if (localEntry != default) logger?.LogError("{cEntryDump}", localEntry.GetCheckpointEntryDump());
-                if (aofSyncTaskInfo != null) clusterProvider.replicationManager.TryRemoveReplicationTask(aofSyncTaskInfo);
-                return "-ERR " + ex.Message; // this is response sent to remote client
+                logger?.LogError(ex, "acquiredEntry: {cEntryDump}", localEntry.GetCheckpointEntryDump());
+                if (aofSyncTaskInfo != null) _ = clusterProvider.replicationManager.TryRemoveReplicationTask(aofSyncTaskInfo);
+                errorMsg = "ERR " + ex.Message;// this is error sent to remote client
+                return false;
             }
             finally
             {
@@ -272,13 +287,13 @@ namespace Garnet.cluster
                 localEntry.RemoveReader();
                 gcs.Dispose();
             }
-            return errorMsg;
+            return true;
         }
 
         public void AcquireCheckpointEntry(out CheckpointEntry cEntry, out AofSyncTaskInfo aofSyncTaskInfo)
         {
             // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
-            bool possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
+            var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
                 (clusterProvider.serverOptions.MainMemoryReplication && !clusterProvider.serverOptions.OnDemandCheckpoint);
 
             aofSyncTaskInfo = null;
@@ -305,7 +320,7 @@ namespace Garnet.cluster
                 }
 
                 // Calculate the minimum start address covered by this checkpoint
-                long startAofAddress = cEntry.GetMinAofCoveredAddress();
+                var startAofAddress = cEntry.GetMinAofCoveredAddress();
 
                 // If there is possible AOF data loss and we need to take an on-demand checkpoint,
                 // then we should take the checkpoint before we register the sync task, because
@@ -389,7 +404,7 @@ namespace Garnet.cluster
             {
                 while (startAddress < endAddress)
                 {
-                    int num_bytes = startAddress + batchSize < endAddress ?
+                    var num_bytes = startAddress + batchSize < endAddress ?
                         batchSize :
                         (int)(endAddress - startAddress);
                     var (pbuffer, readBytes) = ReadInto(device, (ulong)startAddress, num_bytes);
@@ -412,6 +427,10 @@ namespace Garnet.cluster
                     throw new Exception($"Primary error at SendFileSegments {type} {resp}");
                 }
             }
+            catch (Exception ex)
+            {
+                logger?.LogError("SendFileSegments Error: {msg}", ex.Message);
+            }
             finally
             {
                 device.Dispose();
@@ -425,17 +444,17 @@ namespace Garnet.cluster
             string resp;
             try
             {
-                for (int segment = 0; segment < segmentCount; segment++)
+                for (var segment = 0; segment < segmentCount; segment++)
                 {
                     device = clusterProvider.replicationManager.GetInitializedSegmentFileDevice(token, type);
                     Debug.Assert(device != null);
                     device.Initialize(-1);
-                    long size = device.GetFileSize(segment);
-                    long startAddress = 0;
+                    var size = device.GetFileSize(segment);
+                    var startAddress = 0L;
 
                     while (startAddress < size)
                     {
-                        int num_bytes = startAddress + batchSize < size ? batchSize : (int)(size - startAddress);
+                        var num_bytes = startAddress + batchSize < size ? batchSize : (int)(size - startAddress);
                         var (pbuffer, readBytes) = ReadInto(device, (ulong)startAddress, num_bytes, segment);
 
                         resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).ConfigureAwait(false);
@@ -459,6 +478,10 @@ namespace Garnet.cluster
                     device = null;
                 }
             }
+            catch (Exception ex)
+            {
+                logger?.LogError("SendFileSegments Error: {msg}", ex.Message);
+            }
             finally
             {
                 device?.Dispose();
@@ -474,8 +497,7 @@ namespace Garnet.cluster
         /// <param name="segmentId"></param>
         private unsafe (SectorAlignedMemory, int) ReadInto(IDevice device, ulong address, int size, int segmentId = -1)
         {
-            if (bufferPool == null)
-                bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
 
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
@@ -493,7 +515,7 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                string errorMessage = new Win32Exception((int)errorCode).Message;
+                var errorMessage = new Win32Exception((int)errorCode).Message;
                 logger.LogError("[Primary] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
             semaphore.Release();

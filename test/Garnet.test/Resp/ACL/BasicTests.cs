@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Text;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -118,7 +119,7 @@ namespace Garnet.test.Resp.ACL
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("ACL subcommand");
-            Assert.IsTrue(Encoding.ASCII.GetString(response).StartsWith("-ERR"));
+            Assert.IsTrue(response.AsSpan().StartsWith("-ERR"u8));
         }
     }
 }
