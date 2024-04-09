@@ -6,7 +6,7 @@ using System.Collections.Generic;
 
 namespace Garnet.server.ACL
 {
-    partial class ACLParser
+    class ACLParser
     {
         private static readonly char[] WhitespaceChars = [' ', '\t', '\r', '\n'];
 
