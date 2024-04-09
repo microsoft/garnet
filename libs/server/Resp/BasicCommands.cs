@@ -777,7 +777,7 @@ namespace Garnet.server
             var status = storageApi.Increment(key, input, ref output);
             if (status == GarnetStatus.ERROR)
             {
-                while (!RespWriteUtils.WriteDirect(output.ReadOnlySpan, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(output.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
             }
             else

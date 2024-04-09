@@ -294,7 +294,7 @@ namespace Garnet.server
                 case RespCommand.INCR:
                     if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out var val) || val == long.MaxValue)
                     {
-                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
+                        CopyDefaultResp(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
 
@@ -304,7 +304,7 @@ namespace Garnet.server
                 case RespCommand.DECR:
                     if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out val) || val == long.MinValue)
                     {
-                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
+                        CopyDefaultResp(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
 
@@ -314,7 +314,7 @@ namespace Garnet.server
                 case RespCommand.INCRBY:
                     if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out val))
                     {
-                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
+                        CopyDefaultResp(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
 
@@ -327,7 +327,7 @@ namespace Garnet.server
                     }
                     catch (OverflowException)
                     {
-                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
+                        CopyDefaultResp(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
@@ -335,7 +335,7 @@ namespace Garnet.server
                 case RespCommand.DECRBY:
                     if (!NumUtils.TryBytesToLong(value.AsReadOnlySpan(), out val))
                     {
-                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
+                        CopyDefaultResp(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
 
@@ -348,7 +348,7 @@ namespace Garnet.server
                     }
                     catch (OverflowException)
                     {
-                        CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
+                        CopyDefaultResp(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
