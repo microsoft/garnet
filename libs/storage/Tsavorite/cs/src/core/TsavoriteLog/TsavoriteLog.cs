@@ -701,7 +701,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and one SpanByte entry atomically to the log.
+        /// Append a user-defined blittable struct header and one <see cref="SpanByte"/> entry atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
@@ -728,7 +728,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and two SpanByte entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
@@ -757,7 +757,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header and three SpanByte entries entries atomically to the log.
+        /// Append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
@@ -788,7 +788,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined header byte and a SpanByte entry atomically to the log.
+        /// Append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
         /// <param name="item"></param>
@@ -845,7 +845,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined blittable struct header and two SpanByte entries entries atomically to the log.
+        /// Try to append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the log.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -883,7 +883,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined blittable struct header and three SpanByte entries entries atomically to the log.
+        /// Try to append a user-defined blittable struct header and three <see cref="SpanByte"/> entries entries atomically to the log.
         /// If it returns true, we are done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -923,7 +923,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to append a user-defined header byte and a SpanByte entry atomically to the log. If it returns true, we are
+        /// Try to append a user-defined header byte and a <see cref="SpanByte"/> entry atomically to the log. If it returns true, we are
         /// done. If it returns false, we need to retry.
         /// </summary>
         /// <param name="userHeader"></param>

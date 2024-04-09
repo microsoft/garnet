@@ -32,20 +32,34 @@ namespace Tsavorite.test
 
                 var key1 = MemoryMarshal.Cast<char, byte>("key1".AsSpan());
                 var value1 = MemoryMarshal.Cast<char, byte>("value1".AsSpan());
-                var output1 = SpanByteAndMemory.FromFixedSpan(output);
+                var output1 = SpanByteAndMemory.FromPinnedSpan(output);
 
-                s.Upsert(key1, value1);
-                s.Read(key1, ref input, ref output1);
+                fixed (byte* key1Ptr = key1)
+                fixed (byte* value1Ptr = value1)
+                {
+                    var key1SpanByte = SpanByte.FromPinnedPointer(key1Ptr, key1.Length);
+                    var value1SpanByte = SpanByte.FromPinnedPointer(value1Ptr, value1.Length);
+
+                    s.Upsert(key1SpanByte, value1SpanByte);
+                    s.Read(ref key1SpanByte, ref input, ref output1);
+                }
 
                 Assert.IsTrue(output1.IsSpanByte);
                 Assert.IsTrue(output1.SpanByte.AsReadOnlySpan().SequenceEqual(value1));
 
                 var key2 = MemoryMarshal.Cast<char, byte>("key2".AsSpan());
                 var value2 = MemoryMarshal.Cast<char, byte>("value2value2value2".AsSpan());
-                var output2 = SpanByteAndMemory.FromFixedSpan(output);
+                var output2 = SpanByteAndMemory.FromPinnedSpan(output);
 
-                s.Upsert(key2, value2);
-                s.Read(key2, ref input, ref output2);
+                fixed (byte* key2Ptr = key2)
+                fixed (byte* value2Ptr = value2)
+                {
+                    var key2SpanByte = SpanByte.FromPinnedPointer(key2Ptr, key2.Length);
+                    var value2SpanByte = SpanByte.FromPinnedPointer(value2Ptr, value2.Length);
+
+                    s.Upsert(key2SpanByte, value2SpanByte);
+                    s.Read(ref key2SpanByte, ref input, ref output2);
+                }
 
                 Assert.IsTrue(!output2.IsSpanByte);
                 Assert.IsTrue(output2.Memory.Memory.Span.Slice(0, output2.Length).SequenceEqual(value2));
@@ -76,7 +90,7 @@ namespace Tsavorite.test
                     var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
                     var value = MemoryMarshal.Cast<char, byte>($"{i + 1000}".AsSpan());
                     fixed (byte* k = key, v = value)
-                        session.Upsert(SpanByte.FromFixedSpan(key), SpanByte.FromFixedSpan(value));
+                        session.Upsert(SpanByte.FromPinnedSpan(key), SpanByte.FromPinnedSpan(value));
                 }
 
                 // Read, evict all records to disk, read again
@@ -101,7 +115,7 @@ namespace Tsavorite.test
 
                     var keyBytes = MemoryMarshal.Cast<char, byte>($"{key}".AsSpan());
                     fixed (byte* _ = keyBytes)
-                        status = session.Read(key: SpanByte.FromFixedSpan(keyBytes), out output);
+                        status = session.Read(key: SpanByte.FromPinnedSpan(keyBytes), out output);
                     Assert.AreEqual(evicted, status.IsPending, "evicted/pending mismatch");
 
                     if (!evicted)
@@ -137,7 +151,7 @@ namespace Tsavorite.test
             Span<byte> payload = stackalloc byte[20];
             Span<byte> serialized = stackalloc byte[24];
 
-            SpanByte sb = SpanByte.FromFixedSpan(payload);
+            SpanByte sb = SpanByte.FromPinnedSpan(payload);
             Assert.IsFalse(sb.Serialized);
             Assert.AreEqual(20, sb.Length);
             Assert.AreEqual(24, sb.TotalSize);

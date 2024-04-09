@@ -7,7 +7,7 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Equality comparer for SpanByte
+    /// Equality comparer for <see cref="SpanByte"/>
     /// </summary>
     public struct SpanByteComparer : ITsavoriteEqualityComparer<SpanByte>
     {
