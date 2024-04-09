@@ -69,7 +69,7 @@ namespace Garnet.cluster
 
                     //4. Make value SpanByte
                     keyPtr = (byte*)((IntPtr)tuple.Item1).ToPointer();
-                    SpanByte key = SpanByte.FromPointer(keyPtr, ksize);
+                    SpanByte key = SpanByte.FromPinnedPointer(keyPtr, ksize);
                     SpanByte value;
                     MemoryHandle memoryHandle = default;
                     if (!o.IsSpanByte)
