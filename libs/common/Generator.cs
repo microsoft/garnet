@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Security.Cryptography;
 
 namespace Garnet.common
@@ -16,22 +17,34 @@ namespace Garnet.common
         /// </summary>
         /// <param name="size">The length of the hex identifier string</param>
         /// <returns></returns>
-        public static unsafe string CreateHexId(int size = 40)
+        public static string CreateHexId(int size = 40)
         {
-            Span<byte> nodeIdBuffer = stackalloc byte[size / 2];
+            byte[] byteLease = null;
+            Span<byte> nodeIdBuffer = size <= 64 ? stackalloc byte[size / 2] : Lease(size / 2, out byteLease);
             RandomNumberGenerator.Fill(nodeIdBuffer);
 
-            char* charBuffer = stackalloc char[nodeIdBuffer.Length * 2]; // not the same as size (if size is odd)
+            char[] charLease = null;
+            var cLength = nodeIdBuffer.Length * 2; // not the same as size (if size is odd)
+            Span<char> charBuffer = size <= 64 ? stackalloc char[cLength] : Lease(cLength, out charLease);
             int index = 0;
-            fixed (char* hexChars = "0123456789abcdef")
+
+            const string HexChars = "0123456789abcdef";
+            foreach (byte b in nodeIdBuffer)
             {
-                foreach (byte b in nodeIdBuffer)
-                {
-                    charBuffer[index++] = hexChars[b >> 4]; // hi nibble
-                    charBuffer[index++] = hexChars[b & 0xF]; // lo nibble
-                }
+                charBuffer[index++] = HexChars[b >> 4]; // hi nibble
+                charBuffer[index++] = HexChars[b & 0xF]; // lo nibble
             }
-            return new string(charBuffer, 0, index);
+
+            var result = new string(charBuffer);
+            if (byteLease is not null) ArrayPool<byte>.Shared.Return(byteLease);
+            if (charLease is not null) ArrayPool<char>.Shared.Return(charLease);
+            return result;
+
+            static Span<T> Lease<T>(int length, out T[] oversized)
+            {
+                oversized = ArrayPool<T>.Shared.Rent(length);
+                return new(oversized, 0, length);
+            }
         }
 
         /// <summary>
