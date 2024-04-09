@@ -153,7 +153,7 @@ namespace Garnet.cluster
             => slotMap[slot].workerId == 1 || IsLocalExpensive(slot, readCommand);
 
         private bool IsLocalExpensive(ushort slot, bool readCommand)
-            => (readCommand && workers[1].role == NodeRole.REPLICA && workers[slotMap[slot]._workerId].nodeid == GetLocalNodePrimaryId()) ||
+            => (readCommand && workers[1].role == NodeRole.REPLICA && workers[slotMap[slot]._workerId].nodeid.Equals(GetLocalNodePrimaryId(), StringComparison.Ordinal)) ||
             slotMap[slot]._state == SlotState.MIGRATING;
 
         /// <summary>
@@ -257,10 +257,10 @@ namespace Garnet.cluster
             List<(string, int)> primaries = new();
             for (ushort i = 2; i < workers.Length; i++)
             {
-                if (workers[i].role == NodeRole.PRIMARY && workers[i].nodeid != myPrimaryId)
+                if (workers[i].role == NodeRole.PRIMARY && !workers[i].nodeid.Equals(myPrimaryId, StringComparison.OrdinalIgnoreCase))
                     primaries.Add((workers[i].address, workers[i].port));
 
-                if (workers[i].nodeid == myPrimaryId)
+                if (workers[i].nodeid.Equals(myPrimaryId, StringComparison.Ordinal))
                     primaries.Insert(0, (workers[i].address, workers[i].port));
             }
             return primaries;
@@ -276,7 +276,7 @@ namespace Garnet.cluster
             List<int> result = new();
             for (int i = 0; i < MAX_HASH_SLOT_VALUE; i++)
             {
-                if (workers[slotMap[i].workerId].nodeid == primaryId)
+                if (workers[slotMap[i].workerId].nodeid.Equals(primaryId, StringComparison.Ordinal))
                     result.Add(i);
             }
             return result;
@@ -381,7 +381,7 @@ namespace Garnet.cluster
             byte[] claimedSlots = new byte[slotMap.Length / 8];
             for (int i = 0; i < slotMap.Length; i++)
             {
-                if (workers[slotMap[i].workerId].nodeid == nodeId)
+                if (workers[slotMap[i].workerId].nodeid.Equals(nodeId, StringComparison.Ordinal))
                     slotBitmapSetBit(ref claimedSlots, i);
             }
             return claimedSlots;
@@ -861,7 +861,7 @@ namespace Garnet.cluster
             for (ushort i = 1; i < other.NumWorkers + 1; i++)
             {
                 //Do not update local node config
-                if (localId == other.workers[i].nodeid)
+                if (localId.Equals(other.workers[i].nodeid, StringComparison.Ordinal))
                     continue;
                 //Skip any nodes scheduled for deletion
                 if (workerBanList.ContainsKey(other.workers[i].nodeid))
@@ -897,7 +897,7 @@ namespace Garnet.cluster
             ushort workerId = 0;
             for (int i = 1; i < workers.Length; i++)
             {
-                if (workers[i].nodeid == nodeid)
+                if (workers[i].nodeid.Equals(nodeid, StringComparison.Ordinal))
                 {
                     //Skip update if received config is smaller or equal than local worker epoch
                     //Update only if received config epoch is strictly greater
@@ -948,7 +948,7 @@ namespace Garnet.cluster
             ushort workerId = 0;
             for (int i = 1; i < workers.Length; i++)
             {
-                if (workers[i].nodeid == nodeid)
+                if (workers[i].nodeid.Equals(nodeid, StringComparison.Ordinal))
                 {
                     workerId = (ushort)i;
                     break;

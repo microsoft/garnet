@@ -142,7 +142,7 @@ namespace Garnet.cluster
                 {
                     var task = tasks[i];
                     if (task == null) continue;
-                    if (task.Status != TaskStatus.RanToCompletion || !task.Result.Equals("OK"))
+                    if (task.Status != TaskStatus.RanToCompletion || !task.Result.Equals("OK", StringComparison.Ordinal))
                         logger?.LogError("AttachReplicas task failed with status: {taskStatus} {address} {port} {resp}", task.Status, replicaEndpoints[i].Item1, replicaEndpoints[i].Item2, task.Result);
                     clients[0].Dispose();
                 }
