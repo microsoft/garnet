@@ -455,7 +455,7 @@ namespace Garnet.test
             var coord = GeoHash.GetCoordinatesFromLong(r);
 
             //Assert difference is not higher than "0.000001" using fixed point format
-            var diff = (Math.Round(latitude, 9) - Math.Round(coord.Item1, 9)).ToString("F6");
+            var diff = (Math.Round(latitude, 9) - Math.Round(coord.Item1, 9)).ToString("F6", CultureInfo.InvariantCulture);
             Assert.IsTrue(double.Parse(diff, CultureInfo.InvariantCulture) <= 0.000001);
         }
 
