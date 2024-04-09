@@ -318,15 +318,18 @@ namespace Garnet.server
                         return true;
                     }
 
-                    var increment = NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
-                    var able = long.MaxValue - val;
-                    if (able < increment)
+                    try
+                    {
+                        checked
+                        {
+                            val += NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                        }
+                    }
+                    catch (OverflowException)
                     {
                         CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
-
-                    val += increment;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECRBY:
@@ -336,15 +339,18 @@ namespace Garnet.server
                         return true;
                     }
 
-                    var decrement = NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
-                    able = long.MinValue + val;
-                    if (able < decrement)
+                    try
+                    {
+                        checked
+                        {
+                            val -= NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                        }
+                    }
+                    catch (OverflowException)
                     {
                         CopyDefaultResp(CmdStrings.RESP_ERROR_VALUE_IS_NOT_INTEGER, ref output);
                         return true;
                     }
-
-                    val -= decrement;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.SETBIT:
