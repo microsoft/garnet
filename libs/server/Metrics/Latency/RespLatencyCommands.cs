@@ -149,7 +149,7 @@ namespace Garnet.server
                     if (!DrainCommands(bufSpan, count - 1))
                         return false;
                     string paramStr = Encoding.ASCII.GetString(param);
-                    while (!RespWriteUtils.WriteError("ERR Unknown subcommand. Try LATENCY HELP."u8, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UKNOWN_SUBCOMMAND, ref dcurr, dend))
                         SendAndReset();
                 }
             }

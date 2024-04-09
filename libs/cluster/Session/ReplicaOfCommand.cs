@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
-using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -21,7 +19,7 @@ namespace Garnet.cluster
 
             readHead = (int)(ptr - recvBufferPtr);
 
-            //Turn of replication and make replica into a primary but do not delete data
+            // Turn of replication and make replica into a primary but do not delete data
             if (address.ToUpper().Equals("NO") && portStr.ToUpper().Equals("ONE"))
             {
                 clusterProvider.clusterManager?.TryResetReplica();
