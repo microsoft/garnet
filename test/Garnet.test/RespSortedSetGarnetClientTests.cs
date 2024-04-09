@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -71,7 +72,7 @@ namespace Garnet.test
 
             foreach (SortedSetEntry item in leaderBoard)
             {
-                parameters.Add(item.Score.ToString());
+                parameters.Add(item.Score.ToString(CultureInfo.InvariantCulture));
                 parameters.Add(item.Element);
             }
 
@@ -184,7 +185,7 @@ namespace Garnet.test
                         };
                         foreach (SortedSetEntry item in leaderBoard)
                         {
-                            parameters.Add(item.Score.ToString());
+                            parameters.Add(item.Score.ToString(CultureInfo.InvariantCulture));
                             parameters.Add(item.Element);
                         }
 
@@ -244,7 +245,7 @@ namespace Garnet.test
 
             foreach (SortedSetEntry item in leaderBoard)
             {
-                parameters.Add(item.Score.ToString());
+                parameters.Add(item.Score.ToString(CultureInfo.InvariantCulture));
                 parameters.Add(item.Element);
             }
 
@@ -297,7 +298,7 @@ namespace Garnet.test
 
             foreach (SortedSetEntry item in leaderBoard)
             {
-                parameters.Add(item.Score.ToString());
+                parameters.Add(item.Score.ToString(CultureInfo.InvariantCulture));
                 parameters.Add(item.Element);
             }
 
@@ -338,7 +339,7 @@ namespace Garnet.test
 
             foreach (SortedSetEntry item in leaderBoard)
             {
-                parameters.Add(item.Score.ToString());
+                parameters.Add(item.Score.ToString(CultureInfo.InvariantCulture));
                 parameters.Add(item.Element);
             }
 
@@ -523,7 +524,7 @@ namespace Garnet.test
 
             foreach (SortedSetEntry item in leaderBoard)
             {
-                parameters.Add(item.Score.ToString());
+                parameters.Add(item.Score.ToString(CultureInfo.InvariantCulture));
                 parameters.Add(item.Element);
             }
 

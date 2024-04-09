@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Buffers.Text;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -428,7 +429,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            var resultBytes = Encoding.ASCII.GetBytes(result.ToString());
+                            var resultBytes = Encoding.ASCII.GetBytes(result.ToString(CultureInfo.InvariantCulture));
                             hash[key] = resultBytes;
                             Size += Utility.RoundUp(resultBytes.Length, IntPtr.Size) - Utility.RoundUp(value.Length, IntPtr.Size);
 
@@ -461,8 +462,7 @@ namespace Garnet.server
                         }
                         else
                         {
-
-                            while (!RespWriteUtils.WriteAsciiBulkString(resultIncr.ToString(), ref curr, end))
+                            while (!RespWriteUtils.WriteAsciiBulkString(resultIncr.ToString(CultureInfo.InvariantCulture), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                     }

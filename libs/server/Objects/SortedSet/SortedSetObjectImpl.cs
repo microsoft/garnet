@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -148,7 +149,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(), ref curr, end))
+                    while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 _output.bytesDone = 0;
@@ -200,7 +201,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(), ref curr, end))
+                        while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -314,7 +315,7 @@ namespace Garnet.server
                     }
 
                     // write the new score
-                    while (!RespWriteUtils.WriteAsciiBulkString(sortedSetDict[memberByteArray].ToString(), ref curr, end))
+                    while (!RespWriteUtils.WriteAsciiBulkString(sortedSetDict[memberByteArray].ToString(CultureInfo.InvariantCulture), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     countDone = 1;
                 }
@@ -440,7 +441,7 @@ namespace Garnet.server
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             if (options.WithScores)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(), ref curr, end))
+                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
@@ -496,7 +497,7 @@ namespace Garnet.server
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 if (options.WithScores)
                                 {
-                                    while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(), ref curr, end))
+                                    while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
                                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 }
                             }
@@ -529,7 +530,7 @@ namespace Garnet.server
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             if (options.WithScores)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(), ref curr, end))
+                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
@@ -743,7 +744,7 @@ namespace Garnet.server
 
                     if (withScores)
                     {
-                        while (!RespWriteUtils.WriteAsciiBulkString(element.Value.ToString(), ref curr, end))
+                        while (!RespWriteUtils.WriteAsciiBulkString(element.Value.ToString(CultureInfo.InvariantCulture), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -1005,7 +1006,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteBulkString(max.Item2, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                    while (!RespWriteUtils.WriteAsciiBulkString(max.Item1.ToString(), ref curr, end))
+                    while (!RespWriteUtils.WriteAsciiBulkString(max.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     countDone++;
@@ -1062,7 +1063,7 @@ namespace Garnet.server
                 exclusive = true;
             }
 
-            return double.TryParse(strVal, out valueDouble);
+            return double.TryParse(strVal, CultureInfo.InvariantCulture, out valueDouble);
         }
 
         /// <summary>
