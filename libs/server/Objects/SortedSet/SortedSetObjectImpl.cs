@@ -1063,7 +1063,7 @@ namespace Garnet.server
                 exclusive = true;
             }
 
-            return double.TryParse(strVal, CultureInfo.InvariantCulture, out valueDouble);
+            return double.TryParse(strVal, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out valueDouble);
         }
 
         /// <summary>
