@@ -530,14 +530,19 @@ namespace Garnet.common
                 var beg = fNeg ? ptr + 1 : ptr;
                 var end = ptr + length;
                 long result = 0;
-
+                long temp = 0;
                 while (beg < end)
                 {
                     if (!(*beg >= 48 && *beg <= 57))
                     {
                         return false;
                     }
-                    result = result * 10 + (*beg++ - '0');
+                    temp = result * 10 + (*beg++ - '0');
+                    if (temp < result)
+                    {
+                        return false;
+                    }
+                    result = temp;
                 }
                 v = fNeg ? -(result) : result;
             }

@@ -1737,6 +1737,46 @@ namespace Garnet.test
             }
         }
 
+        [TestCase("INCR")]
+        [TestCase("DECR")]
+        [TestCase("INCRBY")]
+        [TestCase("DECRBY")]
+        [Test]
+        public void IncrementLongNumber(string command)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "key";
+            // long max 9223372036854775807
+            _ = db.StringSet(key, "92233720368547758070");
+            try
+            {
+                switch (command)
+                {
+                    case "INCR":
+                        _ = db.StringIncrement(key);
+                        break;
+                    case "DECR":
+                        _ = db.StringDecrement(key);
+                        break;
+                    case "INCRBY":
+                        _ = db.StringIncrement(key, 60);
+                        break;
+                    case "DECRBY":
+                        _ = db.StringDecrement(key, 60);
+                        break;
+                    default:
+                        break;
+                }
+                Assert.Fail();
+            }
+            catch (Exception e)
+            {
+                Assert.AreEqual(e.Message, "ERR value is not an integer or out of range.");
+            }
+        }
+
         [TestCase("INCR", long.MaxValue, 1)]
         [TestCase("DECR", long.MinValue, 1)]
         [TestCase("INCRBY", long.MaxValue - 38, 39)]
