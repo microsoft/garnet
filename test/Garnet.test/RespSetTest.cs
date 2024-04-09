@@ -452,7 +452,7 @@ namespace Garnet.test
             var expectedResponse = ":2\r\n+PONG\r\n";
             strResponse = Encoding.ASCII.GetString(secondResponse).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
-          
+
             // Test for popping set until empty
             response = lightClientRequest.SendCommand("SPOP myset 2", 2);
             strResponse = Encoding.ASCII.GetString(response);
@@ -470,7 +470,7 @@ namespace Garnet.test
         public void CanDoSMOVECommandLC()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            
+
             // source set
             lightClientRequest.SendCommand("SADD \"mySourceSet\" \"oneS\"");
             lightClientRequest.SendCommand("SADD \"mySourceSet\" \"twoS\"");
@@ -530,7 +530,7 @@ namespace Garnet.test
             Assert.AreEqual(response, 0);
             await db.ExecuteForStringResultAsync("SADD", new string[] { "sourceSet", "sourceValue", "commonValue" });
             await db.ExecuteForStringResultAsync("SADD", new string[] { "destinationSet", "destinationValue", "commonValue" });
-            
+
             //Same key.
             response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "sourceSet", "sourceValue" });
             Assert.AreEqual(response, 0);
