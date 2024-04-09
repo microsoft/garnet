@@ -1,13 +1,15 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
 
 namespace Garnet.server.ACL
 {
-    class ACLParser
+    partial class ACLParser
     {
+        private static readonly char[] WhitespaceChars = [' ', '\t', '\r', '\n'];
+
         /// <summary>
         /// Parses a single-line ACL rule and returns a new user according to that rule.
         /// 
@@ -36,10 +38,8 @@ namespace Garnet.server.ACL
         /// <exception cref="ACLUnknownOperationException">Thrown if the given operation does not exist.</exception>
         public static User ParseACLRule(string input, AccessControlList acl = null)
         {
-
             // Tokenize input string 
-            Regex regex = new Regex("\\s+");
-            string[] tokens = regex.Split(input.Trim());
+            string[] tokens = input.Trim().Split(WhitespaceChars);
 
             // Sanity check for correctness
             if (tokens.Length < 3)
