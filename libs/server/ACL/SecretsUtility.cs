@@ -3,42 +3,23 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 
 namespace Garnet.server.ACL
 {
     internal static class SecretsUtility
     {
-        [MethodImpl(MethodImplOptions.NoOptimization)]
+        public static bool ConstantEquals(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b) => CryptographicOperations.FixedTimeEquals(a, b);
+
         public static bool ConstantEquals(string a, string b) => ConstantEquals(a.AsSpan(), b.AsSpan());
 
-        [MethodImpl(MethodImplOptions.NoOptimization)]
-        public static bool ConstantEquals(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
-        {
-            var accumulator = 0;
-
-            accumulator |= a.Length ^ b.Length;
-
-            for (var i = 0; i < Math.Min(a.Length, b.Length); i++)
-            {
-                accumulator |= a[i] ^ b[i];
-            }
-
-            return accumulator == 0;
-        }
-
-        [MethodImpl(MethodImplOptions.NoOptimization)]
+        [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
         public static bool ConstantEquals(ReadOnlySpan<char> a, ReadOnlySpan<char> b)
         {
-            var accumulator = 0;
+            // all secrets are ASCII or UTF-8
 
-            accumulator |= a.Length ^ b.Length;
-
-            for (var i = 0; i < Math.Min(a.Length, b.Length); i++)
-            {
-                accumulator |= a[i] ^ b[i];
-            }
-
-            return accumulator == 0;
+            return ConstantEquals(MemoryMarshal.Cast<char, byte>(a), MemoryMarshal.Cast<char, byte>(b));
         }
     }
 }
