@@ -51,7 +51,7 @@ namespace Garnet.cluster
                 aofTaskStore.TryRemove(aofSyncTaskInfo);
 
                 errorMessage = "ERR Replication Manager Disposed"u8;
-                logger?.LogError(Encoding.ASCII.GetString(errorMessage));
+                logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                 return false;
             }
 
@@ -61,9 +61,8 @@ namespace Garnet.cluster
             if (address == null)
             {
                 aofTaskStore.TryRemove(aofSyncTaskInfo);
-                var msg = $"ERR unknown endpoint for {nodeid}";
-                logger.LogError(msg);
-                errorMessage = Encoding.ASCII.GetBytes(msg);
+                errorMessage = Encoding.ASCII.GetBytes($"ERR unknown endpoint for {nodeid}");
+                logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                 return false;
             }
 

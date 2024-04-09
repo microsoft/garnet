@@ -70,7 +70,6 @@ namespace Garnet.server
 
         internal readonly string localEndpoint;
 
-
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
         internal readonly WatchVersionMap versionMap;
@@ -563,9 +562,16 @@ namespace Garnet.server
             clusterProvider?.Dispose();
         }
 
+        /// <summary>
+        /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpoint tasks
+        /// </summary>
+        /// <returns></returns>
         bool StartCheckpoint()
             => _checkpointTaskLock.TryWriteLock();
 
+        /// <summary>
+        /// Release checkpoint task lock
+        /// </summary>
         void CompleteCheckpoint()
             => _checkpointTaskLock.WriteUnlock();
 
@@ -616,25 +622,25 @@ namespace Garnet.server
                 var lastSaveStoreTailAddress = store.Log.TailAddress;
                 var lastSaveObjectStoreTailAddress = (objectStore?.Log.TailAddress).GetValueOrDefault();
 
-                bool full = false;
+                var full = false;
                 if (this.lastSaveStoreTailAddress == 0 || lastSaveStoreTailAddress - this.lastSaveStoreTailAddress >= serverOptions.FullCheckpointLogInterval)
                     full = true;
                 if (objectStore != null && (this.lastSaveObjectStoreTailAddress == 0 || lastSaveObjectStoreTailAddress - this.lastSaveObjectStoreTailAddress >= serverOptions.FullCheckpointLogInterval))
                     full = true;
 
-                bool tryIncremental = serverOptions.EnableIncrementalSnapshots;
+                var tryIncremental = serverOptions.EnableIncrementalSnapshots;
                 if (store.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
                     tryIncremental = false;
                 if (objectStore?.IncrementalSnapshotTailAddress >= serverOptions.IncrementalSnapshotLogSizeLimit)
                     tryIncremental = false;
 
-                CheckpointType checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
+                var checkpointType = serverOptions.UseFoldOverCheckpoints ? CheckpointType.FoldOver : CheckpointType.Snapshot;
                 await InitiateCheckpoint(full, checkpointType, tryIncremental, storeType, logger);
                 if (full)
                 {
-                    if (storeType == StoreType.Main || storeType == StoreType.All)
+                    if (storeType is StoreType.Main or StoreType.All)
                         this.lastSaveStoreTailAddress = lastSaveStoreTailAddress;
-                    if (storeType == StoreType.Object || storeType == StoreType.All)
+                    if (storeType is StoreType.Object or StoreType.All)
                         this.lastSaveObjectStoreTailAddress = lastSaveObjectStoreTailAddress;
                 }
                 lastSaveTime = DateTimeOffset.UtcNow;
@@ -669,19 +675,19 @@ namespace Garnet.server
             (bool success, Guid token) objectStoreCheckpointResult = default;
             if (full)
             {
-                if (storeType == StoreType.Main || storeType == StoreType.All)
+                if (storeType is StoreType.Main or StoreType.All)
                     storeCheckpointResult = await store.TakeFullCheckpointAsync(checkpointType);
 
-                if (storeType == StoreType.Object || storeType == StoreType.All)
-                    if (objectStore != null) objectStoreCheckpointResult = await objectStore.TakeFullCheckpointAsync(checkpointType);
+                if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                    objectStoreCheckpointResult = await objectStore.TakeFullCheckpointAsync(checkpointType);
             }
             else
             {
-                if (storeType == StoreType.Main || storeType == StoreType.All)
+                if (storeType is StoreType.Main or StoreType.All)
                     storeCheckpointResult = await store.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
 
-                if (storeType == StoreType.Object || storeType == StoreType.All)
-                    if (objectStore != null) objectStoreCheckpointResult = await objectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
+                if (objectStore != null && (storeType == StoreType.Object || storeType == StoreType.All))
+                    objectStoreCheckpointResult = await objectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
             }
 
             // If cluster is enabled the replication manager is responsible for truncating AOF

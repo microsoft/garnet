@@ -3,7 +3,6 @@
 
 using System;
 using System.Text;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -21,31 +20,37 @@ namespace Garnet.cluster
             errorMessage = default;
             if (!replicaSyncSessionTaskStore.TryAddReplicaSyncSession(remoteNodeId, remote_primary_replid, remoteEntry, replicaAofBeginAddress, replicaAofTailAddress))
             {
-                errorMessage = "PRIMARY-ERR failed creating replica sync session task."u8;
-                logger?.LogError(Encoding.ASCII.GetString(errorMessage));
+                errorMessage = CmdStrings.RESP_ERR_CREATE_SYNC_SESSION_ERROR;
+                logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                 return false;
             }
 
-            var errorMsg = ReplicaSyncSessionBackgroundTask(remoteNodeId).GetAwaiter().GetResult();
-            if (errorMsg != null)
+            if (!ReplicaSyncSessionBackgroundTask(remoteNodeId, out errorMessage))
             {
-                errorMessage = Encoding.UTF8.GetBytes(errorMsg);
                 return false;
             }
             return true;
         }
 
-        private async Task<string> ReplicaSyncSessionBackgroundTask(string replicaId)
+        private bool ReplicaSyncSessionBackgroundTask(string replicaId, out ReadOnlySpan<byte> errorMessage)
         {
             try
             {
                 if (!replicaSyncSessionTaskStore.TryGetSession(replicaId, out var session))
                 {
-                    var msg = "PRIMARY-ERR Failed retrieving replica sync session.";
-                    logger?.LogError(msg);
-                    return msg;
+                    errorMessage = CmdStrings.RESP_ERR_RETRIEVE_SYNC_SESSION_ERROR;
+                    logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
+                    return false;
                 }
-                return await session.SendCheckpoint();
+
+                if (!session.SendCheckpoint().GetAwaiter().GetResult())
+                {
+                    errorMessage = Encoding.ASCII.GetBytes(session.errorMsg);
+                    return false;
+                }
+
+                errorMessage = CmdStrings.RESP_OK;
+                return true;
             }
             finally
             {
