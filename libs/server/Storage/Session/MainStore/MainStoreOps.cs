@@ -830,6 +830,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref _output, ref context);
 
+            Debug.Assert(_output.IsSpanByte);
             output.length = _output.Length;
             if (_output.SpanByte.AsReadOnlySpan().SequenceEqual(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER))
             {
