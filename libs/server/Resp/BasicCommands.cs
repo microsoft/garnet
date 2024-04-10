@@ -771,23 +771,24 @@ namespace Garnet.server
 
             var key = new ArgSlice(keyPtr, ksize);
 
-            byte* pbOutput = stackalloc byte[21];
+            var pbOutput = stackalloc byte[21];
             var output = new ArgSlice(pbOutput, 21);
 
             var status = storageApi.Increment(key, input, ref output);
-            var flag = output.Span[^1];
+            var errorFlag = output.Length == 21 ? (IncrErrorType)output.Span[0] : IncrErrorType.SUCCESS;
 
-            switch (flag)
+            switch (errorFlag)
             {
-                case 0:
+                case IncrErrorType.SUCCESS:
                     while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
                         SendAndReset();
                     break;
-                case 1:
+                case IncrErrorType.INVALID_NUMBER:
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
                     break;
-
+                default:
+                    throw new GarnetException($"Invalid IncrErrorType {errorFlag}");
             }
             return true;
         }

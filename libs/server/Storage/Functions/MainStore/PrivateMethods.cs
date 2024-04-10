@@ -465,7 +465,7 @@ namespace Garnet.server
             if (!NumUtils.TryBytesToLong(length, source, out val))
             {
                 // Signal value is not a valid number
-                output.SpanByte.AsSpan()[^1] = 1;
+                output.SpanByte.AsSpan()[0] = (byte)IncrErrorType.INVALID_NUMBER;
                 return false;
             }
             return true;
