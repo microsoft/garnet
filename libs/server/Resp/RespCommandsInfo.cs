@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
-    public class RespCommandsInfo : RespSerializableBase
+    public class RespCommandsInfo : IRespSerializable
     {
         public RespCommand Command { get; init; }
 
@@ -49,9 +49,13 @@ namespace Garnet.server
 
         public string[]? Tips { get; init; }
 
-        public RespCommandKeySpecifications[] KeySpecifications { get; init; }
+        public RespCommandKeySpecification[] KeySpecifications { get; init; }
 
         public RespCommandsInfo[]? SubCommands { get; init; }
+
+        public string RespFormat => respFormat ??= ToRespFormat();
+
+        private string respFormat;
 
         private static bool isInitialized = false;
         private static IReadOnlyDictionary<string, RespCommandsInfo> allRespCommandsInfo = null;
@@ -148,9 +152,7 @@ namespace Garnet.server
             return true;
         }
 
-        protected override void FromRespFormat(string respFormat) => throw new System.NotImplementedException();
-
-        protected override string ToRespFormat()
+        public string ToRespFormat()
         {
             var sb = new StringBuilder();
 
