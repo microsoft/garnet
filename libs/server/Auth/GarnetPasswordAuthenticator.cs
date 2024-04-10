@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.server.ACL;
 
 namespace Garnet.server.Auth
 {
@@ -27,7 +28,7 @@ namespace Garnet.server.Auth
 
         public bool Authenticate(ReadOnlySpan<byte> password, ReadOnlySpan<byte> username)
         {
-            _authenticated = password.SequenceEqual(_pwd);
+            _authenticated = SecretsUtility.ConstantEquals(_pwd, password);
             return _authenticated;
         }
     }

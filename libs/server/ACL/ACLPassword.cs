@@ -92,20 +92,7 @@ namespace Garnet.server.ACL
         /// <returns>True if equal, otherwise false.</returns>
         public bool Equals(ACLPassword password)
         {
-            if (PasswordHash.Length != password.PasswordHash.Length)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < PasswordHash.Length; i++)
-            {
-                if (PasswordHash[i] != password.PasswordHash[i])
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            return SecretsUtility.ConstantEquals(password.PasswordHash.AsSpan(), PasswordHash.AsSpan());
         }
 
         /// <summary>
