@@ -775,7 +775,6 @@ namespace Garnet.server
             var output = new ArgSlice(pbOutput, 21);
 
             var status = storageApi.Increment(key, input, ref output);
-
             var flag = output.Span[^1];
 
             switch (flag)

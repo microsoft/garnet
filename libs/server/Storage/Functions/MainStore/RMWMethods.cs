@@ -293,26 +293,40 @@ namespace Garnet.server
 
                 case RespCommand.INCR:
                     // Check if value contains a valid number
-                    if (!IsValidNumber(ref value, ref output, out var val))
+                    if (!IsValidNumber(value.LengthWithoutMetadata, value.ToPointer(), ref output, out var val))
                         return true;
                     var old = val++;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECR:
                     // Check if value contains a valid number
-                    if (!IsValidNumber(ref value, ref output, out val))
+                    if (!IsValidNumber(value.LengthWithoutMetadata, value.ToPointer(), ref output, out val))
                         return true;
                     val--;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.INCRBY:
-                    val = NumUtils.BytesToLong(value.LengthWithoutMetadata, value.ToPointer());
-                    val += NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                    // Check if value contains a valid number
+                    if (!IsValidNumber(value.LengthWithoutMetadata, value.ToPointer(), ref output, out val))
+                        return true;
+
+                    // Check if input contains a valid number
+                    if (!IsValidNumber(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, ref output, out var by))
+                        return true;
+
+                    val += by;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECRBY:
-                    val = NumUtils.BytesToLong(value.LengthWithoutMetadata, value.ToPointer());
-                    val -= NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                    // Check if value contains a valid number
+                    if (!IsValidNumber(value.LengthWithoutMetadata, value.ToPointer(), ref output, out val))
+                        return true;
+
+                    // Check if input contains a valid number
+                    if (!IsValidNumber(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, ref output, out by))
+                        return true;
+
+                    val -= by;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.SETBIT:

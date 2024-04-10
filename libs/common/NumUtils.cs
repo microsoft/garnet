@@ -105,21 +105,11 @@ namespace Garnet.common
         /// <summary>
         /// Convert sequence of ASCII bytes into long number
         /// </summary>
-        /// <param name="source">Source bytes</param>
-        /// <returns>Result</returns>
-        public static bool TryBytesToLong(ReadOnlySpan<byte> source, out long result)
-        {
-            fixed (byte* ptr = source)
-                return BytesToLong(source.Length, ptr, out result);
-        }
-
-        /// <summary>
-        /// Convert sequence of ASCII bytes into long number
-        /// </summary>
         /// <param name="length">Length of number</param>
         /// <param name="source">Source bytes</param>
-        /// <returns>Result</returns>
-        public static bool BytesToLong(int length, byte* source, out long result)
+        /// <param name="result">Long value extracted from sequence</param>
+        /// <returns>True if sequence contains only numeric values otherwise false</returns>
+        public static bool TryBytesToLong(int length, byte* source, out long result)
         {
             var fNeg = *source == '-';
             var beg = fNeg ? source + 1 : source;

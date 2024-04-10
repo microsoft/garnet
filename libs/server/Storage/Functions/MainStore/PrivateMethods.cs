@@ -459,10 +459,10 @@ namespace Garnet.server
             functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, version = version, sessionID = sessionID }, ref key, ref def, out _);
         }
 
-        static bool IsValidNumber(ref SpanByte value, ref SpanByteAndMemory output, out long val)
+        static bool IsValidNumber(int length, byte* source, ref SpanByteAndMemory output, out long val)
         {
             // Check for valid number
-            if (!NumUtils.TryBytesToLong(value.AsSpan(), out val))
+            if (!NumUtils.TryBytesToLong(length, source, out val))
             {
                 // Signal value is not a valid number
                 output.SpanByte.AsSpan()[^1] = 1;
