@@ -292,12 +292,16 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.INCR:
-                    long val = NumUtils.BytesToLong(value.AsSpan());
-                    val++;
+                    // Check if value contains a valid number
+                    if (!IsValidNumber(ref value, ref output, out var val))
+                        return true;
+                    var old = val++;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECR:
-                    val = NumUtils.BytesToLong(value.AsSpan());
+                    // Check if value contains a valid number
+                    if (!IsValidNumber(ref value, ref output, out val))
+                        return true;
                     val--;
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 

@@ -341,16 +341,16 @@ namespace Garnet.server
 
         static bool InPlaceUpdateNumber(long val, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            bool fNeg = false;
-            int ndigits = NumUtils.NumDigitsInLong(val, ref fNeg);
+            var fNeg = false;
+            var ndigits = NumUtils.NumDigitsInLong(val, ref fNeg);
             ndigits += fNeg ? 1 : 0;
 
             if (ndigits > value.Length)
                 return false;
 
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-            value.ShrinkSerializedLength(ndigits + value.MetadataSize);
-            NumUtils.LongToSpanByte(val, value.AsSpan());
+            _ = value.ShrinkSerializedLength(ndigits + value.MetadataSize);
+            _ = NumUtils.LongToSpanByte(val, value.AsSpan());
             rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
             value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = value.LengthWithoutMetadata;
@@ -457,6 +457,18 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             SpanByte def = default;
             functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, version = version, sessionID = sessionID }, ref key, ref def, out _);
+        }
+
+        static bool IsValidNumber(ref SpanByte value, ref SpanByteAndMemory output, out long val)
+        {
+            // Check for valid number
+            if (!NumUtils.TryBytesToLong(value.AsSpan(), out val))
+            {
+                // Signal value is not a valid number
+                output.SpanByte.AsSpan()[^1] = 1;
+                return false;
+            }
+            return true;
         }
     }
 }
