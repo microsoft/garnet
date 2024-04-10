@@ -338,7 +338,7 @@ namespace Garnet.test
 
             // Missing arguments
             response = lightClientRequest.SendCommand("SISMEMBER myset");
-            expectedResponse = string.Format(CmdStrings.ErrWrongNumArgs, "SISMEMBER");
+            expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "SISMEMBER")}\r\n";
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
 
