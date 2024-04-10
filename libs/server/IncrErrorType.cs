@@ -3,6 +3,9 @@
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Type of error when executing Increment/Decrement commands
+    /// </summary>
     public enum IncrErrorType : byte
     {
         /// <summary>
