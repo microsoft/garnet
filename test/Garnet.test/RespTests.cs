@@ -622,6 +622,39 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase(RespCommand.INCR)]
+        [TestCase(RespCommand.INCRBY)]
+        [TestCase(RespCommand.DECR)]
+        [TestCase(RespCommand.DECRBY)]
+        public void SimpleIncrementInvalidValue(RespCommand cmd)
+        {
+            using var db = TestUtils.GetGarnetClient();
+            db.Connect();
+            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01"];
+
+            foreach (var value in values)
+            {
+                _ = db.StringSetAsync(value, value).GetAwaiter().GetResult();
+                try
+                {
+                    _ = cmd switch
+                    {
+                        RespCommand.INCR => db.StringIncrement(value).GetAwaiter().GetResult(),
+                        RespCommand.INCRBY => db.StringIncrement(value, 10L).GetAwaiter().GetResult(),
+                        RespCommand.DECR => db.StringDecrement(value).GetAwaiter().GetResult(),
+                        RespCommand.DECRBY => db.StringDecrement(value, 10L).GetAwaiter().GetResult(),
+                        _ => throw new Exception($"Command {cmd} not supported!"),
+                    };
+                }
+                catch (Exception ex)
+                {
+                    var msg = ex.Message;
+                    Assert.AreEqual("ERR value is not an integer or out of range.", msg);
+                }
+            }
+        }
+
+        [Test]
         public void SingleDelete()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

@@ -114,10 +114,16 @@ namespace Garnet.common
             var fNeg = *source == '-';
             var beg = fNeg ? source + 1 : source;
             var end = source + length;
+            var digit = *beg - '0';
             result = 0;
+
+            // Check first digit which needs to be non-zero
+            if (digit is <= 0 or > 9)
+                return false;
+
             while (beg < end)
             {
-                var digit = *beg++ - '0';
+                digit = *beg++ - '0';
                 if (digit is < 0 or > 9)
                     return false;
                 result = (result * 10) + digit;
