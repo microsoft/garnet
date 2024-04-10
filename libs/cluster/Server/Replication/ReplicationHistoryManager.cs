@@ -146,6 +146,7 @@ namespace Garnet.cluster
                     break;
             }
             FlushConfig();
+            SetPrimaryReplicationId();
         }
 
         private void FlushConfig()

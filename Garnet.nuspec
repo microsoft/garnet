@@ -53,31 +53,6 @@
 	<file src="libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\bin\AnyCPU\Release\net6.0\Tsavorite.devices.AzureStorageDevice.dll" target="lib\net6.0" />
 	<file src="libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\bin\AnyCPU\Release\net6.0\Tsavorite.devices.AzureStorageDevice.pdb" target="lib\net6.0" />
 	<file src="libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\bin\AnyCPU\Release\net6.0\Tsavorite.devices.AzureStorageDevice.xml" target="lib\net6.0" />
-
-	<file src="libs\server\bin\AnyCPU\Release\net7.0\Garnet.server.dll" target="lib\net7.0" />
-    <file src="libs\server\bin\AnyCPU\Release\net7.0\Garnet.server.pdb" target="lib\net7.0" />
-    <file src="libs\server\bin\AnyCPU\Release\net7.0\Garnet.server.xml" target="lib\net7.0" />
-    <file src="libs\common\bin\AnyCPU\Release\net7.0\Garnet.common.dll" target="lib\net7.0" />
-    <file src="libs\common\bin\AnyCPU\Release\net7.0\Garnet.common.pdb" target="lib\net7.0" />
-    <file src="libs\common\bin\AnyCPU\Release\net7.0\Garnet.common.xml" target="lib\net7.0" />
-    <file src="libs\client\bin\AnyCPU\Release\net7.0\Garnet.client.dll" target="lib\net7.0" />
-    <file src="libs\client\bin\AnyCPU\Release\net7.0\Garnet.client.pdb" target="lib\net7.0" />
-    <file src="libs\client\bin\AnyCPU\Release\net7.0\Garnet.client.xml" target="lib\net7.0" />
-	<file src="libs\cluster\bin\AnyCPU\Release\net7.0\Garnet.cluster.dll" target="lib\net7.0" />
-    <file src="libs\cluster\bin\AnyCPU\Release\net7.0\Garnet.cluster.pdb" target="lib\net7.0" />
-    <file src="libs\cluster\bin\AnyCPU\Release\net7.0\Garnet.cluster.xml" target="lib\net7.0" />
-	<file src="libs\host\bin\AnyCPU\Release\net7.0\Garnet.host.dll" target="lib\net7.0" />
-    <file src="libs\host\bin\AnyCPU\Release\net7.0\Garnet.host.pdb" target="lib\net7.0" />
-    <file src="libs\host\bin\AnyCPU\Release\net7.0\Garnet.host.xml" target="lib\net7.0" />
-	<file src="metrics\HdrHistogram\bin\AnyCPU\Release\net7.0\HdrHistogram.dll" target="lib\net7.0" />
-	<file src="metrics\HdrHistogram\bin\AnyCPU\Release\net7.0\HdrHistogram.pdb" target="lib\net7.0" />
-	<file src="metrics\HdrHistogram\bin\AnyCPU\Release\net7.0\HdrHistogram.xml" target="lib\net7.0" />
-	<file src="libs\storage\Tsavorite\cs\src\core\bin\AnyCPU\Release\net7.0\Tsavorite.core.dll" target="lib\net7.0" />
-	<file src="libs\storage\Tsavorite\cs\src\core\bin\AnyCPU\Release\net7.0\Tsavorite.core.pdb" target="lib\net7.0" />
-	<file src="libs\storage\Tsavorite\cs\src\core\bin\AnyCPU\Release\net7.0\Tsavorite.core.xml" target="lib\net7.0" />
-	<file src="libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\bin\AnyCPU\Release\net7.0\Tsavorite.devices.AzureStorageDevice.dll" target="lib\net7.0" />
-	<file src="libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\bin\AnyCPU\Release\net7.0\Tsavorite.devices.AzureStorageDevice.pdb" target="lib\net7.0" />
-	<file src="libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\bin\AnyCPU\Release\net7.0\Tsavorite.devices.AzureStorageDevice.xml" target="lib\net7.0" />
   
 	<file src="libs\server\bin\AnyCPU\Release\net8.0\Garnet.server.dll" target="lib\net8.0" />
     <file src="libs\server\bin\AnyCPU\Release\net8.0\Garnet.server.pdb" target="lib\net8.0" />

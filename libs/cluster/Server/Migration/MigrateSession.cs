@@ -249,17 +249,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Reset local slot state
         /// </summary>
-        /// <returns></returns>
-        public bool TryResetLocalSlot()
-        {
-            if (!clusterProvider.clusterManager.ResetSlotsState(_sslots, out var resp))
-            {
-                Status = MigrateState.FAIL;
-                logger?.LogError("{resp}", Encoding.ASCII.GetString(resp));
-                return false;
-            }
-            return true;
-        }
+        public void ResetLocalSlot() => clusterProvider.clusterManager.ResetSlotsState(_sslots);
 
         /// <summary>
         /// Prepare remote node for importing
@@ -267,10 +257,10 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryPrepareLocalForMigration()
         {
-            if (!clusterProvider.clusterManager.PrepareSlotsForMigration(_sslots, _targetNodeId, out var resp))
+            if (!clusterProvider.clusterManager.TryPrepareSlotsForMigration(_sslots, _targetNodeId, out var resp))
             {
                 Status = MigrateState.FAIL;
-                logger?.LogError("{resp}", Encoding.ASCII.GetString(resp));
+                logger?.LogError(Encoding.ASCII.GetString(resp));
                 return false;
             }
             return true;
@@ -282,16 +272,16 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool RelinquishOwnership()
         {
-            if (!clusterProvider.clusterManager.PrepareSlotsForOwnershipChange(_sslots, _targetNodeId, out var _))
+            if (!clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(_sslots, _targetNodeId, out var _))
                 return false;
             return true;
         }
 
         /// <summary>
-        /// Recover to cluster state before migration task.
+        /// Try recover to cluster state before migration task.
         /// Used only for MIGRATE SLOTS option.
         /// </summary>
-        public bool RecoverFromFailure()
+        public bool TryRecoverFromFailure()
         {
             // Set slot at target to stable state when migrate slots fails
             // This issues a SETSLOTRANGE STABLE for the slots of the failed migration task
@@ -300,8 +290,7 @@ namespace Garnet.cluster
 
             // Set slots at source node to their original state when migrate fails
             // This will execute the equivalent of SETSLOTRANGE STABLE for the slots of the failed migration task
-            if (!TryResetLocalSlot())
-                return false;
+            ResetLocalSlot();
 
             // Log explicit migration failure.
             Status = MigrateState.FAIL;
