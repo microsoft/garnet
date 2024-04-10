@@ -4,17 +4,17 @@
 namespace Garnet.server
 {
     /// <summary>
-    /// Type of error when executing Increment/Decrement commands
+    /// Operation error type
     /// </summary>
-    public enum IncrErrorType : byte
+    public enum OperationError : byte
     {
         /// <summary>
-        /// Increment/Decrement Success
+        /// Operation on data type succeeded
         /// </summary>
         SUCCESS,
         /// <summary>
-        /// Increment/Decrement Invalid Numeric Value
+        /// Operation failed due to incompatible type
         /// </summary>
-        INVALID_NUMBER
+        INVALID_TYPE
     }
 }

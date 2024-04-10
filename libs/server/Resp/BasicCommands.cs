@@ -775,15 +775,15 @@ namespace Garnet.server
             var output = new ArgSlice(pbOutput, 21);
 
             var status = storageApi.Increment(key, input, ref output);
-            var errorFlag = output.Length == 21 ? (IncrErrorType)output.Span[0] : IncrErrorType.SUCCESS;
+            var errorFlag = output.Length == 21 ? (OperationError)output.Span[0] : OperationError.SUCCESS;
 
             switch (errorFlag)
             {
-                case IncrErrorType.SUCCESS:
+                case OperationError.SUCCESS:
                     while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
                         SendAndReset();
                     break;
-                case IncrErrorType.INVALID_NUMBER:
+                case OperationError.INVALID_TYPE:
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
                     break;
