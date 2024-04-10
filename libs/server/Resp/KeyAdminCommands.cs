@@ -40,11 +40,11 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOSUCHKEY, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -76,12 +76,12 @@ namespace Garnet.server
             // This is only an approximate return value because the deletion of a key on disk is performed as a blind tombstone append
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -124,7 +124,7 @@ namespace Garnet.server
             else
             {
                 Debug.Assert(o.IsSpanByte);
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -194,12 +194,12 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -252,7 +252,7 @@ namespace Garnet.server
 
             if (invalidOption)
             {
-                while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Unsupported option {optionStr}\r\n")), ref dcurr, dend))
+                while (!RespWriteUtils.WriteError($"ERR Unsupported option {optionStr}", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -267,12 +267,12 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK && timeoutSet)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -304,12 +304,12 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -353,7 +353,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_N1, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_N1, ref dcurr, dend))
                     SendAndReset();
             }
             return true;

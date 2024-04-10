@@ -24,13 +24,7 @@ namespace Tsavorite.core
 
         public void Allocate(int index)
         {
-            Record<Key, Value>[] tmp;
-            if (pageSize % RecordSize == 0)
-                tmp = new Record<Key, Value>[pageSize / RecordSize];
-            else
-                tmp = new Record<Key, Value>[1 + (pageSize / RecordSize)];
-            Array.Clear(tmp, 0, tmp.Length);
-            frame[index] = tmp;
+            frame[index] = new Record<Key, Value>[(pageSize + RecordSize - 1) / RecordSize];
         }
 
         public void Clear(int pageIndex)

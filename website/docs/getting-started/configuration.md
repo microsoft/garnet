@@ -87,7 +87,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **EnableStorageTier** | ```--storage-tier``` | ```bool``` |  | Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory. |
 | **CopyReadsToTail** | ```--copy-reads-to-tail``` | ```bool``` |  | When records are read from the main store's in-memory immutable region or storage device, copy them to the tail of the log. |
 | **ObjectStoreCopyReadsToTail** | ```--obj-copy-reads-to-tail``` | ```bool``` |  | When records are read from the object store's in-memory immutable region or storage device, copy them to the tail of the log. |
-| **LogDir** | ```-l```<br/>```--logdir``` | ```string``` |  | Storage directory for tiered records (hybrid log), if storage tiering (--storage) is enabled. Uses current directory if unspecified. |
+| **LogDir** | ```-l```<br/>```--logdir``` | ```string``` |  | Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Uses current directory if unspecified. |
 | **CheckpointDir** | ```-c```<br/>```--checkpointdir``` | ```string``` |  | Storage directory for checkpoints. Uses logdir if unspecified. |
 | **Recover** | ```-r```<br/>```--recover``` | ```bool``` |  | Recover from latest checkpoint and log, if present. |
 | **DisablePubSub** | ```--no-pubsub``` | ```bool``` |  | Disable pub/sub feature on server. |

@@ -21,18 +21,22 @@ namespace Garnet.cluster
         CheckpointEntry cEntry;
 
         /// <summary>
-        /// Initiate replication
+        /// Try to initiate replication
         /// </summary>
         /// <param name="session">ClusterSession for this connection.</param>
         /// <param name="nodeid">Node-id to replicate.</param>
         /// <param name="background">If replication sync will run in the background.</param>
         /// <param name="force">Force adding this node as replica.</param>
-        /// <returns>Return resp span with success or otherwise any err.</returns>
-        public ReadOnlySpan<byte> BeginReplicate(ClusterSession session, string nodeid, bool background, bool force)
+        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
+        /// <returns>A boolean indicating whether replication initiation was successful.</returns>
+        public bool TryBeginReplicate(ClusterSession session, string nodeid, bool background, bool force, out ReadOnlySpan<byte> errorMessage)
         {
-            ReadOnlySpan<byte> resp = CmdStrings.RESP_OK;
+            errorMessage = default;
             if (!replicateLock.TryWriteLock())
-                return Encoding.ASCII.GetBytes("-ERR Replicate already in progress\r\n");
+            {
+                errorMessage = "ERR Replicate already in progress"u8;
+                return false;
+            }
 
             try
             {
@@ -40,29 +44,30 @@ namespace Garnet.cluster
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeid);
 
                 // TryAddReplica will set the recovering boolean
-                if (clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, ref recovering, out resp))
+                if (clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, ref recovering, out errorMessage))
                 {
                     // Wait for threads to agree
                     session.UnsafeWaitForConfigTransition();
 
                     //TODO: We should not be resetting this, need to decide where to start syncing from
                     clusterProvider.replicationManager.ReplicationOffset = 0;
-                    resp = clusterProvider.replicationManager.TryReplicateFromPrimary(background);
+                    return clusterProvider.replicationManager.TryReplicateFromPrimary(out errorMessage, background);
                 }
             }
             finally
             {
                 replicateLock.WriteUnlock();
             }
-            return resp;
+            return true;
         }
 
         /// <summary>
-        /// Attach to primary for replication, recover checkpoint and initiate task for aof streaming
+        /// Try to attach to primary for replication, recover checkpoint and initiate task for aof streaming
         /// </summary>
         /// <returns></returns>
-        public ReadOnlySpan<byte> TryReplicateFromPrimary(bool background = false)
+        public bool TryReplicateFromPrimary(out ReadOnlySpan<byte> errorMessage, bool background = false)
         {
+            errorMessage = default;
             Debug.Assert(recovering);
 
             // The caller should have stopped accepting AOF records from old primary at this point
@@ -88,19 +93,26 @@ namespace Garnet.cluster
             if (background)
             {
                 logger?.LogInformation("Initiating background checkpoint retrieval");
-                Task.Run(InitiateReplicaSync);
+                _ = Task.Run(InitiateReplicaSync);
             }
             else
             {
                 logger?.LogInformation("Initiating foreground checkpoint retrieval");
                 var resp = InitiateReplicaSync().GetAwaiter().GetResult();
                 if (resp != null)
-                    return Encoding.ASCII.GetBytes($"-{resp}\r\n");
+                {
+                    errorMessage = Encoding.ASCII.GetBytes(resp);
+                    return false;
+                }
             }
 
-            return CmdStrings.RESP_OK;
+            return true;
         }
 
+        /// <summary>
+        /// Try to initiate replica
+        /// </summary>
+        /// <returns>A string representing the error message if error occurred; otherwise <see langword="null"/>.</returns>
         private async Task<string> InitiateReplicaSync()
         {
             //1. Send request to primary
@@ -114,8 +126,8 @@ namespace Garnet.cluster
 
             if (address == null || port == -1)
             {
-                var errorMsg = $"-ERR don't have primary\r\n";
-                logger?.LogError(errorMsg);
+                var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
+                logger?.LogError("{msg}", errorMsg);
                 return errorMsg;
             }
 
@@ -126,7 +138,7 @@ namespace Garnet.cluster
                 gcs.Connect();
 
                 var nodeId = current.GetLocalNodeId();
-                cEntry = clusterProvider.replicationManager.GetLatestCheckpointEntryFromDisk();
+                cEntry = GetLatestCheckpointEntryFromDisk();
 
                 storeWrapper.RecoverAOF();
                 logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
@@ -167,7 +179,8 @@ namespace Garnet.cluster
         /// <exception cref="Exception">Throws invalid type checkpoint metadata.</exception>
         public void ProcessCheckpointMetadata(Guid fileToken, CheckpointFileType fileType, byte[] checkpointMetadata)
         {
-            ReplicationLogCheckpointManager ckptManager = fileType switch
+            UpdateLastPrimarySyncTime();
+            var ckptManager = fileType switch
             {
                 CheckpointFileType.STORE_SNAPSHOT or
                 CheckpointFileType.STORE_INDEX => clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main),
@@ -217,19 +230,6 @@ namespace Garnet.cluster
             return null;
         }
 
-        private long GetObjectStoreSnapshotSize(Guid token)
-        {
-            var device = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).GetDevice(CheckpointFileType.OBJ_STORE_SNAPSHOT_OBJ, token);
-            long size = 0;
-            if (device is not null)
-            {
-                device.Initialize(-1);
-                size = device.GetFileSize(0);
-                device.Dispose();
-            }
-            return size;
-        }
-
         /// <summary>
         /// Check if device needs to be initialized with a specifi segment size depending on the checkpoint file type
         /// </summary>
@@ -257,7 +257,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public IDevice GetInitializedSegmentFileDevice(Guid token, CheckpointFileType type)
         {
-            IDevice device = type switch
+            var device = type switch
             {
                 CheckpointFileType.STORE_HLOG => GetStoreHLogDevice(),
                 CheckpointFileType.OBJ_STORE_HLOG => GetObjectStoreHLogDevice(false),//TODO: return device for object store hlog
@@ -290,6 +290,7 @@ namespace Garnet.cluster
             long beginAddress,
             long recoveredReplicationOffset)
         {
+            UpdateLastPrimarySyncTime();
             storeWrapper.RecoverCheckpoint(recoverMainStoreFromToken, recoverObjectStoreFromToken,
                 remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
 
@@ -308,14 +309,14 @@ namespace Garnet.cluster
             ReplicationOffset = recoveredReplicationOffset;
             logger?.LogInformation("ReplicaRecover: ReplicaReplicationOffset = {ReplicaReplicationOffset}", ReplicationOffset);
 
-            //if checkpoint for main store was send add its token here in preparation for purge later on
+            // If checkpoint for main store was send add its token here in preparation for purge later on
             if (recoverMainStoreFromToken)
             {
                 cEntry.storeIndexToken = remoteCheckpoint.storeIndexToken;
                 cEntry.storeHlogToken = remoteCheckpoint.storeHlogToken;
             }
 
-            //if checkpoint for object store was send add its token here in preparation for purge later on
+            // If checkpoint for object store was send add its token here in preparation for purge later on
             if (recoverObjectStoreFromToken)
             {
                 cEntry.objectStoreIndexToken = remoteCheckpoint.objectStoreIndexToken;
@@ -323,7 +324,7 @@ namespace Garnet.cluster
             }
             checkpointStore.PurgeAllCheckpointsExceptEntry(cEntry);
 
-            //Initialize in-memory checkpoint store and delete outdated checkpoint entries
+            // Initialize in-memory checkpoint store and delete outdated checkpoint entries
             InitializeCheckpointStore();
 
             TryUpdateMyPrimaryReplId(primary_replid);

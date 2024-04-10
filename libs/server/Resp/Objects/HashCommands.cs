@@ -90,7 +90,7 @@ namespace Garnet.server
 
                 if (hop == HashOperation.HMSET)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
@@ -195,7 +195,7 @@ namespace Garnet.server
                         else if (op != HashOperation.HMGET)
                         {
                             var respBytes = (includeCountParameter || op == HashOperation.HGETALL) ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
-                            while (!RespWriteUtils.WriteResponse(respBytes, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteDirect(respBytes, ref dcurr, dend))
                                 SendAndReset();
                         }
                         ReadLeftToken(count - 1, ref ptr);
@@ -270,7 +270,7 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -341,7 +341,7 @@ namespace Garnet.server
                         ptr += output.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         ReadLeftToken(count - 1, ref ptr);
                         break;
@@ -419,7 +419,7 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         hashItemsDoneCount = hashOpsCount = 0;
                         ReadLeftToken(count - 1, ref ptr);
@@ -492,7 +492,7 @@ namespace Garnet.server
                         ptr += output.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         ReadLeftToken(count - 1, ref ptr);
                         break;

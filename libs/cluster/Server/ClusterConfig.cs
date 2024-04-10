@@ -1031,19 +1031,20 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Make local node owner of list of slots given. 
-        /// Fails if slot already owned by someone else according to a message received from the gossip protocol.
+        /// Try to make local node owner of list of slots given.
         /// </summary>
         /// <param name="slots">Slots to assign.</param>
         /// <param name="slotAssigned">Slot already assigned if any during this bulk op.</param>
+        /// <param name="config">ClusterConfig object with updates</param>
         /// <param name="state">SlotState type to be set.</param>
-        /// <returns>ClusterConfig object with updates.</returns>
-        public ClusterConfig AddSlots(List<int> slots, out int slotAssigned, SlotState state = SlotState.STABLE)
+        /// <returns><see langword="false"/> if slot already owned by someone else according to a message received from the gossip protocol; otherwise <see langword="true"/>.</returns>
+        public bool TryAddSlots(HashSet<int> slots, out int slotAssigned, out ClusterConfig config, SlotState state = SlotState.STABLE)
         {
+            slotAssigned = -1;
+            config = null;
+
             var newSlotMap = new HashSlot[16384];
             Array.Copy(slotMap, newSlotMap, slotMap.Length);
-            slotAssigned = -1;
-
             if (slots != null)
             {
                 foreach (int slot in slots)
@@ -1051,28 +1052,31 @@ namespace Garnet.cluster
                     if (newSlotMap[slot].workerId != 0)
                     {
                         slotAssigned = slot;
-                        return null;
+                        return false;
                     }
                     newSlotMap[slot]._workerId = 1;
                     newSlotMap[slot]._state = state;
                 }
             }
 
-            return new ClusterConfig(newSlotMap, workers);
+            config = new ClusterConfig(newSlotMap, workers);
+            return true;
         }
 
         /// <summary>
-        /// Remove slots from this local node.
+        /// Try to remove slots from this local node.
         /// </summary>
         /// <param name="slots">Slots to be removed.</param>
-        /// <param name="notLocalSlot">If a slot provided is not local.</param>
-        /// <returns>ClusterConfig object with updates.</returns>
-        public ClusterConfig RemoveSlots(List<int> slots, out int notLocalSlot)
+        /// <param name="notLocalSlot">The slot number that is not local.</param>
+        /// <param name="config">ClusterConfig object with updates</param>
+        /// <returns><see langword="false"/> if a slot provided is not local; otherwise <see langword="true"/>.</returns>
+        public bool TryRemoveSlots(HashSet<int> slots, out int notLocalSlot, out ClusterConfig config)
         {
+            notLocalSlot = -1;
+            config = null;
+
             var newSlotMap = new HashSlot[16384];
             Array.Copy(slotMap, newSlotMap, slotMap.Length);
-            notLocalSlot = -1;
-
             if (slots != null)
             {
                 foreach (int slot in slots)
@@ -1080,14 +1084,15 @@ namespace Garnet.cluster
                     if (newSlotMap[slot].workerId == 0)
                     {
                         notLocalSlot = slot;
-                        return null;
+                        return false;
                     }
                     newSlotMap[slot]._workerId = 0;
                     newSlotMap[slot]._state = SlotState.OFFLINE;
                 }
             }
 
-            return new ClusterConfig(newSlotMap, workers);
+            config = new ClusterConfig(newSlotMap, workers);
+            return true;
         }
 
         /// <summary>

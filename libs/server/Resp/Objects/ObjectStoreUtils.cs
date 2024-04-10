@@ -40,7 +40,7 @@ namespace Garnet.server
         /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
         private bool AbortWithWrongNumberOfArguments(string cmdName, int count)
         {
-            var errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.ErrWrongNumArgs, cmdName));
+            var errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName));
 
             return AbortWithErrorMessage(count, errorMessage);
         }
@@ -60,7 +60,7 @@ namespace Garnet.server
                 return false;
 
             // Print error message to result stream
-            while (!RespWriteUtils.WriteResponse(errorMessage, ref dcurr, dend))
+            while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                 SendAndReset();
 
             return true;

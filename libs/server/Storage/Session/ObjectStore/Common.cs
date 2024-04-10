@@ -19,7 +19,7 @@ namespace Garnet.server
             var _input = input.SpanByte;
 
             output = new();
-            var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new(SpanByte.FromPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
+            var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
 
             // Perform RMW on object store
             var status = objectStoreContext.RMW(ref key, ref _input, ref _output);
@@ -190,7 +190,7 @@ namespace Garnet.server
             var _input = input.SpanByte;
 
             output = new();
-            var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new(SpanByte.FromPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
+            var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
 
             // Perform RMW on object store
             var status = objectStoreContext.Read(ref key, ref _input, ref _output);
