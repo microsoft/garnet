@@ -1,0 +1,452 @@
+﻿[
+  {
+    "Command": "ACL",
+    "SubCommands": [
+      "ACL|CAT",
+      "ACL|DELUSER",
+      "ACL|LIST",
+      "ACL|LOAD",
+      "ACL|SETUSER",
+      "ACL|USERS",
+      "ACL|WHOAMI"
+    ]
+  },
+  {
+    "Command": "APPEND",
+    "SubCommands": null
+  },
+  {
+    "Command": "BITCOUNT",
+    "SubCommands": null
+  },
+  {
+    "Command": "BITFIELD",
+    "SubCommands": null
+  },
+  {
+    "Command": "BITPOS",
+    "SubCommands": null
+  },
+  {
+    "Command": "CLIENT",
+    "SubCommands": null
+  },
+  {
+    "Command": "CLUSTER",
+    "SubCommands": [
+      "CLUSTER|ADDSLOTS",
+      "CLUSTER|ADDSLOTSRANGE",
+      "CLUSTER|BUMPEPOCH",
+      "CLUSTER|COUNTKEYSINSLOT",
+      "CLUSTER|DELSLOTS",
+      "CLUSTER|DELSLOTSRANGE",
+      "CLUSTER|FAILOVER",
+      "CLUSTER|FORGET",
+      "CLUSTER|GETKEYSINSLOT",
+      "CLUSTER|INFO",
+      "CLUSTER|KEYSLOT",
+      "CLUSTER|MEET",
+      "CLUSTER|MYID",
+      "CLUSTER|NODES",
+      "CLUSTER|REPLICAS",
+      "CLUSTER|REPLICATE",
+      "CLUSTER|RESET",
+      "CLUSTER|SET-CONFIG-EPOCH",
+      "CLUSTER|SETSLOT",
+      "CLUSTER|SLOTS"
+    ]
+  },
+  {
+    "Command": "CONFIG",
+    "SubCommands": [
+      "CONFIG|GET",
+      "CONFIG|SET",
+      "CONFIG|REWRITE"
+    ]
+  },
+  {
+    "Command": "DECR",
+    "SubCommands": null
+  },
+  {
+    "Command": "DECRBY",
+    "SubCommands": null
+  },
+  {
+    "Command": "DEL",
+    "SubCommands": null
+  },
+  {
+    "Command": "DISCARD",
+    "SubCommands": null
+  },
+  {
+    "Command": "ECHO",
+    "SubCommands": null
+  },
+  {
+    "Command": "EXEC",
+    "SubCommands": null
+  },
+  {
+    "Command": "EXISTS",
+    "SubCommands": null
+  },
+  {
+    "Command": "EXPIRE",
+    "SubCommands": null
+  },
+  {
+    "Command": "GEOADD",
+    "SubCommands": null
+  },
+  {
+    "Command": "GEODIST",
+    "SubCommands": null
+  },
+  {
+    "Command": "GEOHASH",
+    "SubCommands": null
+  },
+  {
+    "Command": "GEOPOS",
+    "SubCommands": null
+  },
+  {
+    "Command": "GEOSEARCH",
+    "SubCommands": null
+  },
+  {
+    "Command": "GET",
+    "SubCommands": null
+  },
+  {
+    "Command": "GETBIT",
+    "SubCommands": null
+  },
+  {
+    "Command": "GETDEL",
+    "SubCommands": null
+  },
+  {
+    "Command": "GETRANGE",
+    "SubCommands": null
+  },
+  {
+    "Command": "HDEL",
+    "SubCommands": null
+  },
+  {
+    "Command": "HEXISTS",
+    "SubCommands": null
+  },
+  {
+    "Command": "HGET",
+    "SubCommands": null
+  },
+  {
+    "Command": "HGETALL",
+    "SubCommands": null
+  },
+  {
+    "Command": "HINCRBY",
+    "SubCommands": null
+  },
+  {
+    "Command": "HINCRBYFLOAT",
+    "SubCommands": null
+  },
+  {
+    "Command": "HKEYS",
+    "SubCommands": null
+  },
+  {
+    "Command": "HLEN",
+    "SubCommands": null
+  },
+  {
+    "Command": "HMGET",
+    "SubCommands": null
+  },
+  {
+    "Command": "HMSET",
+    "SubCommands": null
+  },
+  {
+    "Command": "HRANDFIELD",
+    "SubCommands": null
+  },
+  {
+    "Command": "HSCAN",
+    "SubCommands": null
+  },
+  {
+    "Command": "HSET",
+    "SubCommands": null
+  },
+  {
+    "Command": "HSETNX",
+    "SubCommands": null
+  },
+  {
+    "Command": "HSTRLEN",
+    "SubCommands": null
+  },
+  {
+    "Command": "HVALS",
+    "SubCommands": null
+  },
+  {
+    "Command": "INCR",
+    "SubCommands": null
+  },
+  {
+    "Command": "INCRBY",
+    "SubCommands": null
+  },
+  {
+    "Command": "LATENCY",
+    "SubCommands": [
+      "LATENCY|HISTOGRAM",
+      "LATENCY|RESET"
+    ]
+  },
+  {
+    "Command": "LINDEX",
+    "SubCommands": null
+  },
+  {
+    "Command": "LINSERT",
+    "SubCommands": null
+  },
+  {
+    "Command": "LLEN",
+    "SubCommands": null
+  },
+  {
+    "Command": "LPOP",
+    "SubCommands": null
+  },
+  {
+    "Command": "LPUSH",
+    "SubCommands": null
+  },
+  {
+    "Command": "LRANGE",
+    "SubCommands": null
+  },
+  {
+    "Command": "LREM",
+    "SubCommands": null
+  },
+  {
+    "Command": "LTRIM",
+    "SubCommands": null
+  },
+  {
+    "Command": "MEMORY",
+    "SubCommands": [
+      "MEMORY|USAGE"
+    ]
+  },
+  {
+    "Command": "MGET",
+    "SubCommands": null
+  },
+  {
+    "Command": "MSET",
+    "SubCommands": null
+  },
+  {
+    "Command": "MSETNX",
+    "SubCommands": null
+  },
+  {
+    "Command": "MULTI",
+    "SubCommands": null
+  },
+  {
+    "Command": "PERSIST",
+    "SubCommands": null
+  },
+  {
+    "Command": "PEXPIRE",
+    "SubCommands": null
+  },
+  {
+    "Command": "PFADD",
+    "SubCommands": null
+  },
+  {
+    "Command": "PFCOUNT",
+    "SubCommands": null
+  },
+  {
+    "Command": "PFMERGE",
+    "SubCommands": null
+  },
+  {
+    "Command": "PSETEX",
+    "SubCommands": null
+  },
+  {
+    "Command": "PTTL",
+    "SubCommands": null
+  },
+  {
+    "Command": "RENAME",
+    "SubCommands": null
+  },
+  {
+    "Command": "REPLICAOF",
+    "SubCommands": null
+  },
+  {
+    "Command": "RPOP",
+    "SubCommands": null
+  },
+  {
+    "Command": "RPUSH",
+    "SubCommands": null
+  },
+  {
+    "Command": "SADD",
+    "SubCommands": null
+  },
+  {
+    "Command": "SCARD",
+    "SubCommands": null
+  },
+  {
+    "Command": "SET",
+    "SubCommands": null
+  },
+  {
+    "Command": "SETBIT",
+    "SubCommands": null
+  },
+  {
+    "Command": "SETEX",
+    "SubCommands": null
+  },
+  {
+    "Command": "SETRANGE",
+    "SubCommands": null
+  },
+  {
+    "Command": "SLAVEOF",
+    "SubCommands": null
+  },
+  {
+    "Command": "SMEMBERS",
+    "SubCommands": null
+  },
+  {
+    "Command": "SPOP",
+    "SubCommands": null
+  },
+  {
+    "Command": "SREM",
+    "SubCommands": null
+  },
+  {
+    "Command": "SSCAN",
+    "SubCommands": null
+  },
+  {
+    "Command": "TTL",
+    "SubCommands": null
+  },
+  {
+    "Command": "UNLINK",
+    "SubCommands": null
+  },
+  {
+    "Command": "UNWATCH",
+    "SubCommands": null
+  },
+  {
+    "Command": "WATCH",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZADD",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZCARD",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZCOUNT",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZINCRBY",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZLEXCOUNT",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZMSCORE",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZPOPMAX",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZPOPMIN",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZRANDMEMBER",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZRANGE",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZRANGEBYSCORE",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZRANK",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZREM",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZREMRANGEBYLEX",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZREMRANGEBYRANK",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZREMRANGEBYSCORE",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZREVRANGE",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZREVRANK",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZSCAN",
+    "SubCommands": null
+  },
+  {
+    "Command": "ZSCORE",
+    "SubCommands": null
+  }
+]

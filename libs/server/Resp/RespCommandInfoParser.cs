@@ -84,17 +84,15 @@ namespace Garnet.server
             commandInfo = new RespCommandsInfo()
             {
                 Name = name.ToUpper(),
-                //Command = supportedCommand.Command,
-                //ArrayCommand = supportedCommand.ArrayCommand,
                 Arity = arity,
                 Flags = flags,
                 FirstKey = firstKey,
                 LastKey = lastKey,
                 Step = step,
                 AclCategories = aclCategories,
-                Tips = tips,
-                KeySpecifications = keySpecifications,
-                SubCommands = subCommands.ToArray()
+                Tips = tips.Length == 0 ? null : tips,
+                KeySpecifications = keySpecifications.Length == 0 ? null : keySpecifications,
+                SubCommands = subCommands.Count == 0 ? null : subCommands.ToArray()
             };
 
             return true;

@@ -28,6 +28,7 @@ namespace Garnet.server
             }
         }
 
+        [JsonIgnore]
         public string RespFormat => _respFormat ??= ToRespFormat();
 
         private string _respFormat;

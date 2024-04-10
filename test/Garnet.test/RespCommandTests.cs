@@ -122,181 +122,142 @@ namespace Garnet.test
 
         private class SupportedCommand
         {
-            public RespCommand Command { get; init; }
+            public string Command { get; init; }
 
-            public byte? ArrayCommand { get; init; }
+            public string[] SubCommands { get; init; }
 
-            public IDictionary<string, SupportedCommand> SupportedSubCommands { get; init; }
-
-            public SupportedCommand(RespCommand command, byte? arrayCommand = null, IDictionary<string, SupportedCommand> supportedSubCommands = null)
+            public SupportedCommand(string command, string[] subcommands)
             {
                 this.Command = command;
-                this.ArrayCommand = arrayCommand;
-                this.SupportedSubCommands = supportedSubCommands;
+                this.SubCommands = subcommands;
             }
         }
 
-        private static readonly Dictionary<string, SupportedCommand> SupportedCommands =
-            new(StringComparer.OrdinalIgnoreCase)
+        private static Dictionary<string, string[]> Commands = new(StringComparer.OrdinalIgnoreCase)
+        {
+            { "GET", null },
+            { "SET", null },
+            { "GETRANGE", null },
+            { "SETRANGE", null },
+            { "PFADD", null },
+            { "PFCOUNT", null },
+            { "PFMERGE", null },
+            { "SETEX", null },
+            { "PSETEX", null },
+            { "DEL", null },
+            { "EXISTS", null },
+            { "RENAME", null },
+            { "INCR", null },
+            { "INCRBY", null },
+            { "DECR", null },
+            { "DECRBY", null },
+            { "EXPIRE", null },
+            { "PEXPIRE", null },
+            { "PERSIST", null },
+            { "TTL", null },
+            { "PTTL", null },
+            { "SETBIT", null },
+            { "GETBIT", null },
+            { "BITCOUNT", null },
+            { "BITPOS", null },
+            { "BITFIELD", null },
+            { "MSET", null },
+            { "MSETNX", null },
+            { "MGET", null },
+            { "UNLINK", null },
+            { "MULTI", null },
+            { "EXEC", null },
+            { "WATCH", null },
+            { "UNWATCH", null },
+            { "DISCARD", null },
+            { "GETDEL", null },
+            { "APPEND", null },
+            { "ECHO", null },
+            { "REPLICAOF", null },
+            { "SLAVEOF", null },
+            { "CONFIG", new[] { "CONFIG|GET", "CONFIG|SET", "CONFIG|REWRITE" } },
+            { "CLIENT", null },
+            { "ZADD", null },
+            { "ZMSCORE", null },
+            { "ZREM", null },
+            { "ZCARD", null },
+            { "ZPOPMAX", null },
+            { "ZSCORE", null },
+            { "ZCOUNT", null },
+            { "ZINCRBY", null },
+            { "ZRANK", null },
+            { "ZRANGE", null },
+            { "ZRANGEBYSCORE", null },
+            { "ZREVRANK", null },
+            { "ZREMRANGEBYLEX", null },
+            { "ZREMRANGEBYRANK", null },
+            { "ZREMRANGEBYSCORE", null },
+            { "ZLEXCOUNT", null },
+            { "ZPOPMIN", null },
+            { "ZRANDMEMBER", null },
+            { "GEOADD", null },
+            { "GEOHASH", null },
+            { "GEODIST", null },
+            { "GEOPOS", null },
+            { "GEOSEARCH", null },
+            { "ZREVRANGE", null },
+            { "ZSCAN", null },
+            { "LPUSH", null },
+            { "LPOP", null },
+            { "RPUSH", null },
+            { "RPOP", null },
+            { "LLEN", null },
+            { "LTRIM", null },
+            { "LRANGE", null },
+            { "LINDEX", null },
+            { "LINSERT", null },
+            { "LREM", null },
+            { "HSET", null },
+            { "HMSET", null },
+            { "HGET", null },
+            { "HMGET", null },
+            { "HGETALL", null },
+            { "HDEL", null },
+            { "HLEN", null },
+            { "HEXISTS", null },
+            { "HKEYS", null },
+            { "HVALS", null },
+            { "HINCRBY", null },
+            { "HINCRBYFLOAT", null },
+            { "HSETNX", null },
+            { "HRANDFIELD", null },
+            { "HSCAN", null },
+            { "HSTRLEN", null },
+            { "SADD", null },
+            { "SMEMBERS", null },
+            { "SREM", null },
+            { "SCARD", null },
+            { "SPOP", null },
+            { "SSCAN", null },
             {
-                {   "GET",  new SupportedCommand(RespCommand.GET)   },
-                {   "SET",  new SupportedCommand(RespCommand.SET)   },
-                {   "GETRANGE", new SupportedCommand(RespCommand.GETRANGE)  },
-                {   "SETRANGE", new SupportedCommand(RespCommand.SETRANGE)  },
-                {   "PFADD",    new SupportedCommand(RespCommand.PFADD) },
-                {   "PFCOUNT",  new SupportedCommand(RespCommand.PFCOUNT)   },
-                {   "PFMERGE",  new SupportedCommand(RespCommand.PFMERGE)   },
-                {   "SETEX",    new SupportedCommand(RespCommand.SETEX) },
-                {   "PSETEX",   new SupportedCommand(RespCommand.PSETEX)    },
-                {   "DEL",  new SupportedCommand(RespCommand.DEL)   },
-                {   "EXISTS",   new SupportedCommand(RespCommand.EXISTS)    },
-                {   "RENAME",   new SupportedCommand(RespCommand.RENAME)    },
-                {   "INCR", new SupportedCommand(RespCommand.INCR)  },
-                {   "INCRBY",   new SupportedCommand(RespCommand.INCRBY)    },
-                {   "DECR", new SupportedCommand(RespCommand.DECR)  },
-                {   "DECRBY",   new SupportedCommand(RespCommand.DECRBY)    },
-                {   "EXPIRE",   new SupportedCommand(RespCommand.EXPIRE)    },
-                {   "PEXPIRE",  new SupportedCommand(RespCommand.PEXPIRE)   },
-                {   "PERSIST",  new SupportedCommand(RespCommand.PERSIST)   },
-                {   "TTL",  new SupportedCommand(RespCommand.TTL)   },
-                {   "PTTL", new SupportedCommand(RespCommand.PTTL)  },
-                {   "SETBIT",   new SupportedCommand(RespCommand.SETBIT)    },
-                {   "GETBIT",   new SupportedCommand(RespCommand.GETBIT)    },
-                {   "BITCOUNT", new SupportedCommand(RespCommand.BITCOUNT)  },
-                {   "BITPOS",   new SupportedCommand(RespCommand.BITPOS)    },
-                {   "BITFIELD", new SupportedCommand(RespCommand.BITFIELD)  },
-                {   "MSET", new SupportedCommand(RespCommand.MSET)  },
-                {   "MSETNX",   new SupportedCommand(RespCommand.MSETNX)    },
-                {   "MGET", new SupportedCommand(RespCommand.MGET)  },
-                {   "UNLINK",   new SupportedCommand(RespCommand.UNLINK)    },
-                {   "MULTI",    new SupportedCommand(RespCommand.MULTI) },
-                {   "EXEC", new SupportedCommand(RespCommand.EXEC)  },
-                {   "WATCH",    new SupportedCommand(RespCommand.WATCH) },
-                {   "UNWATCH",  new SupportedCommand(RespCommand.UNWATCH)   },
-                {   "DISCARD",  new SupportedCommand(RespCommand.DISCARD)   },
-                {   "GETDEL",   new SupportedCommand(RespCommand.GETDEL)    },
-                {   "APPEND",   new SupportedCommand(RespCommand.APPEND)    },
-                {   "ECHO", new SupportedCommand(RespCommand.ECHO)  },
-                {   "REPLICAOF",    new SupportedCommand(RespCommand.REPLICAOF) },
-                {   "SLAVEOF",  new SupportedCommand(RespCommand.SECONDARYOF)   },
-                {   "CONFIG",   new SupportedCommand(RespCommand.CONFIG, null, new Dictionary<string, SupportedCommand>()
-                    {
-                        {   "CONFIG|GET",   new SupportedCommand(RespCommand.CONFIG)    },
-                        {   "CONFIG|SET",   new SupportedCommand(RespCommand.CONFIG)    },
-                        {   "CONFIG|REWRITE",   new SupportedCommand(RespCommand.CONFIG)    },
-                    })
-                },
-                {   "CLIENT",   new SupportedCommand(RespCommand.CLIENT)    },
-                {   "ZADD", new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZADD)  },
-                {   "ZMSCORE",  new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZMSCORE)   },
-                {   "ZREM", new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZREM)  },
-                {   "ZCARD",    new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZCARD) },
-                {   "ZPOPMAX",  new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZPOPMAX)   },
-                {   "ZSCORE",   new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZSCORE)    },
-                {   "ZCOUNT",   new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZCOUNT)    },
-                {   "ZINCRBY",  new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZINCRBY)   },
-                {   "ZRANK",    new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZRANK) },
-                {   "ZRANGE",   new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZRANGE)    },
-                {   "ZRANGEBYSCORE",    new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZRANGEBYSCORE) },
-                {   "ZREVRANK", new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZREVRANK)  },
-                {   "ZREMRANGEBYLEX",   new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYLEX)    },
-                {   "ZREMRANGEBYRANK",  new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYRANK)   },
-                {   "ZREMRANGEBYSCORE", new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYSCORE)  },
-                {   "ZLEXCOUNT",    new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZLEXCOUNT) },
-                {   "ZPOPMIN",  new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZPOPMIN)   },
-                {   "ZRANDMEMBER",  new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZRANDMEMBER)   },
-                {   "GEOADD",   new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.GEOADD)    },
-                {   "GEOHASH",  new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.GEOHASH)   },
-                {   "GEODIST",  new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.GEODIST)   },
-                {   "GEOPOS",   new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.GEOPOS)    },
-                {   "GEOSEARCH",    new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.GEOSEARCH) },
-                {   "ZREVRANGE",    new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZREVRANGE) },
-                {   "ZSCAN",    new SupportedCommand(RespCommand.SortedSet, (byte)SortedSetOperation.ZSCAN) },
-                {   "LPUSH",    new SupportedCommand(RespCommand.List,  (byte)ListOperation.LPUSH)  },
-                {   "LPOP", new SupportedCommand(RespCommand.List,  (byte)ListOperation.LPOP)   },
-                {   "RPUSH",    new SupportedCommand(RespCommand.List,  (byte)ListOperation.RPUSH)  },
-                {   "RPOP", new SupportedCommand(RespCommand.List,  (byte)ListOperation.RPOP)   },
-                {   "LLEN", new SupportedCommand(RespCommand.List,  (byte)ListOperation.LLEN)   },
-                {   "LTRIM",    new SupportedCommand(RespCommand.List,  (byte)ListOperation.LTRIM)  },
-                {   "LRANGE",   new SupportedCommand(RespCommand.List,  (byte)ListOperation.LRANGE) },
-                {   "LINDEX",   new SupportedCommand(RespCommand.List,  (byte)ListOperation.LINDEX) },
-                {   "LINSERT",  new SupportedCommand(RespCommand.List,  (byte)ListOperation.LINSERT)    },
-                {   "LREM", new SupportedCommand(RespCommand.List,  (byte)ListOperation.LREM)   }, 
-                {   "HSET", new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HSET)   },
-                {   "HMSET",    new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HMSET)  },
-                {   "HGET", new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HGET)   },
-                {   "HMGET",    new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HMGET)  },
-                {   "HGETALL",  new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HGETALL)    },
-                {   "HDEL", new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HDEL)   },
-                {   "HLEN", new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HLEN)   },
-                {   "HEXISTS",  new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HEXISTS)    },
-                {   "HKEYS",    new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HKEYS)  },
-                {   "HVALS",    new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HVALS)  },
-                {   "HINCRBY",  new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HINCRBY)    },
-                {   "HINCRBYFLOAT", new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HINCRBYFLOAT)   },
-                {   "HSETNX",   new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HSETNX) },
-                {   "HRANDFIELD",   new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HRANDFIELD) },
-                {   "HSCAN",    new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HSCAN)  },
-                {   "HSTRLEN",  new SupportedCommand(RespCommand.Hash,  (byte)HashOperation.HSTRLEN)    },
-                {   "SADD", new SupportedCommand(RespCommand.Set,   (byte)SetOperation.SADD)    },
-                {   "SMEMBERS", new SupportedCommand(RespCommand.Set,   (byte)SetOperation.SMEMBERS)    },
-                {   "SREM", new SupportedCommand(RespCommand.Set,   (byte)SetOperation.SREM)    },
-                {   "SCARD",    new SupportedCommand(RespCommand.Set,   (byte)SetOperation.SCARD)   },
-                {   "SPOP", new SupportedCommand(RespCommand.Set,   (byte)SetOperation.SPOP)    },
-                {   "SSCAN",    new SupportedCommand(RespCommand.Set,   (byte)SetOperation.SSCAN)   },
-                {   "ACL",  new SupportedCommand(RespCommand.ACL, null, new Dictionary<string, SupportedCommand>
-                    {
-                        {   "ACL|CAT",  new SupportedCommand(RespCommand.ACL)   },
-                        {   "ACL|DELUSER",  new SupportedCommand(RespCommand.ACL)   },
-                        {   "ACL|LIST", new SupportedCommand(RespCommand.ACL)   },
-                        {   "ACL|LOAD", new SupportedCommand(RespCommand.ACL)   },
-                        {   "ACL|SETUSER",  new SupportedCommand(RespCommand.ACL)   },
-                        {   "ACL|USERS",    new SupportedCommand(RespCommand.ACL)   },
-                        {   "ACL|WHOAMI",   new SupportedCommand(RespCommand.ACL)   },
-                    })
-                },
-                {   "CLUSTER",  new SupportedCommand(RespCommand.CLUSTER, null, new Dictionary<string, SupportedCommand>
-                    {
-                        {   "CLUSTER|ADDSLOTS", new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|ADDSLOTSRANGE",    new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|BUMPEPOCH",    new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|COUNTKEYSINSLOT",  new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|DELSLOTS", new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|DELSLOTSRANGE",    new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|FAILOVER", new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|FORGET",   new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|GETKEYSINSLOT",    new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|INFO", new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|KEYSLOT",  new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|MEET", new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|MYID", new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|NODES",    new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|REPLICAS", new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|REPLICATE",    new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|RESET",    new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|SET-CONFIG-EPOCH", new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|SETSLOT",  new SupportedCommand(RespCommand.CLUSTER)   },
-                        {   "CLUSTER|SLOTS",    new SupportedCommand(RespCommand.CLUSTER)   },
-                    })
-                },
-                {   "MEMORY",  new SupportedCommand(RespCommand.MEMORY, null, new Dictionary<string, SupportedCommand>
-                    {
-                        {   "MEMORY|USAGE", new SupportedCommand(RespCommand.MEMORY)    },
-                    })
-                },
-                {   "LATENCY",  new SupportedCommand(RespCommand.LATENCY, null, new Dictionary<string, SupportedCommand>
-                    {
-                        {   "LATENCY|HISTOGRAM",    new SupportedCommand(RespCommand.LATENCY)   },
-                        {   "LATENCY|RESET",    new SupportedCommand(RespCommand.LATENCY)   },
-                    })
-                },
-            };
+                "ACL",
+                new[] { "ACL|CAT", "ACL|DELUSER", "ACL|LIST", "ACL|LOAD", "ACL|SETUSER", "ACL|USERS", "ACL|WHOAMI" }
+            },
+            {
+                "CLUSTER",
+                new[]
+                {
+                    "CLUSTER|ADDSLOTS", "CLUSTER|ADDSLOTSRANGE", "CLUSTER|BUMPEPOCH", "CLUSTER|COUNTKEYSINSLOT",
+                    "CLUSTER|DELSLOTS", "CLUSTER|DELSLOTSRANGE", "CLUSTER|FAILOVER", "CLUSTER|FORGET",
+                    "CLUSTER|GETKEYSINSLOT", "CLUSTER|INFO", "CLUSTER|KEYSLOT", "CLUSTER|MEET", "CLUSTER|MYID",
+                    "CLUSTER|NODES", "CLUSTER|REPLICAS", "CLUSTER|REPLICATE", "CLUSTER|RESET",
+                    "CLUSTER|SET-CONFIG-EPOCH", "CLUSTER|SETSLOT", "CLUSTER|SLOTS"
+                }
+            },
+            { "MEMORY", new[] { "MEMORY|USAGE" } },
+            { "LATENCY", new[] { "LATENCY|HISTOGRAM", "LATENCY|RESET" } }
+        };
 
         [Test]
         public unsafe void RespCommandTestTest()
         {
             var lightClient = new LightClientRequest("127.0.0.1", 6379, 0);
-            var response = lightClient.SendCommand($"COMMAND INFO {string.Join(' ', SupportedCommands.Keys)}");
+            var response = lightClient.SendCommand($"COMMAND INFO {string.Join(' ', Commands.Keys)}");
 
             fixed (byte* respPtr = response)
             {
@@ -322,7 +283,7 @@ namespace Garnet.test
                 File.WriteAllText(outputPath, jsonString);
 
                 var outputPath2 = "D:\\Tal\\SupportedRespCommands.json";
-                var supportedCommands = SupportedCommands.OrderBy(kvp => kvp.Key);
+                var supportedCommands = Commands.OrderBy(kvp => kvp.Key).Select(c => new SupportedCommand(c.Key, c.Value)).ToArray();
                 jsonString = JsonSerializer.Serialize(supportedCommands, serializerOptions);
                 File.WriteAllText(outputPath2, jsonString);
             }
