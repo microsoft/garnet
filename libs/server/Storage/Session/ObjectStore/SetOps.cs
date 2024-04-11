@@ -489,8 +489,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Diff result store.
-        /// Returns the number of result set.
+        /// This command is equal to SDIFF, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
         /// </summary>
         /// <param name="key">destination</param>
         /// <param name="keys"></param>
@@ -557,6 +557,7 @@ namespace Garnet.server
         {
             var result = new HashSet<byte[]>();
 
+            // first SetObject
             var status = GET(keys[0].ToArray(), out var first, ref objectContext);
             if (status == GarnetStatus.OK)
             {
@@ -570,6 +571,7 @@ namespace Garnet.server
                 }
             }
 
+            // after SetObjects
             for (var i = 1; i < keys.Length; i++)
             {
                 status = GET(keys[i].ToArray(), out var next, ref objectContext);
