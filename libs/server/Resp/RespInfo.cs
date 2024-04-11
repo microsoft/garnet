@@ -38,7 +38,7 @@ namespace Garnet.server
                 // Pub/sub
                 "PUBLISH", "SUBSCRIBE", "PSUBSCRIBE", "UNSUBSCRIBE", "PUNSUBSCRIBE",
                 // Set
-                "SADD", "SREM", "SPOP", "SMEMBERS", "SCARD", "SSCAN", "SDIFF", "SDIFFSTORE",
+                "SADD", "SREM", "SPOP", "SMEMBERS", "SCARD", "SSCAN", "SISMEMBER", "SDIFF", "SDIFFSTORE",
                 //Scan ops
                 "DBSIZE", "KEYS","SCAN",
                 // Geospatial commands

@@ -175,8 +175,8 @@ namespace Garnet.server
 
                     if (sortedSetDict.TryGetValue(member, out var value52Int))
                     {
-                        var geohash = Encoding.ASCII.GetBytes(server.GeoHash.GetGeoHashCode((long)value52Int));
-                        while (!RespWriteUtils.WriteBulkString(geohash, ref curr, end))
+                        var geohash = server.GeoHash.GetGeoHashCode((long)value52Int);
+                        while (!RespWriteUtils.WriteAsciiBulkString(geohash, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -248,7 +248,7 @@ namespace Garnet.server
                                         distance :
                                         server.GeoHash.ConvertMetersToUnits(distance, units);
 
-                    while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(distanceValue.ToString()), ref curr, end))
+                    while (!RespWriteUtils.WriteAsciiBulkString(distanceValue.ToString(), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     countDone = count;
@@ -329,10 +329,10 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(lon.ToString()), ref curr, end))
+                        while (!RespWriteUtils.WriteAsciiBulkString(lon.ToString(), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(lat.ToString()), ref curr, end))
+                        while (!RespWriteUtils.WriteAsciiBulkString(lat.ToString(), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -462,8 +462,7 @@ namespace Garnet.server
                 // Check that we have the mandatory options
                 if (!((opts.FromMember || opts.FromLonLat) && (opts.ByRadius || opts.ByBox)))
                 {
-                    var errorMessage = Encoding.ASCII.GetBytes($"-ERR required parameters are missing.\r\n");
-                    while (!RespWriteUtils.WriteResponse(errorMessage, ref curr, end))
+                    while (!RespWriteUtils.WriteError("ERR required parameters are missing."u8, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     _input->count = 0;
                     count = 0;
@@ -478,7 +477,7 @@ namespace Garnet.server
                     if (opts.ByRadius)
                     {
                         // Not supported in Garnet: ByRadius
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref curr, end))
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -519,17 +518,17 @@ namespace Garnet.server
                             var distanceValue = (byBoxUnits.Length == 1 && (byBoxUnits[0] == (int)'M' || byBoxUnits[0] == (int)'m')) ? item.Distance
                                                 : server.GeoHash.ConvertMetersToUnits(item.Distance, byBoxUnits);
 
-                            while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(distanceValue.ToString()), ref curr, end))
+                            while (!RespWriteUtils.WriteAsciiBulkString(distanceValue.ToString(), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                             // Write array of 2 values
                             while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(item.Coords.Item2.ToString()), ref curr, end))
+                            while (!RespWriteUtils.WriteAsciiBulkString(item.Coords.Item2.ToString(), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(item.Coords.Item1.ToString()), ref curr, end))
+                            while (!RespWriteUtils.WriteAsciiBulkString(item.Coords.Item1.ToString(), ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
 
@@ -539,7 +538,7 @@ namespace Garnet.server
                 // Not supported options in Garnet: FROMLONLAT BYBOX BYRADIUS 
                 if (opts.FromLonLat)
                 {
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERR, ref curr, end))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 // Write bytes parsed from input and count done, into output footer
