@@ -658,6 +658,23 @@ namespace Garnet.test
             var range = await db.SortedSetRangeByRankWithScoresAsync(key);
             Assert.AreEqual(powOfTwo.Length, range.Length);
         }
+        
+        [Test]
+        public async Task CanManageZRangeByScoreWhenStartHigherThanExistingMaxScoreSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "SortedSet_OnlyZeroScore";
+            
+            await db.SortedSetAddAsync(key, "A", 0, CommandFlags.FireAndForget);
+
+            var res = await db.SortedSetRangeByScoreAsync(key, start: 1);
+            Assert.AreEqual(0, res.Length);
+
+            var range = await db.SortedSetRangeByRankWithScoresAsync(key, start: 1);
+            Assert.AreEqual(0, range.Length);
+        }
 
         #endregion
 

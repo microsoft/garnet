@@ -918,8 +918,12 @@ namespace Garnet.server
         /// <returns></returns>
         private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, (int, int) limit = default)
         {
-
             List<(double, byte[])> scoredElements = new();
+            if (sortedSet.Max.Item1 < minValue)
+            {
+                return scoredElements;
+            }
+            
             foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
             {
                 if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue)) break;
