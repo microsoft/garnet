@@ -522,8 +522,8 @@ namespace Garnet.server
         GarnetStatus SetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
-        /// Diff result store.
-        /// Returns the number of result set.
+        /// This command is equal to SDIFF, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
         /// </summary>
         /// <param name="key">destination</param>
         /// <param name="keys"></param>
