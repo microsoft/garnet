@@ -42,7 +42,7 @@ jobs:
           path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
         if: ${{ always() }}
 
-  # Job to build and test Tsavorite code (only if there were changes to it)
+  # Job to build and test Tsavorite code
   build-test-tsavorite:        
     name: Tsavorite
     runs-on: ${{ matrix.os }}
