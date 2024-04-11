@@ -279,26 +279,26 @@ namespace Garnet.server
 
             try
             {
+                int[] indexes = default;
+
                 if (count > 0)
                 {
                     // Return an array of distinct elements
                     var countParameter = count > set.Count ? set.Count : count;
                     List<byte[]> randomElements = new List<byte[]>();
 
+                    // The order of fields in the reply is not truly random
+                    indexes = new HashSet<int>(Enumerable.Range(0, set.Count).OrderBy(x => Guid.NewGuid()).Take(countParameter)).ToArray();
+
                     // Write the size of the array reply
                     while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                    while (randomElements.Count < countParameter)
+                    foreach (var index in indexes)
                     {
-                        int index = RandomNumberGenerator.GetInt32(0, set.Count);
-                        var item = set.ElementAt(index);
-                        if (!randomElements.Any(x => x.SequenceEqual(item)))
-                        {
-                            randomElements.Add(item);
-                            while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
+                        var element = set.ElementAt(index);
+                        while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
                         countDone++;
                     }
                     countDone += count - countParameter;
@@ -321,30 +321,38 @@ namespace Garnet.server
                     }
                     countDone++;
                 }
-                else
+                else // count < 0
                 {
                     // Return an array with potentially duplicate elements
                     int countParameter = Math.Abs(count);
 
+                    Random random = new Random();
+                    List<int> randomIndexes = new List<int>();
+                    for (int i = 0; i < countParameter; i++)
+                    {
+                        randomIndexes.Add(RandomNumberGenerator.GetInt32(0, set.Count));
+                    }
+                    indexes = randomIndexes.ToArray();
+
                     // Write the size of the array reply
                     while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    for (int i = 0; i < countParameter; i++)
+
+                    if (set.Count > 0)
                     {
-                        if (set.Count > 0)
+                        foreach (var index in indexes)
                         {
-                            int index = RandomNumberGenerator.GetInt32(0, set.Count);
-                            var item = set.ElementAt(index);
-                            while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            var element = set.ElementAt(index);
+                            while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            countDone++;
                         }
-                        else
-                        {
-                            // If set is empty, return nil
-                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        countDone++;
+                    }
+                    else
+                    {
+                        // If set is empty, return nil
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
                 // Write bytes parsed from input and count done, into output footer
