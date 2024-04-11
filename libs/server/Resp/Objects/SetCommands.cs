@@ -558,8 +558,7 @@ namespace Garnet.server
             }
             else if (status == GarnetStatus.WRONGTYPE)
             {
-                // todo use WriteError?
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -613,8 +612,7 @@ namespace Garnet.server
             }
             else if (status == GarnetStatus.WRONGTYPE)
             {
-                // todo use WriteError?
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                     SendAndReset();
             }
 

@@ -722,11 +722,10 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             lightClientRequest.SendCommand("LPUSH key a b c d e f g");
             var response = lightClientRequest.SendCommand("SDIFF key");
-            var expectedResponse = Encoding.ASCII.GetString(CmdStrings.RESP_WRONG_TYPE);
+            var expectedResponse = "-WRONGTYPE Operation against a key holding the wrong kind of value.";
             Assert.AreEqual(expectedResponse, Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length));
 
-            response = lightClientRequest.SendCommand("SDIFFSTORE key key");
-            expectedResponse = Encoding.ASCII.GetString(CmdStrings.RESP_WRONG_TYPE);
+            response = lightClientRequest.SendCommand("SDIFFSTORE key1 key");
             Assert.AreEqual(expectedResponse, Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length));
         }
         #endregion
