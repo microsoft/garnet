@@ -108,10 +108,11 @@ namespace Garnet.server
         {
             long size = ParseSize(memorySize);
             long pageSize = 1L << pageSizeBits;
-            int numPages = (int)((size + pageSize - 1) / pageSize);
+            long numPagesLong = (size + pageSize - 1) / pageSize;
+            int numPages = numPagesLong > int.MaxValue ? int.MaxValue : (int)numPagesLong;
             long adjustedSize = numPages * pageSize;
             if (size != adjustedSize)
-                logger?.LogInformation($"Warning: using adjusted memory size {PrettySize(adjustedSize)} different from specified {PrettySize(size)}");
+                logger?.LogInformation($"Warning: using adjusted memory size {PrettySize(adjustedSize)} which is different from specified size of {PrettySize(size)}");
             return numPages;
         }
 

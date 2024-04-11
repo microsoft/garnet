@@ -459,25 +459,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get memory size
-        /// </summary>
-        /// <returns></returns>
-        public int MemorySizeBits(string memorySize, string storePageSize, out int emptyPageCount)
-        {
-            emptyPageCount = 0;
-            long size = ParseSize(memorySize);
-            long adjustedSize = PreviousPowerOf2(size);
-            if (size != adjustedSize)
-            {
-                adjustedSize *= 2;
-                long pageSize = ParseSize(storePageSize);
-                pageSize = PreviousPowerOf2(pageSize);
-                emptyPageCount = (int)((adjustedSize - size) / pageSize);
-            }
-            return (int)Math.Log(adjustedSize, 2);
-        }
-
-        /// <summary>
         /// Get object store settings
         /// </summary>
         /// <param name="objLogSettings"></param>
