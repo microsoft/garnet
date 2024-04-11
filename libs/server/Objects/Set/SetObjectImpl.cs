@@ -298,7 +298,7 @@ namespace Garnet.server
                     {
                         var element = set.ElementAt(index);
                         while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone++;
                     }
                     countDone += count - countParameter;
@@ -344,7 +344,7 @@ namespace Garnet.server
                         {
                             var element = set.ElementAt(index);
                             while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             countDone++;
                         }
                     }
