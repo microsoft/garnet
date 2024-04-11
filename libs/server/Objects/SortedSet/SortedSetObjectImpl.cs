@@ -923,7 +923,7 @@ namespace Garnet.server
             {
                 return scoredElements;
             }
-            
+
             foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
             {
                 if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue)) break;
