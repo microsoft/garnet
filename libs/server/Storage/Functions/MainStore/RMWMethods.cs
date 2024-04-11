@@ -295,7 +295,17 @@ namespace Garnet.server
                     // Check if value contains a valid number
                     if (!IsValidNumber(value.LengthWithoutMetadata, value.ToPointer(), ref output, out var val))
                         return true;
-                    var old = val++;
+
+                    try
+                    {
+                        checked { val++; }
+                    }
+                    catch
+                    {
+
+                        return true;
+                    }
+
                     return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                 case RespCommand.DECR:

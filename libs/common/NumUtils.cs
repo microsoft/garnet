@@ -13,6 +13,8 @@ namespace Garnet.common
     /// </summary>
     public static unsafe class NumUtils
     {
+        public const int MaximumFormatInt64Length = 20;   // 19 + sign (i.e. -9223372036854775808)
+
         /// <summary>
         /// Convert long number into sequence of ASCII bytes
         /// </summary>
@@ -126,7 +128,7 @@ namespace Garnet.common
                 digit = *beg++ - '0';
                 if (digit is < 0 or > 9)
                     return false;
-                result = (result * 10) + digit;
+                checked { result = (result * 10) + digit; }
             }
             result = fNeg ? -result : result;
             return true;
@@ -542,6 +544,5 @@ namespace Garnet.common
             result = fNeg ? -(result) : result;
             return true;
         }
-
     }
 }

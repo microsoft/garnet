@@ -770,12 +770,11 @@ namespace Garnet.server
                 return true;
 
             var key = new ArgSlice(keyPtr, ksize);
-
-            var pbOutput = stackalloc byte[21];
-            var output = new ArgSlice(pbOutput, 21);
+            var pbOutput = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
+            var output = new ArgSlice(pbOutput, NumUtils.MaximumFormatInt64Length + 1);
 
             var status = storageApi.Increment(key, input, ref output);
-            var errorFlag = output.Length == 21 ? (OperationError)output.Span[0] : OperationError.SUCCESS;
+            var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1 ? (OperationError)output.Span[0] : OperationError.SUCCESS;
 
             switch (errorFlag)
             {
@@ -788,7 +787,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    throw new GarnetException($"Invalid IncrErrorType {errorFlag}");
+                    throw new GarnetException($"Invalid OperationError {errorFlag}");
             }
             return true;
         }
