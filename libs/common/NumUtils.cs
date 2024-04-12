@@ -500,8 +500,9 @@ namespace Garnet.common
         {
             bool fNeg = (*source == '-');
             var beg = fNeg ? source + 1 : source;
+            var start = fNeg ? 1 : 0;
             result = 0;
-            for (int i = 0; i < len; ++i)
+            for (int i = start; i < len; ++i)
             {
                 if (!(source[i] >= 48 && source[i] <= 57))
                 {

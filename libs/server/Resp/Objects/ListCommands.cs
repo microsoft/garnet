@@ -832,7 +832,7 @@ namespace Garnet.server
                     case GarnetStatus.OK:
                         //process output
                         var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        // ptr += objOutputHeader.bytesDone;
+                        ptr += objOutputHeader.bytesDone;
                         break;
                 }
             }

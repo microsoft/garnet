@@ -729,7 +729,6 @@ namespace Garnet.test
 
             tokenSource.Dispose();
         }
-
         #endregion
 
         #region LightClientTests
@@ -846,6 +845,38 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand("HSET myhash onekey onepair");
             lightClientRequest.SendCommand("LINSERT myhash BEFORE one two");
             var expectedResponse = "-ERR wrong key type used in LINSERT command.\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanDoLSETbasicLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            _ = lightClientRequest.SendCommand("RPUSH mylist one two three");
+            var response = lightClientRequest.SendCommand("LSET mylist 0 four");
+            var expectedResponse = "+OK\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanReturnErrorLSETWhenNosuchkey()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("LSET mylist 0 four");
+            var expectedResponse = "-ERR no such key\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanReturnErrorLSETWhenIndexNotInteger()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            _ = lightClientRequest.SendCommand("RPUSH mylist one two three");
+            var response = lightClientRequest.SendCommand("LSET mylist a four");
+            var expectedResponse = "-ERR value is not an integer or out of range.\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
