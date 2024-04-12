@@ -285,10 +285,9 @@ namespace Garnet.server
                 {
                     // Return an array of distinct elements
                     var countParameter = count > set.Count ? set.Count : count;
-                    List<byte[]> randomElements = new List<byte[]>();
 
                     // The order of fields in the reply is not truly random
-                    indexes = new HashSet<int>(Enumerable.Range(0, set.Count).OrderBy(x => Guid.NewGuid()).Take(countParameter)).ToArray();
+                    indexes = new List<int>(Enumerable.Range(0, set.Count).OrderBy(x => Guid.NewGuid()).Take(countParameter)).ToArray();
 
                     // Write the size of the array reply
                     while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
@@ -326,20 +325,18 @@ namespace Garnet.server
                     // Return an array with potentially duplicate elements
                     int countParameter = Math.Abs(count);
 
-                    Random random = new Random();
-                    List<int> randomIndexes = new List<int>();
+                    indexes = new int[countParameter];
                     for (int i = 0; i < countParameter; i++)
                     {
-                        randomIndexes.Add(RandomNumberGenerator.GetInt32(0, set.Count));
+                        indexes[i] = RandomNumberGenerator.GetInt32(0, set.Count);
                     }
-                    indexes = randomIndexes.ToArray();
-
-                    // Write the size of the array reply
-                    while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     if (set.Count > 0)
                     {
+                        // Write the size of the array reply
+                        while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
                         foreach (var index in indexes)
                         {
                             var element = set.ElementAt(index);
