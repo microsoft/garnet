@@ -20,6 +20,7 @@ namespace Tsavorite.core
         public long snapshotEndPage;
         public long untilAddress;
         public int capacity;
+        public int usableCapacity;
         public CheckpointType checkpointType;
 
         public IDevice recoveryDevice;
@@ -33,10 +34,11 @@ namespace Tsavorite.core
         private readonly SemaphoreSlim readSemaphore = new(0);
         private readonly SemaphoreSlim flushSemaphore = new(0);
 
-        public RecoveryStatus(int capacity,
+        public RecoveryStatus(int capacity, int usableCapacity,
                               long endPage, long untilAddress, CheckpointType checkpointType)
         {
             this.capacity = capacity;
+            this.usableCapacity = usableCapacity;
             this.endPage = endPage;
             this.untilAddress = untilAddress;
             this.checkpointType = checkpointType;
@@ -625,7 +627,7 @@ namespace Tsavorite.core
                 // We make an extra pass to clear locks when reading every page back into memory
                 ClearLocksOnPage(page, options);
 
-                ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, numPagesToReadFirst, page, pageIndex);
+                ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, capacity, numPagesToReadFirst, page, pageIndex);
             }
 
             WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
@@ -649,7 +651,7 @@ namespace Tsavorite.core
                 // We make an extra pass to clear locks when reading every page back into memory
                 ClearLocksOnPage(page, options);
 
-                ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, capacity, page, pageIndex);
+                ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, capacity, numPagesToReadFirst, page, pageIndex);
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
@@ -669,10 +671,10 @@ namespace Tsavorite.core
 
             // Leave out at least MinEmptyPageCount pages to maintain memory size during recovery
             numPagesToReadFirst = Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead);
-            return new RecoveryStatus(capacity, endPage, untilAddress, checkpointType);
+            return new RecoveryStatus(capacity, capacity - hlog.MinEmptyPageCount, endPage, untilAddress, checkpointType);
         }
 
-        private void ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long endPage, int numPagesToRead, long page, int pageIndex)
+        private void ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long endPage, int capacity, int numPagesToRead, long page, int pageIndex)
         {
             if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex))
             {
@@ -687,8 +689,16 @@ namespace Tsavorite.core
             // Issue next read if there are more pages past 'capacity' from this one.
             if (page + numPagesToRead < endPage)
             {
-                recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                hlog.AsyncReadPagesFromDevice(page + numPagesToRead, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
+                // If full capacity cannot be utilized, free the page to ensure memory size constraint is maintained
+                if (numPagesToRead < capacity)
+                {
+                    hlog.FreePage(page);
+                }
+
+                var readPage = page + numPagesToRead;
+                var readPageIndex = hlog.GetPageIndexForPage(readPage);
+                recoveryStatus.readStatus[readPageIndex] = ReadStatus.Pending;
+                hlog.AsyncReadPagesFromDevice(readPage, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
             }
         }
 
@@ -713,7 +723,7 @@ namespace Tsavorite.core
             if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
-                recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
+                //recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
                 recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
                 return true;
             }
@@ -742,9 +752,9 @@ namespace Tsavorite.core
                                           recoveryStatus, recoveryStatus.recoveryDevicePageOffset,
                                           recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
 
-            for (long page = startPage; page < endPage; page += capacity)
+            for (long page = startPage; page < endPage; page += numPagesToReadFirst)
             {
-                long end = Math.Min(page + capacity, endPage);
+                long end = Math.Min(page + numPagesToReadFirst, endPage);
                 for (long p = page; p < end; p++)
                 {
                     int pageIndex = hlog.GetPageIndexForPage(p);
@@ -766,7 +776,7 @@ namespace Tsavorite.core
                     }
                 }
 
-                ApplyDelta(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, options, deltaLog, recoverTo, endPage, snapshotEndPage, capacity, recoveryStatus, page, end);
+                ApplyDelta(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, options, deltaLog, recoverTo, endPage, snapshotEndPage, capacity, numPagesToReadFirst, recoveryStatus, page, end);
             }
 
             WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
@@ -806,14 +816,14 @@ namespace Tsavorite.core
                     }
                 }
 
-                ApplyDelta(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, options, deltaLog, recoverTo, endPage, snapshotEndPage, capacity, recoveryStatus, page, end);
+                ApplyDelta(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, options, deltaLog, recoverTo, endPage, snapshotEndPage, capacity, numPagesToReadFirst, recoveryStatus, page, end);
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
             recoveryStatus.Dispose();
         }
 
-        private void ApplyDelta(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, DeltaLog deltaLog, long recoverTo, long endPage, long snapshotEndPage, int capacity, RecoveryStatus recoveryStatus, long page, long end)
+        private void ApplyDelta(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, DeltaLog deltaLog, long recoverTo, long endPage, long snapshotEndPage, int capacity, int numPagesToRead, RecoveryStatus recoveryStatus, long page, long end)
         {
             hlog.ApplyDelta(deltaLog, page, end, recoverTo);
 
@@ -826,13 +836,19 @@ namespace Tsavorite.core
                     ProcessReadSnapshotPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
 
                 // Issue next read
-                if (p + capacity < endPage)
+                if (p + numPagesToRead < endPage)
                 {
                     // Flush snapshot page to main log
                     // Flush callback will issue further reads or page clears
                     recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
-                    if (p + capacity < snapshotEndPage)
-                        recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
+
+                    var readPage = p + numPagesToRead;
+                    if (p + numPagesToRead < snapshotEndPage)
+                    {
+                        var readPageIndex = hlog.GetPageIndexForPage(readPage);
+                        recoveryStatus.readStatus[readPageIndex] = ReadStatus.Pending;
+                    }
+
                     hlog.AsyncFlushPages(p, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus);
                 }
             }
@@ -858,7 +874,7 @@ namespace Tsavorite.core
 
             recoveryDevice.Initialize(hlog.GetSegmentSize());
             objectLogRecoveryDevice.Initialize(-1);
-            recoveryStatus = new RecoveryStatus(capacity, endPage, untilAddress, CheckpointType.Snapshot)
+            recoveryStatus = new RecoveryStatus(capacity, capacity - hlog.MinEmptyPageCount, endPage, untilAddress, CheckpointType.Snapshot)
             {
                 recoveryDevice = recoveryDevice,
                 objectLogRecoveryDevice = objectLogRecoveryDevice,
@@ -1013,9 +1029,18 @@ namespace Tsavorite.core
                     result.context.SignalFlushedError(pageIndex);
                 else
                     result.context.SignalFlushed(pageIndex);
-                if (result.page + result.context.capacity < result.context.endPage)
+                if (result.page + result.context.usableCapacity < result.context.endPage)
                 {
-                    long readPage = result.page + result.context.capacity;
+                    // If full capacity cannot be utilized, free the page to ensure memory size constraint is maintained
+                    if (result.context.usableCapacity < result.context.capacity)
+                    {
+                        hlog.FreePage(result.page);
+                    }
+
+                    var readPage = result.page + result.context.usableCapacity;
+                    var readPageIndex = hlog.GetPageIndexForPage(readPage);
+                    result.context.readStatus[readPageIndex] = ReadStatus.Pending;
+
                     if (result.context.checkpointType == CheckpointType.FoldOver)
                     {
                         hlog.AsyncReadPagesFromDevice(readPage, 1, result.context.untilAddress, hlog.AsyncReadPagesCallbackForRecovery, result.context);
@@ -1128,7 +1153,8 @@ namespace Tsavorite.core
                     tailPage = GetPage(fromAddress);
                     headPage = GetPage(headAddress);
 
-                    recoveryStatus = new RecoveryStatus(GetCapacityNumPages(), tailPage, untilAddress, 0);
+                    var capacity = GetCapacityNumPages();
+                    recoveryStatus = new RecoveryStatus(capacity, capacity - MinEmptyPageCount, tailPage, untilAddress, 0);
                     for (int i = 0; i < recoveryStatus.capacity; i++)
                     {
                         recoveryStatus.readStatus[i] = ReadStatus.Done;

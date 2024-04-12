@@ -226,7 +226,7 @@ namespace Garnet.test
             if (useAzure)
                 TestUtils.IgnoreIfNotRunningAzureTests();
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, UseAzureStorage: useAzure, lowMemory: true, MemorySize: "5k", PageSize: "1k");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, UseAzureStorage: useAzure, lowMemory: true, MemorySize: "4k", PageSize: "1k");
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -252,7 +252,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure, lowMemory: true, MemorySize: "5k", PageSize: "1k");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure, lowMemory: true, MemorySize: "3k", PageSize: "1k");
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
