@@ -143,18 +143,21 @@ namespace Garnet.server.ACL
             }
 
             // Any of the registered password hashes is allowed
+
+            bool matched = false;
+
             lock (_passwordHashes)
             {
                 foreach (ACLPassword hash in _passwordHashes)
                 {
                     if (password.Equals(hash))
                     {
-                        return true;
+                        matched = true;
                     }
                 }
             }
 
-            return false;
+            return matched;
         }
 
         /// <summary>
