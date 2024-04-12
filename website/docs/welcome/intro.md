@@ -14,7 +14,7 @@ tiered storage (such as SSD and Azure Storage). Garnet supports a rich API surfa
 model.
 
 Garnet uses Redis' RESP as its primary wire protocol. Thus, one can use Garnet with unmodified Redis clients 
-[available](https://redis.io/resources/clients/) in most programming languages, for example, with [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis)
+[available](https://redis.io/docs/latest/develop/connect/clients/) in most programming languages, for example, with [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis)
 in C#. Compared to other open-source cache-stores, you get much better performance, latency, extensibility, and durability features.
 
 Note that Garnet is a research project from Microsoft Research, and the project should be treated as such. That said, we are bunch 
