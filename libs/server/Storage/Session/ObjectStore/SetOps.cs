@@ -540,7 +540,7 @@ namespace Garnet.server
                 var newSetObject = new SetObject();
                 foreach (var item in diffSet)
                 {
-                    newSetObject.Set.Add(item);
+                    _ = newSetObject.Set.Add(item);
                     newSetObject.UpdateSize(item);
                 }
                 _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
