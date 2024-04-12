@@ -166,6 +166,7 @@ ClientBin/
 node_modules/
 **/log-commits
 .mono
+**/yarn.lock
 
 # RIA/Silverlight projects
 Generated_Code/

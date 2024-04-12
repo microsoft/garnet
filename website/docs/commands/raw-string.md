@@ -231,25 +231,6 @@ Simple string reply: OK.
 
 ---
 
-### SETNX
-
-#### Syntax
-
-```bash
-    SETNX key value
-```
-
-Set **key** to hold value if **key** does not exist. When **key** already holds a value, no operation is performed.
-
-#### Resp Reply
-
-One of the following:
-
-* Integer reply: 0 if the key was not set.
-* Integer reply: 1 if the key was set.
-
----
-
 ### STRLEN
 
 #### Syntax
