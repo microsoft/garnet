@@ -389,20 +389,14 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            SetLength(sourceKey, out var initCount, ref objectStoreContext);
-            SetRemove(sourceKey, member, out _, ref objectStoreContext);
-            SetLength(sourceKey, out var endCount, ref objectStoreContext);
+            SetRemove(sourceKey, member, out var sremOps, ref objectStoreContext);
 
-            SetLength(destinationKey, out var destinationCount, ref objectStoreContext);
-
-            if (initCount == endCount || destinationCount == 0)
+            if (sremOps != 1)
             {
                 return GarnetStatus.OK;
             }
 
-            SetAdd(destinationKey, member, out _, ref objectStoreContext);
-
-            smoveResult = 1;
+            SetAdd(destinationKey, member, out smoveResult, ref objectStoreContext);
 
             return GarnetStatus.OK;
         }
