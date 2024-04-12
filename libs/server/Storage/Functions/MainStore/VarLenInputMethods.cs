@@ -40,11 +40,19 @@ namespace Garnet.server
                     var valueLength = *(int*)(inputPtr + RespInputHeader.Size);
                     return sizeof(int) + valueLength;
 
-                case RespCommand.DECRBY:
-                    var next = -NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                case RespCommand.INCRBY:
+                    var next = NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
 
                     var fNeg = false;
                     var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
+
+                    return sizeof(int) + ndigits + (fNeg ? 1 : 0);
+
+                case RespCommand.DECRBY:
+                    next = -NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+
+                    fNeg = false;
+                    ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
 

@@ -357,11 +357,79 @@ namespace Garnet.server
             return true;
         }
 
+        static bool TryInPlaceUpdateNumber(ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo, long input)
+        {
+            // Check if value contains a valid number
+            if (!IsValidNumber(value.LengthWithoutMetadata, value.ToPointer(), output.SpanByte.AsSpan(), out var val))
+                return true;
+
+            try
+            {
+                checked { val += input; }
+            }
+            catch
+            {
+                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                return true;
+            }
+
+            return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
+        }
+
         static void CopyUpdateNumber(long next, ref SpanByte newValue, ref SpanByteAndMemory output)
         {
             NumUtils.LongToSpanByte(next, newValue.AsSpan());
             newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = newValue.LengthWithoutMetadata;
+        }
+
+        static void TryCopyUpdateNumber(ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, long input)
+        {
+            newValue.ExtraMetadata = oldValue.ExtraMetadata;
+
+            // Check if value contains a valid number
+            if (!IsValidNumber(oldValue.LengthWithoutMetadata, oldValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            {
+                // Move to tail of the log
+                oldValue.CopyTo(ref newValue);
+                return;
+            }
+
+            // Check operation overflow
+            try
+            {
+                checked { val += input; }
+            }
+            catch
+            {
+                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                return;
+            }
+
+            // Move to tail of the log and update
+            CopyUpdateNumber(val, ref newValue, ref output);
+        }
+
+        static bool IsValidNumber(int length, byte* source, Span<byte> output, out long val)
+        {
+            val = 0;
+            try
+            {
+                // Check for valid number
+                if (!NumUtils.TryBytesToLong(length, source, out val))
+                {
+                    // Signal value is not a valid number
+                    output[0] = (byte)OperationError.INVALID_TYPE;
+                    return false;
+                }
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                output[0] = (byte)OperationError.INVALID_TYPE;
+                return false;
+            }
+            return true;
         }
 
         void CopyDefaultResp(ReadOnlySpan<byte> resp, ref SpanByteAndMemory dst)
@@ -457,18 +525,6 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             SpanByte def = default;
             functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, version = version, sessionID = sessionID }, ref key, ref def, out _);
-        }
-
-        static bool IsValidNumber(int length, byte* source, ref SpanByteAndMemory output, out long val)
-        {
-            // Check for valid number
-            if (!NumUtils.TryBytesToLong(length, source, out val))
-            {
-                // Signal value is not a valid number
-                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
-                return false;
-            }
-            return true;
         }
     }
 }

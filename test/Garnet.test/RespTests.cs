@@ -623,8 +623,8 @@ namespace Garnet.test
 
         [Test]
         [TestCase(RespCommand.INCR)]
-        [TestCase(RespCommand.INCRBY)]
         [TestCase(RespCommand.DECR)]
+        [TestCase(RespCommand.INCRBY)]
         [TestCase(RespCommand.DECRBY)]
         public void SimpleIncrementInvalidValue(RespCommand cmd)
         {
@@ -634,24 +634,68 @@ namespace Garnet.test
 
             foreach (var value in values)
             {
+                var exception = false;
                 _ = db.StringSetAsync(value, value).GetAwaiter().GetResult();
                 try
                 {
                     _ = cmd switch
                     {
                         RespCommand.INCR => db.StringIncrement(value).GetAwaiter().GetResult(),
-                        RespCommand.INCRBY => db.StringIncrement(value, 10L).GetAwaiter().GetResult(),
                         RespCommand.DECR => db.StringDecrement(value).GetAwaiter().GetResult(),
+                        RespCommand.INCRBY => db.StringIncrement(value, 10L).GetAwaiter().GetResult(),
                         RespCommand.DECRBY => db.StringDecrement(value, 10L).GetAwaiter().GetResult(),
                         _ => throw new Exception($"Command {cmd} not supported!"),
                     };
                 }
                 catch (Exception ex)
                 {
+                    exception = true;
                     var msg = ex.Message;
                     Assert.AreEqual("ERR value is not an integer or out of range.", msg);
                 }
+                Assert.IsTrue(exception);
             }
+        }
+
+        [Test]
+        [TestCase(RespCommand.INCR)]
+        [TestCase(RespCommand.DECR)]
+        [TestCase(RespCommand.INCRBY)]
+        [TestCase(RespCommand.DECRBY)]
+        public void SimpleIncrementOverflow(RespCommand cmd)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var exception = false;
+
+            var key = "test";
+            try
+            {
+                switch (cmd)
+                {
+                    case RespCommand.INCR:
+                        _ = db.StringSet(key, long.MaxValue.ToString());
+                        _ = db.StringIncrement(key);
+                        break;
+                    case RespCommand.DECR:
+                        _ = db.StringSet(key, long.MinValue.ToString());
+                        _ = db.StringDecrement(key);
+                        break;
+                    case RespCommand.INCRBY:
+                        _ = db.Execute("INCRBY", [key, ulong.MaxValue.ToString()]);
+                        break;
+                    case RespCommand.DECRBY:
+                        _ = db.Execute("DECRBY", [key, ulong.MaxValue.ToString()]);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                exception = true;
+                var msg = ex.Message;
+                Assert.AreEqual("ERR value is not an integer or out of range.", msg);
+            }
+            Assert.IsTrue(exception);
         }
 
         [Test]
