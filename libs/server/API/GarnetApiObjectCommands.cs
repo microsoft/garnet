@@ -236,6 +236,10 @@ namespace Garnet.server
         public GarnetStatus ListRemove(byte[] key, ArgSlice input, out ObjectOutputHeader output)
             => storageSession.ListRemove(key, input, out output, ref objectContext);
 
+        /// <inheritdoc />
+        public GarnetStatus ListSet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.ListSet(key, input, ref outputFooter, ref objectContext);
+
         #endregion
 
         #region Set Methods

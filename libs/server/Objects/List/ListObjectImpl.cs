@@ -381,5 +381,85 @@ namespace Garnet.server
                 output.Length = (int)(curr - ptr);
             }
         }
+
+        private void ListSet(byte* input, int length, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var _output = output.SpanByte.ToPointer();
+            var _o_curr = _output;
+            var _o_end = _o_curr + output.Length;
+
+            if (list.Count == 0)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY.ToArray(), ref _o_curr, _o_end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref _output, ref ptrHandle, ref _o_curr, ref _o_end);
+                return;
+            }
+
+            byte* ptr = input + sizeof(ObjectInputHeader);
+            byte* end = input + length;
+
+            byte* indexParam = default;
+            var indexParamSize = 0;
+
+            // index
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref indexParam, ref indexParamSize, ref ptr, end))
+                return;
+
+            if (NumUtils.TryBytesToInt(indexParam, indexParamSize, out var index) == false)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER.ToArray(), ref _o_curr, _o_end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref _output, ref ptrHandle, ref _o_curr, ref _o_end);
+                return;
+            }
+
+            index = index < 0 ? list.Count + index : index;
+
+            if (index > list.Count - 1)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE.ToArray(), ref _o_curr, _o_end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref _output, ref ptrHandle, ref _o_curr, ref _o_end);
+                return;
+            }
+
+            // element
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var element, ref ptr, end))
+                return;
+
+            if (index == 0)
+            {
+                UpdateSize(list.First.Value, false);
+                list.First.Value = element;
+                UpdateSize(list.First.Value, true);
+            }
+            else if (index == list.Count - 1)
+            {
+                UpdateSize(list.Last.Value, false);
+                list.Last.Value = element;
+                UpdateSize(list.Last.Value, true);
+            }
+            else
+            {
+                var start = 0;
+                foreach (var node in list.Nodes())
+                {
+                    if (start == index)
+                    {
+                        UpdateSize(node.Value, false);
+                        node.Value = element;
+                        UpdateSize(element, false);
+                        break;
+                    }
+                }
+            }
+
+
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref _o_curr, _o_end))
+                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref _output, ref ptrHandle, ref _o_curr, ref _o_end);
+            // if (isMemory) ptrHandle.Dispose();
+            // ??
+            // output.Length = (int)(_o_curr - _output);
+        }
     }
 }

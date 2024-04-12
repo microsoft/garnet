@@ -702,6 +702,15 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus ListRemove(byte[] key, ArgSlice input, out ObjectOutputHeader output);
 
+        /// <summary>
+        /// Sets the list element at index to element.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus ListSet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput output);
+
         #endregion
 
         #region Hash Methods
