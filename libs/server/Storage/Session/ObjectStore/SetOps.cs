@@ -473,11 +473,7 @@ namespace Garnet.server
 
             try
             {
-                (members, var status) = _setDiff(keys, ref objectStoreLockableContext);
-                if (status == GarnetStatus.WRONGTYPE)
-                {
-                    return status;
-                }
+                members = _setDiff(keys, ref objectStoreLockableContext);
             }
             finally
             {
@@ -521,12 +517,7 @@ namespace Garnet.server
 
             try
             {
-                (var diffSet, var status) = _setDiff(keys, ref objectStoreLockableContext);
-
-                if (status == GarnetStatus.WRONGTYPE)
-                {
-                    return status;
-                }
+                var diffSet = _setDiff(keys, ref objectStoreLockableContext);
 
                 var asMembers = new ArgSlice[diffSet.Count];
                 for (var i = 0; i < diffSet.Count; i++)
@@ -552,7 +543,7 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        private (HashSet<byte[]>, GarnetStatus) _setDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+        private HashSet<byte[]> _setDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             var result = new HashSet<byte[]>();
@@ -564,10 +555,6 @@ namespace Garnet.server
                 if (first.garnetObject is SetObject firstObject)
                 {
                     result.UnionWith(firstObject.Set);
-                }
-                else
-                {
-                    return (result, GarnetStatus.WRONGTYPE);
                 }
             }
 
@@ -583,14 +570,10 @@ namespace Garnet.server
                         var interItems = result.Intersect(nextSet, nextSet.Comparer);
                         result.ExceptWith(interItems);
                     }
-                    else
-                    {
-                        return (result, GarnetStatus.WRONGTYPE);
-                    }
                 }
             }
 
-            return (result, GarnetStatus.OK);
+            return result;
         }
     }
 }

@@ -353,36 +353,6 @@ namespace Garnet.test
             Assert.AreEqual(1, membersResult.Count());
             Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("c")));
         }
-
-        [Test]
-        public void CanDoSdiffAndSdiffStoreWrongTypeSC()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            var key = "key";
-            db.ListLeftPush(key, ["a", "b", "c", "d", "e", "f", "g"]);
-
-            // possible to skip
-            // need LC test
-            try
-            {
-                db.Execute("SDIFF", "key");
-            }
-            catch (Exception e)
-            {
-                Assert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value.", e.Message);
-            }
-
-            try
-            {
-                db.Execute("SDIFFSTORE", "key", "key");
-            }
-            catch (Exception e)
-            {
-                Assert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value.", e.Message);
-            }
-        }
         #endregion
 
 
@@ -714,19 +684,6 @@ namespace Garnet.test
             expectedResponse = "*0\r\n";
             strResponse = Encoding.ASCII.GetString(membersResponse).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
-        }
-
-        [Test]
-        public void CanDoSdiffAndSdiffStoreWrongType()
-        {
-            using var lightClientRequest = TestUtils.CreateRequest();
-            lightClientRequest.SendCommand("LPUSH key a b c d e f g");
-            var response = lightClientRequest.SendCommand("SDIFF key");
-            var expectedResponse = "-WRONGTYPE Operation against a key holding the wrong kind of value.";
-            Assert.AreEqual(expectedResponse, Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length));
-
-            response = lightClientRequest.SendCommand("SDIFFSTORE key1 key");
-            Assert.AreEqual(expectedResponse, Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length));
         }
         #endregion
 

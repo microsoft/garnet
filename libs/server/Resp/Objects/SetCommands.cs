@@ -556,11 +556,6 @@ namespace Garnet.server
                     }
                 }
             }
-            else if (status == GarnetStatus.WRONGTYPE)
-            {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                    SendAndReset();
-            }
 
             // Move input head
             readHead = (int)(ptr - recvBufferPtr);
@@ -608,11 +603,6 @@ namespace Garnet.server
             if (status == GarnetStatus.OK)
             {
                 while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else if (status == GarnetStatus.WRONGTYPE)
-            {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                     SendAndReset();
             }
 
