@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -469,11 +468,12 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
 
             try
             {
-                members = _setDiff(keys, ref objectStoreLockableContext);
+                members = SetDiff(keys, ref setObjectStoreLockableContext);
             }
             finally
             {
@@ -513,17 +513,12 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
 
-            var objectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
 
             try
             {
-                var diffSet = _setDiff(keys, ref objectStoreLockableContext);
-
-                var asMembers = new ArgSlice[diffSet.Count];
-                for (var i = 0; i < diffSet.Count; i++)
-                {
-                    asMembers[i] = scratchBufferManager.CreateArgSlice(diffSet.ElementAt(i));
-                }
+                var diffSet = SetDiff(keys, ref setObjectStoreLockableContext);
 
                 var newSetObject = new SetObject();
                 foreach (var item in diffSet)
@@ -531,7 +526,7 @@ namespace Garnet.server
                     newSetObject.Set.Add(item);
                     newSetObject.UpdateSize(item);
                 }
-                _ = SET(key, newSetObject, ref objectStoreLockableContext);
+                _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
                 count = diffSet.Count;
             }
             finally
@@ -543,10 +538,15 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        private HashSet<byte[]> _setDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+        private HashSet<byte[]> SetDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
-            var result = new HashSet<byte[]>();
+            if (keys.Length == 0)
+            {
+                return [];
+            }
+
+            HashSet<byte[]> result = default;
 
             // first SetObject
             var status = GET(keys[0].ToArray(), out var first, ref objectContext);
@@ -554,7 +554,7 @@ namespace Garnet.server
             {
                 if (first.garnetObject is SetObject firstObject)
                 {
-                    result.UnionWith(firstObject.Set);
+                    result = new(firstObject.Set, new ByteArrayComparer());
                 }
             }
 
@@ -566,14 +566,12 @@ namespace Garnet.server
                 {
                     if (next.garnetObject is SetObject nextObject)
                     {
-                        var nextSet = nextObject.Set;
-                        var interItems = result.Intersect(nextSet, nextSet.Comparer);
-                        result.ExceptWith(interItems);
+                        result.ExceptWith(nextObject.Set);
                     }
                 }
             }
 
-            return result;
+            return result ?? [];
         }
     }
 }
