@@ -287,7 +287,7 @@ namespace Garnet.server
                     var countParameter = count > set.Count ? set.Count : count;
 
                     // The order of fields in the reply is not truly random
-                    indexes = new List<int>(Enumerable.Range(0, set.Count).OrderBy(x => Guid.NewGuid()).Take(countParameter)).ToArray();
+                    indexes = Enumerable.Range(0, set.Count).OrderBy(x => Guid.NewGuid()).Take(countParameter).ToArray();
 
                     // Write the size of the array reply
                     while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
