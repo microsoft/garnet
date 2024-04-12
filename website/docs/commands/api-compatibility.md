@@ -236,7 +236,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | SMISMEMBER | ➖ |  |
 |  | SMOVE | ➖ |  |
 |  | [SPOP](data-structures.md#spop) | ➕ |  |
-|  | SRANDMEMBER | ➖ |  |
+|  | [SRANDMEMBER](data-structures.md#srandmember) | ➕ |  |
 |  | [SREM](data-structures.md#srem) | ➕ |  |
 |  | [SSCAN](data-structures.md#sscan) | ➕ |  |
 |  | SUNION | ➖ |  |
