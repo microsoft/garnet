@@ -3,6 +3,8 @@
 
 using System;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -17,6 +19,58 @@ namespace Garnet.cluster
             cEntry.RemoveReader();
         }
 
+        /// <summary>
+        ///  Keep trying to acquire main store metadata until it settles
+        /// </summary>
+        /// <param name="entry">CheckpointEntry to retrieve metadata for</param>
+        /// <param name="hlog_size">LogFileInfo to return</param>
+        /// <param name="index_size">Index size in bytes to return</param>
+        public bool TryAcquireSettledMetadataForMainStore(CheckpointEntry entry, out LogFileInfo hlog_size, out long index_size)
+        {
+            hlog_size = default;
+            index_size = -1;
+            try
+            {
+                hlog_size = storeWrapper.store.GetLogFileSize(entry.storeHlogToken);
+                index_size = storeWrapper.store.GetIndexFileSize(entry.storeIndexToken);
+                return true;
+            }
+            catch
+            {
+                logger?.LogError("Waiting for main store metadata to settle");
+                return false;
+            }
+        }
+
+        /// <summary>
+        ///  Keep trying to acquire object store metadata until it settles
+        /// </summary>
+        /// <param name="entry">CheckpointEntry to retrieve metadata for</param>
+        /// <param name="hlog_size">LogFileInfo to return</param>
+        /// <param name="index_size">Index size in bytes to return</param>
+        public bool TryAcquireSettledMetadataForObjectStore(CheckpointEntry entry, out LogFileInfo hlog_size, out long index_size)
+        {
+            hlog_size = default;
+            index_size = -1;
+            try
+            {
+                hlog_size = storeWrapper.objectStore.GetLogFileSize(entry.objectStoreHlogToken);
+                index_size = storeWrapper.objectStore.GetIndexFileSize(entry.objectStoreIndexToken);
+                return true;
+            }
+            catch
+            {
+                logger?.LogError("Waiting for object store metadata to settle");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Add new checkpoint entry to the in-memory store
+        /// </summary>
+        /// <param name="entry"></param>
+        /// <param name="storeType"></param>
+        /// <param name="fullCheckpoint"></param>
         public void AddCheckpointEntry(CheckpointEntry entry, StoreType storeType, bool fullCheckpoint)
             => checkpointStore.AddCheckpointEntry(entry, storeType, fullCheckpoint);
 
@@ -48,11 +102,15 @@ namespace Garnet.cluster
                 clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).CurrentSafeAofAddress = safeAofTailAddress;
         }
 
+        /// <summary>
+        /// Update replicationId for both stores to use for signing future checkpoints
+        /// Should be called only at initialization of replication manager and during a failover
+        /// </summary>
         public void SetPrimaryReplicationId()
         {
-            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).PrimaryReplicationId = PrimaryReplId;
+            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).CurrentReplicationId = PrimaryReplId;
             if (!clusterProvider.serverOptions.DisableObjects)
-                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).PrimaryReplicationId = PrimaryReplId;
+                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).CurrentReplicationId = PrimaryReplId;
         }
     }
 }

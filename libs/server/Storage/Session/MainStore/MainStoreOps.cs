@@ -370,7 +370,7 @@ namespace Garnet.server
             {
                 fixed (byte* ptr = value.Span)
                 {
-                    var _value = SpanByte.FromPointer(ptr, value.Length);
+                    var _value = SpanByte.FromPinnedPointer(ptr, value.Length);
                     return SET(ref _key, ref _value, ref context);
                 }
             }
@@ -497,7 +497,7 @@ namespace Garnet.server
                 {
                     fixed (byte* ptr = key)
                     {
-                        var keySB = SpanByte.FromPointer(ptr, key.Length);
+                        var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
                         var status = context.Delete(ref keySB);
                         Debug.Assert(!status.IsPending);
                         if (status.Found) found = true;
@@ -545,7 +545,7 @@ namespace Garnet.server
                         var ptrVal = (byte*)memoryHandle.Pointer;
 
                         RespReadUtils.ReadHeaderLength(out var headerLength, ref ptrVal, ptrVal + o.Length);
-                        var value = SpanByte.FromPointer(ptrVal, headerLength);
+                        var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
                         SET(ref newKey, ref value, ref context);
 
                         memoryHandle.Dispose();
@@ -689,7 +689,7 @@ namespace Garnet.server
             input.ExtraMetadata = DateTimeOffset.UtcNow.Ticks + expiry.Ticks;
 
             var rmwOutput = stackalloc byte[ObjectOutputHeader.Size];
-            var output = new SpanByteAndMemory(SpanByte.FromPointer(rmwOutput, ObjectOutputHeader.Size));
+            var output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(rmwOutput, ObjectOutputHeader.Size));
             timeoutSet = false;
 
             bool found = false;
