@@ -625,7 +625,7 @@ namespace Tsavorite.core
                 // We make an extra pass to clear locks when reading every page back into memory
                 ClearLocksOnPage(page, options);
 
-                ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, capacity, page, pageIndex);
+                ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, numPagesToReadFirst, page, pageIndex);
             }
 
             WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
@@ -666,11 +666,13 @@ namespace Tsavorite.core
 
             capacity = hlog.GetCapacityNumPages();
             int totalPagesToRead = (int)(endPage - startPage);
-            numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
+
+            // Leave out at least MinEmptyPageCount pages to maintain memory size during recovery
+            numPagesToReadFirst = Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead);
             return new RecoveryStatus(capacity, endPage, untilAddress, checkpointType);
         }
 
-        private void ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long endPage, int capacity, long page, int pageIndex)
+        private void ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long endPage, int numPagesToRead, long page, int pageIndex)
         {
             if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex))
             {
@@ -683,10 +685,10 @@ namespace Tsavorite.core
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
 
             // Issue next read if there are more pages past 'capacity' from this one.
-            if (page + capacity < endPage)
+            if (page + numPagesToRead < endPage)
             {
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
-                hlog.AsyncReadPagesFromDevice(page + capacity, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
+                hlog.AsyncReadPagesFromDevice(page + numPagesToRead, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
             }
         }
 
@@ -866,7 +868,7 @@ namespace Tsavorite.core
 
             // Initially issue read request for all pages that can be held in memory
             int totalPagesToRead = (int)(snapshotEndPage - startPage);
-            numPagesToReadFirst = Math.Min(capacity, totalPagesToRead);
+            numPagesToReadFirst = Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead);
         }
 
         private void ProcessReadSnapshotPage(long fromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
