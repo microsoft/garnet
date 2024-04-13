@@ -167,6 +167,7 @@ node_modules/
 **/log-commits
 .mono
 **/yarn.lock
+**/package.lock.json
 
 # RIA/Silverlight projects
 Generated_Code/
