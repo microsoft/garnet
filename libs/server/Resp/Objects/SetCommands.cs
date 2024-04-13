@@ -553,7 +553,7 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.NOTFOUND)
                 {
-                    while (!RespWriteUtils.WriteError(sourceKey.ToArray(), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                         SendAndReset();
                 }
                 else

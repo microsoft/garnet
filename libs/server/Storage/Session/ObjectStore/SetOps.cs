@@ -3,9 +3,7 @@
 
 using System;
 using System.Text;
-using System.Xml.Linq;
 using Garnet.common;
-using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -387,6 +385,13 @@ namespace Garnet.server
             if (sameKey)
             {
                 return GarnetStatus.OK;
+            }
+
+            SetLength(sourceKey, out var length, ref objectStoreContext);
+
+            if(length == 0)
+            {
+                return GarnetStatus.NOTFOUND;
             }
 
             SetRemove(sourceKey, member, out var sremOps, ref objectStoreContext);
