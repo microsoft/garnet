@@ -269,8 +269,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZREMRANGEBYRANK](data-structures.md#zremrangebyrank) | ➕ |  |
 |  | [ZREMRANGEBYSCORE](data-structures.md#zremrangebyscore) | ➕ |  |
 |  | [ZREVRANGE](data-structures.md#zrevrange) | ➕ |  |
-|  | ZREVRANGEBYLEX | ➖ | _Deprecated, use `ZRANGE` with `REV` and `BYLEX` arguments_ |
-|  | ZREVRANGEBYSCORE | ➖ | _Deprecated, use `ZRANGE` with `REV` and `BYSCORE` arguments_ |
+|  | ZREVRANGEBYLEX | ➖ |  |
+|  | ZREVRANGEBYSCORE | ➖ |  |
 |  | [ZREVRANK](data-structures.md#zrevrank) | ➕ |  |
 |  | [ZSCAN](data-structures.md#zscan) | ➕ |  |
 |  | [ZSCORE](data-structures.md#zscore) | ➕ |  |
@@ -298,7 +298,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [GETDEL](raw-string.md#getdel) | ➕ |  |
 |  | GETEX | ➖ |  |
 |  | [GETRANGE](raw-string.md#getrange) | ➕ |  |
-|  | GETSET | ➖ | _Deprecated, use `SET` with `GET` argument_ |
+|  | GETSET | ➖ |  |
 |  | [INCR](raw-string.md#incr) | ➕ |  |
 |  | [INCRBY](raw-string.md#incrby) | ➕ |  |
 |  | INCRBYFLOAT | ➖ |  |
@@ -310,10 +310,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SET](raw-string.md#set) | ➕ |  |
 |  | [SET ... NX](raw-string.md#set) | ➕ |  |
 |  | [SETEX](raw-string.md#setex) | ➕ |  |
-|  | SETNX | ➖ | _Deprecated, use `SET` with `NX` argument instead_ |
+|  | SETNX | ➖ |  |
 |  | SETRANGE | ➕ |  |
 |  | [STRLEN](raw-string.md#strlen) | ➕ |  |
-|  | SUBSTR | ➖ | _Deprecated, use `GETRANGE` instead_ |
+|  | SUBSTR | ➖ |  |
 | <span id="transactions">**TRANSACTIONS**</span> | [DISCARD](transactions.md#discard) | ➕ |  |
 |  | [EXEC](transactions.md#exec) | ➕ |  |
 |  | [MULTI](transactions.md#multi) | ➕ |  |
