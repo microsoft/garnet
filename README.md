@@ -2,10 +2,10 @@
 [![.NET CI](https://github.com/microsoft/garnet/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/microsoft/garnet/actions/workflows/ci.yml)
 [![Discord Shield](https://discordapp.com/api/guilds/1213937452272582676/widget.png?style=shield)](https://aka.ms/garnet-discord)
 
-Garnet is a new remote cache-store from Microsoft Research, that offers several unique benefits:
+Garnet is a new remote cache store from Microsoft Research, that offers several unique benefits:
 * Garnet adopts the popular [RESP](https://redis.io/docs/reference/protocol-spec/) wire protocol as a starting point, which makes it possible to use Garnet from unmodified Redis clients available in
   most programming languages of today, such as [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis) in C#.
-* Garnet offers much better throughput and scalability with many client connections and small batches, relative to comparable open-source cache-stores, leading to cost savings for large apps and services.
+* Garnet offers much better throughput and scalability with many client connections and small batches, relative to comparable open-source cache stores, leading to cost savings for large apps and services.
 * Garnet demonstrates extremely low client latencies (often less than 300 microseconds at the 99.9th percentile) using commodity cloud (Azure) VMs with Accelerated Networking enabled, which is critical to real-world scenarios.
 * Based on the latest .NET technology, Garnet is cross-platform, extensible, and modern. It is designed to be easy to develop for and evolve, without sacrificing performance in the
   common case. We leveraged the rich library ecosystem of .NET for API breadth, with open opportunities for optimization. Thanks to our careful use of .NET, Garnet achieves
@@ -21,7 +21,7 @@ operations on both raw strings and new object types, all in the convenience and 
 
 Garnet uses a fast and pluggable network layer, enabling future extensions such as leveraging kernel-bypass stacks. It supports secure transport layer security (TLS) communications using 
 the robust [SslStream](https://learn.microsoft.com/en-us/dotnet/api/system.net.security.sslstream) library of .NET, as well as basic access control. Garnet’s storage layer, called Tsavorite, was
-forked from our prior open-source project [FASTER](https://github.com/microsoft/FASTER), and includes strong database features such as thread scalability, tiered storage support 
+forked from our prior open-source project [FASTER](https://github.com/microsoft/FASTER) and includes strong database features such as thread scalability, tiered storage support 
 (memory, SSD, and cloud storage), fast non-blocking checkpointing, recovery, operation logging for durability, multi-key transaction support, and better memory management and reuse.
 Finally, Garnet supports a cluster mode of operation with support for sharding, replication, and dynamic key migration.
 
@@ -31,11 +31,11 @@ Finally, Garnet supports a cluster mode of operation with support for sharding, 
 
 ## Performance Preview
 
-We illustrate a few key results on our [website](https://microsoft.github.io/garnet/docs/benchmarking/overview) comparing Garnet to leading open-source cache-stores.
+We illustrate a few key results on our [website](https://microsoft.github.io/garnet/docs/benchmarking/overview) comparing Garnet to leading open-source cache stores.
 
 ## Design Highlights
 
-Garnet’s design re-thinks the entire cache-store stack – from receiving packets on the network, to parsing and processing database operations, to performing storage interactions. We build on 
+Garnet’s design re-thinks the entire cache-store stack – from receiving packets on the network to parsing and processing database operations to performing storage interactions. We build on 
 top of years of our [prior research](https://microsoft.github.io/FASTER/docs/td-research-papers/). Below is Garnet’s overall architecture.
 
 <p align="center">
@@ -57,8 +57,8 @@ processing concerns from storage details such as concurrency, storage tiering, a
 
 ### Cluster Mode
 
-In addition to single-node execution, Garnet supports a cluster mode, which allows users to create and manage a sharded and replicated deployment. Garnet also supports an efficient and dynamic key migration scheme 
-to rebalance shards. Users can use standard Redis cluster commands to create and manage Garnet clusters, and nodes perform gossip to share and evolve cluster state. Cluster is still work in progress.
+In addition to single-node execution, Garnet supports a cluster mode, which allows users to create and manage a shared and replicated deployment. Garnet also supports an efficient and dynamic key migration scheme 
+to rebalance shards. Users can use standard Redis cluster commands to create and manage Garnet clusters, and nodes perform gossip to share and evolve cluster state. The cluster is still a work in progress.
 
 ## Next Steps
 
@@ -90,10 +90,10 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 ## Trademarks
 
 This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
-trademarks or logos is subject to and must follow 
+trademarks or logos are subject to and must follow 
 [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
+Use of Microsoft trademarks or logos in modified versions of this project must not confuse or imply Microsoft sponsorship.
+Any use of third-party trademarks or logos is subject to those third-party's policies.
 
 Redis is a registered trademark of Redis Ltd. Any rights therein are reserved to Redis Ltd. Any use by Microsoft is for referential 
-purposes only and does not indicate any sponsorship, endorsement or affiliation between Redis and Microsoft.
+purposes only and does not indicate any sponsorship, endorsement, or affiliation between Redis and Microsoft.
