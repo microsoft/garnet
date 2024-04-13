@@ -193,7 +193,5 @@ namespace Garnet.server
             if (cursor == set.Count)
                 cursor = 0;
         }
-
-        public HashSet<byte[]> Set => set;
     }
 }

@@ -3,7 +3,6 @@
 
 using System;
 using System.Text;
-using System.Xml.Linq;
 using Garnet.common;
 using Tsavorite.core;
 
