@@ -533,6 +533,7 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult);
 
+        /// <summary>
         /// When called with just the key argument, return a random element from the set value stored at key.
         /// If the provided count argument is positive, return an array of distinct elements. 
         /// The array's length is either count or the set's cardinality (SCARD), whichever is lower.
