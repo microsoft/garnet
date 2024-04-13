@@ -423,7 +423,7 @@ namespace Garnet.server
 
                 if (index > list.Count - 1)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE.ToArray(), ref _o_curr, _o_end))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE, ref _o_curr, _o_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref _out_ptr, ref ptrHandle, ref _o_curr, ref _o_end);
                     return;
                 }
