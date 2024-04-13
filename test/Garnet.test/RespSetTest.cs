@@ -337,7 +337,7 @@ namespace Garnet.test
 
             var membersResult = db.SetMembers("key");
             Assert.AreEqual(3, membersResult.Length);
-            var strResult = membersResult.Select(m=>m.ToString()).ToArray();
+            var strResult = membersResult.Select(m => m.ToString()).ToArray();
             var expectedResult = new[] { "a", "b", "d" };
             Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
             Assert.IsFalse(Array.Exists(membersResult, t => t.ToString().Equals("c")));
