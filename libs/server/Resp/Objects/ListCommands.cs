@@ -684,7 +684,7 @@ namespace Garnet.server
                 if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
                 {
                     return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
-                }                
+                }
 
                 result = ListMove(count, sourceKey, destinationKey, sourceDirection, destinationDirection, out var node, ref storageApi);
                 if (node != null)
