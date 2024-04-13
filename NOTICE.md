@@ -15,7 +15,7 @@ For users of this code who wish to consume it under the "BSD" license
 rather than under the public domain or CC0 contribution text mentioned
 above, the code found under this directory is *also* provided under the
 following license (commonly referred to as the BSD 2-Clause License). This
-license does not detract from the above stated release of the code into
+license does not detract from the above-stated release of the code into
 the public domain, and simply represents an additional license granted by
 the Author.
 
