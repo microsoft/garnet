@@ -65,5 +65,28 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// Tries to parse the input as "LEFT" or "RIGHT" and returns the corresponding OperationDirection.
+        /// If parsing fails, returns OperationDirection.Unknown.
+        /// </summary>
+        /// <param name="input">The input to parse.</param>
+        /// <returns>The parsed OperationDirection, or OperationDirection.Unknown if parsing fails.</returns>
+        public OperationDirection GetOperationDirection(ReadOnlySpan<byte> input)
+        {
+            string inputString = Encoding.UTF8.GetString(input).ToUpperInvariant();
+            if (inputString == "RIGHT")
+            {
+                return OperationDirection.Right;
+            }
+            else if (inputString == "LEFT")
+            {
+                return OperationDirection.Left;
+            }
+            else
+            {
+                return OperationDirection.Unknown;
+            }
+        }
     }
 }

@@ -679,8 +679,12 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref param2.ptr, ref param2.length, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                var sourceDirection = param1.ReadOnlySpan.SequenceEqual("RIGHT"u8) ? OperationDirection.Right : OperationDirection.Left;
-                var destinationDirection = param2.ReadOnlySpan.SequenceEqual("RIGHT"u8) ? OperationDirection.Right : OperationDirection.Left;
+                OperationDirection sourceDirection = GetOperationDirection(param1.ReadOnlySpan);
+                OperationDirection destinationDirection = GetOperationDirection(param2.ReadOnlySpan);
+                if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
+                {
+                    return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                }                
 
                 result = ListMove(count, sourceKey, destinationKey, sourceDirection, destinationDirection, out var node, ref storageApi);
                 if (node != null)
