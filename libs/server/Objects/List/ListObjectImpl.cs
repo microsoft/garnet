@@ -414,7 +414,7 @@ namespace Garnet.server
 
                 if (NumUtils.TryBytesToInt(indexParam, indexParamSize, out var index) == false)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER.ToArray(), ref _o_curr, _o_end))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref _o_curr, _o_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref _out_ptr, ref ptrHandle, ref _o_curr, ref _o_end);
                     return;
                 }
