@@ -558,12 +558,11 @@ namespace Garnet.server
         private HashSet<byte[]> SetDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
+            var result = new HashSet<byte[]>();
             if (keys.Length == 0)
             {
-                return [];
+                return result;
             }
-
-            HashSet<byte[]> result = default;
 
             // first SetObject
             var status = GET(keys[0].ToArray(), out var first, ref objectContext);
@@ -571,8 +570,12 @@ namespace Garnet.server
             {
                 if (first.garnetObject is SetObject firstObject)
                 {
-                    result = new(firstObject.Set, new ByteArrayComparer());
+                    result = new HashSet<byte[]>(firstObject.Set, new ByteArrayComparer());
                 }
+            }
+            else
+            {
+                return result;
             }
 
             // after SetObjects
@@ -588,7 +591,7 @@ namespace Garnet.server
                 }
             }
 
-            return result ?? [];
+            return result;
         }
     }
 }

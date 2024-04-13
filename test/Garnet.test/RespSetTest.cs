@@ -282,34 +282,35 @@ namespace Garnet.test
             var key1 = "key1";
             var key1Value = new RedisValue[] { "a", "b", "c", "d" };
 
-            var key2 = "kye2";
+            var key2 = "key2";
             var key2Value = new RedisValue[] { "c" };
 
-            _ = db.SetAdd(key1, key1Value);
-            _ = db.SetAdd(key2, key2Value);
+            var addResult = db.SetAdd(key1, key1Value);
+            Assert.AreEqual(4, addResult);
+            addResult = db.SetAdd(key2, key2Value);
+            Assert.AreEqual(1, addResult);
 
             var result = (RedisResult[])db.Execute("SDIFF", key1, key2);
             Assert.AreEqual(3, result.Length);
-
-            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("a")));
-            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("b")));
-            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("d")));
-
-            Assert.IsFalse(Array.Exists(result, t => t.ToString().Equals("c")));
+            var strResult = result.Select(r => r.ToString()).ToArray();
+            var expectedResult = new[] { "a", "b", "d" };
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
+            Assert.IsFalse(strResult.Contains("c"));
 
             var key3 = "key3";
             var key3Value = new RedisValue[] { "a", "c", "e" };
 
-            _ = db.SetAdd(key3, key3Value);
+            addResult = db.SetAdd(key3, key3Value);
+            Assert.AreEqual(3, addResult);
 
             result = (RedisResult[])db.Execute("SDIFF", key1, key2, key3);
             Assert.AreEqual(2, result.Length);
+            strResult = result.Select(r => r.ToString()).ToArray();
+            expectedResult = ["b", "d"];
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
 
-            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("b")));
-            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("d")));
-
-            Assert.IsFalse(Array.Exists(result, t => t.ToString().Equals("c")));
-            Assert.IsFalse(Array.Exists(result, t => t.ToString().Equals("e")));
+            Assert.IsFalse(strResult.Contains("c"));
+            Assert.IsFalse(strResult.Contains("e"));
         }
 
         [Test]
@@ -323,21 +324,22 @@ namespace Garnet.test
             var key1 = "key1";
             var key1Value = new RedisValue[] { "a", "b", "c", "d" };
 
-            var key2 = "kye2";
+            var key2 = "key2";
             var key2Value = new RedisValue[] { "c" };
 
-            _ = db.SetAdd(key1, key1Value);
-            _ = db.SetAdd(key2, key2Value);
+            var addResult = db.SetAdd(key1, key1Value);
+            Assert.AreEqual(4, addResult);
+            addResult = db.SetAdd(key2, key2Value);
+            Assert.AreEqual(1, addResult);
 
             var result = db.Execute("SDIFFSTORE", key, key1, key2);
             Assert.AreEqual(3, int.Parse(result.ToString()));
 
             var membersResult = db.SetMembers("key");
-            Assert.AreEqual(3, membersResult.Count());
-            Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("a")));
-            Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("b")));
-            Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("d")));
-
+            Assert.AreEqual(3, membersResult.Length);
+            var strResult = membersResult.Select(m=>m.ToString()).ToArray();
+            var expectedResult = new[] { "a", "b", "d" };
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
             Assert.IsFalse(Array.Exists(membersResult, t => t.ToString().Equals("c")));
 
             var key3 = "key3";
@@ -345,12 +347,14 @@ namespace Garnet.test
             var key4 = "key4";
             var key4Value = new RedisValue[] { "a", "b" };
 
-            _ = db.SetAdd(key3, key3Value);
-            _ = db.SetAdd(key4, key4Value);
+            addResult = db.SetAdd(key3, key3Value);
+            Assert.AreEqual(3, addResult);
+            addResult = db.SetAdd(key4, key4Value);
+            Assert.AreEqual(2, addResult);
 
             result = db.Execute("SDIFFSTORE", key, key3, key4);
             membersResult = db.SetMembers("key");
-            Assert.AreEqual(1, membersResult.Count());
+            Assert.AreEqual(1, membersResult.Length);
             Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("c")));
         }
         #endregion

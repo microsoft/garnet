@@ -631,7 +631,7 @@ namespace Garnet.server
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool SetDiff<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool SetDiff<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (count < 1)
@@ -681,7 +681,7 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe bool SetDiffStore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool SetDiffStore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (count < 2)
