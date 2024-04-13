@@ -377,7 +377,7 @@ namespace Garnet.server
         {
             smoveResult = 0;
 
-            if (sourceKey.Length == 0 || destinationKey.Length == 0 || destinationKey.Length == 0)
+            if (sourceKey.Length == 0 || destinationKey.Length == 0 || member.Length == 0)
                 return GarnetStatus.OK;
 
             // If the keys are the same, no operation is performed.
@@ -387,14 +387,12 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            SetLength(sourceKey, out var length, ref objectStoreContext);
+            var sremStatus = SetRemove(sourceKey, member, out var sremOps, ref objectStoreContext);
 
-            if(length == 0)
+            if (sremStatus == GarnetStatus.NOTFOUND)
             {
                 return GarnetStatus.NOTFOUND;
             }
-
-            SetRemove(sourceKey, member, out var sremOps, ref objectStoreContext);
 
             if (sremOps != 1)
             {
