@@ -506,7 +506,9 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// 
+        /// Moves a member from a source set to a destination set.
+        /// If the move was performed, this command returns 1.
+        /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
