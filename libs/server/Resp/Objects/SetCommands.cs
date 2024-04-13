@@ -523,46 +523,45 @@ namespace Garnet.server
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SMOVE", count);
             }
+
+            ArgSlice sourceKey = default;
+            ArgSlice destinationKey = default;
+            ArgSlice sourceMember = default;
+
+            // Get the source key 
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceKey.ptr, ref sourceKey.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            // Get the destination key
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref destinationKey.ptr, ref destinationKey.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            // Get the member to move
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceMember.ptr, ref sourceMember.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            var keys = new ArgSlice[2] { sourceKey, destinationKey };
+
+            if (NetworkKeyArraySlotVerify(ref keys, false))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count)) return false;
+                return true;
+            }
+
+            var status = storageApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
+
+            if (status == GarnetStatus.NOTFOUND)
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    SendAndReset();
+            }
             else
             {
-                ArgSlice sourceKey = default;
-                ArgSlice destinationKey = default;
-                ArgSlice sourceMember = default;
-
-                // Get the source key 
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceKey.ptr, ref sourceKey.length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                // Get the destination key
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref destinationKey.ptr, ref destinationKey.length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                // Get the member to move
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceMember.ptr, ref sourceMember.length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                var keys = new ArgSlice[2] { sourceKey, destinationKey };
-
-                if (NetworkKeyArraySlotVerify(ref keys, false))
-                {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count)) return false;
-                    return true;
-                }
-
-                var status = storageApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
-
-                if (status == GarnetStatus.NOTFOUND)
-                {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
-                        SendAndReset();
-                }
+                while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
+                    SendAndReset();
             }
+
             // Reset session counters
             setItemsDoneCount = setOpsCount = 0;
 
