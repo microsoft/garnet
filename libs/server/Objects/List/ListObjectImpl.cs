@@ -396,7 +396,7 @@ namespace Garnet.server
             {
                 if (list.Count == 0)
                 {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY.ToArray(), ref _o_curr, _o_end))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref _o_curr, _o_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref _out_ptr, ref ptrHandle, ref _o_curr, ref _o_end);
                     return;
                 }
