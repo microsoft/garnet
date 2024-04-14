@@ -679,33 +679,8 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref param2.ptr, ref param2.length, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                OperationDirection sourceDirection, destinationDirection;
-                if (Ascii.EqualsIgnoreCase("RIGHT", param1.ReadOnlySpan))
-                {
-                    sourceDirection = OperationDirection.Right;
-                }
-                else if (Ascii.EqualsIgnoreCase("LEFT", param1.ReadOnlySpan))
-                {
-                    sourceDirection = OperationDirection.Left;
-                }
-                else
-                {
-                    sourceDirection = OperationDirection.Unknown;
-                }
-
-                if (Ascii.EqualsIgnoreCase("RIGHT", param2.ReadOnlySpan))
-                {
-                    destinationDirection = OperationDirection.Right;
-                }
-                else if (Ascii.EqualsIgnoreCase("LEFT", param2.ReadOnlySpan))
-                {
-                    destinationDirection = OperationDirection.Left;
-                }
-                else
-                {
-                    destinationDirection = OperationDirection.Unknown;
-                }
-
+                OperationDirection sourceDirection = GetOperationDirection(param1.ReadOnlySpan);
+                OperationDirection destinationDirection = GetOperationDirection(param2.ReadOnlySpan);
                 if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
                 {
                     return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
