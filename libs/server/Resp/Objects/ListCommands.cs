@@ -692,7 +692,7 @@ namespace Garnet.server
                 {
                     sourceDirection = OperationDirection.Unknown;
                 }
-                
+
                 if (Ascii.EqualsIgnoreCase("RIGHT", param2.ReadOnlySpan))
                 {
                     destinationDirection = OperationDirection.Right;
