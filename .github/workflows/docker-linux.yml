@@ -1,4 +1,4 @@
-name: Garnet Docker images
+name: Garnet Docker images for Linux
 
 on:
   workflow_dispatch: # allow manual run
@@ -7,13 +7,30 @@ on:
     types: [completed]
     branches: [main]
 
-permissions:
-   contents: read
-   packages: write
-
 jobs:
   docker:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - dockerfile: Dockerfile
+            image: ghcr.io/${{ github.repository }}
+            os: ubuntu-latest
+          - dockerfile: Dockerfile.alpine
+            image: ghcr.io/${{ github.repository }}-alpine
+            os: ubuntu-latest
+          - dockerfile: Dockerfile.ubuntu
+            image: ghcr.io/${{ github.repository }}-jammy
+            os: ubuntu-latest
+          - dockerfile: Dockerfile.chiseled
+            image: ghcr.io/${{ github.repository }}-jammy-chiseled
+            os: ubuntu-latest
+          - dockerfile: Dockerfile.cbl-mariner
+            image: ghcr.io/${{ github.repository }}-cbl-mariner2.0
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: write
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     steps:
       -
@@ -24,7 +41,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ matrix.image }}
           tags: |
             # generate Docker tags based on the following events/attributes
             type=ref,event=branch
@@ -53,7 +70,8 @@ jobs:
         name: Build and push
         uses: docker/build-push-action@v5
         with:
-          file: Dockerfile
+          file: ${{ matrix.dockerfile }}
+          provenance: false
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
