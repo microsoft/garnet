@@ -69,7 +69,7 @@ namespace Garnet.server
 
         public RespCommandKeySpecification[] KeySpecifications { get; init; }
 
-        public RespCommandsInfo[]? SubCommands { get; init; }
+        public RespCommandsInfo[] SubCommands { get; init; }
 
         [JsonIgnore]
         public string RespFormat => respFormat ??= ToRespFormat();

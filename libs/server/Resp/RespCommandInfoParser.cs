@@ -7,9 +7,9 @@ using Garnet.common;
 
 namespace Garnet.server
 {
-    internal class RespCommandInfoParser
+    public class RespCommandInfoParser
     {
-        internal static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out RespCommandsInfo commandInfo)
+        public static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out RespCommandsInfo commandInfo)
         {
             commandInfo = default;
 
