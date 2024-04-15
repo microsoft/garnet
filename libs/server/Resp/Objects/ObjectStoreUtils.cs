@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
 
@@ -73,7 +72,6 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input">The input to parse.</param>
         /// <returns>The parsed OperationDirection, or OperationDirection.Unknown if parsing fails.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public OperationDirection GetOperationDirection(ArgSlice input)
         {
 #if NET8_0_OR_GREATER
