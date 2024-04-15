@@ -459,7 +459,7 @@ namespace Garnet.server
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
-            bool found = false;
+            var found = false;
 
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
@@ -468,7 +468,7 @@ namespace Garnet.server
                 if (status.Found) found = true;
             }
 
-            if (!found && (storeType == StoreType.Object || storeType == StoreType.All) && objectStoreSession != null)
+            if (objectStoreSession != null && (storeType == StoreType.Object || storeType == StoreType.All))
             {
                 var keyBA = key.ToByteArray();
                 var status = objectContext.Delete(ref keyBA);
