@@ -600,18 +600,18 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var key = "mylist";
-            _ = db.ListRightPush(key, "one");
-            _ = db.ListRightPush(key, "two");
-            _ = db.ListRightPush(key, "three");
+            var values = new RedisValue[] { "one", "two", "three" };
+            var pushResult = db.ListRightPush(key, values);
+            Assert.AreEqual(3, pushResult);
 
             db.ListSetByIndex(key, 0, "four");
             db.ListSetByIndex(key, -2, "five");
 
             var result = db.ListRange(key, 0, -1);
+            var strResult = result.Select(r => r.ToString()).ToArray();
             Assert.AreEqual(3, result.Length);
-            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("four")));
-            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("five")));
-            Assert.IsTrue(Array.Exists(result, t => t.ToString().Equals("three")));
+            var expected = new[] { "four", "five", "three" };
+            Assert.IsTrue(expected.SequenceEqual(strResult));
         }
 
         #region GarnetClientTests
