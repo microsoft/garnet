@@ -679,8 +679,8 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref param2.ptr, ref param2.length, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                OperationDirection sourceDirection = GetOperationDirection(param1.ReadOnlySpan);
-                OperationDirection destinationDirection = GetOperationDirection(param2.ReadOnlySpan);
+                OperationDirection sourceDirection = GetOperationDirection(param1);
+                OperationDirection destinationDirection = GetOperationDirection(param2);
                 if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
                 {
                     return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);

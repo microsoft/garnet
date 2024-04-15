@@ -74,32 +74,31 @@ namespace Garnet.server
         /// <param name="input">The input to parse.</param>
         /// <returns>The parsed OperationDirection, or OperationDirection.Unknown if parsing fails.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public OperationDirection GetOperationDirection(ReadOnlySpan<byte> input)
+        public OperationDirection GetOperationDirection(ArgSlice input)
         {
 #if NET8_0_OR_GREATER
-            if (Ascii.EqualsIgnoreCase(input, "RIGHT"))
+            if (Ascii.EqualsIgnoreCase(input.ReadOnlySpan, "RIGHT"))
             {
                 return OperationDirection.Right;
             }
-            else if (Ascii.EqualsIgnoreCase(input, "LEFT"))
+            else if (Ascii.EqualsIgnoreCase(input.ReadOnlySpan, "LEFT"))
             {
                 return OperationDirection.Left;
             }
 #else
-            string inputString = Encoding.UTF8.GetString(input);
-            if (inputString.Equals("RIGHT", StringComparison.OrdinalIgnoreCase))
-            {
-                return OperationDirection.Right;
-            }
-            else if (inputString.Equals("LEFT", StringComparison.OrdinalIgnoreCase))
-            {
+            // Optimize for the common case
+            if (input.ReadOnlySpan.SequenceEqual("LEFT"u8))
                 return OperationDirection.Left;
-            }
-#endif
-            else
-            {
-                return OperationDirection.Unknown;
-            }
+            if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))
+                return OperationDirection.Right;
+            // Rare case: try making upper case and retry
+            MakeUpperCase(input.ptr);
+            if (input.ReadOnlySpan.SequenceEqual("LEFT"u8))
+                return OperationDirection.Left;
+            if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))
+                return OperationDirection.Right;
+#endif            
+            return OperationDirection.Unknown;
         }
     }
 }
