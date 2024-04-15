@@ -407,6 +407,55 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoSRANDMEMBERWithCountCommandLC()
+        {
+            var myset = new HashSet<string> { "one", "two", "three", "four", "five" };
+
+            CreateLongSet();
+
+            using (var lightClientRequest = TestUtils.CreateRequest())
+            {
+                var response = lightClientRequest.SendCommand("SRANDMEMBER myset", 1);
+                var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
+                var item = Encoding.ASCII.GetString(response).Substring(4, Int32.Parse(strLen));
+                Assert.IsTrue(myset.Contains(item));
+
+                // Get three random members
+                response = lightClientRequest.SendCommand("SRANDMEMBER myset 3", 3);
+                var strResponse = Encoding.ASCII.GetString(response);
+                Assert.AreEqual('*', strResponse[0]);
+
+                var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+                Assert.IsTrue(arrLenEndIdx > 1);
+
+                var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+                Assert.IsTrue(int.TryParse(strArrLen, out var arrLen));
+                Assert.AreEqual(3, arrLen);
+
+                // Get 6 random members and verify that at least two elements are the same
+                response = lightClientRequest.SendCommand("SRANDMEMBER myset -6", 6);
+                arrLenEndIdx = Encoding.ASCII.GetString(response).IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+                strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+                Assert.IsTrue(int.TryParse(strArrLen, out arrLen));
+
+                var members = new HashSet<string>();
+                var repeatedMembers = false;
+                for (int i = 0; i < arrLen; i++)
+                {
+                    var member = Encoding.ASCII.GetString(response).Substring(arrLenEndIdx + 2, response.Length - arrLenEndIdx - 5);
+                    if (members.Contains(member))
+                    {
+                        repeatedMembers = true;
+                        break;
+                    }
+                    members.Add(member);
+                }
+
+                Assert.IsTrue(repeatedMembers, "At least two members are repeated.");
+            }
+        }
+
+        [Test]
         public void CanDoSPOPCommandLC()
         {
             var myset = new HashSet<string>();
@@ -463,6 +512,37 @@ namespace Garnet.test
             strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
             Assert.IsTrue(int.TryParse(strArrLen, out arrLen));
             Assert.AreEqual(2, arrLen);
+        }
+
+        [Test]
+        public void CanDoSPOPWithMoreCountThanSetSizeCommandLC()
+        {
+            CreateLongSet();
+
+            var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand("SPOP myset 10", 5);
+
+            var strResponse = Encoding.ASCII.GetString(response);
+            Assert.AreEqual('*', strResponse[0]);
+
+            var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+            Assert.IsTrue(arrLenEndIdx > 1);
+
+            var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            Assert.IsTrue(int.TryParse(strArrLen, out var arrLen));
+            Assert.IsTrue(arrLen == 5);
+
+            var lightClientRequest2 = TestUtils.CreateRequest();
+            var response2 = lightClientRequest2.SendCommand("SADD myset one");
+            var expectedResponse = ":1\r\n";
+            strResponse = Encoding.ASCII.GetString(response2).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response2 = lightClientRequest2.SendCommand("SCARD myset");
+            expectedResponse = ":1\r\n";
+            strResponse = Encoding.ASCII.GetString(response2).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
         }
 
         [Test]
