@@ -723,7 +723,6 @@ namespace Tsavorite.core
             if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
-                //recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
                 recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
                 return true;
             }
@@ -843,7 +842,7 @@ namespace Tsavorite.core
                     recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
 
                     var readPage = p + numPagesToRead;
-                    if (p + numPagesToRead < snapshotEndPage)
+                    if (readPage < snapshotEndPage)
                     {
                         var readPageIndex = hlog.GetPageIndexForPage(readPage);
                         recoveryStatus.readStatus[readPageIndex] = ReadStatus.Pending;
