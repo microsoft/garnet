@@ -74,16 +74,6 @@ namespace Garnet.server
         /// <returns>The parsed OperationDirection, or OperationDirection.Unknown if parsing fails.</returns>
         public OperationDirection GetOperationDirection(ArgSlice input)
         {
-#if NET8_0_OR_GREATER
-            if (Ascii.EqualsIgnoreCase(input.ReadOnlySpan, "RIGHT"))
-            {
-                return OperationDirection.Right;
-            }
-            else if (Ascii.EqualsIgnoreCase(input.ReadOnlySpan, "LEFT"))
-            {
-                return OperationDirection.Left;
-            }
-#else
             // Optimize for the common case
             if (input.ReadOnlySpan.SequenceEqual("LEFT"u8))
                 return OperationDirection.Left;
@@ -95,7 +85,6 @@ namespace Garnet.server
                 return OperationDirection.Left;
             if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))
                 return OperationDirection.Right;
-#endif            
             return OperationDirection.Unknown;
         }
     }
