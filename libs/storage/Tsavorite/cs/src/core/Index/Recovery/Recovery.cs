@@ -615,6 +615,8 @@ namespace Tsavorite.core
                 return;
             var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadFirst);
 
+            FreePagesBeyondUsableCapacity(startPage: startPage, capacity: capacity, usableCapacity: capacity - hlog.MinEmptyPageCount, pagesToRead: numPagesToReadFirst);
+
             // Issue request to read pages as much as possible
             hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
 
@@ -638,6 +640,8 @@ namespace Tsavorite.core
             if (untilAddress <= scanFromAddress)
                 return;
             var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadFirst);
+
+            FreePagesBeyondUsableCapacity(startPage: startPage, capacity: capacity, usableCapacity: capacity - hlog.MinEmptyPageCount, pagesToRead: numPagesToReadFirst);
 
             // Issue request to read pages as much as possible
             hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
@@ -685,6 +689,7 @@ namespace Tsavorite.core
 
             // We do not need to flush
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
+            recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
 
             // Issue next read if there are more pages past 'capacity' from this one.
             if (page + numPagesToRead < endPage)
@@ -697,6 +702,8 @@ namespace Tsavorite.core
 
                 var readPage = page + numPagesToRead;
                 var readPageIndex = hlog.GetPageIndexForPage(readPage);
+                recoveryStatus.WaitFlush(readPageIndex); // wait until page is flushed to read in again to the same index
+
                 recoveryStatus.readStatus[readPageIndex] = ReadStatus.Pending;
                 hlog.AsyncReadPagesFromDevice(readPage, 1, untilAddress, hlog.AsyncReadPagesCallbackForRecovery, recoveryStatus);
             }
@@ -723,6 +730,7 @@ namespace Tsavorite.core
             if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
+                recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
                 recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
                 return true;
             }
@@ -745,6 +753,8 @@ namespace Tsavorite.core
         private void RecoverHybridLogFromSnapshotFile(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options, DeltaLog deltaLog, long recoverTo)
         {
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
+
+            FreePagesBeyondUsableCapacity(startPage: startPage, capacity: capacity, usableCapacity: capacity - hlog.MinEmptyPageCount, pagesToRead: numPagesToReadFirst);
 
             hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, snapshotEndAddress,
                                           hlog.AsyncReadPagesCallbackForRecovery,
@@ -782,9 +792,34 @@ namespace Tsavorite.core
             recoveryStatus.Dispose();
         }
 
+        /// <summary>
+        /// This method ensures that before 'pagesToRead' number of pages are read into memory, any previously allocated pages 
+        /// that would cause total number of pages in memory to go beyond usableCapacity are freed. This is to ensure that 
+        /// memory size constraint is maintained during recovery.
+        /// </summary>
+        /// <param name="startPage"></param>
+        /// <param name="capacity"></param>
+        /// <param name="usableCapacity"></param>
+        /// <param name="pagesToRead"></param>
+        private void FreePagesBeyondUsableCapacity(long startPage, int capacity, int usableCapacity, int pagesToRead)
+        {
+            var beg = startPage - capacity;
+            var end = startPage - (usableCapacity - pagesToRead);
+            if (beg < 0) beg = 0;
+            if (end < 0) end = 0;
+
+            for (var page = beg; page < end; page++)
+            {
+                if (hlog.IsAllocated(hlog.GetPageIndexForPage(page)))
+                    hlog.FreePage(page);
+            }
+        }
+
         private async ValueTask RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options, DeltaLog deltaLog, long recoverTo, CancellationToken cancellationToken)
         {
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadFirst);
+
+            FreePagesBeyondUsableCapacity(startPage: startPage, capacity: capacity, usableCapacity: capacity - hlog.MinEmptyPageCount, pagesToRead: numPagesToReadFirst);
 
             hlog.AsyncReadPagesFromDevice(startPage, numPagesToReadFirst, snapshotEndAddress,
                                           hlog.AsyncReadPagesCallbackForRecovery,
@@ -839,6 +874,7 @@ namespace Tsavorite.core
                 {
                     // Flush snapshot page to main log
                     // Flush callback will issue further reads or page clears
+                    recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
                     recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
 
                     var readPage = p + numPagesToRead;
@@ -1024,20 +1060,25 @@ namespace Tsavorite.core
             if (Interlocked.Decrement(ref result.count) == 0)
             {
                 int pageIndex = hlog.GetPageIndexForPage(result.page);
+
+                // If full capacity cannot be utilized, free the page to ensure memory size constraint is maintained
+                if (result.page + result.context.usableCapacity < result.context.endPage &&
+                    result.context.usableCapacity < result.context.capacity)
+                {
+                    hlog.FreePage(result.page);
+                }
+
                 if (errorCode != 0)
                     result.context.SignalFlushedError(pageIndex);
                 else
                     result.context.SignalFlushed(pageIndex);
+
                 if (result.page + result.context.usableCapacity < result.context.endPage)
                 {
-                    // If full capacity cannot be utilized, free the page to ensure memory size constraint is maintained
-                    if (result.context.usableCapacity < result.context.capacity)
-                    {
-                        hlog.FreePage(result.page);
-                    }
-
                     var readPage = result.page + result.context.usableCapacity;
                     var readPageIndex = hlog.GetPageIndexForPage(readPage);
+
+                    result.context.WaitFlush(readPageIndex); // wait until page is flushed to read in again to the same index
                     result.context.readStatus[readPageIndex] = ReadStatus.Pending;
 
                     if (result.context.checkpointType == CheckpointType.FoldOver)

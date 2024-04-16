@@ -205,7 +205,7 @@ namespace Tsavorite.core
         /// <param name="index"></param>
         internal override void AllocatePage(int index)
         {
-            Interlocked.Increment(ref AllocatedPageCount);
+            UpdateMaxAllocatedPageCount(Interlocked.Increment(ref AllocatedPageCount));
 
             if (overflowPagePool.TryGet(out var item))
             {
