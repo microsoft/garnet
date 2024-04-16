@@ -418,6 +418,14 @@ namespace Garnet.server
             CopyUpdateNumber(val, ref newValue, ref output);
         }
 
+        /// <summary>
+        /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
+        /// </summary>
+        /// <param name="length">Length of byte array</param>
+        /// <param name="source">Pointer to byte array</param>
+        /// <param name="output">Output error flag</param>
+        /// <param name="val">Parsed long value</param>
+        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
         static bool IsValidNumber(int length, byte* source, Span<byte> output, out long val)
         {
             val = 0;
