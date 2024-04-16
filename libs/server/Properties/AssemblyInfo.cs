@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("Garnet.test" + AssemblyRef.GarnetPublicKey)]
 [assembly: InternalsVisibleTo("Embedded.perftest" + AssemblyRef.GarnetPublicKey)]
+[assembly: InternalsVisibleTo("BDN.benchmark" + AssemblyRef.GarnetPublicKey)]
 
 /// <summary>
 /// Sets public key string for friend assemblies.
