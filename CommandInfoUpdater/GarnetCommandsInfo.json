@@ -1,0 +1,30 @@
+﻿[
+  {
+    "Command": "COSCAN",
+    "ArrayCommand": null,
+    "Name": "COSCAN",
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "REGISTERCS",
+    "ArrayCommand": null,
+    "Name": "REGISTERCS",
+    "Arity": -5,
+    "Flags": "Admin, NoScript, NoMulti, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, Dangerous",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  }
+]

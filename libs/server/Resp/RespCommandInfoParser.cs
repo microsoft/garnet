@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Garnet.common;
@@ -9,7 +10,7 @@ namespace Garnet.server
 {
     public class RespCommandInfoParser
     {
-        public static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out RespCommandsInfo commandInfo)
+        public static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, IReadOnlyDictionary<string, (RespCommand, byte?)> supportedCommands, out RespCommandsInfo commandInfo, string parentCommand = null)
         {
             commandInfo = default;
 
@@ -75,7 +76,7 @@ namespace Garnet.server
             var subCommands = new List<RespCommandsInfo>();
             for (var scIdx = 0; scIdx < scCount; scIdx++)
             {
-                if (!TryReadFromResp(ref ptr, end, out commandInfo))
+                if (!TryReadFromResp(ref ptr, end, supportedCommands, out commandInfo, name))
                     return false;
 
                 subCommands.Add(commandInfo);
@@ -83,6 +84,8 @@ namespace Garnet.server
 
             commandInfo = new RespCommandsInfo()
             {
+                Command = supportedCommands[parentCommand ?? name].Item1,
+                ArrayCommand = supportedCommands[parentCommand ?? name].Item2,
                 Name = name.ToUpper(),
                 Arity = arity,
                 Flags = flags,

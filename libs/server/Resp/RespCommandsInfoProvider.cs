@@ -39,7 +39,7 @@ namespace Garnet
         /// <param name="commandsInfo">Dictionary that maps a command name to its matching RespCommandsInfo</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if export succeeded</returns>
-        bool TryExportRespCommandsInfo(string path, IStreamProvider streamProvider, IDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger);
+        bool TryExportRespCommandsInfo(string path, IStreamProvider streamProvider, IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger);
     }
 
     public class RespCommandsInfoProviderFactory
@@ -114,7 +114,7 @@ namespace Garnet
             return true;
         }
 
-        public bool TryExportRespCommandsInfo(string path, IStreamProvider streamProvider, IDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger)
+        public bool TryExportRespCommandsInfo(string path, IStreamProvider streamProvider, IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger)
         {
             string jsonSettings;
 

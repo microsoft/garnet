@@ -9,7 +9,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="GarnetCommandsInfo.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="..\libs\server\Resp\RespCommandsInfo.json" Link="RespCommandsInfo.json" />
+    <EmbeddedResource Include="GarnetCommandsInfo.json" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,12 +24,6 @@
   <ItemGroup>
     <ProjectReference Include="..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\test\Garnet.test\Garnet.test.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="SupportedCommands.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
 </Project>
