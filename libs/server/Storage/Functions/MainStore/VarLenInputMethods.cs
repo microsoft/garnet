@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -41,7 +40,8 @@ namespace Garnet.server
                     return sizeof(int) + valueLength;
 
                 case RespCommand.INCRBY:
-                    var next = NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                    if (!NumUtils.TryBytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out var next))
+                        return sizeof(int);
 
                     var fNeg = false;
                     var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
@@ -49,7 +49,9 @@ namespace Garnet.server
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
 
                 case RespCommand.DECRBY:
-                    next = -NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                    if (!NumUtils.TryBytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out next))
+                        return sizeof(int);
+                    next = -next;
 
                     fNeg = false;
                     ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
@@ -85,14 +87,15 @@ namespace Garnet.server
                 {
                     case RespCommand.INCR:
                     case RespCommand.INCRBY:
-                        int datalen = inputspan.Length - RespInputHeader.Size;
-                        Span<byte> slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
+                        var datalen = inputspan.Length - RespInputHeader.Size;
+                        var slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
 
-                        long curr = NumUtils.BytesToLong(t.AsSpan());
-                        long next = curr + NumUtils.BytesToLong(slicedInputData);
+                        // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
+                        var curr = NumUtils.BytesToLong(t.AsSpan());
+                        var next = curr + NumUtils.BytesToLong(slicedInputData);
 
-                        bool fNeg = false;
-                        int ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
+                        var fNeg = false;
+                        var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
                         ndigits += fNeg ? 1 : 0;
 
                         return sizeof(int) + ndigits + t.MetadataSize;
@@ -102,6 +105,7 @@ namespace Garnet.server
                         datalen = inputspan.Length - RespInputHeader.Size;
                         slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
 
+                        // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
                         curr = NumUtils.BytesToLong(t.AsSpan());
                         next = curr - NumUtils.BytesToLong(slicedInputData);
 

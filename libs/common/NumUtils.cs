@@ -110,7 +110,7 @@ namespace Garnet.common
         /// <param name="length">Length of number</param>
         /// <param name="source">Source bytes</param>
         /// <param name="result">Long value extracted from sequence</param>
-        /// <returns>True if sequence contains only numeric values otherwise false</returns>
+        /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
         public static bool TryBytesToLong(int length, byte* source, out long result)
         {
             var fNeg = *source == '-';
