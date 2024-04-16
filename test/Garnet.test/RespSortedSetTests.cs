@@ -9,7 +9,6 @@ using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
-using Tsavorite.core;
 
 namespace Garnet.test
 {

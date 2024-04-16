@@ -24,6 +24,11 @@ namespace Embedded.perftest
         }
 
         /// <summary>
+        /// Dispose server
+        /// </summary>
+        public new void Dispose() => base.Dispose();
+
+        /// <summary>
         /// Return a RESP session to this server
         /// </summary>
         /// <returns>A new RESP server session</returns>
