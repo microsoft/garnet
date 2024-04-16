@@ -770,14 +770,25 @@ namespace Garnet.server
 
             var key = new ArgSlice(keyPtr, ksize);
 
-            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             var status = storageApi.Increment(key, input, ref output);
+            var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1 ? (OperationError)output.Span[0] : OperationError.SUCCESS;
 
-            while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                SendAndReset();
-
+            switch (errorFlag)
+            {
+                case OperationError.SUCCESS:
+                    while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), output.Length, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case OperationError.INVALID_TYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    throw new GarnetException($"Invalid OperationError {errorFlag}");
+            }
             return true;
         }
 

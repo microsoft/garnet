@@ -105,6 +105,36 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Convert sequence of ASCII bytes into long number
+        /// </summary>
+        /// <param name="length">Length of number</param>
+        /// <param name="source">Source bytes</param>
+        /// <param name="result">Long value extracted from sequence</param>
+        /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
+        public static bool TryBytesToLong(int length, byte* source, out long result)
+        {
+            var fNeg = *source == '-';
+            var beg = fNeg ? source + 1 : source;
+            var end = source + length;
+            var digit = *beg - '0';
+            result = 0;
+
+            // Check first digit which needs to be non-zero
+            if (digit is <= 0 or > 9)
+                return false;
+
+            while (beg < end)
+            {
+                digit = *beg++ - '0';
+                if (digit is < 0 or > 9)
+                    return false;
+                checked { result = (result * 10) + digit; }
+            }
+            result = fNeg ? -result : result;
+            return true;
+        }
+
+        /// <summary>
         /// Convert sequence of ASCII bytes into ulong number
         /// </summary>
         /// <param name="length">Length of number</param>
@@ -514,6 +544,5 @@ namespace Garnet.common
             result = fNeg ? -(result) : result;
             return true;
         }
-
     }
 }

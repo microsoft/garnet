@@ -7,7 +7,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;

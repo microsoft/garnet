@@ -341,20 +341,39 @@ namespace Garnet.server
 
         static bool InPlaceUpdateNumber(long val, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            bool fNeg = false;
-            int ndigits = NumUtils.NumDigitsInLong(val, ref fNeg);
+            var fNeg = false;
+            var ndigits = NumUtils.NumDigitsInLong(val, ref fNeg);
             ndigits += fNeg ? 1 : 0;
 
             if (ndigits > value.Length)
                 return false;
 
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
-            value.ShrinkSerializedLength(ndigits + value.MetadataSize);
-            NumUtils.LongToSpanByte(val, value.AsSpan());
+            _ = value.ShrinkSerializedLength(ndigits + value.MetadataSize);
+            _ = NumUtils.LongToSpanByte(val, value.AsSpan());
             rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
             value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = value.LengthWithoutMetadata;
             return true;
+        }
+
+        static bool TryInPlaceUpdateNumber(ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo, long input)
+        {
+            // Check if value contains a valid number
+            if (!IsValidNumber(value.LengthWithoutMetadata, value.ToPointer(), output.SpanByte.AsSpan(), out var val))
+                return true;
+
+            try
+            {
+                checked { val += input; }
+            }
+            catch
+            {
+                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                return true;
+            }
+
+            return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
         }
 
         static void CopyUpdateNumber(long next, ref SpanByte newValue, ref SpanByteAndMemory output)
@@ -362,6 +381,71 @@ namespace Garnet.server
             NumUtils.LongToSpanByte(next, newValue.AsSpan());
             newValue.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = newValue.LengthWithoutMetadata;
+        }
+
+        /// <summary>
+        /// Copy update from old value to new value while also validating whether oldValue is a numerical value.
+        /// </summary>
+        /// <param name="oldValue">Old value copying from</param>
+        /// <param name="newValue">New value copying to</param>
+        /// <param name="output">Output value</param>
+        /// <param name="input">Parsed input value</param>
+        static void TryCopyUpdateNumber(ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, long input)
+        {
+            newValue.ExtraMetadata = oldValue.ExtraMetadata;
+
+            // Check if value contains a valid number
+            if (!IsValidNumber(oldValue.LengthWithoutMetadata, oldValue.ToPointer(), output.SpanByte.AsSpan(), out var val))
+            {
+                // Move to tail of the log even when oldValue is alphanumeric
+                // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
+                oldValue.CopyTo(ref newValue);
+                return;
+            }
+
+            // Check operation overflow
+            try
+            {
+                checked { val += input; }
+            }
+            catch
+            {
+                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
+                return;
+            }
+
+            // Move to tail of the log and update
+            CopyUpdateNumber(val, ref newValue, ref output);
+        }
+
+        /// <summary>
+        /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
+        /// </summary>
+        /// <param name="length">Length of byte array</param>
+        /// <param name="source">Pointer to byte array</param>
+        /// <param name="output">Output error flag</param>
+        /// <param name="val">Parsed long value</param>
+        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        static bool IsValidNumber(int length, byte* source, Span<byte> output, out long val)
+        {
+            val = 0;
+            try
+            {
+                // Check for valid number
+                if (!NumUtils.TryBytesToLong(length, source, out val))
+                {
+                    // Signal value is not a valid number
+                    output[0] = (byte)OperationError.INVALID_TYPE;
+                    return false;
+                }
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                output[0] = (byte)OperationError.INVALID_TYPE;
+                return false;
+            }
+            return true;
         }
 
         void CopyDefaultResp(ReadOnlySpan<byte> resp, ref SpanByteAndMemory dst)

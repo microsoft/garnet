@@ -9,29 +9,42 @@ Below is the full list of API commands and their implementation status in Garnet
 Note that this list is subject to change as we continue to expand our API command support with the help of our growing community.
 
 ### Command Categories
-1. [BITMAP](#bitmap)
-2. [CLUSTER](#cluster)
-3. [CONNECTION](#connection)
-4. [FUNCTIONS](#functions)
-5. [GENERIC](#generic)
-6. [GEO](#geo)
-7. [HASH](#hash)
-8. [HYPERLOGLOG](#hyperloglog)
-9. [KEYS](#keys)
-10. [LIST](#list)
-11. [PUB/SUB](#pubsub)
-12. [SCRIPTING](#scripting)
-13. [SERVER](#server)
-14. [SET](#set)
-15. [SORTED SET](#sorted-set)
-16. [STREAM](#stream)
-17. [STRING](#string)
-18. [TRANSACTIONS](#transactions)
+1. [ACL](#acl)
+2. [BITMAP](#bitmap)
+3. [CLUSTER](#cluster)
+4. [CONNECTION](#connection)
+5. [FUNCTIONS](#functions)
+6. [GENERIC](#generic)
+7. [GEO](#geo)
+8. [HASH](#hash)
+9. [HYPERLOGLOG](#hyperloglog)
+10. [KEYS](#keys)
+11. [LIST](#list)
+12. [PUB/SUB](#pubsub)
+13. [SCRIPTING](#scripting)
+14. [SERVER](#server)
+15. [SET](#set)
+16. [SORTED SET](#sorted-set)
+17. [STREAM](#stream)
+18. [STRING](#string)
+10. [TRANSACTIONS](#transactions)
 
 ### Full Commands List
 
 | Category | Command | Implemented in Garnet | Notes |
 | ------------- | ------------- | ------------- | ------------- | 
+| <span id="acl">**ACL**</span> | [CAT](acl.md#acl-cat) | ➕ |  |
+|  | [DELUSER](acl.md#acl-deluser) | ➕ |  |
+|  | DRYRUN | ➖ |  |
+|  | GENPASS | ➖ |  |
+|  | GETUSER | ➖ |  |
+|  | [LIST](acl.md#acl-list) | ➕ |  |
+|  | [LOAD](acl.md#acl-load) | ➕ |  |
+|  | LOG | ➖ |  |
+|  | SAVE | ➖ |  |
+|  | [SETUSER](acl.md#acl-setuser) | ➕ |  |
+|  | [USERS](acl.md#acl-users) | ➕ |  |
+|  | [WHOAMI](acl.md#acl-whoami) | ➕ |  |
 | <span id="bitmap">**BITMAP**</span> | [BITCOUNT](analytics.md#bitcount) | ➕ |  |
 |  | [BITFIELD](analytics.md#bitfield) | ➕ |  |
 |  | BITFIELD_RO | ➖ |  |
@@ -223,7 +236,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | SMISMEMBER | ➖ |  |
 |  | SMOVE | ➖ |  |
 |  | [SPOP](data-structures.md#spop) | ➕ |  |
-|  | SRANDMEMBER | ➖ |  |
+|  | [SRANDMEMBER](data-structures.md#srandmember) | ➕ |  |
 |  | [SREM](data-structures.md#srem) | ➕ |  |
 |  | [SSCAN](data-structures.md#sscan) | ➕ |  |
 |  | SUNION | ➖ |  |
@@ -297,7 +310,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SET](raw-string.md#set) | ➕ |  |
 |  | [SET ... NX](raw-string.md#set) | ➕ |  |
 |  | [SETEX](raw-string.md#setex) | ➕ |  |
-|  | [SETNX](raw-string.md#setnx) | ➕ |  |
+|  | SETNX | ➖ |  |
 |  | SETRANGE | ➕ |  |
 |  | [STRLEN](raw-string.md#strlen) | ➕ |  |
 |  | SUBSTR | ➖ |  |
