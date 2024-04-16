@@ -106,7 +106,7 @@ namespace Garnet.server
         private bool SetUnion<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 2)
+            if (count < 1)
             {
                 setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SUNION", count);
@@ -132,17 +132,14 @@ namespace Garnet.server
             storageApi.SetUnion(keys, out var result);
 
             // write the size of result
-            var resultCount = result?.Count ?? 0;
+            var resultCount = result.Count;
             while (!RespWriteUtils.WriteArrayLength(resultCount, ref dcurr, dend))
                 SendAndReset();
 
-            if (result != null)
+            foreach (var item in result)
             {
-                foreach (var item in result)
-                {
-                    while (!RespWriteUtils.WriteBulkString(item, ref dcurr, dend))
-                        SendAndReset();
-                }
+                while (!RespWriteUtils.WriteBulkString(item, ref dcurr, dend))
+                    SendAndReset();
             }
 
             // update read pointers

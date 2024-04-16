@@ -693,7 +693,7 @@ namespace Garnet.server
                                         {
                                             return (RespCommand.STRLEN, 0);
                                         }
-                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSUNION\r\n"u8))
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUNION\r\n"u8))
                                         {
                                             return (RespCommand.Set, (byte)SetOperation.SUNION);
                                         }
