@@ -1055,6 +1055,11 @@ namespace Tsavorite.core
         public int AllocatedPageCount;
 
         /// <summary>
+        /// Max number of pages that have been allocated at any point in time
+        /// </summary>
+        public int MaxAllocatedPageCount;
+
+        /// <summary>
         /// Maximum possible number of empty pages in circular buffer
         /// </summary>
         public int MaxEmptyPageCount => BufferSize - 1;
@@ -1116,6 +1121,18 @@ namespace Tsavorite.core
         /// </summary>
         internal abstract void DeleteFromMemory();
 
+        /// <summary>
+        /// Update MaxAllocatedPageCount, if a higher number of pages have been allocated.
+        /// </summary>
+        /// <param name="newAllocatedPageCount"></param>
+        protected void UpdateMaxAllocatedPageCount(int newAllocatedPageCount)
+        {
+            int currMaxAllocatedPageCount = MaxAllocatedPageCount;
+            if (newAllocatedPageCount > currMaxAllocatedPageCount)
+            {
+                Interlocked.CompareExchange(ref MaxAllocatedPageCount, newAllocatedPageCount, currMaxAllocatedPageCount);
+            }
+        }
 
         /// <summary>
         /// Segment size
