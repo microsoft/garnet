@@ -297,6 +297,10 @@ namespace Garnet.server
             => storageSession.SetPop(key, input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus SetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SetRandomMember(key, input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
             => storageSession.SetScan(key, cursor, match, count, out items, ref objectContext);
 
