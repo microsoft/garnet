@@ -622,28 +622,34 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(RespCommand.INCR)]
-        [TestCase(RespCommand.DECR)]
-        [TestCase(RespCommand.INCRBY)]
-        [TestCase(RespCommand.DECRBY)]
-        public void SimpleIncrementInvalidValue(RespCommand cmd)
+        [TestCase(RespCommand.INCR, true)]
+        [TestCase(RespCommand.DECR, true)]
+        [TestCase(RespCommand.INCRBY, true)]
+        [TestCase(RespCommand.DECRBY, true)]
+        [TestCase(RespCommand.INCRBY, false)]
+        [TestCase(RespCommand.DECRBY, false)]
+        public void SimpleIncrementInvalidValue(RespCommand cmd, bool initialize)
         {
-            using var db = TestUtils.GetGarnetClient();
-            db.Connect();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
             string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01"];
 
             foreach (var value in values)
             {
                 var exception = false;
-                _ = db.StringSetAsync(value, value).GetAwaiter().GetResult();
+                if (initialize)
+                {
+                    var resp = db.StringSet(value, value);
+                    Assert.AreEqual(true, resp);
+                }
                 try
                 {
                     _ = cmd switch
                     {
-                        RespCommand.INCR => db.StringIncrement(value).GetAwaiter().GetResult(),
-                        RespCommand.DECR => db.StringDecrement(value).GetAwaiter().GetResult(),
-                        RespCommand.INCRBY => db.StringIncrement(value, 10L).GetAwaiter().GetResult(),
-                        RespCommand.DECRBY => db.StringDecrement(value, 10L).GetAwaiter().GetResult(),
+                        RespCommand.INCR => db.StringIncrement(value),
+                        RespCommand.DECR => db.StringDecrement(value),
+                        RespCommand.INCRBY => (initialize ? db.StringIncrement(value, 10L) : (long)db.Execute("INCRBY", [value, value])),
+                        RespCommand.DECRBY => (initialize ? db.StringDecrement(value, 10L) : (long)db.Execute("DECRBY", [value, value])),
                         _ => throw new Exception($"Command {cmd} not supported!"),
                     };
                 }
