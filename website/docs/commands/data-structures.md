@@ -509,6 +509,19 @@ The **match** parameter allows to apply a filter to elements after they have bee
 
 ---
 
+### SUNION
+
+#### Syntax
+
+```bash
+    SUNION key [key ...]
+```
+
+Returns the members of the set resulting from the union of all the given sets.
+Keys that do not exist are considered to be empty sets.
+
+---
+
 ## Sorted Set
 
 ### ZADD

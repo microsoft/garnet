@@ -239,7 +239,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SRANDMEMBER](data-structures.md#srandmember) | ➕ |  |
 |  | [SREM](data-structures.md#srem) | ➕ |  |
 |  | [SSCAN](data-structures.md#sscan) | ➕ |  |
-|  | SUNION | ➖ |  |
+|  | [SUNION](data-structures.md#sunion) | ➕ |  |
 |  | SUNIONSTORE | ➖ |  |
 | <span id="sorted-set">**SORTED SET**</span> | BZPOP | ➖ |  |
 |  | BZPOPMAX | ➖ |  |
