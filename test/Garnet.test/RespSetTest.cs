@@ -8,6 +8,7 @@ using System.Text;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
+using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
@@ -273,6 +274,52 @@ namespace Garnet.test
             Assert.AreEqual(l, $"value:{setEntries.Length - 1}");
         }
 
+        [Test]
+        public void CanDoSetUnion()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var redisValues1 = new RedisValue[] { "item-a", "item-b", "item-c", "item-d" };
+            var result = db.SetAdd(new RedisKey("key1"), redisValues1);
+            Assert.AreEqual(4, result);
+
+            result = db.SetAdd(new RedisKey("key2"), new RedisValue[] { "item-c" });
+            Assert.AreEqual(1, result);
+
+            result = db.SetAdd(new RedisKey("key3"), new RedisValue[] { "item-a", "item-c", "item-e" });
+            Assert.AreEqual(3, result);
+
+            var members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2", "key3" });
+            RedisValue[] entries = new RedisValue[] { "item-a", "item-b", "item-c", "item-d", "item-e" };
+            Assert.AreEqual(5, members.Length);
+            // assert two arrays are equal ignoring order
+            Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(entries.OrderBy(x => x)));
+
+            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2", "key3", "_not_exists" });
+            Assert.AreEqual(5, members.Length);
+            Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(entries.OrderBy(x => x)));
+
+            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "_not_exists_1", "_not_exists_2", "_not_exists_3" });
+            Assert.IsEmpty(members);
+
+            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "_not_exists_1", "key1", "_not_exists_2", "_not_exists_3" });
+            Assert.AreEqual(4, members.Length);
+            Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
+
+            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2" });
+            Assert.AreEqual(4, members.Length);
+            Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
+
+            try
+            {
+                db.SetCombine(SetOperation.Union, new RedisKey[] { });
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                Assert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, "SUNION"), e.Message);
+            }
+        }
 
 
         #endregion
@@ -303,7 +350,6 @@ namespace Garnet.test
             expectedResponse = "*2\r\n$7\r\n\"Hello\"\r\n$7\r\n\"World\"\r\n";
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
-
         }
 
         [Test]
@@ -568,6 +614,47 @@ namespace Garnet.test
             res = lightClientRequest.SendCommand("SMEMBERS MySet", 2);
             expectedResponse = "*1\r\n$7\r\nItemOne\r\n";
             Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+        }
+
+        [Test]
+        public void CanDoSetUnionLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SADD myset ItemOne ItemTwo ItemThree ItemFour");
+            var expectedResponse = ":4\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION myset another_set", 5);
+            expectedResponse = "*4\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            lightClientRequest.SendCommand("SADD another_set ItemOne ItemFive ItemTwo ItemSix ItemSeven");
+            response = lightClientRequest.SendCommand("SUNION myset another_set", 8);
+            expectedResponse = "*7\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION myset no_exist_set", 5);
+            expectedResponse = "*4\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION no_exist_set myset no_exist_set another_set", 8);
+            expectedResponse = "*7\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION myset", 5);
+            expectedResponse = "*4\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION");
+            expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "SUNION")}\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
         }
 
         #endregion
