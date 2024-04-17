@@ -3,11 +3,10 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading;
+using Garnet.common;
 using Garnet.server;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Garnet
 {
@@ -45,7 +44,7 @@ namespace Garnet
         /// </summary>
         static void RegisterExtensions(GarnetServer server)
         {
-            var customCommandsInfo = ParseRespCustomCommandsInfo();
+            var customCommandsInfo = GetRespCommandsInfo(CustomRespCommandInfoJsonPath);
 
             // Register custom command on raw strings (SETIFPM = "set if prefix match")
             server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), customCommandsInfo["SETIFPM"]);
@@ -72,24 +71,12 @@ namespace Garnet
             server.Register.NewTransactionProc("SAMPLEDELETETX", 5, () => new SampleDeleteTxn());
         }
 
-        private static IDictionary<string, RespCommandsInfo> ParseRespCustomCommandsInfo()
+        private static IReadOnlyDictionary<string, RespCommandsInfo> GetRespCommandsInfo(string path)
         {
-            var serializerOptions = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                Converters = { new JsonStringEnumConverter(), new KeySpecConverter() }
-            };
-
-            using var fileStream = File.OpenRead(CustomRespCommandInfoJsonPath)!;
-            var respCommands = JsonSerializer.Deserialize<RespCommandsInfo[]>(fileStream, serializerOptions)!;
-
-            var respCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
-            foreach (var respCommand in respCommands)
-            {
-                respCommandsInfo.Add(respCommand.Name, respCommand);
-            }
-
-            return respCommandsInfo;
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
+            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
+            commandsInfoProvider.TryImportRespCommandsInfo(path, streamProvider, NullLogger.Instance, out var commandsInfo);
+            return commandsInfo;
         }
     }
 }
