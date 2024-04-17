@@ -262,6 +262,15 @@ namespace Garnet.server
         }
 
 
+        /// <inheritdoc />
+        public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> output)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SetDiff(keys, out output);
+        }
         #endregion
 
         #region Hash Methods

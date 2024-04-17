@@ -513,5 +513,137 @@ namespace Garnet.server
         public GarnetStatus SetRandomMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+
+        /// <summary>
+        /// Returns the members of the set resulting from the difference between the first set at key and all the successive sets at keys.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="members"></param>
+        /// <returns></returns>
+        public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)
+        {
+            members = default;
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                members = SetDiff(keys, ref setObjectStoreLockableContext);
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// This command is equal to SDIFF, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
+        /// </summary>
+        /// <param name="key">destination</param>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys, out int count)
+        {
+            count = default;
+
+            if (key.Length == 0 || keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var destination = scratchBufferManager.CreateArgSlice(key);
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destination, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var diffSet = SetDiff(keys, ref setObjectStoreLockableContext);
+
+                var newSetObject = new SetObject();
+                foreach (var item in diffSet)
+                {
+                    _ = newSetObject.Set.Add(item);
+                    newSetObject.UpdateSize(item);
+                }
+                _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                count = diffSet.Count;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        private HashSet<byte[]> SetDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            var result = new HashSet<byte[]>();
+            if (keys.Length == 0)
+            {
+                return result;
+            }
+
+            // first SetObject
+            var status = GET(keys[0].ToArray(), out var first, ref objectContext);
+            if (status == GarnetStatus.OK)
+            {
+                if (first.garnetObject is SetObject firstObject)
+                {
+                    result = new HashSet<byte[]>(firstObject.Set, new ByteArrayComparer());
+                }
+            }
+            else
+            {
+                return result;
+            }
+
+            // after SetObjects
+            for (var i = 1; i < keys.Length; i++)
+            {
+                status = GET(keys[i].ToArray(), out var next, ref objectContext);
+                if (status == GarnetStatus.OK)
+                {
+                    if (next.garnetObject is SetObject nextObject)
+                    {
+                        result.ExceptWith(nextObject.Set);
+                    }
+                }
+            }
+
+            return result;
+        }
     }
 }
