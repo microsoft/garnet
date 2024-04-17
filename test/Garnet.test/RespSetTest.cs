@@ -309,7 +309,7 @@ namespace Garnet.test
             members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2" });
             Assert.AreEqual(4, members.Length);
             Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
-            
+
             try
             {
                 db.SetCombine(SetOperation.Union, new RedisKey[] { });
