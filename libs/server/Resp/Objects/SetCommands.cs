@@ -95,6 +95,58 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Returns the members of the set resulting from the union of all the given sets.
+        /// Keys that do not exist are considered to be empty sets.
+        /// </summary>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <returns></returns>
+        private bool SetUnion<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count < 1)
+            {
+                return AbortWithWrongNumberOfArguments("SUNION", count);
+            }
+
+            // Read all the keys
+            ArgSlice[] keys = new ArgSlice[count];
+
+            for (int i = 0; i < keys.Length; i++)
+            {
+                keys[i] = default;
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+
+            if (NetworkKeyArraySlotVerify(ref keys, true))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count)) return false;
+                return true;
+            }
+
+            storageApi.SetUnion(keys, out var result);
+
+            // write the size of result
+            var resultCount = result.Count;
+            while (!RespWriteUtils.WriteArrayLength(resultCount, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var item in result)
+            {
+                while (!RespWriteUtils.WriteBulkString(item, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            // update read pointers
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        /// <summary>
         /// Remove the specified members from the set.
         /// Specified members that are not a member of this set are ignored. 
         /// If key does not exist, this command returns 0.

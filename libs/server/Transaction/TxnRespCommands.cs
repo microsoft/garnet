@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 

@@ -183,6 +183,7 @@ namespace Garnet.server
                 (byte)SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
+                (byte)SetOperation.SUNION => ListKeys(inputCount, true, LockType.Shared),
                 (byte)SetOperation.SDIFF => ListKeys(inputCount, true, LockType.Shared),
                 (byte)SetOperation.SDIFFSTORE => ListKeys(inputCount, true, LockType.Exclusive),
                 _ => -1
