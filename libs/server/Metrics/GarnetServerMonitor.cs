@@ -92,20 +92,6 @@ namespace Garnet.server
             finally { rwLock.WriteUnlock(); }
         }
 
-        public string GetAllLocksets()
-        {
-            string result = "";
-            var sessions = ((GarnetServerBase)server).ActiveConsumers();
-            foreach (var s in sessions)
-            {
-                var session = (RespServerSession)s;
-                var lockset = session.txnManager.GetLockset();
-                if (lockset != "")
-                    result += session.StoreSessionID + ": " + lockset + "\n";
-            }
-            return result;
-        }
-
         private void UpdateInstantaneousMetrics()
         {
             if (monitor_iterations % instant_metrics_period == 0)
@@ -127,7 +113,7 @@ namespace Garnet.server
             }
         }
 
-        private void UpdatAllMetricsHistory()
+        private void UpdateAllMetricsHistory()
         {
             //Reset session metrics accumulator
             accSessionMetrics.Reset();
@@ -263,7 +249,7 @@ namespace Garnet.server
                     globalMetrics.total_connections_disposed = garnetServer.get_conn_disp();
 
                     UpdateInstantaneousMetrics();
-                    UpdatAllMetricsHistory();
+                    UpdateAllMetricsHistory();
                     UpdateAllMetrics(server);
 
                     //Reset & Cleanup
