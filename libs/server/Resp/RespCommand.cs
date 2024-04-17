@@ -18,7 +18,6 @@ namespace Garnet.server
         NONE = 0x0,
 
         // Read-only commands
-        [RespCommand("GET")]
         GET = (0x40 | 0x0),
         GETRANGE = (0x40 | 0x1),
         MGET = (0x40 | 0x2),
@@ -140,18 +139,6 @@ namespace Garnet.server
     enum RespCommandOption : byte
     {
         EX, NX, XX, GET, PX, EXAT, PXAT, PERSIST, GT, LT
-    }
-
-    internal class RespCommandAttribute : Attribute
-    {
-        public string RespCommand { get; init; }
-        public byte ArrayCommand { get; init; }
-
-        public RespCommandAttribute(string respCommand, byte arrayCommand = 0)
-        {
-            this.RespCommand = respCommand;
-            this.ArrayCommand = arrayCommand;
-        }
     }
 
     /// <summary>

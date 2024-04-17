@@ -6,6 +6,9 @@ using System.ComponentModel;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// RESP command flags
+    /// </summary>
     [Flags]
     public enum RespCommandFlags
     {
@@ -54,6 +57,9 @@ namespace Garnet.server
         AllowBusy = 1 << 20,
     }
 
+    /// <summary>
+    /// RESP ACL categories
+    /// </summary>
     [Flags]
     public enum RespAclCategories
     {
@@ -100,21 +106,5 @@ namespace Garnet.server
         Transaction = 1 << 19,
         [Description("write")]
         Write = 1 << 20,
-    }
-
-    [Flags]
-    public enum RespCommandOptions : ushort
-    {
-        None = 0,
-        EX = 1,
-        NX = 1 << 1,
-        XX = 1 << 2,
-        GET = 1 << 3,
-        PX = 1 << 4,
-        EXAT = 1 << 5,
-        PXAT = 1 << 6,
-        PERSIST = 1 << 7,
-        GT = 1 << 8,
-        LT = 1 << 9,
     }
 }

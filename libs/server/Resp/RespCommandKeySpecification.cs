@@ -10,31 +10,55 @@ using Garnet.common;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Represents a RESP command's key specification
+    /// A key specification describes a rule for extracting the names of one or more keys from the arguments of a given command
+    /// </summary>
     public class RespCommandKeySpecification : IRespSerializable
     {
+        /// <summary>
+        /// BeginSearch value of a specification informs the client of the extraction's beginning
+        /// </summary>
         public KeySpecBase BeginSearch { get; init; }
 
+        /// <summary>
+        /// FindKeys value of a key specification tells the client how to continue the search for key names
+        /// </summary>
         public KeySpecBase FindKeys { get; init; }
 
+        /// <summary>
+        /// Notes about non-obvious key specs considerations
+        /// </summary>
         public string? Notes { get; init; }
 
+        /// <summary>
+        /// Flags that provide more details about the key
+        /// </summary>
         public KeySpecificationFlags Flags
         {
-            get => this._flags;
+            get => this.flags;
             init
             {
-                this._flags = value;
-                this._respFormatFlags = EnumUtils.GetEnumDescriptions(this._flags);
+                this.flags = value;
+                this.respFormatFlags = EnumUtils.GetEnumDescriptions(this.flags);
             }
         }
 
+        /// <summary>
+        /// Returns the serialized representation of the current object in RESP format
+        /// This property returns a cached value, if exists (this value should never change after object initialization)
+        /// </summary>
         [JsonIgnore]
-        public string RespFormat => _respFormat ??= ToRespFormat();
+        public string RespFormat => respFormat ??= ToRespFormat();
 
-        private string _respFormat;
-        private KeySpecificationFlags _flags;
-        private readonly string[] _respFormatFlags;
+        private string respFormat;
+        private readonly KeySpecificationFlags flags;
+        private readonly string[] respFormatFlags;
 
+        /// <summary>
+        /// Serializes the current object to RESP format
+        /// </summary>
+        /// <returns>Serialized value</returns>
         public string ToRespFormat()
         {
             var sb = new StringBuilder();
@@ -51,8 +75,8 @@ namespace Garnet.server
             {
                 elemCount += 2;
                 sb.Append("$5\r\nflags\r\n");
-                sb.Append($"*{this._respFormatFlags.Length}\r\n");
-                foreach (var flag in this._respFormatFlags)
+                sb.Append($"*{this.respFormatFlags.Length}\r\n");
+                foreach (var flag in this.respFormatFlags)
                     sb.Append($"+{flag}\r\n");
             }
 
@@ -72,6 +96,9 @@ namespace Garnet.server
         }
     }
 
+    /// <summary>
+    /// RESP key specification flags
+    /// </summary>
     [Flags]
     public enum KeySpecificationFlags : ushort
     {
@@ -102,18 +129,38 @@ namespace Garnet.server
         VariableFlags = 1 << 10,
     }
 
+    /// <summary>
+    /// Base class representing BeginSearch / FindKeys key specification types
+    /// </summary>
     public abstract class KeySpecBase : IRespSerializable
     {
+        /// <summary>
+        /// Name of the key specification (begin_search / find_keys)
+        /// </summary>
         public abstract string KeySpecName { get; }
 
+        /// <summary>
+        /// Type of the key specification in RESP format
+        /// </summary>
         public abstract string RespFormatType { get; }
 
+        /// <summary>
+        /// Spec of the key specification in RESP format
+        /// </summary>
         public abstract string RespFormatSpec { get; }
 
-        public string RespFormat => _respFormat ??= ToRespFormat();
+        /// <summary>
+        /// Returns the serialized representation of the current object in RESP format
+        /// This property returns a cached value, if exists (this value should never change after object initialization)
+        /// </summary>
+        public string RespFormat => respFormat ??= ToRespFormat();
 
-        private string _respFormat;
+        private string respFormat;
 
+        /// <summary>
+        /// Serializes the current object to RESP format
+        /// </summary>
+        /// <returns>Serialized value</returns>
         public string ToRespFormat()
         {
             var sb = new StringBuilder();
@@ -127,13 +174,26 @@ namespace Garnet.server
         }
     }
 
+    /// <summary>
+    /// Base class representing BeginSearch key specification types
+    /// </summary>
     public abstract class BeginSearchKeySpecBase : KeySpecBase
     {
+        /// <summary>
+        /// Name of the key specification
+        /// </summary>
         public sealed override string KeySpecName => "begin_search";
     }
 
+    /// <summary>
+    /// Represents BeginSearch key specification of type "index"
+    /// Indicates that input keys appear at a constant index
+    /// </summary>
     public class BeginSearchIndex : BeginSearchKeySpecBase
     {
+        /// <summary>
+        /// The 0-based index from which the client should start extracting key names
+        /// </summary>
         public int Index { get; init; }
 
         [JsonIgnore]
@@ -142,10 +202,10 @@ namespace Garnet.server
         [JsonIgnore]
         public sealed override string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*2\r\n$5\r\nindex\r\n:{this.Index}"; }
+            get { return this.respFormatSpec ??= $"*2\r\n$5\r\nindex\r\n:{this.Index}"; }
         }
 
-        private string _respFormatSpec;
+        private string respFormatSpec;
 
         public BeginSearchIndex()
         {
@@ -157,10 +217,20 @@ namespace Garnet.server
         }
     }
 
+    /// <summary>
+    /// Represents BeginSearch key specification of type "keyword"
+    /// Indicates that a literal token precedes key name arguments
+    /// </summary>
     public class BeginSearchKeyword : BeginSearchKeySpecBase
     {
+        /// <summary>
+        /// The keyword that marks the beginning of key name arguments
+        /// </summary>
         public string Keyword { get; init; }
 
+        /// <summary>
+        /// An index to the arguments array from which the client should begin searching
+        /// </summary>
         public int StartFrom { get; init; }
 
         [JsonIgnore]
@@ -169,10 +239,10 @@ namespace Garnet.server
         [JsonIgnore]
         public sealed override string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*4\r\n$7\r\nkeyword\r\n${this.Keyword?.Length ?? 0}\r\n{this.Keyword}\r\n$9\r\nstartfrom\r\n:{this.StartFrom}"; }
+            get { return this.respFormatSpec ??= $"*4\r\n$7\r\nkeyword\r\n${this.Keyword?.Length ?? 0}\r\n{this.Keyword}\r\n$9\r\nstartfrom\r\n:{this.StartFrom}"; }
         }
 
-        private string _respFormatSpec;
+        private string respFormatSpec;
 
         public BeginSearchKeyword() { }
 
@@ -183,6 +253,9 @@ namespace Garnet.server
         }
     }
 
+    /// <summary>
+    /// Represents BeginSearch key specification of unknown type
+    /// </summary>
     public class BeginSearchUnknown : BeginSearchKeySpecBase
     {
         [JsonIgnore]
@@ -197,17 +270,36 @@ namespace Garnet.server
         private string? _respFormatSpec;
     }
 
+    /// <summary>
+    /// Base class representing FindKeys key specification types
+    /// </summary>
     public abstract class FindKeysKeySpecBase : KeySpecBase
     {
+        /// <summary>
+        /// Name of the key specification
+        /// </summary>
         public sealed override string KeySpecName => "find_keys";
     }
 
+    /// <summary>
+    /// Represents FindKeys key specification of type "range"
+    /// Indicates that keys stop at a specific index or relative to the last argument
+    /// </summary>
     public class FindKeysRange : FindKeysKeySpecBase
     {
+        /// <summary>
+        /// The index, relative to BeginSearch, of the last key argument
+        /// </summary>
         public int LastKey { get; init; }
 
+        /// <summary>
+        /// The number of arguments that should be skipped, after finding a key, to find the next one
+        /// </summary>
         public int KeyStep { get; init; }
 
+        /// <summary>
+        /// If LastKey is has the value of -1, Limit is used to stop the search by a factor
+        /// </summary>
         public int Limit { get; init; }
 
         [JsonIgnore]
@@ -216,10 +308,10 @@ namespace Garnet.server
         [JsonIgnore]
         public sealed override string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*6\r\n$7\r\nlastkey\r\n:{this.LastKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}\r\n$5\r\nlimit\r\n:{this.Limit}"; }
+            get { return this.respFormatSpec ??= $"*6\r\n$7\r\nlastkey\r\n:{this.LastKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}\r\n$5\r\nlimit\r\n:{this.Limit}"; }
         }
 
-        private string? _respFormatSpec;
+        private string? respFormatSpec;
 
         public FindKeysRange() { }
 
@@ -231,12 +323,25 @@ namespace Garnet.server
         }
     }
 
+    /// <summary>
+    /// Represents FindKeys key specification of type "keynum"
+    /// Indicates that an additional argument specifies the number of input keys
+    /// </summary>
     public class FindKeysKeyNum : FindKeysKeySpecBase
     {
+        /// <summary>
+        /// The index, relative to BeginSearch, of the argument containing the number of keys
+        /// </summary>
         public int KeyNumIdx { get; init; }
 
+        /// <summary>
+        /// The index, relative to BeginSearch, of the first key
+        /// </summary>
         public int FirstKey { get; init; }
 
+        /// <summary>
+        /// The number of arguments that should be skipped, after finding a key, to find the next one
+        /// </summary>
         public int KeyStep { get; init; }
 
         [JsonIgnore]
@@ -245,10 +350,10 @@ namespace Garnet.server
         [JsonIgnore]
         public sealed override string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*6\r\n$9\r\nkeynumidx\r\n:{this.KeyNumIdx}\r\n$8\r\nfirstkey\r\n:{this.FirstKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}"; }
+            get { return this.respFormatSpec ??= $"*6\r\n$9\r\nkeynumidx\r\n:{this.KeyNumIdx}\r\n$8\r\nfirstkey\r\n:{this.FirstKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}"; }
         }
 
-        private string? _respFormatSpec;
+        private string? respFormatSpec;
 
         public FindKeysKeyNum() { }
 
@@ -260,6 +365,9 @@ namespace Garnet.server
         }
     }
 
+    /// <summary>
+    /// Represents FindKeys key specification of unknown type
+    /// </summary>
     public class FindKeysUnknown : FindKeysKeySpecBase
     {
         [JsonIgnore]
@@ -274,6 +382,9 @@ namespace Garnet.server
         private string? _respFormatSpec;
     }
 
+    /// <summary>
+    /// JSON converter for objects implementing KeySpecBase
+    /// </summary>
     public class KeySpecConverter : JsonConverter<KeySpecBase>
     {
         public override bool CanConvert(Type typeToConvert) => typeof(KeySpecBase).IsAssignableFrom(typeToConvert);

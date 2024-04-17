@@ -1,21 +1,34 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Text;
 using Garnet.common;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Logic for parsing command info from RESP format
+    /// </summary>
     public class RespCommandInfoParser
     {
+        /// <summary>
+        /// Tries to parse a RespCommandInfo object from RESP format
+        /// </summary>
+        /// <param name="ptr">Pointer to current RESP chunk to read</param>
+        /// <param name="end">Pointer to end of RESP chunk to read</param>
+        /// <param name="supportedCommands">Mapping between command name and Garnet RespCommand and ArrayCommand values</param>
+        /// <param name="commandInfo">Parsed RespCommandsInfo object</param>
+        /// <param name="parentCommand">Name of parent command, null if none</param>
+        /// <returns>True if parsing successful</returns>
         public static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, IReadOnlyDictionary<string, (RespCommand, byte?)> supportedCommands, out RespCommandsInfo commandInfo, string parentCommand = null)
         {
             commandInfo = default;
 
+            // Command info is null
             if (Encoding.ASCII.GetString(ptr, 5) == "$-1\r\n") return true;
 
+            // Verify command info array length
             RespReadUtils.ReadArrayLength(out var infoElemCount, ref ptr, end);
             if (infoElemCount != 10) return false;
 
@@ -102,8 +115,18 @@ namespace Garnet.server
         }
     }
 
+    /// <summary>
+    /// Logic for parsing key specification from RESP format
+    /// </summary>
     internal class RespKeySpecificationParser
     {
+        /// <summary>
+        /// Tries to parse RespCommandKeySpecification from RESP format
+        /// </summary>
+        /// <param name="ptr">Pointer to current RESP chunk to read</param>
+        /// <param name="end">Pointer to end of RESP chunk to read</param>
+        /// <param name="keySpec">Parsed RespCommandKeySpecification object</param>
+        /// <returns>True if parsing successful</returns>
         internal static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out RespCommandKeySpecification keySpec)
         {
             keySpec = default;
@@ -155,8 +178,19 @@ namespace Garnet.server
         }
     }
 
+    /// <summary>
+    /// Logic for parsing BeginSearch / FindKeys key specification from RESP format
+    /// </summary>
     internal class RespKeySpecificationTypesParser
     {
+        /// <summary>
+        /// Tries to parse KeySpecBase from RESP format
+        /// </summary>
+        /// <param name="keySpecKey">Type of key specification ("begin_search" / "find_keys")</param>
+        /// <param name="ptr">Pointer to current RESP chunk to read</param>
+        /// <param name="end">Pointer to end of RESP chunk to read</param>
+        /// <param name="keySpec">Parsed KeySpecBase object</param>
+        /// <returns>True if parsing successful</returns>
         public static unsafe bool TryReadFromResp(string keySpecKey, ref byte* ptr, byte* end, out KeySpecBase keySpec)
         {
             keySpec = default;
@@ -195,8 +229,18 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Interface for classes implementing parsing of KeySpecBase objects
+        /// </summary>
         internal interface IKeySpecParser
         {
+            /// <summary>
+            /// Tries to parse KeySpecBase from RESP format
+            /// </summary>
+            /// <param name="ptr">Pointer to current RESP chunk to read</param>
+            /// <param name="end">Pointer to end of RESP chunk to read</param>
+            /// <param name="keySpec">Parsed KeySpecBase object</param>
+            /// <returns>True if parsing successful</returns>
             unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecBase keySpec);
         }
 

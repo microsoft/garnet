@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -13,16 +12,36 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Represents a RESP command's information
+    /// </summary>
     public class RespCommandsInfo : IRespSerializable
     {
+        /// <summary>
+        /// Garnet's RespCommand enum command representation
+        /// </summary>
         public RespCommand Command { get; init; }
 
+        /// <summary>
+        /// Garnet's sub-command enum value representation
+        /// </summary>
         public byte? ArrayCommand { get; init; }
 
+        /// <summary>
+        /// The command's name
+        /// </summary>
         public string Name { get; init; }
 
+        /// <summary>
+        /// The command's arity, i.e. the number of arguments a command expects
+        /// * A positive integer means a fixed number of arguments
+        /// * A negative integer means a minimal number of arguments
+        /// </summary>
         public int Arity { get; init; }
 
+        /// <summary>
+        /// RESP command flags
+        /// </summary>
         public RespCommandFlags Flags
         {
             get => this.flags;
@@ -33,12 +52,24 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// The position of the command's first key name argument
+        /// </summary>
         public int FirstKey { get; init; }
 
+        /// <summary>
+        /// The position of the command's last key name argument
+        /// </summary>
         public int LastKey { get; init; }
 
+        /// <summary>
+        /// The step, or increment, between the first key and the position of the next key
+        /// </summary>
         public int Step { get; init; }
 
+        /// <summary>
+        /// ACL categories to which the command belongs
+        /// </summary>
         public RespAclCategories AclCategories
         {
             get => this.aclCategories;
@@ -49,25 +80,36 @@ namespace Garnet.server
             }
         }
 
-        public string[]? Tips { get; init; }
+        /// <summary>
+        /// Helpful information about the command
+        /// </summary>
+        public string[] Tips { get; init; }
 
+        /// <summary>
+        /// Methods for locating keys in the command's arguments
+        /// </summary>
         public RespCommandKeySpecification[] KeySpecifications { get; init; }
 
+        /// <summary>
+        /// All the command's sub-commands, if any
+        /// </summary>
         public RespCommandsInfo[] SubCommands { get; init; }
 
+        /// <summary>
+        /// Returns the serialized representation of the current object in RESP format
+        /// This property returns a cached value, if exists (this value should never change after object initialization)
+        /// </summary>
         [JsonIgnore]
         public string RespFormat => respFormat ??= ToRespFormat();
 
+        private const string RespCommandsEmbeddedFileName = @"RespCommandsInfo.json";
+
         private string respFormat;
 
-        private static bool isInitialized = false;
-        private static IReadOnlyDictionary<string, RespCommandsInfo> allRespCommandsInfo = null;
-        private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> basicRespCommandsInfo = null;
-
-        private static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>
-            arrayRespCommandsInfo = null;
-
-        private const string RespCommandsEmbeddedFileName = @"RespCommandsInfo.json";
+        private static bool IsInitialized = false;
+        private static IReadOnlyDictionary<string, RespCommandsInfo> AllRespCommandsInfo = null;
+        private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> BasicRespCommandsInfo = null;
+        private static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>> ArrayRespCommandsInfo = null;
 
         private readonly RespCommandFlags flags;
         private readonly RespAclCategories aclCategories;
@@ -105,58 +147,86 @@ namespace Garnet.server
                 }
             }
 
-            allRespCommandsInfo = tmpAllRespCommandsInfo;
-            basicRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpBasicRespCommandsInfo);
-            arrayRespCommandsInfo = new ReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>(
+            AllRespCommandsInfo = tmpAllRespCommandsInfo;
+            BasicRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpBasicRespCommandsInfo);
+            ArrayRespCommandsInfo = new ReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>(
                 tmpArrayRespCommandsInfo
                     .ToDictionary(kvp => kvp.Key,
                         kvp =>
                             (IReadOnlyDictionary<byte, RespCommandsInfo>)new ReadOnlyDictionary<byte, RespCommandsInfo>(
                                 kvp.Value)));
 
+            IsInitialized = true;
             return true;
         }
 
+        /// <summary>
+        /// Gets the number of commands supported by Garnet
+        /// </summary>
+        /// <param name="logger">Logger</param>
+        /// <param name="count">The count value</param>
+        /// <returns>True if initialization was successful and data was retrieved successfully</returns>
         internal static bool TryGetRespCommandsInfoCount(ILogger logger, out int count)
         {
             count = -1;
-            if (!isInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
+            if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
 
-            count = allRespCommandsInfo!.Count;
+            count = AllRespCommandsInfo!.Count;
             return true;
         }
 
+        /// <summary>
+        /// Gets all the command info objects of commands supported by Garnet
+        /// </summary>
+        /// <param name="logger">Logger</param>
+        /// <param name="respCommandsInfo">The commands info</param>
+        /// <returns>True if initialization was successful and data was retrieved successfully</returns>
         internal static bool TryGetRespCommandsInfo(ILogger logger, out IEnumerable<RespCommandsInfo> respCommandsInfo)
         {
             respCommandsInfo = default;
-            if (!isInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
+            if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
 
-            respCommandsInfo = allRespCommandsInfo!.Values;
+            respCommandsInfo = AllRespCommandsInfo!.Values;
             return true;
         }
 
-        internal static bool TryGetRespCommandInfo(string cmdName, ILogger logger,
-            out RespCommandsInfo respCommandsInfo)
+        /// <summary>
+        /// Gets command info by command name
+        /// </summary>
+        /// <param name="cmdName">The command name</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="respCommandsInfo">The command info</param>
+        /// <returns>True if initialization was successful and command info was found</returns>
+        internal static bool TryGetRespCommandInfo(string cmdName, ILogger logger, out RespCommandsInfo respCommandsInfo)
         {
             respCommandsInfo = default;
-            if ((!isInitialized && !TryInitializeRespCommandsInfo(logger)) ||
-                !allRespCommandsInfo.ContainsKey(cmdName)) return false;
+            if ((!IsInitialized && !TryInitializeRespCommandsInfo(logger)) ||
+                !AllRespCommandsInfo.ContainsKey(cmdName)) return false;
 
-            respCommandsInfo = allRespCommandsInfo[cmdName];
+            respCommandsInfo = AllRespCommandsInfo[cmdName];
             return true;
         }
 
+        /// <summary>
+        /// Gets command info by RespCommand enum and sub-command byte, if applicable
+        /// </summary>
+        /// <param name="cmd">The RespCommand enum</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="respCommandsInfo">The commands info</param>
+        /// <param name="subCmd">The sub-command byte, if applicable</param>
+        /// <param name="txnOnly">Return only commands that are allowed in a transaction context (False by default)</param>
+        /// <returns>True if initialization was successful and command info was found</returns>
         internal static bool TryGetRespCommandInfo(RespCommand cmd, ILogger logger,
             out RespCommandsInfo respCommandsInfo, byte subCmd = 0, bool txnOnly = false)
         {
             respCommandsInfo = default;
-            if ((!isInitialized && !TryInitializeRespCommandsInfo(logger))) return false;
+            if ((!IsInitialized && !TryInitializeRespCommandsInfo(logger))) return false;
 
             RespCommandsInfo tmpRespCommandInfo = default;
-            if (arrayRespCommandsInfo.ContainsKey(cmd) && arrayRespCommandsInfo[cmd].ContainsKey(subCmd))
-                tmpRespCommandInfo = arrayRespCommandsInfo[cmd][subCmd];
-            else if (basicRespCommandsInfo.ContainsKey(cmd))
-                tmpRespCommandInfo = basicRespCommandsInfo[cmd];
+            if (ArrayRespCommandsInfo.ContainsKey(cmd) && ArrayRespCommandsInfo[cmd].ContainsKey(subCmd))
+                tmpRespCommandInfo = ArrayRespCommandsInfo[cmd][subCmd];
+            else if (BasicRespCommandsInfo.ContainsKey(cmd))
+                tmpRespCommandInfo = BasicRespCommandsInfo[cmd];
 
             if (tmpRespCommandInfo == default ||
                 (txnOnly && tmpRespCommandInfo.Flags.HasFlag(RespCommandFlags.NoMulti))) return false;
@@ -165,6 +235,10 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Serializes the current object to RESP format
+        /// </summary>
+        /// <returns>Serialized value</returns>
         public string ToRespFormat()
         {
             var sb = new StringBuilder();
