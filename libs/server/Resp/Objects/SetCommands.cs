@@ -108,7 +108,6 @@ namespace Garnet.server
         {
             if (count < 1)
             {
-                setItemsDoneCount = setOpsCount = 0;
                 return AbortWithWrongNumberOfArguments("SUNION", count);
             }
 

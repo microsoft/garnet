@@ -309,6 +309,16 @@ namespace Garnet.test
             members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2" });
             Assert.AreEqual(4, members.Length);
             Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
+            
+            try
+            {
+                db.SetCombine(SetOperation.Union, new RedisKey[] { });
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                Assert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, "SUNION"), e.Message);
+            }
         }
 
 
@@ -340,7 +350,6 @@ namespace Garnet.test
             expectedResponse = "*2\r\n$7\r\n\"Hello\"\r\n$7\r\n\"World\"\r\n";
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
-
         }
 
         [Test]
@@ -637,8 +646,13 @@ namespace Garnet.test
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
 
-            response = lightClientRequest.SendCommand("SUNION myset");
-            expectedResponse = $"-ERR wrong number of arguments for 'SUNION' command\r\n";
+            response = lightClientRequest.SendCommand("SUNION myset", 5);
+            expectedResponse = "*4\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION");
+            expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "SUNION")}\r\n";
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
         }

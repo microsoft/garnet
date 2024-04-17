@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -376,13 +377,38 @@ namespace Garnet.server
         {
             output = new HashSet<byte[]>(new ByteArrayComparer());
 
-            foreach (var key in keys)
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
             {
-                if (GET(key.ToArray(), out var currObject, ref objectStoreContext) == GarnetStatus.OK)
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                foreach (var key in keys)
                 {
-                    var currSet = ((SetObject)currObject.garnetObject).Set;
-                    output.UnionWith(currSet);
+                    if (GET(key.ToArray(), out var currObject, ref setObjectStoreLockableContext) == GarnetStatus.OK)
+                    {
+                        var currSet = ((SetObject)currObject.garnetObject).Set;
+                        output.UnionWith(currSet);
+                    }
                 }
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
             }
 
             return GarnetStatus.OK;
