@@ -217,11 +217,11 @@ namespace Garnet.server
                 count = ptr[1] - '1';
                 Debug.Assert(count is >= 0 and < 9);
 
-                var oldReadHead = readHead;
-
                 // Extract length of the first string header
                 var length = ptr[5] - '0';
                 Debug.Assert(length is > 0 and <= 9);
+
+                var oldReadHead = readHead;
 
                 // Ensure that the complete command string is contained in the package. Otherwise exit early.
                 // Include 10 bytes to account for array and command string headers, and terminator
@@ -239,239 +239,67 @@ namespace Garnet.server
                     //
 
                     // Only check against commands with the correct count and length.
-                    // Note: Cases are encoded as 0x{count}{length} for readability.
-                    byte hash = (byte)((count << 4) | length);
-                    switch (hash)
+
+                    return ((count << 4) | length) switch
                     {
-                        case 0x04:
-                            if (lastWord == MemoryMarshal.Read<ulong>("\r\nPING\r\n"u8))
-                            {
-                                return RespCommand.PING;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("\r\nEXEC\r\n"u8))
-                            {
-                                return RespCommand.EXEC;
-                            }
-                            break;
-                        case 0x05:
-                            if (lastWord == MemoryMarshal.Read<ulong>("\nMULTI\r\n"u8))
-                            {
-                                return RespCommand.MULTI;
-                            }
-                            break;
-                        case 0x06:
-                            if (lastWord == MemoryMarshal.Read<ulong>("ASKING\r\n"u8))
-                            {
-                                return RespCommand.ASKING;
-                            }
-                            break;
+                        // Commands without arguments
+                        4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPING\r\n"u8) => RespCommand.PING,
+                        4 when lastWord == MemoryMarshal.Read<ulong>("\r\nEXEC\r\n"u8) => RespCommand.EXEC,
+                        5 when lastWord == MemoryMarshal.Read<ulong>("\nMULTI\r\n"u8) => RespCommand.MULTI,
+                        6 when lastWord == MemoryMarshal.Read<ulong>("ASKING\r\n"u8) => RespCommand.ASKING,
+                        7 when lastWord == MemoryMarshal.Read<ulong>("ISCARD\r\n"u8) && ptr[8] == 'D' => RespCommand.DISCARD,
+                        7 when lastWord == MemoryMarshal.Read<ulong>("NWATCH\r\n"u8) && ptr[8] == 'U' => RespCommand.UNWATCH,
+                        8 when lastWord == MemoryMarshal.Read<ulong>("ADONLY\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8) => RespCommand.READONLY,
+                        9 when lastWord == MemoryMarshal.Read<ulong>("DWRITE\r\n"u8) && *(uint*)(ptr + 8) == MemoryMarshal.Read<uint>("READ"u8) => RespCommand.READWRITE,
 
-                        case 0x07:
-                            if (lastWord == MemoryMarshal.Read<ulong>("ISCARD\r\n"u8) && ptr[8] == 'D')
-                            {
-                                return RespCommand.DISCARD;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("NWATCH\r\n"u8) && ptr[8] == 'U')
-                            {
-                                return RespCommand.UNWATCH;
-                            }
-                            break;
+                        // Commands with fixed number of arguments
+                        (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nGET\r\n"u8) => RespCommand.GET,
+                        (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nDEL\r\n"u8) => RespCommand.DEL,
+                        (1 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nTTL\r\n"u8) => RespCommand.TTL,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nINCR\r\n"u8) => RespCommand.INCR,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nPTTL\r\n"u8) => RespCommand.PTTL,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDECR\r\n"u8) => RespCommand.DECR,
+                        (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("EXISTS\r\n"u8) => RespCommand.EXISTS,
+                        (1 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETDEL\r\n"u8) => RespCommand.GETDEL,
+                        (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ERSIST\r\n"u8) && ptr[8] == 'P' => RespCommand.PERSIST,
+                        (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("PFCOUNT\r\n"u8) && ptr[8] == 'P' => RespCommand.PFCOUNT,
+                        (2 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SET,
+                        (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nPFADD\r\n"u8) => RespCommand.PFADD,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("INCRBY\r\n"u8) => RespCommand.INCRBY,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("DECRBY\r\n"u8) => RespCommand.DECRBY,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8) => RespCommand.RENAME,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETBIT\r\n"u8) => RespCommand.GETBIT,
+                        (2 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("APPEND\r\n"u8) => RespCommand.APPEND,
+                        (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && ptr[8] == 'P' => RespCommand.PUBLISH,
+                        (2 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("FMERGE\r\n"u8) && ptr[8] == 'P' => RespCommand.PFMERGE,
+                        (3 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nSETEX\r\n"u8) => RespCommand.SETEX,
+                        (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("PSETEX\r\n"u8) => RespCommand.PSETEX,
+                        (3 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("SETBIT\r\n"u8) => RespCommand.SETBIT,
+                        (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SE"u8) => RespCommand.SETRANGE,
+                        (3 << 4) | 8 when lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("GE"u8) => RespCommand.GETRANGE,
 
-                        case 0x08:
-                            if (lastWord == MemoryMarshal.Read<ulong>("ADONLY\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("RE"u8))
-                            {
-                                return RespCommand.READONLY;
-                            }
-                            break;
+                        _ => ((length << 4) | count) switch
+                        {
+                            // Commands with dynamic number of arguments
+                            >= ((3 << 4) | 3) and <= ((3 << 4) | 6) when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SETEXNX,
+                            >= ((6 << 4) | 0) and <= ((6 << 4) | 9) when lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8) => RespCommand.RUNTXP,
+                            >= ((6 << 4) | 2) and <= ((6 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) => RespCommand.EXPIRE,
+                            >= ((6 << 4) | 2) and <= ((6 << 4) | 5) when lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8) => RespCommand.BITPOS,
+                            >= ((7 << 4) | 2) and <= ((7 << 4) | 3) when lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) && ptr[8] == 'P' => RespCommand.PEXPIRE,
+                            >= ((8 << 4) | 1) and <= ((8 << 4) | 4) when lastWord == MemoryMarshal.Read<ulong>("TCOUNT\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("BI"u8) => RespCommand.BITCOUNT,
 
-                        case 0x09:
-                            if (lastWord == MemoryMarshal.Read<ulong>("DWRITE\r\n"u8) && *(uint*)(ptr + 8) == MemoryMarshal.Read<uint>("READ"u8))
-                            {
-                                return RespCommand.READWRITE;
-                            }
-                            break;
+                            _ => MatchedNone(this, oldReadHead)
+                        }
+                    };
 
-                        case 0x13:
-                            if (lastWord == MemoryMarshal.Read<ulong>("3\r\nGET\r\n"u8))
-                            {
-                                return RespCommand.GET;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("3\r\nDEL\r\n"u8))
-                            {
-                                return RespCommand.DEL;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("3\r\nTTL\r\n"u8))
-                            {
-                                return RespCommand.TTL;
-                            }
-                            break;
-
-                        case 0x14:
-                            if (lastWord == MemoryMarshal.Read<ulong>("\r\nINCR\r\n"u8))
-                            {
-                                return RespCommand.INCR;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("\r\nPTTL\r\n"u8))
-                            {
-                                return RespCommand.PTTL;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("\r\nDECR\r\n"u8))
-                            {
-                                return RespCommand.DECR;
-                            }
-                            break;
-
-                        case 0x16:
-                            if (lastWord == MemoryMarshal.Read<ulong>("EXISTS\r\n"u8))
-                            {
-                                return RespCommand.EXISTS;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("GETDEL\r\n"u8))
-                            {
-                                return RespCommand.GETDEL;
-                            }
-                            break;
-
-                        case 0x17:
-                            if (lastWord == MemoryMarshal.Read<ulong>("ERSIST\r\n"u8) && ptr[8] == 'P')
-                            {
-                                return RespCommand.PERSIST;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("FCOUNT\r\n"u8) && ptr[8] == 'P')
-                            {
-                                return RespCommand.PFCOUNT;
-                            }
-                            break;
-
-                        case 0x23:
-                            if (lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8))
-                            {
-                                return RespCommand.SET;
-                            }
-                            break;
-
-                        case 0x25:
-                            if (lastWord == MemoryMarshal.Read<ulong>("\nPFADD\r\n"u8))
-                            {
-                                return RespCommand.PFADD;
-                            }
-                            break;
-
-                        case 0x26:
-                            if (lastWord == MemoryMarshal.Read<ulong>("INCRBY\r\n"u8))
-                            {
-                                return RespCommand.INCRBY;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("DECRBY\r\n"u8))
-                            {
-                                return RespCommand.DECRBY;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("RENAME\r\n"u8))
-                            {
-                                return RespCommand.RENAME;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("GETBIT\r\n"u8))
-                            {
-                                return RespCommand.GETBIT;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("APPEND\r\n"u8))
-                            {
-                                return RespCommand.APPEND;
-                            }
-                            break;
-
-                        case 0x27:
-                            if (lastWord == MemoryMarshal.Read<ulong>("UBLISH\r\n"u8) && ptr[8] == 'P')
-                            {
-                                return RespCommand.PUBLISH;
-                            }
-
-                            else if (lastWord == MemoryMarshal.Read<ulong>("FMERGE\r\n"u8) && ptr[8] == 'P')
-                            {
-                                return RespCommand.PFMERGE;
-                            }
-                            break;
-
-                        case 0x35:
-                            if (lastWord == MemoryMarshal.Read<ulong>("\nSETEX\r\n"u8))
-                            {
-                                return RespCommand.SETEX;
-                            }
-                            break;
-
-                        case 0x36:
-                            if (lastWord == MemoryMarshal.Read<ulong>("PSETEX\r\n"u8))
-                            {
-                                return RespCommand.PSETEX;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("SETBIT\r\n"u8))
-                            {
-                                return RespCommand.SETBIT;
-                            }
-                            break;
-
-                        case 0x38:
-                            if (lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("SE"u8))
-                            {
-                                return RespCommand.SETRANGE;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("TRANGE\r\n"u8) && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("GE"u8))
-                            {
-                                return RespCommand.GETRANGE;
-                            }
-                            break;
-                    }
-
-                    //
-                    // Fast path for commands with few, but variable, #arguments (command array size < 10)
-                    //
-
-                    switch (length)
+                    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                    static RespCommand MatchedNone(RespServerSession session, int oldReadHead)
                     {
-                        case 3:
-                            if (((count >= 3) && (count <= 6)) && lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8))
-                            {
-                                return RespCommand.SETEXNX;
-                            }
-                            break;
+                        // Backup the read head, if we didn't find a command and need to continue in the more expensive parsing loop
+                        session.readHead = oldReadHead;
 
-                        case 6:
-                            if (lastWord == MemoryMarshal.Read<ulong>("RUNTXP\r\n"u8))
-                            {
-                                return RespCommand.RUNTXP;
-                            }
-                            else if (((count == 2) || (count == 3)) && lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8))
-                            {
-                                return RespCommand.EXPIRE;
-                            }
-                            else if ((count > 1 && count < 6) && lastWord == MemoryMarshal.Read<ulong>("BITPOS\r\n"u8))
-                            {
-                                return RespCommand.BITPOS;
-                            }
-                            break;
-
-                        case 7:
-
-                            if (((count == 2) || (count == 3)) && lastWord == MemoryMarshal.Read<ulong>("EXPIRE\r\n"u8) && ptr[8] == 'P')
-                            {
-                                return RespCommand.PEXPIRE;
-                            }
-                            else if (lastWord == MemoryMarshal.Read<ulong>("OMMAND\r\n"u8) && ptr[8] == 'C')
-                            {
-                                return RespCommand.COMMAND;
-                            }
-                            break;
-
-                        case 8:
-                            if ((count > 0 && count < 5) && lastWord == MemoryMarshal.Read<ulong>("TCOUNT\r\n"u8) /* "BITCOUNT" */ && *(ushort*)(ptr + 8) == MemoryMarshal.Read<ushort>("BI"u8))
-                            {
-                                return RespCommand.BITCOUNT;
-                            }
-                            break;
+                        return RespCommand.NONE;
                     }
-
-                    // Backup the read head, if we didn't find a command and need to continue in the more expensive parsing loop
-                    readHead = oldReadHead;
                 }
             }
             else
@@ -1001,6 +829,10 @@ namespace Garnet.server
                                 {
                                     return (RespCommand.SUBSCRIBE, 0);
                                 }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SISMEMBE"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("ER\r\n"u8))
+                                {
+                                    return (RespCommand.Set, (byte)SetOperation.SISMEMBER);
+                                }
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZLEXCOUN"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("NT\r\n"u8))
                                 {
                                     return (RespCommand.SortedSet, (byte)SortedSetOperation.ZLEXCOUNT);
@@ -1068,6 +900,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nBITFI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("ELD_RO\r\n"u8))
                                 {
                                     return (RespCommand.BITFIELD_RO, 0);
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSRAND"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("MEMBER\r\n"u8))
+                                {
+                                    return (RespCommand.Set, (byte)SetOperation.SRANDMEMBER);
                                 }
                                 break;
 

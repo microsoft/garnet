@@ -293,29 +293,29 @@ namespace Garnet.test.cluster
 
             #region AddSlots
             string resp;
-            resp = context.clusterTestUtils.AddDelSlots(0, new List<int> { 1, 2, 3, 4, 4, 5, 6 }, true);
-            Assert.AreEqual(resp, "ERR Slot 4 specified multiple times");
+            resp = context.clusterTestUtils.AddDelSlots(0, [1, 2, 3, 4, 4, 5, 6], addslot: true);
+            Assert.AreEqual("ERR Slot 4 specified multiple times", resp);
 
-            resp = context.clusterTestUtils.AddDelSlots(0, new List<int> { -1, 2, 3, 4, 4, 5, 6 }, true);
-            Assert.AreEqual(resp, "ERR Slot out of range");
+            resp = context.clusterTestUtils.AddDelSlots(0, [-1, 2, 3, 4, 4, 5, 6], addslot: true);
+            Assert.AreEqual("ERR Slot out of range", resp);
 
-            resp = context.clusterTestUtils.AddDelSlots(0, new List<int> { 16384, 2, 3, 4, 4, 5, 6 }, true);
-            Assert.AreEqual(resp, "ERR Slot out of range");
+            resp = context.clusterTestUtils.AddDelSlots(0, [16384, 2, 3, 4, 4, 5, 6], addslot: true);
+            Assert.AreEqual("ERR Slot out of range", resp);
 
-            resp = context.clusterTestUtils.AddDelSlots(0, new List<int> { 1, 2, 3, 4, 5, 6 }, true);
-            Assert.AreEqual(resp, "OK");
+            resp = context.clusterTestUtils.AddDelSlots(0, [1, 2, 3, 4, 5, 6], addslot: true);
+            Assert.AreEqual("OK", resp);
 
-            resp = context.clusterTestUtils.AddDelSlots(0, new List<int> { 1, 2, 3, 4, 5, 6 }, true);
-            Assert.AreEqual(resp, "ERR Slot 1 is already busy");
+            resp = context.clusterTestUtils.AddDelSlots(0, [1, 2, 3, 4, 5, 6], addslot: true);
+            Assert.AreEqual("ERR Slot 1 is already busy", resp);
 
-            resp = context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)> { new(1, 6) }, true);
-            Assert.AreEqual(resp, "ERR Slot 1 is already busy");
+            resp = context.clusterTestUtils.AddDelSlotsRange(0, [new(1, 6)], addslot: true);
+            Assert.AreEqual("ERR Slot 1 is already busy", resp);
 
-            resp = context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)> { new(10, 30), new(20, 40) }, true);
-            Assert.AreEqual(resp, "ERR Slot 20 specified multiple times");
+            resp = context.clusterTestUtils.AddDelSlotsRange(0, [new(10, 30), new(20, 40)], addslot: true);
+            Assert.AreEqual("ERR Slot 20 specified multiple times", resp);
 
-            resp = context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)> { new(10, 30), new(40, 80) }, true);
-            Assert.AreEqual(resp, "OK");
+            resp = context.clusterTestUtils.AddDelSlotsRange(0, [new(10, 30), new(40, 80)], true);
+            Assert.AreEqual("OK", resp);
 
             HashSet<int> slots = new(context.clusterTestUtils.GetOwnedSlotsFromNode(0, context.logger));
 

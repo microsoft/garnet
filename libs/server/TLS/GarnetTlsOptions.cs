@@ -75,28 +75,23 @@ namespace Garnet.server.TLS
             if (TlsClientOptions == null && enableCluster) TlsClientOptions = GetSslClientAuthenticationOptions();
         }
 
-        /// <summary>
-        /// Update certificate file name
-        /// </summary>
-        /// <param name="certFileName"></param>
-        /// <param name="certPassword"></param>
-        /// <param name="errorMsg"></param>
-        public bool UpdateCertFile(string certFileName, string certPassword, out string errorMsg)
+        /// <inheritdoc />
+        public bool UpdateCertFile(string certFileName, string certPassword, out string errorMessage)
         {
             if (CertSubjectName != null)
             {
-                errorMsg = "Cannot use cert-file-name with cert-subject-name. Provide only one of them.";
+                errorMessage = "Cannot use cert-file-name with cert-subject-name. Provide only one of them.";
                 logger?.LogError("Cannot use cert-file-name with cert-subject-name. Provide only one of them.");
                 return false;
             }
             if (certFileName == null)
             {
-                errorMsg = "Cannot provide null cert-file-name.";
+                errorMessage = "Cannot provide null cert-file-name.";
                 logger?.LogError("Cannot provide null cert-file-name.");
                 return false;
             }
 
-            errorMsg = null;
+            errorMessage = null;
             CertFileName = certFileName;
             CertPassword = certPassword;
             TlsServerOptions = GetSslServerAuthenticationOptions();

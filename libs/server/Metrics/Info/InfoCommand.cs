@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using Garnet.common;
 
 namespace Garnet.server
@@ -57,7 +56,7 @@ namespace Garnet.server
 
             if (invalid)
             {
-                while (!RespWriteUtils.WriteResponse(new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"-ERR Invalid section {invalidSection}. Try INFO HELP\r\n")), ref dcurr, dend))
+                while (!RespWriteUtils.WriteError($"ERR Invalid section {invalidSection}. Try INFO HELP", ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -70,7 +69,7 @@ namespace Garnet.server
             {
                 if (storeWrapper.monitor != null)
                     storeWrapper.monitor.resetEventFlags[InfoMetricsType.STATS] = true;
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -78,7 +77,7 @@ namespace Garnet.server
                 InfoMetricsType[] sectionsArr = sections == null ? GarnetInfoMetrics.defaultInfo : sections.ToArray();
                 GarnetInfoMetrics garnetInfo = new();
                 string info = garnetInfo.GetRespInfo(sectionsArr, storeWrapper);
-                while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(info), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiBulkString(info, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -92,7 +91,7 @@ namespace Garnet.server
                 SendAndReset();
             foreach (var sectionInfo in sectionsHelp)
             {
-                while (!RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(sectionInfo), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiBulkString(sectionInfo, ref dcurr, dend))
                     SendAndReset();
             }
         }

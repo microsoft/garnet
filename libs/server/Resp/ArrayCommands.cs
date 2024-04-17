@@ -71,7 +71,7 @@ namespace Garnet.server
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(o.IsSpanByte);
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -168,7 +168,7 @@ namespace Garnet.server
                         if (firstPending == -1)
                         {
                             // Realized not-found without IO, and no earlier pending, so we can add directly to the output
-                            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                                 SendAndReset();
                             o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                         }
@@ -200,7 +200,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -221,25 +221,39 @@ namespace Garnet.server
         /// <param name="binaryPaths">Binary paths from which to load assemblies</param>
         /// <param name="classNameToRegisterArgs">Mapping between class names to register and arguments required for registration</param>
         /// <param name="customCommandManager">CustomCommandManager instance used to register commands</param>
-        /// <returns>Response</returns>
-        private ReadOnlySpan<byte> RegisterCustomCommands(IEnumerable<string> binaryPaths, Dictionary<string, List<RegisterArgsBase>> classNameToRegisterArgs, CustomCommandManager customCommandManager)
+        /// <param name="errorMessage">If method returned false, contains ASCII encoded generic error string; otherwise <c>default</c></param>
+        /// <returns>A boolean value indicating whether registration of the custom commands was successful.</returns>
+        private bool TryRegisterCustomCommands(
+            IEnumerable<string> binaryPaths,
+            Dictionary<string, List<RegisterArgsBase>> classNameToRegisterArgs,
+            CustomCommandManager customCommandManager,
+            out ReadOnlySpan<byte> errorMessage)
         {
+            errorMessage = default;
             var classInstances = new Dictionary<string, object>();
             // Get all binary file paths from inputs binary paths
-            if (!FileUtils.TryGetFiles(binaryPaths, out var files, out _, new[] { ".dll", ".exe" },
-                    SearchOption.AllDirectories)) return CmdStrings.RESP_ERROR_GETTING_BINARY_FILES;
+            if (!FileUtils.TryGetFiles(binaryPaths, out var files, out _, [".dll", ".exe"],
+                    SearchOption.AllDirectories))
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_BINARY_FILES;
+                return false;
+            }
 
             // Check that all binary files are contained in allowed binary paths
             var binaryFiles = files.ToArray();
             if (binaryFiles.Any(f =>
                     storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))
             {
-                return CmdStrings.RESP_ERROR_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
+                return false;
             }
 
             // Get all assemblies from binary files
             if (!FileUtils.TryLoadAssemblies(binaryFiles, out var assemblies, out _))
-                return CmdStrings.RESP_ERROR_LOADING_ASSEMBLIES;
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
+                return false;
+            }
 
             var loadedAssemblies = assemblies.ToArray();
 
@@ -250,31 +264,36 @@ namespace Garnet.server
                 {
                     var publicKey = loadedAssembly.GetName().GetPublicKey();
                     if (publicKey == null || publicKey.Length == 0)
-                        return CmdStrings.RESP_ERROR_ASSEMBLY_NOT_SIGNED;
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
+                        return false;
+                    }
                 }
             }
 
             foreach (var c in classNameToRegisterArgs.Keys)
             {
-                if (classInstances.ContainsKey(c)) continue;
-                classInstances.Add(c, null);
+                classInstances.TryAdd(c, null);
             }
 
             // Get types from loaded assemblies
-            var loadedTypes = loadedAssemblies.SelectMany(a => a.GetTypes()).Where(t =>
-                classInstances.ContainsKey(t.Name)).ToArray();
+            var loadedTypes = loadedAssemblies
+                .SelectMany(a => a.GetTypes())
+                .Where(t => classInstances.ContainsKey(t.Name)).ToArray();
 
             // Check that all types implement one of the supported custom command base classes
             var supportedCustomCommandTypes = RegisterCustomCommandProviderBase.SupportedCustomCommandBaseTypesLazy.Value;
             if (loadedTypes.Any(t => !supportedCustomCommandTypes.Any(st => st.IsAssignableFrom(t))))
             {
-                return CmdStrings.RESP_ERROR_REGISTERCS_UNSUPPORTED_CLASS;
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS;
+                return false;
             }
 
             // Check that all types have empty constructors
             if (loadedTypes.Any(t => t.GetConstructor(Type.EmptyTypes) == null))
             {
-                return CmdStrings.RESP_ERROR_INSTANTIATING_CLASS;
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
+                return false;
             }
 
             // Instantiate types
@@ -287,7 +306,8 @@ namespace Garnet.server
             // If any class specified in the arguments was not instantiated, return an error
             if (classNameToRegisterArgs.Keys.Any(c => classInstances[c] == null))
             {
-                return CmdStrings.RESP_ERROR_INSTANTIATING_CLASS;
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
+                return false;
             }
 
             // Register each command / transaction using its specified class instance
@@ -300,7 +320,10 @@ namespace Garnet.server
                         RegisterCustomCommandProviderFactory.GetRegisterCustomCommandProvider(classInstances[classNameToArgs.Key], args);
 
                     if (registerApi == null)
-                        return CmdStrings.RESP_ERROR_REGISTERCS_UNSUPPORTED_CLASS;
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS;
+                        return false;
+                    }
 
                     registerApis.Add(registerApi);
                 }
@@ -311,7 +334,7 @@ namespace Garnet.server
                 registerApi.Register(customCommandManager);
             }
 
-            return CmdStrings.RESP_OK;
+            return true;
 
             // If any assembly was not loaded correctly, return an error
 
@@ -331,10 +354,10 @@ namespace Garnet.server
             // Custom class name to arguments read from each sub-command
             var classNameToRegisterArgs = new Dictionary<string, List<RegisterArgsBase>>();
 
-            ReadOnlySpan<byte> response = null;
+            ReadOnlySpan<byte> errorMsg = null;
 
             if (leftTokens == 0)
-                response = CmdStrings.RESP_MALFORMED_REGISTERCS_COMMAND;
+                errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
             // Parse the REGISTERCS command - list of registration sub-commands followed by a list of paths to binary files / folders
             // Syntax - REGISTERCS cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...] SRC path [path ...]
@@ -377,7 +400,7 @@ namespace Garnet.server
                     // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
                     if (classNameToRegisterArgs.Count == 0)
                     {
-                        response = CmdStrings.RESP_MALFORMED_REGISTERCS_COMMAND;
+                        errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                         break;
                     }
 
@@ -403,7 +426,7 @@ namespace Garnet.server
                     }
 
                     // Unexpected token
-                    response = CmdStrings.RESP_MALFORMED_REGISTERCS_COMMAND;
+                    errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                     break;
                 }
 
@@ -443,14 +466,18 @@ namespace Garnet.server
                 leftTokens--;
             }
 
-            // If no error is found, continue to register commands in the server
-            if (response == null)
+            // If no error is found, continue to try register custom commands in the server
+            if (errorMsg == null &&
+                TryRegisterCustomCommands(binaryPaths, classNameToRegisterArgs, customCommandManager, out errorMsg))
             {
-                response = this.RegisterCustomCommands(binaryPaths, classNameToRegisterArgs, customCommandManager);
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
             }
-
-            while (!RespWriteUtils.WriteResponse(response, ref dcurr, dend))
-                SendAndReset();
+            else
+            {
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             readHead = (int)(ptr - recvBufferPtr);
 
@@ -501,7 +528,7 @@ namespace Garnet.server
                 readHead = (int)(ptr - recvBufferPtr);
             }
             opsDone = 0;
-            while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -642,12 +669,12 @@ namespace Garnet.server
 
             if (string.Equals(result, "0"))
             {
-                while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes("-ERR invalid database index.\r\n"), ref dcurr, dend))
+                while (!RespWriteUtils.WriteError("ERR invalid database index."u8, ref dcurr, dend))
                     SendAndReset();
             }
             return true;
@@ -808,12 +835,12 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(typeName), ref dcurr, dend))
+                while (!RespWriteUtils.WriteSimpleString(typeName, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteSimpleString(Encoding.ASCII.GetBytes(@"none"), ref dcurr, dend))
+                while (!RespWriteUtils.WriteSimpleString("none"u8, ref dcurr, dend))
                     SendAndReset();
             }
 

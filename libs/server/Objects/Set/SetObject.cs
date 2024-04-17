@@ -23,6 +23,8 @@ namespace Garnet.server
         SMEMBERS,
         SCARD,
         SSCAN,
+        SRANDMEMBER,
+        SISMEMBER,
     }
 
 
@@ -111,6 +113,9 @@ namespace Garnet.server
                     case SetOperation.SMEMBERS:
                         SetMembers(_input, input.Length, ref output);
                         break;
+                    case SetOperation.SISMEMBER:
+                        SetIsMember(_input, input.Length, ref output);
+                        break;
                     case SetOperation.SREM:
                         SetRemove(_input, input.Length, _output);
                         break;
@@ -119,6 +124,9 @@ namespace Garnet.server
                         break;
                     case SetOperation.SPOP:
                         SetPop(_input, input.Length, ref output);
+                        break;
+                    case SetOperation.SRANDMEMBER:
+                        SetRandomMember(_input, input.Length, ref output);
                         break;
                     case SetOperation.SSCAN:
                         if (ObjectUtils.ReadScanInput(_input, input.Length, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))

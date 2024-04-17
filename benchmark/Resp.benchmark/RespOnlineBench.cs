@@ -6,7 +6,6 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -434,39 +433,39 @@ namespace Resp.benchmark
 
             byte[] pingBufferAllocation = GC.AllocateArray<byte>(14, true);
             byte* pingBuffer = (byte*)Unsafe.AsPointer(ref pingBufferAllocation[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*1\r\n$4\r\nPING\r\n")).CopyTo(new Span<byte>(pingBuffer, 14));
+            "*1\r\n$4\r\nPING\r\n"u8.CopyTo(new Span<byte>(pingBuffer, 14));
 
             byte[] getBufferA = GC.AllocateArray<byte>(13 + RespWriteUtils.GetBulkStringLength(keyLen), true);
             byte* getBuffer = (byte*)Unsafe.AsPointer(ref getBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*2\r\n$3\r\nGET\r\n")).CopyTo(new Span<byte>(getBuffer, 13));
+            "*2\r\n$3\r\nGET\r\n"u8.CopyTo(new Span<byte>(getBuffer, 13));
 
             byte[] setBufferA = GC.AllocateArray<byte>(130 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetBulkStringLength(valueLen), true);
             byte* setBuffer = (byte*)Unsafe.AsPointer(ref setBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*3\r\n$3\r\nSET\r\n")).CopyTo(new Span<byte>(setBuffer, 13));
+            "*3\r\n$3\r\nSET\r\n"u8.CopyTo(new Span<byte>(setBuffer, 13));
 
             byte[] setexBufferA = GC.AllocateArray<byte>(15 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl) + RespWriteUtils.GetBulkStringLength(valueLen), true);
             byte* setexBuffer = (byte*)Unsafe.AsPointer(ref setexBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*4\r\n$5\r\nSETEX\r\n")).CopyTo(new Span<byte>(setexBuffer, 15));
+            "*4\r\n$5\r\nSETEX\r\n"u8.CopyTo(new Span<byte>(setexBuffer, 15));
 
             byte[] delBufferA = GC.AllocateArray<byte>(13 + RespWriteUtils.GetBulkStringLength(keyLen), true);
             byte* delBuffer = (byte*)Unsafe.AsPointer(ref delBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*2\r\n$3\r\nDEL\r\n")).CopyTo(new Span<byte>(delBuffer, 13));
+            "*2\r\n$3\r\nDEL\r\n"u8.CopyTo(new Span<byte>(delBuffer, 13));
 
             byte[] zaddBufferA = GC.AllocateArray<byte>(14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(1) + RespWriteUtils.GetBulkStringLength(keyLen), true);
             byte* zaddBuffer = (byte*)Unsafe.AsPointer(ref zaddBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*4\r\n$4\r\nZADD\r\n")).CopyTo(new Span<byte>(zaddBuffer, 14));
+            "*4\r\n$4\r\nZADD\r\n"u8.CopyTo(new Span<byte>(zaddBuffer, 14));
 
             byte[] zremBufferA = GC.AllocateArray<byte>(14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetBulkStringLength(keyLen), true);
             byte* zremBuffer = (byte*)Unsafe.AsPointer(ref zremBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*3\r\n$4\r\nZREM\r\n")).CopyTo(new Span<byte>(zremBuffer, 14));
+            "*3\r\n$4\r\nZREM\r\n"u8.CopyTo(new Span<byte>(zremBuffer, 14));
 
             byte[] zcardBufferAllocation = GC.AllocateArray<byte>(15 + RespWriteUtils.GetBulkStringLength(sskeyLen), true);
             byte* zcardBuffer = (byte*)Unsafe.AsPointer(ref zcardBufferAllocation[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*2\r\n$4\r\nZCARD\r\n")).CopyTo(new Span<byte>(zcardBuffer, 15));
+            "*2\r\n$4\r\nZCARD\r\n"u8.CopyTo(new Span<byte>(zcardBuffer, 15));
 
             byte[] expireBufferA = GC.AllocateArray<byte>(16 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl), true);
             byte* expireBuffer = (byte*)Unsafe.AsPointer(ref expireBufferA[0]);
-            new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes("*3\r\n$6\r\nEXPIRE\r\n")).CopyTo(new Span<byte>(expireBuffer, 16));
+            "*3\r\n$6\r\nEXPIRE\r\n"u8.CopyTo(new Span<byte>(expireBuffer, 16));
 
             byte* getEnd = getBuffer + 13 + RespWriteUtils.GetBulkStringLength(keyLen);
             byte* setEnd = setBuffer + 130 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetBulkStringLength(valueLen);
@@ -496,20 +495,20 @@ namespace Resp.benchmark
                         break;
                     case OpType.GET:
                         byte* getCurr = getBuffer + 13;
-                        RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(req.GenerateKey()), ref getCurr, getEnd);
+                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref getCurr, getEnd);
                         client.Send(getBuffer, (int)(getCurr - getBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.SET:
                         byte* setCurr = setBuffer + 13;
-                        RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(req.GenerateKey()), ref setCurr, setEnd);
+                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref setCurr, setEnd);
                         RespWriteUtils.WriteBulkString(req.GenerateValueBytes().Span, ref setCurr, setEnd);
                         client.Send(setBuffer, (int)(setCurr - setBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.SETEX:
                         byte* setexCurr = setexBuffer + 15;
-                        RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(req.GenerateKey()), ref setexCurr, setexEnd);
+                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref setexCurr, setexEnd);
                         RespWriteUtils.WriteIntegerAsBulkString(opts.Ttl, ref setexCurr, setexEnd);
                         RespWriteUtils.WriteBulkString(req.GenerateValueBytes().Span, ref setexCurr, setexEnd);
                         client.Send(setexBuffer, (int)(setexCurr - setexBuffer), 1);
@@ -517,21 +516,21 @@ namespace Resp.benchmark
                         break;
                     case OpType.DEL:
                         byte* delCurr = delBuffer + 13;
-                        RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(req.GenerateKey()), ref delCurr, delEnd);
+                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref delCurr, delEnd);
                         client.Send(delBuffer, (int)(delCurr - delBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.ZADD:
                         byte* zaddCurr = zaddBuffer + 14;
-                        RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(sskey), ref zaddCurr, zaddEnd);
+                        RespWriteUtils.WriteAsciiBulkString(sskey, ref zaddCurr, zaddEnd);
                         RespWriteUtils.WriteIntegerAsBulkString(1, ref zaddCurr, zaddEnd);
-                        RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(req.GenerateKey()), ref zaddCurr, zaddEnd);
+                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref zaddCurr, zaddEnd);
                         client.Send(zaddBuffer, (int)(zaddCurr - zaddBuffer), 1);
                         if (opts.Ttl > 0)
                         {
                             // NOTE: Here we are not resetting opType. This only works for online bench
                             byte* expireCurr = expireBuffer + 16;
-                            RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(sskey), ref expireCurr, expireEnd);
+                            RespWriteUtils.WriteAsciiBulkString(sskey, ref expireCurr, expireEnd);
                             RespWriteUtils.WriteIntegerAsBulkString(opts.Ttl, ref expireCurr, expireEnd);
                             client.Send(expireBuffer, (int)(expireCurr - expireBuffer), 1);
                         }
@@ -539,15 +538,15 @@ namespace Resp.benchmark
                         break;
                     case OpType.ZREM:
                         byte* zremCurr = zremBuffer + 14;
-                        RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(sskey), ref zremCurr, zremEnd);
+                        RespWriteUtils.WriteAsciiBulkString(sskey, ref zremCurr, zremEnd);
                         RespWriteUtils.WriteIntegerAsBulkString(1, ref zremCurr, zremEnd);
-                        RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(req.GenerateKey()), ref zremCurr, zremEnd);
+                        RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref zremCurr, zremEnd);
                         client.Send(zremBuffer, (int)(zremCurr - zremEnd), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.ZCARD:
                         byte* zcardCurr = zcardBuffer + 15;
-                        RespWriteUtils.WriteBulkString(Encoding.ASCII.GetBytes(sskey), ref zcardCurr, zcardEnd);
+                        RespWriteUtils.WriteAsciiBulkString(sskey, ref zcardCurr, zcardEnd);
                         client.Send(zcardBuffer, (int)(zcardCurr - zcardEnd), 1);
                         client.CompletePendingRequests();
                         break;

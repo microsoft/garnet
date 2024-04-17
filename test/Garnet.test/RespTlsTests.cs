@@ -61,6 +61,20 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task SingleUnicodeSetGetGarnetClient()
+        {
+            using var db = TestUtils.GetGarnetClient(useTLS: true);
+            db.Connect();
+
+            string origValue = "笑い男";
+            await db.StringSetAsync("mykey", origValue);
+
+            string retValue = await db.StringGetAsync("mykey");
+
+            Assert.AreEqual(origValue, retValue);
+        }
+
+        [Test]
         public void TlsMultiSetGet()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(disablePubSub: true, useTLS: true));

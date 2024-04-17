@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -61,7 +60,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(nodeId, ref curr, end))
+            while (!RespWriteUtils.WriteAsciiBulkString(nodeId, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -69,7 +68,7 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.WriteBulkString(primary_replid, ref curr, end))
+            while (!RespWriteUtils.WriteAsciiBulkString(primary_replid, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -294,7 +293,7 @@ namespace Garnet.client
             offset = curr;
 
             //3
-            while (!RespWriteUtils.WriteBulkString(sendStoreCheckpoint ? Encoding.ASCII.GetBytes("1") : Encoding.ASCII.GetBytes("0"), ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(sendStoreCheckpoint ? "1"u8 : "0"u8, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -302,7 +301,7 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.WriteBulkString(sendObjectStoreCheckpoint ? Encoding.ASCII.GetBytes("1") : Encoding.ASCII.GetBytes("0"), ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(sendObjectStoreCheckpoint ? "1"u8 : "0"u8, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -310,7 +309,7 @@ namespace Garnet.client
             offset = curr;
 
             //5
-            while (!RespWriteUtils.WriteBulkString(replayAOF ? Encoding.ASCII.GetBytes("1") : Encoding.ASCII.GetBytes("0"), ref curr, end))
+            while (!RespWriteUtils.WriteBulkString(replayAOF ? "1"u8 : "0"u8, ref curr, end))
             {
                 Flush();
                 curr = offset;
@@ -318,7 +317,7 @@ namespace Garnet.client
             offset = curr;
 
             //6
-            while (!RespWriteUtils.WriteBulkString(primary_replid, ref curr, end))
+            while (!RespWriteUtils.WriteAsciiBulkString(primary_replid, ref curr, end))
             {
                 Flush();
                 curr = offset;

@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -33,7 +32,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
             }
             else
@@ -42,7 +41,7 @@ namespace Garnet.server
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
                 else
-                    while (!RespWriteUtils.WriteResponse(Encoding.ASCII.GetBytes($"-ERR Transaction failed.\r\n"), ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR Transaction failed.", ref dcurr, dend))
                         SendAndReset();
             }
             latencyMetrics?.Stop(LatencyMetricsType.TX_PROC_LAT);
@@ -110,7 +109,7 @@ namespace Garnet.server
                 if (output.Memory != null)
                     SendAndReset(output.Memory, output.Length);
                 else
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
             }
             else
@@ -123,13 +122,13 @@ namespace Garnet.server
                     if (output.Memory != null)
                         SendAndReset(output.Memory, output.Length);
                     else
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                 }
                 else
                 {
                     Debug.Assert(output.Memory == null);
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                 }
             }
@@ -169,7 +168,7 @@ namespace Garnet.server
                 if (output.spanByteAndMemory.Memory != null)
                     SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
                 else
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
             }
             else
@@ -182,14 +181,14 @@ namespace Garnet.server
                     if (output.spanByteAndMemory.Memory != null)
                         SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
                     else
-                        while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_OK, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
 
                 }
                 else
                 {
                     Debug.Assert(output.spanByteAndMemory.Memory == null);
-                    while (!RespWriteUtils.WriteResponse(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                 }
             }

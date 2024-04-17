@@ -418,6 +418,19 @@ namespace Garnet.server
             => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
 
         /// <summary>
+        /// Returns if member is a member of the set stored at key.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public GarnetStatus SetIsMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+
+        /// <summary>
         /// Removes and returns one or more random members from the set at key.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
@@ -427,6 +440,23 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetPop<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+
+        /// <summary>
+        /// When called with just the key argument, return a random element from the set value stored at key.
+        /// If the provided count argument is positive, return an array of distinct elements. 
+        /// The array's length is either count or the set's cardinality (SCARD), whichever is lower.
+        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times. 
+        /// In this case, the number of returned elements is the absolute value of the specified count.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <param name="objectContext"></param>
+        /// <returns></returns>
+        public GarnetStatus SetRandomMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
     }
