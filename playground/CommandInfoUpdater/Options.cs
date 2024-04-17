@@ -16,7 +16,7 @@ namespace CommandInfoUpdater
         [Option('o', "output", Required = true)]
         public string OutputPath { get; set; }
 
-        [Option('i', "ignore", Default = new[]{ "SETEXXX", "SETEXNX" })]
+        [Option('i', "ignore", Default = new[] { "SETEXXX", "SETEXNX" })]
         public IEnumerable<string> IgnoreCommands { get; set; }
     }
 }

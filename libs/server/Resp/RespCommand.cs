@@ -145,7 +145,7 @@ namespace Garnet.server
     internal class RespCommandAttribute : Attribute
     {
         public string RespCommand { get; init; }
-        public byte ArrayCommand { get;init; }
+        public byte ArrayCommand { get; init; }
 
         public RespCommandAttribute(string respCommand, byte arrayCommand = 0)
         {

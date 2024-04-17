@@ -177,10 +177,10 @@ namespace Garnet.server.Custom
         public override void Register(CustomCommandManager customCommandManager)
         {
             customCommandManager.Register(
-                this.RegisterArgs.Name, 
+                this.RegisterArgs.Name,
                 this.RegisterArgs.NumParams,
-                this.RegisterArgs.CommandType, 
-                this.Instance, 
+                this.RegisterArgs.CommandType,
+                this.Instance,
                 this.RegisterArgs.CommandInfo,
                 this.RegisterArgs.ExpirationTicks);
         }

@@ -73,7 +73,7 @@ namespace Garnet.server
             } while (objectCommandMap[type] != null);
 
             objectCommandMap[type] = new CustomObjectCommandWrapper((byte)type, factory);
-            
+
             return type;
         }
 
@@ -97,7 +97,7 @@ namespace Garnet.server
             int subCommand = Interlocked.Increment(ref wrapper.CommandId) - 1;
             if (subCommand >= byte.MaxValue)
                 throw new Exception("Out of registration space");
-            
+
             wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, 1, numParams, commandType, wrapper.factory);
             customCommandsInfo.Add(name, commandInfo);
 

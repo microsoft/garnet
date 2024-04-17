@@ -78,7 +78,7 @@ namespace CommandInfoUpdater
                 .Where(existingCommand => !updatedCommands.Contains(existingCommand.Key))
                 .ToDictionary(existingCommand => existingCommand.Key, existingCommand => existingCommand.Value);
 
-                foreach (var command in commandsToRemove.Where(kvp => !kvp.Value).Select(kvp => kvp.Key))
+            foreach (var command in commandsToRemove.Where(kvp => !kvp.Value).Select(kvp => kvp.Key))
             {
                 var existingSubCommands = existingCommandsInfo[command.Command].SubCommands == null ? null
                     : existingCommandsInfo[command.Command].SubCommands.Select(sc => sc.Name).ToArray();

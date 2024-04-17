@@ -33,7 +33,7 @@ namespace Garnet.common
 
         public static IDictionary<string, string> GetEnumNameToDescription<T>() where T : Enum
         {
-            if (!EnumNameToDescriptionCache.ContainsKey(typeof(T))) 
+            if (!EnumNameToDescriptionCache.ContainsKey(typeof(T)))
                 AddTypeToCache<T>();
 
             return EnumNameToDescriptionCache[typeof(T)];
@@ -54,9 +54,9 @@ namespace Garnet.common
             if (!EnumDescriptionToNameCache.ContainsKey(typeof(T)))
                 AddTypeToCache<T>();
 
-            if (!EnumDescriptionToNameCache[typeof(T)].ContainsKey(strVal)) 
+            if (!EnumDescriptionToNameCache[typeof(T)].ContainsKey(strVal))
                 return Enum.TryParse(strVal, out val);
-            
+
             return Enum.TryParse(EnumDescriptionToNameCache[typeof(T)][strVal], out val);
         }
     }

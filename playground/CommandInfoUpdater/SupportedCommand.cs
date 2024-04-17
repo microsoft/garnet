@@ -31,7 +31,7 @@ namespace CommandInfoUpdater
             new("BITFIELD", RespCommand.BITFIELD),
             new("BITPOS", RespCommand.BITPOS),
             new("CLIENT", RespCommand.CLIENT),
-            new("CLUSTER", RespCommand.CLUSTER, 0, new [] 
+            new("CLUSTER", RespCommand.CLUSTER, 0, new []
             {
                 "CLUSTER|ADDSLOTS",
                 "CLUSTER|ADDSLOTSRANGE",
@@ -75,7 +75,7 @@ namespace CommandInfoUpdater
             new("GEOHASH", RespCommand.SortedSet, (byte) SortedSetOperation.GEOHASH),
             new("GEOPOS", RespCommand.SortedSet, (byte) SortedSetOperation.GEOPOS),
             new("GEOSEARCH", RespCommand.SortedSet, (byte) SortedSetOperation.GEOSEARCH),
-            new("GET", RespCommand.GET), 
+            new("GET", RespCommand.GET),
             new("GETBIT", RespCommand.GETBIT),
             new("GETDEL", RespCommand.GETDEL),
             new("GETRANGE", RespCommand.GETRANGE),

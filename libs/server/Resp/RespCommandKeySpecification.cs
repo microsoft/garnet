@@ -144,7 +144,7 @@ namespace Garnet.server
         {
             get { return this._respFormatSpec ??= $"*2\r\n$5\r\nindex\r\n:{this.Index}"; }
         }
-        
+
         private string _respFormatSpec;
 
         public BeginSearchIndex()
@@ -163,7 +163,7 @@ namespace Garnet.server
 
         public int StartFrom { get; init; }
 
-            [JsonIgnore]
+        [JsonIgnore]
         public sealed override string RespFormatType => "$7\r\nkeyword";
 
         [JsonIgnore]
@@ -428,7 +428,7 @@ namespace Garnet.server
                 case FindKeysUnknown findKeysUnknown:
                     writer.WriteString("TypeDiscriminator", nameof(FindKeysUnknown));
                     break;
-                default: 
+                default:
                     throw new JsonException();
             }
 

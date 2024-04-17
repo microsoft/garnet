@@ -1,19 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text.Json.Serialization;
-using System.Text.Json;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using StackExchange.Redis;
-using SetOperation = Garnet.server.SetOperation;
 
 namespace Garnet.test
 {
@@ -63,7 +55,7 @@ namespace Garnet.test
 
             // Get command count
             var commandCount = (int)db.Execute("COMMAND", "COUNT");
-            
+
             Assert.AreEqual(respCommandsInfo.Count, commandCount);
 
             // Register custom commands

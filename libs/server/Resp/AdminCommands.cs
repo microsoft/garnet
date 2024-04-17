@@ -314,7 +314,7 @@ namespace Garnet.server
                             if (!RespReadUtils.ReadStringWithLengthHeader(out var cmdName, ref ptr, recvBufferPtr + bytesRead))
                                 return false;
 
-                            if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, logger, out var cmdInfo) || 
+                            if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, logger, out var cmdInfo) ||
                                 storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                             {
                                 while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(cmdInfo.RespFormat), ref dcurr, dend))

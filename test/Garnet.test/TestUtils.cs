@@ -18,11 +18,11 @@ using Garnet.server;
 using Garnet.server.Auth;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using StackExchange.Redis;
 using Tsavorite.core;
 using Tsavorite.devices;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Garnet.test
 {

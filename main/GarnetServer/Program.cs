@@ -2,12 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text.Json.Serialization;
+using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using Garnet.server;
-using System.IO;
-using System.Collections.Generic;
 
 namespace Garnet
 {
@@ -17,7 +17,7 @@ namespace Garnet
     class Program
     {
         private static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
-            
+
         static void Main(string[] args)
         {
             try
