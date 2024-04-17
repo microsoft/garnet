@@ -13,17 +13,20 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="..\libs\server\Resp\RespCommandsInfo.json" Link="RespCommandsInfo.json" />
+    <EmbeddedResource Include="..\..\libs\server\Resp\RespCommandsInfo.json" Link="RespCommandsInfo.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="GarnetCommandsInfo.json" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="CommandLineParser" Version="2.9.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="7.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\libs\server\Garnet.server.csproj" />
-    <ProjectReference Include="..\test\Garnet.test\Garnet.test.csproj" />
+    <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
   </ItemGroup>
 
 </Project>

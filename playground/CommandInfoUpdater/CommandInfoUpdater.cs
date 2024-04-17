@@ -8,7 +8,6 @@ using System.Runtime.CompilerServices;
 using Garnet;
 using Garnet.common;
 using Garnet.server;
-using Garnet.test;
 using Microsoft.Extensions.Logging;
 
 namespace CommandInfoUpdater
