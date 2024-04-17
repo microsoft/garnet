@@ -314,7 +314,7 @@ namespace CommandInfoUpdater
         {
             // Define updated commands as commands to add unified with commands to remove
             var updatedCommands = new HashSet<string>(commandsToAdd.Keys.Union(commandsToRemove.Keys).Select(c => c.Command));
-            
+
             // Preserve command info for all commands that have not been updated
             var updatedCommandsInfo = existingCommandsInfo
                 .Where(existingCommand => !updatedCommands.Contains(existingCommand.Key))
@@ -407,7 +407,7 @@ namespace CommandInfoUpdater
 
             return updatedCommandsInfo;
         }
-        
+
         /// <summary>
         /// Try to serialize updated commands info to JSON file
         /// </summary>
