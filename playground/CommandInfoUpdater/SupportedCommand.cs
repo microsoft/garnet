@@ -5,8 +5,14 @@ using Garnet.server;
 
 namespace CommandInfoUpdater
 {
+    /// <summary>
+    /// Defines a command supported by Garnet
+    /// </summary>
     public class SupportedCommand
     {
+        /// <summary>
+        /// Map between a supported command's name and its SupportedCommand object
+        /// </summary>
         public static IReadOnlyDictionary<string, SupportedCommand> SupportedCommandsMap => _supportedCommandsMap.Value;
 
         private static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> _supportedCommandsMap =
@@ -169,12 +175,24 @@ namespace CommandInfoUpdater
             new("ZSCORE", RespCommand.SortedSet, (byte) SortedSetOperation.ZSCORE),
         };
 
+        /// <summary>
+        /// Supported command's name
+        /// </summary>
         public string Command { get; set; }
 
+        /// <summary>
+        /// Supported command's sub-commands' names
+        /// </summary>
         public HashSet<string>? SubCommands { get; set; }
 
+        /// <summary>
+        /// Garnet RespCommand
+        /// </summary>
         public RespCommand RespCommand { get; set; }
 
+        /// <summary>
+        /// Garnet ArrayCommand
+        /// </summary>
         public byte? ArrayCommand { get; set; }
 
         public SupportedCommand()
