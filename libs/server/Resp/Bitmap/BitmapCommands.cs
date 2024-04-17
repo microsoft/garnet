@@ -564,7 +564,7 @@ namespace Garnet.server
                     encodingInfo = (byte)(sign | bitCount);
 
                     //Calculate number offset from bitCount if offsetArg starts with #
-                    bool offsetType = offsetArg.StartsWith("#", StringComparison.OrdinalIgnoreCase);
+                    bool offsetType = offsetArg.StartsWith("#", StringComparison.Ordinal);
                     offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg);
                     offset = offsetType ? (offset * bitCount) : offset;
                 }
@@ -747,7 +747,7 @@ namespace Garnet.server
                     encodingInfo = (byte)(sign | bitCount);
 
                     //Calculate number offset from bitCount if offsetArg starts with #
-                    bool offsetType = offsetArg.StartsWith("#", StringComparison.OrdinalIgnoreCase);
+                    bool offsetType = offsetArg.StartsWith("#", StringComparison.Ordinal);
                     offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg);
                     offset = offsetType ? (offset * bitCount) : offset;
                 }

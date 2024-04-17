@@ -179,7 +179,7 @@ namespace Garnet.server.ACL
                     user.AddCategory(category);
                 }
             }
-            else if (op.Equals("~*", StringComparison.OrdinalIgnoreCase) || op.Equals("allkeys", StringComparison.OrdinalIgnoreCase))
+            else if (op.Equals("~*", StringComparison.Ordinal) || op.Equals("allkeys", StringComparison.OrdinalIgnoreCase))
             {
                 // NOTE: No-op, because only wildcard key patterns are currently supported
             }
