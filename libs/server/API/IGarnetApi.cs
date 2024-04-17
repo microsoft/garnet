@@ -521,6 +521,19 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus SetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// When called with just the key argument, return a random element from the set value stored at key.
+        /// If the provided count argument is positive, return an array of distinct elements. 
+        /// The array's length is either count or the set's cardinality (SCARD), whichever is lower.
+        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times. 
+        /// In this case, the number of returned elements is the absolute value of the specified count.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus SetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+
         #endregion
 
         #region List Methods

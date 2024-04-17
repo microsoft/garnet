@@ -499,8 +499,7 @@ namespace Garnet.server
                 var canParse = Int32.TryParse(Encoding.ASCII.GetString(countParameterByteArray), out countParameter);
                 if (!canParse || countParameter < 0)
                 {
-                    ReadOnlySpan<byte> errorMessage = "-ERR value is not an integer or out of range\r\n"u8;
-                    while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError("ERR value is not an integer or out of range"u8, ref dcurr, dend))
                         SendAndReset();
 
                     // Restore input buffer
@@ -559,5 +558,122 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// When called with just the key argument, return a random element from the set value stored at key.
+        /// If the provided count argument is positive, return an array of distinct elements. 
+        /// The array's length is either count or the set's cardinality (SCARD), whichever is lower.
+        /// If called with a negative count, the behavior changes and the command is allowed to return the same element multiple times. 
+        /// In this case, the number of returned elements is the absolute value of the specified count.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool SetRandomMember<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count < 1 || count > 2)
+            {
+                setItemsDoneCount = setOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("SRANDMEMBER", count);
+            }
+
+            // Get the key
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, true))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+                return true;
+            }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save old values on buffer for possible revert
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = sizeof(ObjectInputHeader);
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.Set;
+            inputPtr->header.SetOp = SetOperation.SRANDMEMBER;
+            inputPtr->count = Int32.MinValue;
+
+            int countParameter = 0;
+            if (count == 2)
+            {
+                // Get the value for the count parameter
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterByteArray, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                // Prepare response
+                var canParse = Int32.TryParse(Encoding.ASCII.GetString(countParameterByteArray), out countParameter);
+                if (!canParse)
+                {
+                    ReadOnlySpan<byte> errorMessage = "-ERR value is not an integer or out of range\r\n"u8;
+                    while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
+                        SendAndReset();
+
+                    // Restore input buffer
+                    *inputPtr = save;
+
+                    // Move input head
+                    readHead = (int)(ptr - recvBufferPtr);
+                    return true;
+                }
+                else if (countParameter == 0)
+                {
+                    while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
+
+                    // Restore input buffer
+                    *inputPtr = save;
+
+                    // Move input head
+                    readHead = (int)(ptr - recvBufferPtr);
+                    return true;
+                }
+                inputPtr->count = countParameter;
+            }
+
+            inputPtr->done = 0;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SetRandomMember(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Reset input buffer
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    // Process output
+                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ptr += objOutputHeader.bytesDone;
+                    setItemsDoneCount += objOutputHeader.countDone;
+                    if (count == 2 && setItemsDoneCount < countParameter)
+                        return false;
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            // Reset session counters
+            setItemsDoneCount = setOpsCount = 0;
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
     }
 }

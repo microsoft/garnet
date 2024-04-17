@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -12,6 +11,33 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct MainStoreFunctions : IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
     {
+        /// <summary>
+        /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
+        /// </summary>
+        /// <param name="length">Length of byte array</param>
+        /// <param name="source">Pointer to byte array</param>
+        /// <param name="val">Parsed long value</param>
+        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        static bool IsValidNumber(int length, byte* source, out long val)
+        {
+            val = 0;
+            try
+            {
+                // Check for valid number
+                if (!NumUtils.TryBytesToLong(length, source, out val))
+                {
+                    // Signal value is not a valid number
+                    return false;
+                }
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                return false;
+            }
+            return true;
+        }
+
         /// <inheritdoc/>
         public int GetRMWInitialValueLength(ref SpanByte input)
         {
@@ -40,11 +66,22 @@ namespace Garnet.server
                     var valueLength = *(int*)(inputPtr + RespInputHeader.Size);
                     return sizeof(int) + valueLength;
 
-                case RespCommand.DECRBY:
-                    var next = -NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
+                case RespCommand.INCRBY:
+                    if (!IsValidNumber(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out var next))
+                        return sizeof(int);
 
                     var fNeg = false;
                     var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
+
+                    return sizeof(int) + ndigits + (fNeg ? 1 : 0);
+
+                case RespCommand.DECRBY:
+                    if (!IsValidNumber(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out next))
+                        return sizeof(int);
+                    next = -next;
+
+                    fNeg = false;
+                    ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
 
@@ -77,14 +114,15 @@ namespace Garnet.server
                 {
                     case RespCommand.INCR:
                     case RespCommand.INCRBY:
-                        int datalen = inputspan.Length - RespInputHeader.Size;
-                        Span<byte> slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
+                        var datalen = inputspan.Length - RespInputHeader.Size;
+                        var slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
 
-                        long curr = NumUtils.BytesToLong(t.AsSpan());
-                        long next = curr + NumUtils.BytesToLong(slicedInputData);
+                        // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
+                        var curr = NumUtils.BytesToLong(t.AsSpan());
+                        var next = curr + NumUtils.BytesToLong(slicedInputData);
 
-                        bool fNeg = false;
-                        int ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
+                        var fNeg = false;
+                        var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
                         ndigits += fNeg ? 1 : 0;
 
                         return sizeof(int) + ndigits + t.MetadataSize;
@@ -94,6 +132,7 @@ namespace Garnet.server
                         datalen = inputspan.Length - RespInputHeader.Size;
                         slicedInputData = inputspan.Slice(RespInputHeader.Size, datalen);
 
+                        // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
                         curr = NumUtils.BytesToLong(t.AsSpan());
                         next = curr - NumUtils.BytesToLong(slicedInputData);
 

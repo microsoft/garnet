@@ -622,6 +622,89 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase(RespCommand.INCR, true)]
+        [TestCase(RespCommand.DECR, true)]
+        [TestCase(RespCommand.INCRBY, true)]
+        [TestCase(RespCommand.DECRBY, true)]
+        [TestCase(RespCommand.INCRBY, false)]
+        [TestCase(RespCommand.DECRBY, false)]
+        public void SimpleIncrementInvalidValue(RespCommand cmd, bool initialize)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01"];
+
+            foreach (var value in values)
+            {
+                var exception = false;
+                if (initialize)
+                {
+                    var resp = db.StringSet(value, value);
+                    Assert.AreEqual(true, resp);
+                }
+                try
+                {
+                    _ = cmd switch
+                    {
+                        RespCommand.INCR => db.StringIncrement(value),
+                        RespCommand.DECR => db.StringDecrement(value),
+                        RespCommand.INCRBY => (initialize ? db.StringIncrement(value, 10L) : (long)db.Execute("INCRBY", [value, value])),
+                        RespCommand.DECRBY => (initialize ? db.StringDecrement(value, 10L) : (long)db.Execute("DECRBY", [value, value])),
+                        _ => throw new Exception($"Command {cmd} not supported!"),
+                    };
+                }
+                catch (Exception ex)
+                {
+                    exception = true;
+                    var msg = ex.Message;
+                    Assert.AreEqual("ERR value is not an integer or out of range.", msg);
+                }
+                Assert.IsTrue(exception);
+            }
+        }
+
+        [Test]
+        [TestCase(RespCommand.INCR)]
+        [TestCase(RespCommand.DECR)]
+        [TestCase(RespCommand.INCRBY)]
+        [TestCase(RespCommand.DECRBY)]
+        public void SimpleIncrementOverflow(RespCommand cmd)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var exception = false;
+
+            var key = "test";
+            try
+            {
+                switch (cmd)
+                {
+                    case RespCommand.INCR:
+                        _ = db.StringSet(key, long.MaxValue.ToString());
+                        _ = db.StringIncrement(key);
+                        break;
+                    case RespCommand.DECR:
+                        _ = db.StringSet(key, long.MinValue.ToString());
+                        _ = db.StringDecrement(key);
+                        break;
+                    case RespCommand.INCRBY:
+                        _ = db.Execute("INCRBY", [key, ulong.MaxValue.ToString()]);
+                        break;
+                    case RespCommand.DECRBY:
+                        _ = db.Execute("DECRBY", [key, ulong.MaxValue.ToString()]);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                exception = true;
+                var msg = ex.Message;
+                Assert.AreEqual("ERR value is not an integer or out of range.", msg);
+            }
+            Assert.IsTrue(exception);
+        }
+
+        [Test]
         public void SingleDelete()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1439,7 +1522,7 @@ namespace Garnet.test
             }
             catch (RedisServerException ex)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERROFFSETOUTOFRANGE).TrimEnd().TrimStart('-'), ex.Message);
+                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
             }
 
             // existing key, length 10, offset 0, value length 5 -> 10 ("ABCDE56789")
@@ -1483,7 +1566,7 @@ namespace Garnet.test
             }
             catch (RedisServerException ex)
             {
-                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERROFFSETOUTOFRANGE).Trim().TrimStart('-'), ex.Message);
+                Assert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
             }
         }
 

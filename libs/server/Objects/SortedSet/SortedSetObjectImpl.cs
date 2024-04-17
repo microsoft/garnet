@@ -418,8 +418,7 @@ namespace Garnet.server
 
                     if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) | !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
                     {
-                        ReadOnlySpan<byte> errorMessage = "-ERR max or min value is not a float value.\r\n"u8;
-                        while (!RespWriteUtils.WriteDirect(errorMessage, ref curr, end))
+                        while (!RespWriteUtils.WriteError("ERR max or min value is not a float value."u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone = _input->count;
                         count = 0;
@@ -451,8 +450,7 @@ namespace Garnet.server
                         int minIndex = (int)minValue, maxIndex = (int)maxValue;
                         if (options.ValidLimit)
                         {
-                            ReadOnlySpan<byte> errorMessage = "-ERR syntax error, LIMIT is only supported in BYSCORE or BYLEX.\r\n"u8;
-                            while (!RespWriteUtils.WriteDirect(errorMessage, ref curr, end))
+                            while (!RespWriteUtils.WriteError("ERR syntax error, LIMIT is only supported in BYSCORE or BYLEX."u8, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             countDone = _input->count;
                             count = 0;
@@ -513,8 +511,7 @@ namespace Garnet.server
 
                     if (errorCode == int.MaxValue)
                     {
-                        ReadOnlySpan<byte> errorMessage = "-ERR max or min value not valid string range.\r\n"u8;
-                        while (!RespWriteUtils.WriteDirect(errorMessage, ref curr, end))
+                        while (!RespWriteUtils.WriteError("ERR max or min value not valid string range."u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone = _input->count;
                         count = 0;
@@ -921,8 +918,12 @@ namespace Garnet.server
         /// <returns></returns>
         private List<(double, byte[])> GetElementsInRangeByScore(double minValue, double maxValue, bool minExclusive, bool maxExclusive, bool withScore, bool doReverse, bool validLimit, bool rem, (int, int) limit = default)
         {
-
             List<(double, byte[])> scoredElements = new();
+            if (sortedSet.Max.Item1 < minValue)
+            {
+                return scoredElements;
+            }
+
             foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
             {
                 if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue)) break;

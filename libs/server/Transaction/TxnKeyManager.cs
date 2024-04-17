@@ -42,7 +42,7 @@ namespace Garnet.server
         /// </summary>
         internal int GetKeys(RespCommand command, int inputCount, out ReadOnlySpan<byte> error, byte subCommand)
         {
-            error = CmdStrings.RESP_ERR;
+            error = CmdStrings.RESP_ERR_GENERIC_UNK_CMD;
             return command switch
             {
                 RespCommand.SortedSet => SortedSetObjectKeys(subCommand, inputCount),
@@ -180,6 +180,7 @@ namespace Garnet.server
                 (byte)SetOperation.SMEMBERS => SingleKey(1, true, LockType.Shared),
                 (byte)SetOperation.SREM => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SCARD => SingleKey(1, true, LockType.Exclusive),
+                (byte)SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
                 _ => -1

@@ -293,7 +293,7 @@ namespace Garnet.server
             int offset = NumUtils.BytesToInt(offsetSize, offsetPtr);
             if (offset < 0)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERROFFSETOUTOFRANGE, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -461,14 +461,14 @@ namespace Garnet.server
 
                     if (expOption != ExpirationOption.None)
                     {
-                        errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
                         error = true;
                         continue;
                     }
                     expOption = ExpirationOption.EX;
                     if (expiry <= 0)
                     {
-                        errorMessage = CmdStrings.RESP_ERRINVALIDEXP_IN_SET;
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
                         error = true;
                         continue;
                     }
@@ -484,14 +484,14 @@ namespace Garnet.server
 
                     if (expOption != ExpirationOption.None)
                     {
-                        errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
                         error = true;
                         continue;
                     }
                     expOption = ExpirationOption.PX;
                     if (expiry <= 0)
                     {
-                        errorMessage = CmdStrings.RESP_ERRINVALIDEXP_IN_SET;
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET;
                         error = true;
                         continue;
                     }
@@ -502,7 +502,7 @@ namespace Garnet.server
                     count--;
                     if (expOption != ExpirationOption.None)
                     {
-                        errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
                         error = true;
                         continue;
                     }
@@ -514,7 +514,7 @@ namespace Garnet.server
                     count--;
                     if (existOptions != ExistOptions.None)
                     {
-                        errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
                         error = true;
                         continue;
                     }
@@ -526,7 +526,7 @@ namespace Garnet.server
                     count--;
                     if (existOptions != ExistOptions.None)
                     {
-                        errorMessage = CmdStrings.RESP_SYNTAX_ERROR;
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
                         error = true;
                         continue;
                     }
@@ -540,7 +540,7 @@ namespace Garnet.server
                 }
                 else if (!MakeUpperCase(ptr))
                 {
-                    errorMessage = CmdStrings.RESP_ERR;
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_UNK_CMD;
                     error = true;
                     continue;
                 }
@@ -550,7 +550,7 @@ namespace Garnet.server
 
             if (error)
             {
-                while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
@@ -614,7 +614,7 @@ namespace Garnet.server
                     break;
             }
 
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR, ref dcurr, dend))
+            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -770,15 +770,25 @@ namespace Garnet.server
                 return true;
 
             var key = new ArgSlice(keyPtr, ksize);
-
-            byte* pbOutput = stackalloc byte[20];
-            var output = new ArgSlice(pbOutput, 20);
+            var pbOutput = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
+            var output = new ArgSlice(pbOutput, NumUtils.MaximumFormatInt64Length + 1);
 
             var status = storageApi.Increment(key, input, ref output);
+            var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1 ? (OperationError)output.Span[0] : OperationError.SUCCESS;
 
-            while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
-                SendAndReset();
-
+            switch (errorFlag)
+            {
+                case OperationError.SUCCESS:
+                    while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case OperationError.INVALID_TYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                default:
+                    throw new GarnetException($"Invalid OperationError {errorFlag}");
+            }
             return true;
         }
 

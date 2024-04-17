@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -512,7 +511,7 @@ namespace Garnet.server
                     //At this point processed two arguments
                     else
                     {
-                        while (!RespWriteUtils.WriteAsciiDirect($"-ERR Overflow type {overflowArg} not supported\r\n", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError($"ERR Overflow type {overflowArg} not supported", ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -544,7 +543,7 @@ namespace Garnet.server
                             secondaryOPcode = (byte)RespCommand.INCRBY;
                         else
                         {
-                            while (!RespWriteUtils.WriteAsciiDirect($"-ERR Bitfield command {command} not supported\r\n", ref dcurr, dend))
+                            while (!RespWriteUtils.WriteError($"ERR Bitfield command {command} not supported", ref dcurr, dend))
                                 SendAndReset();
                             return true;
                         }
@@ -705,7 +704,7 @@ namespace Garnet.server
                         overFlowType = (byte)BitFieldOverflow.FAIL;
                     else
                     {
-                        while (!RespWriteUtils.WriteAsciiDirect($"-ERR Overflow type {overflowArg} not supported\r\n", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError($"ERR Overflow type {overflowArg} not supported", ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -759,7 +758,7 @@ namespace Garnet.server
             //Process only bitfield GET and skip any other subcommand.
             if (writeError)
             {
-                while (!RespWriteUtils.WriteDirect("-ERR BITFIELD_RO only supports the GET subcommand.\r\n"u8, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError("ERR BITFIELD_RO only supports the GET subcommand."u8, ref dcurr, dend))
                     SendAndReset();
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;

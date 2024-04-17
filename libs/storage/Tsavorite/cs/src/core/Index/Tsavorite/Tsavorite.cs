@@ -171,7 +171,7 @@ namespace Tsavorite.core
 
             bool isFixedLenReviv = true;
 
-            if (!Utility.IsBlittable<Key>() && !Utility.IsBlittable<Value>())
+            if (!Utility.IsBlittable<Key>() || !Utility.IsBlittable<Value>())
             {
                 hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator HybridLog"));
                 Log = new LogAccessor<Key, Value>(this, hlog);

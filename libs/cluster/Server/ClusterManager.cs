@@ -2,8 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
-using System.Text;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -21,12 +19,6 @@ namespace Garnet.cluster
         ClusterConfig currentConfig;
         readonly IDevice clusterConfigDevice;
         readonly SectorAlignedBufferPool pool;
-
-        /// <summary>
-        /// Replication manager - needs to be set after instantiation, hence made public
-        /// </summary>
-        public ReplicationManager replicationManager;
-
         readonly ILogger logger;
 
         /// <summary>
@@ -47,9 +39,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Constructor
         /// </summary>
-        public unsafe ClusterManager(
-            ClusterProvider clusterProvider,
-            ILoggerFactory loggerFactory = null)
+        public unsafe ClusterManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             var opts = clusterProvider.serverOptions;
@@ -61,7 +51,7 @@ namespace Garnet.cluster
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
             var address = opts.Address ?? StoreWrapper.GetIp();
-            logger = loggerFactory?.CreateLogger($"ClusterManager-{address}:{opts.Port}");
+            this.logger = logger;
             var recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !opts.CleanClusterConfig;
 
             tlsOptions = opts.TlsOptions;
@@ -195,19 +185,19 @@ namespace Garnet.cluster
             return ClusterInfo;
         }
 
-        private static string GetRange(List<int> slots)
+        private static string GetRange(int[] slots)
         {
             var range = "> ";
             var start = slots[0];
             var end = slots[0];
-            for (var i = 1; i < slots.Count + 1; i++)
+            for (var i = 1; i < slots.Length + 1; i++)
             {
-                if (i < slots.Count && slots[i] == end + 1)
+                if (i < slots.Length && slots[i] == end + 1)
                     end = slots[i];
                 else
                 {
                     range += $"{start}-{end} ";
-                    if (i < slots.Count)
+                    if (i < slots.Length)
                     {
                         start = slots[i];
                         end = slots[i];
@@ -218,28 +208,36 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Update config epoch of local worker
+        /// Attempts to update config epoch of local worker
         /// </summary>
         /// <param name="configEpoch"></param>
+        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public ReadOnlySpan<byte> TrySetLocalConfigEpoch(long configEpoch)
+        public bool TrySetLocalConfigEpoch(long configEpoch, out ReadOnlySpan<byte> errorMessage)
         {
+            errorMessage = default;
             while (true)
             {
                 var current = currentConfig;
                 if (current.NumWorkers == 0)
-                    return "-ERR workers not initialized.\r\n"u8;
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_WORKERS_NOT_INITIALIZED;
+                    return false;
+                }
 
                 var newConfig = currentConfig.SetLocalWorkerConfigEpoch(configEpoch);
                 if (newConfig == null)
-                    return "-ERR Node config epoch was not set due to invalid epoch specified.\r\n"u8;
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CONFIG_EPOCH_NOT_SET;
+                    return false;
+                }
 
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
             FlushConfig();
             logger?.LogTrace("SetConfigEpoch {configEpoch}", configEpoch);
-            return CmdStrings.RESP_OK;
+            return true;
         }
 
         /// <summary>
@@ -286,7 +284,7 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
-            replicationManager.Reset();
+            clusterProvider.replicationManager.Reset();
             FlushConfig();
         }
 
