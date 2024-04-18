@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -260,7 +260,8 @@ namespace Garnet.server
                     countDone = count;
 
                     // Prepare response
-                    if (!Utf8Parser.TryParse(countParameterByteArray, out int countParameter, out _, default))
+                    if (!Utf8Parser.TryParse(countParameterByteArray, out int countParameter, out var bytesConsumed, default) ||
+                        bytesConsumed != countParameterByteArray.Length)
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -408,8 +409,10 @@ namespace Garnet.server
 
                 if (hash.TryGetValue(key, out var value))
                 {
-                    if (Utf8Parser.TryParse(value, out float result, out _, default) &&
-                        Utf8Parser.TryParse(incr, out float resultIncr, out _, default))
+                    if (Utf8Parser.TryParse(value, out float result, out var valueBytesConsumed, default) &&
+                        valueBytesConsumed == value.Length &&
+                        Utf8Parser.TryParse(incr, out float resultIncr, out var incrBytesConsumed, default) &&
+                        incrBytesConsumed == incr.Length)
                     {
                         result += resultIncr;
 
@@ -446,7 +449,8 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (!Utf8Parser.TryParse(incr, out float resultIncr, out _, default))
+                    if (!Utf8Parser.TryParse(incr, out float resultIncr, out var incrBytesConsumed, default) ||
+                        incrBytesConsumed != incr.Length)
                     {
                         while (!RespWriteUtils.WriteError("ERR field value is not a number"u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

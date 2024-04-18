@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -100,7 +100,8 @@ namespace Garnet.server
                     if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterValue, ref input_currptr, input + length))
                         return false;
 
-                    _ = Utf8Parser.TryParse(countParameterValue, out countInInput, out _, default);
+                    _ = Utf8Parser.TryParse(countParameterValue, out countInInput, out var bytesConsumed, default) &&
+                        bytesConsumed == countParameterValue.Length;
 
                     // Limiting number of items to send to the output
                     if (countInInput > limitCountInOutput)

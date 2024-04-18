@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -532,7 +532,8 @@ namespace Garnet.common
                 result = 0;
                 return false;
             }
-            parsed = Utf8Parser.TryParse(resultBytes, out result, out _, default);
+            parsed = Utf8Parser.TryParse(resultBytes, out result, out var bytesConsumed, default) &&
+                bytesConsumed == resultBytes.Length;
             return true;
         }
 

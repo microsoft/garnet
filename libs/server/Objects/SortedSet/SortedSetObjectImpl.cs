@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -294,7 +294,8 @@ namespace Garnet.server
                     return;
 
                 //check if increment value is valid
-                if (!Utf8Parser.TryParse(incrementByteArray, out double incrValue, out _, default))
+                if (!Utf8Parser.TryParse(incrementByteArray, out double incrValue, out var incrBytesConsumed, default) ||
+                    incrBytesConsumed != incrementByteArray.Length)
                 {
                     countDone = int.MaxValue;
                 }

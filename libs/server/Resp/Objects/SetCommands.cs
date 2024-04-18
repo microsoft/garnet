@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -496,7 +496,8 @@ namespace Garnet.server
                     return false;
 
                 // Prepare response
-                if (!Utf8Parser.TryParse(countParameterByteArray, out countParameter, out _, default) ||
+                if (!Utf8Parser.TryParse(countParameterByteArray, out countParameter, out var bytesConsumed, default) ||
+                    bytesConsumed != countParameterByteArray.Length ||
                     countParameter < 0)
                 {
                     while (!RespWriteUtils.WriteError("ERR value is not an integer or out of range"u8, ref dcurr, dend))

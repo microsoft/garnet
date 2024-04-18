@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -771,7 +771,8 @@ namespace Garnet.server
                 {
                     if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterValue, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    _ = Utf8Parser.TryParse(countParameterValue, out countValue, out _, default);
+                    _ = Utf8Parser.TryParse(countParameterValue, out countValue, out var countBytesConsumed, default) &&
+                        countBytesConsumed == countParameterValue.Length;
                     leftTokens--;
                 }
                 else if (parameterSB.SequenceEqual(CmdStrings.TYPE) || parameterSB.SequenceEqual(CmdStrings.type))
@@ -783,11 +784,12 @@ namespace Garnet.server
                 leftTokens--;
             }
 
-            _ = Utf8Parser.TryParse(cursorParameterByte, out long cursorFromInput, out _, default);
+            _ = Utf8Parser.TryParse(cursorParameterByte, out long cursorFromInput, out var cursorBytesConsumed, default) &&
+                cursorBytesConsumed == cursorParameterByte.Length;
 
             var patternAS = new ArgSlice(pattern, psize);
 
-            storageApi.DbScan(patternAS, allKeys, cursorFromInput, out long cursor, out var keys, typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
+            storageApi.DbScan(patternAS, allKeys, cursorFromInput, out var cursor, out var keys, typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
 
             // Prepare values for output
             if (keys.Count == 0)
