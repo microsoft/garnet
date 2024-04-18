@@ -226,8 +226,8 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [TIME](server.md#time) | ➕ |  |
 | <span id="set">**SET**</span> | [SADD](data-structures.md#sadd) | ➕ |  |
 |  | [SCARD](data-structures.md#scard) | ➕ |  |
-|  | SDIFF | ➖ |  |
-|  | SDIFFSTORE | ➖ |  |
+|  | [SDIFF](data-structures.md#sdiff) | ➕ |  |
+|  | [SDIFFSTORE](data-structures.md#sdiffstore) | ➕ |  |
 |  | SINTER | ➖ |  |
 |  | SINTERCARD | ➖ |  |
 |  | SINTERSTORE | ➖ |  |
@@ -239,7 +239,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SRANDMEMBER](data-structures.md#srandmember) | ➕ |  |
 |  | [SREM](data-structures.md#srem) | ➕ |  |
 |  | [SSCAN](data-structures.md#sscan) | ➕ |  |
-|  | SUNION | ➖ |  |
+|  | [SUNION](data-structures.md#sunion) | ➕ |  |
 |  | SUNIONSTORE | ➖ |  |
 | <span id="sorted-set">**SORTED SET**</span> | BZPOP | ➖ |  |
 |  | BZPOPMAX | ➖ |  |
