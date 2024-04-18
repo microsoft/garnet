@@ -199,6 +199,8 @@ namespace CommandInfoUpdater
             new("UNSUBSCRIBE", RespCommand.UNSUBSCRIBE),
             new("UNWATCH", RespCommand.UNWATCH),
             new("WATCH", RespCommand.WATCH),
+            new("WATCHMS", RespCommand.WATCHMS),
+            new("WATCHOS", RespCommand.WATCHOS),
             new("ZADD", RespCommand.SortedSet, (byte) SortedSetOperation.ZADD),
             new("ZCARD", RespCommand.SortedSet, (byte) SortedSetOperation.ZCARD),
             new("ZCOUNT", RespCommand.SortedSet, (byte) SortedSetOperation.ZCOUNT),

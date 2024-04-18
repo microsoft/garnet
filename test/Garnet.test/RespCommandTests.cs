@@ -56,8 +56,6 @@ namespace Garnet.test
                 RespCommand.CustomObjCmd,
                 RespCommand.CustomTxn,
                 RespCommand.INVALID,
-                RespCommand.WATCHMS,
-                RespCommand.WATCHOS
             };
 
             var missingCombinations = new List<(RespCommand, byte)>();

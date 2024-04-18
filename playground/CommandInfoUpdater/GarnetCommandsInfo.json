@@ -128,5 +128,35 @@
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null
+  },
+  {
+    "Command": "WATCHMS",
+    "ArrayCommand": null,
+    "Name": "WATCHMS",
+    "IsInternal": true,
+    "Arity": -3,
+    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Fast, Transaction",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "WATCHOS",
+    "ArrayCommand": null,
+    "Name": "WATCHOS",
+    "IsInternal": true,
+    "Arity": -3,
+    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Fast, Transaction",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
   }
 ]
