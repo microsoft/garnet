@@ -249,7 +249,7 @@ namespace Garnet.server
         /// <param name="subCmd">The sub-command byte, if applicable</param>
         /// <param name="txnOnly">Return only commands that are allowed in a transaction context (False by default)</param>
         /// <returns>True if initialization was successful and command info was found</returns>
-        internal static bool TryGetRespCommandInfo(RespCommand cmd, 
+        internal static bool TryGetRespCommandInfo(RespCommand cmd,
             out RespCommandsInfo respCommandsInfo, byte subCmd = 0, bool txnOnly = false, ILogger logger = null)
         {
             respCommandsInfo = default;
