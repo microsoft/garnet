@@ -199,7 +199,13 @@ namespace Garnet.test
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
             }
 
-            return new GarnetServer(opts);
+            var loggerFactory = LoggerFactory.Create(builder =>
+            {
+                builder.AddProvider(new NUnitLoggerProvider(TestContext.Progress, "GarnetServer", null, false, false, LogLevel.Trace));
+                builder.SetMinimumLevel(LogLevel.Trace);
+            });
+
+            return new GarnetServer(opts, loggerFactory);
         }
 
         /// <summary>
