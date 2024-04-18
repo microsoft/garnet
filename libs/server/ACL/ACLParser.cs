@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -97,28 +97,28 @@ namespace Garnet.server.ACL
                 return;
             }
 
-            if (op.Equals("on", StringComparison.Ordinal))
+            if (op.Equals("ON", StringComparison.OrdinalIgnoreCase))
             {
                 // Enable user
                 user.IsEnabled = true;
             }
-            else if (op.Equals("off", StringComparison.Ordinal))
+            else if (op.Equals("OFF", StringComparison.OrdinalIgnoreCase))
             {
                 // Disable user
                 user.IsEnabled = false;
             }
-            else if (op.Equals("nopass", StringComparison.Ordinal))
+            else if (op.Equals("NOPASS", StringComparison.OrdinalIgnoreCase))
             {
                 // Make account passwordless
                 user.ClearPasswords();
                 user.IsPasswordless = true;
             }
-            else if (op.Equals("reset", StringComparison.Ordinal))
+            else if (op.Equals("RESET", StringComparison.OrdinalIgnoreCase))
             {
                 // Remove all passwords and access rights from the user
                 user.Reset();
             }
-            else if (op.Equals("resetpass", StringComparison.Ordinal))
+            else if (op.Equals("RESETPASS", StringComparison.OrdinalIgnoreCase))
             {
                 // Remove all passwords from the user
                 user.ClearPasswords();
@@ -179,11 +179,11 @@ namespace Garnet.server.ACL
                     user.AddCategory(category);
                 }
             }
-            else if (op.Equals("~*", StringComparison.Ordinal) || op.Equals("allkeys", StringComparison.OrdinalIgnoreCase))
+            else if (op.Equals("~*", StringComparison.Ordinal) || op.Equals("ALLKEYS", StringComparison.OrdinalIgnoreCase))
             {
                 // NOTE: No-op, because only wildcard key patterns are currently supported
             }
-            else if (op.Equals("resetkeys", StringComparison.Ordinal))
+            else if (op.Equals("RESETKEYS", StringComparison.OrdinalIgnoreCase))
             {
                 // NOTE: No-op, because only wildcard key patterns are currently supported
             }
