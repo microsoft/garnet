@@ -308,6 +308,17 @@ namespace Garnet.server
         public GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items)
             => storageSession.SetScan(key, cursor, match, count, out items, ref objectContext);
 
+        /// <inheritdoc />
+        public GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)
+            => storageSession.SetUnion(keys, out output, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)
+            => storageSession.SetDiff(keys, out members);
+
+        /// <inheritdoc />
+        public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys, out int count)
+            => storageSession.SetDiffStore(key, keys, out count);
         #endregion
 
         #region Hash Methods

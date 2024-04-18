@@ -251,6 +251,26 @@ namespace Garnet.server
             return garnetApi.SetScan(key, cursor, match, count, out items);
         }
 
+        /// <inheritdoc />
+        public GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SetUnion(keys, out output);
+        }
+
+
+        /// <inheritdoc />
+        public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> output)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SetDiff(keys, out output);
+        }
         #endregion
 
         #region Hash Methods
