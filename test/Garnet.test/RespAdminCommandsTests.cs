@@ -219,8 +219,8 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase("63k", "3k")]
         [TestCase("63k", "15k")]
+        [TestCase("63k", "3k")]
         [TestCase("63k", "1k")]
         [TestCase("8k", "5k")]
         [TestCase("16k", "16k")]

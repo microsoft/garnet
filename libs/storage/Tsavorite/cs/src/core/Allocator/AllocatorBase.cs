@@ -1122,15 +1122,19 @@ namespace Tsavorite.core
         internal abstract void DeleteFromMemory();
 
         /// <summary>
+        /// Increments AllocatedPageCount
         /// Update MaxAllocatedPageCount, if a higher number of pages have been allocated.
         /// </summary>
-        /// <param name="newAllocatedPageCount"></param>
-        protected void UpdateMaxAllocatedPageCount(int newAllocatedPageCount)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected void IncrementAllocatedPageCount()
         {
-            int currMaxAllocatedPageCount = MaxAllocatedPageCount;
-            if (newAllocatedPageCount > currMaxAllocatedPageCount)
+            var newAllocatedPageCount = Interlocked.Increment(ref AllocatedPageCount);
+            var currMaxAllocatedPageCount = MaxAllocatedPageCount;
+            while (currMaxAllocatedPageCount < newAllocatedPageCount)
             {
-                Interlocked.CompareExchange(ref MaxAllocatedPageCount, newAllocatedPageCount, currMaxAllocatedPageCount);
+                if (Interlocked.CompareExchange(ref MaxAllocatedPageCount, newAllocatedPageCount, currMaxAllocatedPageCount) == currMaxAllocatedPageCount)
+                    return;
+                currMaxAllocatedPageCount = MaxAllocatedPageCount;
             }
         }
 
