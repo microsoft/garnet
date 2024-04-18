@@ -5,12 +5,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<LangVersion>latest</LangVersion>
-    <Nullable>enable</Nullable>
+		<SignAssembly>true</SignAssembly>
+		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
+		<DelaySign>false</DelaySign>
   </PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="BenchmarkDotNet" Version="0.13.12" />
 	</ItemGroup>
 	<ItemGroup>
+		<ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
 		<ProjectReference Include="..\..\libs\common\Garnet.common.csproj" />
+		<ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<Compile Include="..\..\playground\Embedded.perftest\EmbeddedRespServer.cs" Link="EmbeddedRespServer.cs" />
+		<Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="DummyNetworkSender.cs" />
 	</ItemGroup>
 </Project>

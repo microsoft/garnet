@@ -534,6 +534,15 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus SetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// This command is equal to SDIFF, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
+        /// </summary>
+        /// <param name="key">destination</param>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys, out int count);
         #endregion
 
         #region List Methods
@@ -1199,6 +1208,22 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus SetScan(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items);
 
+        /// <summary>
+        /// Returns the members of the set resulting from the union of all the given sets.
+        /// Keys that do not exist are considered to be empty sets.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output);
+
+        /// <summary>
+        /// Returns the members of the set resulting from the difference between the first set and all the successive sets.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="members"></param>
+        /// <returns></returns>
+        GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members);
         #endregion
 
         #region Hash Methods
