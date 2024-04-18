@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -382,18 +382,18 @@ namespace Garnet.server
                     {
                         if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var token, ref input_currptr, input + length))
                             return;
-                        switch (Encoding.ASCII.GetString(token).ToLowerInvariant())
+                        switch (Encoding.ASCII.GetString(token).ToUpperInvariant())
                         {
-                            case "byscore":
+                            case "BYSCORE":
                                 options.ByScore = true;
                                 break;
-                            case "bylex":
+                            case "BYLEX":
                                 options.ByLex = true;
                                 break;
-                            case "rev":
+                            case "REV":
                                 options.Reverse = true;
                                 break;
-                            case "limit":
+                            case "LIMIT":
                                 // read the next two tokens
                                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var offset, ref input_currptr, input + length))
                                     return;
@@ -406,7 +406,7 @@ namespace Garnet.server
                                     i += 2;
                                 }
                                 break;
-                            case "withscores":
+                            case "WITHSCORES":
                                 options.WithScores = true;
                                 break;
                             default:
