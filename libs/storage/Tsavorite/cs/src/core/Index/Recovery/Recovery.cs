@@ -673,7 +673,7 @@ namespace Tsavorite.core
                     // We make an extra pass to clear locks when reading every page back into memory
                     ClearLocksOnPage(p, options);
 
-                    ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, capacity, numPagesToReadFirst, p, pageIndex);
+                    ProcessReadPageAndFlush(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
                 }
             }
 
@@ -705,7 +705,7 @@ namespace Tsavorite.core
                     // We make an extra pass to clear locks when reading every page back into memory
                     ClearLocksOnPage(p, options);
 
-                    ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, endPage, capacity, numPagesToReadFirst, p, pageIndex);
+                    ProcessReadPageAndFlush(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
                 }
             }
 
@@ -729,7 +729,7 @@ namespace Tsavorite.core
             return new RecoveryStatus(capacity, capacity - hlog.MinEmptyPageCount, endPage, untilAddress, checkpointType);
         }
 
-        private void ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long endPage, int capacity, int numPagesToRead, long page, int pageIndex)
+        private void ProcessReadPageAndFlush(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex))
             {
@@ -1062,13 +1062,6 @@ namespace Tsavorite.core
             if (Interlocked.Decrement(ref result.count) == 0)
             {
                 int pageIndex = hlog.GetPageIndexForPage(result.page);
-
-                // If full capacity cannot be utilized, free the page to ensure memory size constraint is maintained
-                if (result.page + result.context.usableCapacity < result.context.endPage &&
-                    result.context.usableCapacity < result.context.capacity)
-                {
-                    hlog.FreePage(result.page);
-                }
 
                 if (errorCode != 0)
                     result.context.SignalFlushedError(pageIndex);
