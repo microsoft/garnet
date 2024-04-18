@@ -47,7 +47,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [WHOAMI](acl.md#acl-whoami) | ➕ |  |
 | <span id="bitmap">**BITMAP**</span> | [BITCOUNT](analytics.md#bitcount) | ➕ |  |
 |  | [BITFIELD](analytics.md#bitfield) | ➕ |  |
-|  | BITFIELD_RO | ➖ |  |
+|  | [BITFIELD_RO](analytics.md#bitfield_ro) | ➕ |  |
 |  | [BITOP AND](analytics.md#bitop-and) | ➕ |  |
 |  | [BITOP NOT](analytics.md#bitop-not) | ➕ |  |
 |  | [BITPOS](analytics.md#bitpos) | ➕ |  |

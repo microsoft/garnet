@@ -262,7 +262,7 @@ namespace Garnet.server
                 // Handle COMMAND COUNT
                 if (count > 0 && (subCommand.SequenceEqual(CmdStrings.COUNT) || subCommand.SequenceEqual(CmdStrings.count)))
                 {
-                    if (!RespCommandsInfo.TryGetRespCommandsInfoCount(out var respCommandCount, logger))
+                    if (!RespCommandsInfo.TryGetRespCommandsInfoCount(out var respCommandCount, true, logger))
                     {
                         respCommandCount = 0;
                     }
@@ -287,7 +287,7 @@ namespace Garnet.server
                             resultSb.Append(customCmd.RespFormat);
                         }
 
-                        if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, logger))
+                        if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, true, logger))
                         {
                             foreach (var cmd in respCommandsInfo.Values)
                             {

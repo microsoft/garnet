@@ -14,7 +14,6 @@ namespace CommandInfoUpdater
     public class CommandInfoUpdater
     {
         private static readonly string GarnetCommandInfoJsonPath = "GarnetCommandsInfo.json";
-        private static readonly string[] DefaultCommandsToIgnore = new[] { "SETEXXX", "SETEXNX" };
 
         /// <summary>
         /// Tries to generate an updated JSON file containing Garnet's supported commands' info
@@ -29,13 +28,12 @@ namespace CommandInfoUpdater
         {
             logger.LogInformation("Attempting to update RESP commands info...");
 
-            if (!RespCommandsInfo.TryGetRespCommandsInfo(out var existingCommandsInfo, logger))
+            if (!RespCommandsInfo.TryGetRespCommandsInfo(out var existingCommandsInfo, false, logger))
             {
                 logger.LogError($"Unable to get existing RESP commands info.");
                 return false;
             }
 
-            ignoreCommands = ignoreCommands == null ? DefaultCommandsToIgnore : ignoreCommands.Union(DefaultCommandsToIgnore);
             var (commandsToAdd, commandsToRemove) =
                 GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands);
 
@@ -107,11 +105,11 @@ namespace CommandInfoUpdater
         /// <param name="existingCommandsInfo">Existing command names mapped to current command info</param>
         /// <param name="ignoreCommands">Commands to ignore</param>
         /// <returns>Commands to add and commands to remove mapped to a boolean determining if parent command should be added / removed</returns>
-        private static (IDictionary<SupportedCommand, bool>, IDictionary<SupportedCommand, bool>) GetCommandsToAddAndRemove(IReadOnlyDictionary<string, RespCommandsInfo> existingCommandsInfo, IEnumerable<string> ignoreCommands)
+        private static (IDictionary<SupportedCommand, bool>, IDictionary<SupportedCommand, bool>) GetCommandsToAddAndRemove(IReadOnlyDictionary<string, RespCommandsInfo> existingCommandsInfo, IEnumerable<string>? ignoreCommands)
         {
             var commandsToAdd = new Dictionary<SupportedCommand, bool>();
             var commandsToRemove = new Dictionary<SupportedCommand, bool>();
-            var commandsToIgnore = new HashSet<string>(ignoreCommands);
+            var commandsToIgnore = ignoreCommands != null ? new HashSet<string>(ignoreCommands) : null;
 
             // Supported commands
             var supportedCommands = SupportedCommand.SupportedCommandsMap;
@@ -120,7 +118,7 @@ namespace CommandInfoUpdater
             foreach (var supportedCommand in supportedCommands.Values)
             {
                 // Ignore command if in commands to ignore
-                if (commandsToIgnore.Contains(supportedCommand.Command)) continue;
+                if (commandsToIgnore != null && commandsToIgnore.Contains(supportedCommand.Command)) continue;
 
                 // If existing commands do not contain parent command, add it and indicate parent command should be added
                 if (!existingCommandsInfo.ContainsKey(supportedCommand.Command))

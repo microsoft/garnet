@@ -1,10 +1,12 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
+using SetOperation = Garnet.server.SetOperation;
 
 namespace Garnet.test
 {
@@ -32,6 +34,73 @@ namespace Garnet.test
         {
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        [Test]
+        public void CommandsInfoCoverageTest()
+        {
+            var existingCombinations = new Dictionary<RespCommand, HashSet<byte>>();
+            foreach (var commandInfo in respCommandsInfo.Values)
+            {
+                if (!existingCombinations.ContainsKey(commandInfo.Command))
+                    existingCombinations.Add(commandInfo.Command, new HashSet<byte>());
+                if (commandInfo.ArrayCommand.HasValue)
+                    existingCombinations[commandInfo.Command].Add(commandInfo.ArrayCommand.Value);
+            }
+
+            var ignoreCommands = new HashSet<RespCommand>()
+            {
+                RespCommand.NONE,
+                RespCommand.COSCAN,
+                RespCommand.CustomCmd,
+                RespCommand.CustomObjCmd,
+                RespCommand.CustomTxn,
+                RespCommand.INVALID,
+                RespCommand.WATCHMS,
+                RespCommand.WATCHOS
+            };
+
+            var missingCombinations = new List<(RespCommand, byte)>();
+            foreach (var respCommand in Enum.GetValues<RespCommand>())
+            {
+                if (ignoreCommands.Contains(respCommand)) continue;
+
+                var arrayCommandEnumType = (respCommand) switch
+                {
+                    RespCommand.Set => typeof(SetOperation),
+                    RespCommand.Hash => typeof(HashOperation),
+                    RespCommand.List => typeof(ListOperation),
+                    RespCommand.SortedSet => typeof(SortedSetOperation),
+                    _ => default
+                };
+
+                if (arrayCommandEnumType != default)
+                {
+                    foreach (var arrayCommand in Enum.GetValues(arrayCommandEnumType))
+                    {
+                        if (!existingCombinations.ContainsKey(respCommand) ||
+                            !existingCombinations[respCommand].Contains((byte)arrayCommand))
+                        {
+                            missingCombinations.Add((respCommand, (byte)arrayCommand));
+                        }
+                    }
+                }
+                else if (respCommand == RespCommand.All)
+                {
+                    if (!existingCombinations.ContainsKey(respCommand) ||
+                        !existingCombinations[respCommand].Contains((byte)RespCommand.COSCAN))
+                    {
+                        missingCombinations.Add((respCommand, (byte)RespCommand.COSCAN));
+                    }
+                }
+                else
+                {
+                    if (!existingCombinations.ContainsKey(respCommand))
+                        missingCombinations.Add((respCommand, 0));
+                }
+            }
+
+            Assert.IsEmpty(missingCombinations);
         }
 
         [Test]

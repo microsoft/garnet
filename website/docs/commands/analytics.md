@@ -43,6 +43,21 @@ Similarly the command handles increments and decrements of the specified integer
 Integer Reply: the bit value stored at offset.
 
 ---
+### BITFIELD_RO
+
+#### Syntax
+
+```bash
+BITFIELD_RO key [GET encoding offset [GET encoding offset ...]]
+```
+
+Read-only variant of the [BITFIELD](#bitfield) command. It is like the original [BITFIELD](#bitfield) but only accepts GET subcommand and can safely be used in read-only replicas.
+
+#### Resp Reply
+
+Array reply: each entry being the corresponding result of the sub-command given at the same position.
+
+---
 ### BITOP AND
 
 #### Syntax

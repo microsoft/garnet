@@ -35,6 +35,11 @@ namespace Garnet.server
         public string Name { get; init; }
 
         /// <summary>
+        /// Determines if the command is Garnet internal-only (i.e. not exposed to clients) 
+        /// </summary>
+        public bool IsInternal { get; init; }
+
+        /// <summary>
         /// The command's arity, i.e. the number of arguments a command expects
         /// * A positive integer means a fixed number of arguments
         /// * A negative integer means a minimal number of arguments
@@ -110,9 +115,11 @@ namespace Garnet.server
 
         private static bool IsInitialized = false;
         private static IReadOnlyDictionary<string, RespCommandsInfo> AllRespCommandsInfo = null;
+        private static IReadOnlyDictionary<string, RespCommandsInfo> ExternalRespCommandsInfo = null;
         private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> BasicRespCommandsInfo = null;
         private static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>> ArrayRespCommandsInfo = null;
         private static IReadOnlySet<string> AllRespCommandNames = null;
+        private static IReadOnlySet<string> ExternalRespCommandNames = null;
 
         private readonly RespCommandFlags flags;
         private readonly RespAclCategories aclCategories;
@@ -151,7 +158,11 @@ namespace Garnet.server
             }
 
             AllRespCommandsInfo = tmpAllRespCommandsInfo;
+            ExternalRespCommandsInfo = new ReadOnlyDictionary<string, RespCommandsInfo>(tmpAllRespCommandsInfo
+                .Where(ci => !ci.Value.IsInternal)
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
             AllRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, AllRespCommandsInfo.Keys.ToArray());
+            ExternalRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, ExternalRespCommandsInfo.Keys.ToArray());
             BasicRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpBasicRespCommandsInfo);
             ArrayRespCommandsInfo = new ReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>(
                 tmpArrayRespCommandsInfo
@@ -167,45 +178,48 @@ namespace Garnet.server
         /// <summary>
         /// Gets the number of commands supported by Garnet
         /// </summary>
-        /// <param name="logger">Logger</param>
         /// <param name="count">The count value</param>
+        /// <param name="externalOnly">Return number of commands that are visible externally</param>
+        /// <param name="logger">Logger</param>
         /// <returns>True if initialization was successful and data was retrieved successfully</returns>
-        internal static bool TryGetRespCommandsInfoCount(out int count, ILogger logger = null)
+        internal static bool TryGetRespCommandsInfoCount(out int count, bool externalOnly = false, ILogger logger = null)
         {
             count = -1;
             if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
 
-            count = AllRespCommandsInfo!.Count;
+            count = externalOnly ? ExternalRespCommandsInfo!.Count : AllRespCommandsInfo!.Count;
             return true;
         }
 
         /// <summary>
         /// Gets all the command info objects of commands supported by Garnet
         /// </summary>
-        /// <param name="logger">Logger</param>
         /// <param name="respCommandsInfo">Mapping between command name to command info</param>
+        /// <param name="externalOnly">Return only commands that are visible externally</param>
+        /// <param name="logger">Logger</param>
         /// <returns>True if initialization was successful and data was retrieved successfully</returns>
-        public static bool TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> respCommandsInfo, ILogger logger = null)
+        public static bool TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> respCommandsInfo, bool externalOnly = false, ILogger logger = null)
         {
             respCommandsInfo = default;
             if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
 
-            respCommandsInfo = AllRespCommandsInfo;
+            respCommandsInfo = externalOnly ? ExternalRespCommandsInfo : AllRespCommandsInfo;
             return true;
         }
 
         /// <summary>
         /// Gets all the command names of commands supported by Garnet
         /// </summary>
-        /// <param name="logger">Logger</param>
         /// <param name="respCommandNames">The command names</param>
+        /// <param name="externalOnly">Return only names of commands that are visible externally</param>
+        /// <param name="logger">Logger</param>
         /// <returns>True if initialization was successful and data was retrieved successfully</returns>
-        public static bool TryGetRespCommandNames(out IReadOnlySet<string> respCommandNames, ILogger logger = null)
+        public static bool TryGetRespCommandNames(out IReadOnlySet<string> respCommandNames, bool externalOnly = false, ILogger logger = null)
         {
             respCommandNames = default;
             if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
 
-            respCommandNames = AllRespCommandNames;
+            respCommandNames = externalOnly ? ExternalRespCommandNames : AllRespCommandNames;
             return true;
         }
 
@@ -213,8 +227,8 @@ namespace Garnet.server
         /// Gets command info by command name
         /// </summary>
         /// <param name="cmdName">The command name</param>
-        /// <param name="logger">Logger</param>
         /// <param name="respCommandsInfo">The command info</param>
+        /// <param name="logger">Logger</param>
         /// <returns>True if initialization was successful and command info was found</returns>
         internal static bool TryGetRespCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo, ILogger logger = null)
         {
