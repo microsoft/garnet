@@ -297,6 +297,8 @@ namespace Garnet.server
                 RespReadUtils.ReadStringWithLengthHeader(out var argKey, ref ptr, end);
                 if (argKey != "keyword") return false;
                 RespReadUtils.ReadStringWithLengthHeader(out var keyword, ref ptr, end);
+                RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end);
+                if (argKey != "startfrom") return false;
                 RespReadUtils.ReadIntegerAsString(out var strStartFrom, ref ptr, end);
                 if (!int.TryParse(strStartFrom, out var startFrom)) return false;
 

@@ -105,9 +105,13 @@ namespace Garnet.server
         None = 0,
 
         // Access type flags 
+        [Description("RW")]
         RW = 1,
+        [Description("RO")]
         RO = 1 << 1,
+        [Description("OW")]
         OW = 1 << 2,
+        [Description("RM")]
         RM = 1 << 3,
 
         // Logical operation flags

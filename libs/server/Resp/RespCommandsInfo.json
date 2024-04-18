@@ -142,6 +142,48 @@
     "SubCommands": null
   },
   {
+    "Command": "ASKING",
+    "ArrayCommand": null,
+    "Name": "ASKING",
+    "Arity": 1,
+    "Flags": "Fast",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Connection, Fast",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "AUTH",
+    "ArrayCommand": null,
+    "Name": "AUTH",
+    "Arity": -2,
+    "Flags": "Fast, Loading, NoAuth, NoScript, Stale, AllowBusy",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Connection, Fast",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "BGSAVE",
+    "ArrayCommand": null,
+    "Name": "BGSAVE",
+    "Arity": -1,
+    "Flags": "Admin, NoAsyncLoading, NoScript",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Admin, Dangerous, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "BITCOUNT",
     "ArrayCommand": null,
     "Name": "BITCOUNT",
@@ -195,6 +237,49 @@
         },
         "Notes": "This command allows both access and modification of the key",
         "Flags": "RW, Access, Update, VariableFlags"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "BITOP",
+    "ArrayCommand": null,
+    "Name": "BITOP",
+    "Arity": -4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 2,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Bitmap, Slow, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Update"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 3
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
       }
     ],
     "SubCommands": null
@@ -550,6 +635,67 @@
     ]
   },
   {
+    "Command": "COMMAND",
+    "ArrayCommand": 0,
+    "Name": "COMMAND",
+    "Arity": -1,
+    "Flags": "Loading, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Connection, Slow",
+    "Tips": [
+      "nondeterministic_output_order"
+    ],
+    "KeySpecifications": null,
+    "SubCommands": [
+      {
+        "Command": "COMMAND",
+        "ArrayCommand": 0,
+        "Name": "COMMAND|INFO",
+        "Arity": -2,
+        "Flags": "Loading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Connection, Slow",
+        "Tips": [
+          "nondeterministic_output_order"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "COMMAND",
+        "ArrayCommand": 0,
+        "Name": "COMMAND|COUNT",
+        "Arity": 2,
+        "Flags": "Loading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Connection, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      }
+    ]
+  },
+  {
+    "Command": "COMMITAOF",
+    "ArrayCommand": null,
+    "Name": "COMMITAOF",
+    "Arity": -1,
+    "Flags": "Admin, NoMulti, NoScript, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "CONFIG",
     "ArrayCommand": 0,
     "Name": "CONFIG",
@@ -620,6 +766,23 @@
     "Step": 1,
     "AclCategories": "Read, Slow",
     "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "DBSIZE",
+    "ArrayCommand": null,
+    "Name": "DBSIZE",
+    "Arity": 1,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Fast, KeySpace, Read",
+    "Tips": [
+      "request_policy:all_shards",
+      "response_policy:agg_sum"
+    ],
     "KeySpecifications": null,
     "SubCommands": null
   },
@@ -814,6 +977,23 @@
         "Flags": "RW, Update"
       }
     ],
+    "SubCommands": null
+  },
+  {
+    "Command": "FLUSHDB",
+    "ArrayCommand": null,
+    "Name": "FLUSHDB",
+    "Arity": -1,
+    "Flags": "Write",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Dangerous, KeySpace, Slow, Write",
+    "Tips": [
+      "request_policy:all_shards",
+      "response_policy:all_succeeded"
+    ],
+    "KeySpecifications": null,
     "SubCommands": null
   },
   {
@@ -1610,6 +1790,57 @@
     "SubCommands": null
   },
   {
+    "Command": "INFO",
+    "ArrayCommand": null,
+    "Name": "INFO",
+    "Arity": -1,
+    "Flags": "Loading, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Dangerous, Slow",
+    "Tips": [
+      "nondeterministic_output",
+      "request_policy:all_shards",
+      "response_policy:special"
+    ],
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "KEYS",
+    "ArrayCommand": null,
+    "Name": "KEYS",
+    "Arity": 2,
+    "Flags": "ReadOnly",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Dangerous, KeySpace, Read, Slow",
+    "Tips": [
+      "request_policy:all_shards",
+      "nondeterministic_output_order"
+    ],
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "LASTSAVE",
+    "ArrayCommand": null,
+    "Name": "LASTSAVE",
+    "Arity": 1,
+    "Flags": "Fast, Loading, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Admin, Dangerous, Fast",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "LATENCY",
     "ArrayCommand": 0,
     "Name": "LATENCY",
@@ -1748,6 +1979,49 @@
   },
   {
     "Command": "List",
+    "ArrayCommand": 13,
+    "Name": "LMOVE",
+    "Arity": 5,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "List, Slow, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "List",
     "ArrayCommand": 0,
     "Name": "LPOP",
     "Arity": -2,
@@ -1779,6 +2053,35 @@
     "Command": "List",
     "ArrayCommand": 1,
     "Name": "LPUSH",
+    "Arity": -3,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, List, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "List",
+    "ArrayCommand": 2,
+    "Name": "LPUSHX",
     "Arity": -3,
     "Flags": "DenyOom, Fast, Write",
     "FirstKey": 1,
@@ -1964,6 +2267,80 @@
         "Flags": "RO, Access"
       }
     ],
+    "SubCommands": null
+  },
+  {
+    "Command": "MIGRATE",
+    "ArrayCommand": null,
+    "Name": "MIGRATE",
+    "Arity": -6,
+    "Flags": "MovableKeys, Write",
+    "FirstKey": 3,
+    "LastKey": 3,
+    "Step": 1,
+    "AclCategories": "Dangerous, KeySpace, Slow, Write",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 3
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchKeyword",
+          "Keyword": "KEYS",
+          "StartFrom": -2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete, Incomplete"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "MODULE",
+    "ArrayCommand": null,
+    "Name": "MODULE",
+    "Arity": -2,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "MONITOR",
+    "ArrayCommand": null,
+    "Name": "MONITOR",
+    "Arity": 1,
+    "Flags": "Admin, Loading, NoScript, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Admin, Dangerous, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
     "SubCommands": null
   },
   {
@@ -2204,6 +2581,23 @@
     "SubCommands": null
   },
   {
+    "Command": "PING",
+    "ArrayCommand": null,
+    "Name": "PING",
+    "Arity": -1,
+    "Flags": "Fast",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Connection, Fast",
+    "Tips": [
+      "request_policy:all_shards",
+      "response_policy:all_succeeded"
+    ],
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "PSETEX",
     "ArrayCommand": null,
     "Name": "PSETEX",
@@ -2230,6 +2624,20 @@
         "Flags": "OW, Update"
       }
     ],
+    "SubCommands": null
+  },
+  {
+    "Command": "PSUBSCRIBE",
+    "ArrayCommand": null,
+    "Name": "PSUBSCRIBE",
+    "Arity": -2,
+    "Flags": "Loading, NoScript, PubSub, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "PubSub, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
     "SubCommands": null
   },
   {
@@ -2261,6 +2669,62 @@
         "Flags": "RO, Access"
       }
     ],
+    "SubCommands": null
+  },
+  {
+    "Command": "PUBLISH",
+    "ArrayCommand": null,
+    "Name": "PUBLISH",
+    "Arity": 3,
+    "Flags": "Fast, Loading, PubSub, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Fast, PubSub",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "PUNSUBSCRIBE",
+    "ArrayCommand": null,
+    "Name": "PUNSUBSCRIBE",
+    "Arity": -1,
+    "Flags": "Loading, NoScript, PubSub, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "PubSub, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "QUIT",
+    "ArrayCommand": null,
+    "Name": "QUIT",
+    "Arity": -1,
+    "Flags": "Fast, Loading, NoAuth, NoScript, Stale, AllowBusy",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Connection, Fast",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "READONLY",
+    "ArrayCommand": null,
+    "Name": "READONLY",
+    "Arity": 1,
+    "Flags": "Fast, Loading, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Connection, Fast",
+    "Tips": null,
+    "KeySpecifications": null,
     "SubCommands": null
   },
   {
@@ -2335,6 +2799,20 @@
     "SubCommands": null
   },
   {
+    "Command": "RESET",
+    "ArrayCommand": null,
+    "Name": "RESET",
+    "Arity": 1,
+    "Flags": "Fast, Loading, NoAuth, NoScript, Stale, AllowBusy",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Connection, Fast",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "List",
     "ArrayCommand": 3,
     "Name": "RPOP",
@@ -2365,8 +2843,80 @@
   },
   {
     "Command": "List",
+    "ArrayCommand": 12,
+    "Name": "RPOPLPUSH",
+    "Arity": 3,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "List, Slow, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "List",
     "ArrayCommand": 4,
     "Name": "RPUSH",
+    "Arity": -3,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, List, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "List",
+    "ArrayCommand": 5,
+    "Name": "RPUSHX",
     "Arity": -3,
     "Flags": "DenyOom, Fast, Write",
     "FirstKey": 1,
@@ -2422,6 +2972,37 @@
     "SubCommands": null
   },
   {
+    "Command": "SAVE",
+    "ArrayCommand": null,
+    "Name": "SAVE",
+    "Arity": 1,
+    "Flags": "Admin, NoAsyncLoading, NoMulti, NoScript",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Admin, Dangerous, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "SCAN",
+    "ArrayCommand": null,
+    "Name": "SCAN",
+    "Arity": -2,
+    "Flags": "ReadOnly",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "KeySpace, Read, Slow",
+    "Tips": [
+      "nondeterministic_output",
+      "request_policy:special"
+    ],
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "Set",
     "ArrayCommand": 4,
     "Name": "SCARD",
@@ -2448,6 +3029,20 @@
         "Flags": "RO"
       }
     ],
+    "SubCommands": null
+  },
+  {
+    "Command": "SELECT",
+    "ArrayCommand": null,
+    "Name": "SELECT",
+    "Arity": 2,
+    "Flags": "Fast, Loading, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Connection, Fast",
+    "Tips": null,
+    "KeySpecifications": null,
     "SubCommands": null
   },
   {
@@ -2567,6 +3162,35 @@
     "SubCommands": null
   },
   {
+    "Command": "Set",
+    "ArrayCommand": 7,
+    "Name": "SISMEMBER",
+    "Arity": 3,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Set",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "SECONDARYOF",
     "ArrayCommand": null,
     "Name": "SLAVEOF",
@@ -2644,6 +3268,37 @@
   },
   {
     "Command": "Set",
+    "ArrayCommand": 6,
+    "Name": "SRANDMEMBER",
+    "Arity": -2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Set, Slow",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "Set",
     "ArrayCommand": 1,
     "Name": "SREM",
     "Arity": -3,
@@ -2703,6 +3358,65 @@
     "SubCommands": null
   },
   {
+    "Command": "STRLEN",
+    "ArrayCommand": null,
+    "Name": "STRLEN",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, String",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "SUBSCRIBE",
+    "ArrayCommand": null,
+    "Name": "SUBSCRIBE",
+    "Arity": -2,
+    "Flags": "Loading, NoScript, PubSub, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "PubSub, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "TIME",
+    "ArrayCommand": null,
+    "Name": "TIME",
+    "Arity": 1,
+    "Flags": "Fast, Loading, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Fast",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "TTL",
     "ArrayCommand": null,
     "Name": "TTL",
@@ -2729,6 +3443,35 @@
         },
         "Notes": null,
         "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "TYPE",
+    "ArrayCommand": null,
+    "Name": "TYPE",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, KeySpace, Read",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO"
       }
     ],
     "SubCommands": null
@@ -2763,6 +3506,20 @@
         "Flags": "RM, Delete"
       }
     ],
+    "SubCommands": null
+  },
+  {
+    "Command": "UNSUBSCRIBE",
+    "ArrayCommand": null,
+    "Name": "UNSUBSCRIBE",
+    "Arity": -1,
+    "Flags": "Loading, NoScript, PubSub, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "PubSub, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
     "SubCommands": null
   },
   {
@@ -2888,6 +3645,35 @@
           "LastKey": 0,
           "KeyStep": 1,
           "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "SortedSet",
+    "ArrayCommand": 23,
+    "Name": "ZDIFF",
+    "Arity": -3,
+    "Flags": "MovableKeys, ReadOnly",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Read, SortedSet, Slow",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysKeyNum",
+          "KeyNumIdx": 0,
+          "FirstKey": 1,
+          "KeyStep": 1
         },
         "Notes": null,
         "Flags": "RO, Access"

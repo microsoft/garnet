@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
@@ -110,6 +112,7 @@ namespace Garnet.server
         private static IReadOnlyDictionary<string, RespCommandsInfo> AllRespCommandsInfo = null;
         private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> BasicRespCommandsInfo = null;
         private static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>> ArrayRespCommandsInfo = null;
+        private static IReadOnlySet<string> AllRespCommandNames = null;
 
         private readonly RespCommandFlags flags;
         private readonly RespAclCategories aclCategories;
@@ -148,6 +151,7 @@ namespace Garnet.server
             }
 
             AllRespCommandsInfo = tmpAllRespCommandsInfo;
+            AllRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, AllRespCommandsInfo.Keys.ToArray());
             BasicRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpBasicRespCommandsInfo);
             ArrayRespCommandsInfo = new ReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>(
                 tmpArrayRespCommandsInfo
@@ -187,6 +191,21 @@ namespace Garnet.server
             if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
 
             respCommandsInfo = AllRespCommandsInfo!.Values;
+            return true;
+        }
+
+        /// <summary>
+        /// Gets all the command names of commands supported by Garnet
+        /// </summary>
+        /// <param name="logger">Logger</param>
+        /// <param name="respCommandNames">The command names</param>
+        /// <returns>True if initialization was successful and data was retrieved successfully</returns>
+        internal static bool TryGetRespCommandNames(ILogger logger, out IReadOnlySet<string> respCommandNames)
+        {
+            respCommandNames = default;
+            if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
+
+            respCommandNames = AllRespCommandNames;
             return true;
         }
 

@@ -59,6 +59,9 @@ namespace Garnet.common
             if (!EnumDescriptionToNameCache.ContainsKey(typeof(T)))
                 AddTypeToCache<T>();
 
+            if (!EnumDescriptionToNameCache[typeof(T)].ContainsKey(strVal))
+                return false;
+
             foreach (var enumName in EnumDescriptionToNameCache[typeof(T)][strVal])
             {
                 if (Enum.TryParse(enumName, out T enumVal))

@@ -25,8 +25,8 @@ namespace Garnet.server
         Fast = 1 << 4,
         [Description("loading")]
         Loading = 1 << 5,
-        [Description("moveablekeys")]
-        MoveableKeys = 1 << 6,
+        [Description("movablekeys")]
+        MovableKeys = 1 << 6,
         [Description("no_auth")]
         NoAuth = 1 << 7,
         [Description("no_async_loading")]
