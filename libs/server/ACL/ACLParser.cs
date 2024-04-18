@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -39,7 +39,7 @@ namespace Garnet.server.ACL
         public static User ParseACLRule(string input, AccessControlList acl = null)
         {
             // Tokenize input string 
-            string[] tokens = input.Trim().Split(WhitespaceChars);
+            string[] tokens = input.Trim().Split(WhitespaceChars, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             // Sanity check for correctness
             if (tokens.Length < 3)
