@@ -564,6 +564,7 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSMOVE\r\n"u8))
                                         {
                                             return (RespCommand.Set, (byte)SetOperation.SMOVE);
+                                        }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSDIFF\r\n"u8))
                                         {
                                             return (RespCommand.Set, (byte)SetOperation.SDIFF);
