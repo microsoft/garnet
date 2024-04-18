@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
-using System.Text;
 using Garnet.common;
 
 namespace Garnet.server
@@ -26,7 +26,7 @@ namespace Garnet.server
             commandInfo = default;
 
             // Command info is null
-            if (Encoding.ASCII.GetString(ptr, 5) == "$-1\r\n") return true;
+            if (new ReadOnlySpan<byte>(ptr, 5).SequenceEqual("$-1\r\n"u8)) return true;
 
             // Verify command info array length
             RespReadUtils.ReadArrayLength(out var infoElemCount, ref ptr, end);
@@ -133,36 +133,41 @@ namespace Garnet.server
 
             string notes = null;
             var flags = KeySpecificationFlags.None;
-            KeySpecBase beginSearch = null;
-            KeySpecBase findKeys = null;
+            KeySpecMethodBase beginSearch = null;
+            KeySpecMethodBase findKeys = null;
 
             RespReadUtils.ReadArrayLength(out var elemCount, ref ptr, end);
 
             for (var elemIdx = 0; elemIdx < elemCount; elemIdx += 2)
             {
                 RespReadUtils.ReadStringWithLengthHeader(out var ksKey, ref ptr, end);
-                switch (ksKey)
-                {
-                    case "notes":
-                        RespReadUtils.ReadStringWithLengthHeader(out notes, ref ptr, end);
-                        break;
-                    case "flags":
-                        RespReadUtils.ReadArrayLength(out var flagsCount, ref ptr, end);
-                        for (var flagIdx = 0; flagIdx < flagsCount; flagIdx++)
-                        {
-                            RespReadUtils.ReadSimpleString(out var strFlag, ref ptr, end);
-                            if (!EnumUtils.TryParseEnumFromDescription<KeySpecificationFlags>(strFlag,
-                                    out var flag)) return false;
-                            flags |= flag;
-                        }
 
-                        break;
-                    case "begin_search":
-                        if (!RespKeySpecificationTypesParser.TryReadFromResp(ksKey, ref ptr, end, out beginSearch)) return false;
-                        break;
-                    case "find_keys":
-                        if (!RespKeySpecificationTypesParser.TryReadFromResp(ksKey, ref ptr, end, out findKeys)) return false;
-                        break;
+                if (string.Equals(ksKey, "notes", StringComparison.Ordinal))
+                {
+                    RespReadUtils.ReadStringWithLengthHeader(out notes, ref ptr, end);
+                }
+                else if (string.Equals(ksKey, "flags", StringComparison.Ordinal))
+                {
+                    RespReadUtils.ReadArrayLength(out var flagsCount, ref ptr, end);
+                    for (var flagIdx = 0; flagIdx < flagsCount; flagIdx++)
+                    {
+                        RespReadUtils.ReadSimpleString(out var strFlag, ref ptr, end);
+                        if (!EnumUtils.TryParseEnumFromDescription<KeySpecificationFlags>(strFlag,
+                                out var flag)) return false;
+                        flags |= flag;
+                    }
+                }
+                else if (string.Equals(ksKey, "begin_search", StringComparison.Ordinal))
+                {
+                    if (!RespKeySpecificationTypesParser.TryReadFromResp(ksKey, ref ptr, end, out beginSearch)) return false;
+                }
+                else if (string.Equals(ksKey, "find_keys", StringComparison.Ordinal))
+                {
+                    if (!RespKeySpecificationTypesParser.TryReadFromResp(ksKey, ref ptr, end, out findKeys)) return false;
+                }
+                else
+                {
+                    return false;
                 }
             }
 
@@ -184,31 +189,43 @@ namespace Garnet.server
     internal class RespKeySpecificationTypesParser
     {
         /// <summary>
-        /// Tries to parse KeySpecBase from RESP format
+        /// Tries to parse KeySpecMethodBase from RESP format
         /// </summary>
         /// <param name="keySpecKey">Type of key specification ("begin_search" / "find_keys")</param>
         /// <param name="ptr">Pointer to current RESP chunk to read</param>
         /// <param name="end">Pointer to end of RESP chunk to read</param>
-        /// <param name="keySpec">Parsed KeySpecBase object</param>
+        /// <param name="keySpecMethod">Parsed KeySpecMethodBase object</param>
         /// <returns>True if parsing successful</returns>
-        public static unsafe bool TryReadFromResp(string keySpecKey, ref byte* ptr, byte* end, out KeySpecBase keySpec)
+        public static unsafe bool TryReadFromResp(string keySpecKey, ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
         {
-            keySpec = default;
+            keySpecMethod = default;
 
             if (!TryReadKeySpecHeader(ref ptr, end, out var keySpecType)) return false;
 
-            IKeySpecParser parser = (keySpecKey, keySpecType) switch
+            IKeySpecParser parser;
+            if (string.Equals(keySpecKey, "begin_search", StringComparison.Ordinal))
             {
-                ("begin_search", "index") => BeginSearchIndexParser.Instance,
-                ("begin_search", "keyword") => BeginSearchKeywordParser.Instance,
-                ("begin_search", "unknown") => BeginSearchUnknownParser.Instance,
-                ("find_keys", "range") => FindKeysRangeParser.Instance,
-                ("find_keys", "keynum") => FindKeysKeyNumParser.Instance,
-                ("find_keys", "unknown") => FindKeysUnknownParser.Instance,
-                _ => null
-            };
+                if (string.Equals(keySpecType, "index", StringComparison.Ordinal))
+                    parser = BeginSearchIndexParser.Instance;
+                else if (string.Equals(keySpecType, "keyword", StringComparison.Ordinal))
+                    parser = BeginSearchKeywordParser.Instance;
+                else if (string.Equals(keySpecType, "unknown", StringComparison.Ordinal))
+                    parser = BeginSearchUnknownParser.Instance;
+                else return false;
+            }
+            else if (string.Equals(keySpecKey, "find_keys", StringComparison.Ordinal))
+            {
+                if (string.Equals(keySpecType, "range", StringComparison.Ordinal))
+                    parser = FindKeysRangeParser.Instance;
+                else if (string.Equals(keySpecType, "keynum", StringComparison.Ordinal))
+                    parser = FindKeysKeyNumParser.Instance;
+                else if (string.Equals(keySpecType, "unknown", StringComparison.Ordinal))
+                    parser = FindKeysUnknownParser.Instance;
+                else return false;
+            }
+            else return false;
 
-            if (parser == null || !parser.TryReadFromResp(ref ptr, end, out keySpec)) return false;
+            if (!parser.TryReadFromResp(ref ptr, end, out keySpecMethod)) return false;
 
             return true;
         }
@@ -220,28 +237,28 @@ namespace Garnet.server
             RespReadUtils.ReadArrayLength(out var ksTypeElemCount, ref ptr, end);
             if (ksTypeElemCount != 4) return false;
             RespReadUtils.ReadStringWithLengthHeader(out var ksTypeStr, ref ptr, end);
-            if (ksTypeStr != "type") return false;
+            if (!string.Equals(ksTypeStr, "type", StringComparison.Ordinal)) return false;
             RespReadUtils.ReadStringWithLengthHeader(out var ksType, ref ptr, end);
             RespReadUtils.ReadStringWithLengthHeader(out var ksSpecStr, ref ptr, end);
-            if (ksSpecStr != "spec") return false;
+            if (!string.Equals(ksSpecStr, "spec", StringComparison.Ordinal)) return false;
 
             keySpecType = ksType;
             return true;
         }
 
         /// <summary>
-        /// Interface for classes implementing parsing of KeySpecBase objects
+        /// Interface for classes implementing parsing of KeySpecMethodBase objects
         /// </summary>
         internal interface IKeySpecParser
         {
             /// <summary>
-            /// Tries to parse KeySpecBase from RESP format
+            /// Tries to parse KeySpecMethodBase from RESP format
             /// </summary>
             /// <param name="ptr">Pointer to current RESP chunk to read</param>
             /// <param name="end">Pointer to end of RESP chunk to read</param>
-            /// <param name="keySpec">Parsed KeySpecBase object</param>
+            /// <param name="keySpecMethod">Parsed KeySpecMethodBase object</param>
             /// <returns>True if parsing successful</returns>
-            unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecBase keySpec);
+            unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod);
         }
 
         internal sealed class BeginSearchIndexParser : IKeySpecParser
@@ -257,18 +274,18 @@ namespace Garnet.server
                 get { return instance ??= new BeginSearchIndexParser(); }
             }
 
-            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecBase keySpec)
+            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
-                keySpec = default;
+                keySpecMethod = default;
 
                 RespReadUtils.ReadArrayLength(out var ksSpecElemCount, ref ptr, end);
                 if (ksSpecElemCount != 2) return false;
                 RespReadUtils.ReadStringWithLengthHeader(out var ksArgKey, ref ptr, end);
-                if (ksArgKey != "index") return false;
+                if (!string.Equals(ksArgKey, "index", StringComparison.Ordinal)) return false;
                 RespReadUtils.ReadIntegerAsString(out var strIndex, ref ptr, end);
                 if (!int.TryParse(strIndex, out var index)) return false;
 
-                keySpec = new BeginSearchIndex(index);
+                keySpecMethod = new BeginSearchIndex(index);
 
                 return true;
             }
@@ -288,21 +305,21 @@ namespace Garnet.server
                 get { return instance ??= new BeginSearchKeywordParser(); }
             }
 
-            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecBase keySpec)
+            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
-                keySpec = default;
+                keySpecMethod = default;
 
                 RespReadUtils.ReadArrayLength(out var specElemCount, ref ptr, end);
                 if (specElemCount != 4) return false;
                 RespReadUtils.ReadStringWithLengthHeader(out var argKey, ref ptr, end);
-                if (argKey != "keyword") return false;
+                if (!string.Equals(argKey, "keyword", StringComparison.Ordinal)) return false;
                 RespReadUtils.ReadStringWithLengthHeader(out var keyword, ref ptr, end);
                 RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end);
-                if (argKey != "startfrom") return false;
+                if (!string.Equals(argKey, "startfrom", StringComparison.Ordinal)) return false;
                 RespReadUtils.ReadIntegerAsString(out var strStartFrom, ref ptr, end);
                 if (!int.TryParse(strStartFrom, out var startFrom)) return false;
 
-                keySpec = new BeginSearchKeyword(keyword, startFrom);
+                keySpecMethod = new BeginSearchKeyword(keyword, startFrom);
 
                 return true;
             }
@@ -321,14 +338,14 @@ namespace Garnet.server
                 get { return instance ??= new BeginSearchUnknownParser(); }
             }
 
-            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecBase keySpec)
+            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
-                keySpec = default;
+                keySpecMethod = default;
 
                 RespReadUtils.ReadArrayLength(out var ksSpecElemCount, ref ptr, end);
                 if (ksSpecElemCount == 0) return false;
 
-                keySpec = new BeginSearchUnknown();
+                keySpecMethod = new BeginSearchUnknown();
 
                 return true;
             }
@@ -347,26 +364,26 @@ namespace Garnet.server
                 get { return instance ??= new FindKeysRangeParser(); }
             }
 
-            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecBase keySpec)
+            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
-                keySpec = default;
+                keySpecMethod = default;
 
                 RespReadUtils.ReadArrayLength(out var specElemCount, ref ptr, end);
                 if (specElemCount != 6) return false;
                 RespReadUtils.ReadStringWithLengthHeader(out var argKey, ref ptr, end);
-                if (argKey != "lastkey") return false;
+                if (!string.Equals(argKey, "lastkey", StringComparison.Ordinal)) return false;
                 RespReadUtils.ReadIntegerAsString(out var strLastKey, ref ptr, end);
                 if (!int.TryParse(strLastKey, out var lastKey)) return false;
                 RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end);
-                if (argKey != "keystep") return false;
+                if (!string.Equals(argKey, "keystep", StringComparison.Ordinal)) return false;
                 RespReadUtils.ReadIntegerAsString(out var strKeyStep, ref ptr, end);
                 if (!int.TryParse(strKeyStep, out var keyStep)) return false;
                 RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end);
-                if (argKey != "limit") return false;
+                if (!string.Equals(argKey, "limit", StringComparison.Ordinal)) return false;
                 RespReadUtils.ReadIntegerAsString(out var strLimit, ref ptr, end);
                 if (!int.TryParse(strLimit, out var limit)) return false;
 
-                keySpec = new FindKeysRange(lastKey, keyStep, limit);
+                keySpecMethod = new FindKeysRange(lastKey, keyStep, limit);
 
                 return true;
             }
@@ -385,26 +402,26 @@ namespace Garnet.server
                 get { return instance ??= new FindKeysKeyNumParser(); }
             }
 
-            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecBase keySpec)
+            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
-                keySpec = default;
+                keySpecMethod = default;
 
                 RespReadUtils.ReadArrayLength(out var specElemCount, ref ptr, end);
                 if (specElemCount != 6) return false;
                 RespReadUtils.ReadStringWithLengthHeader(out var argKey, ref ptr, end);
-                if (argKey != "keynumidx") return false;
+                if (!string.Equals(argKey, "keynumidx", StringComparison.Ordinal)) return false;
                 RespReadUtils.ReadIntegerAsString(out var strKeyNumIdx, ref ptr, end);
                 if (!int.TryParse(strKeyNumIdx, out var keyNumIdx)) return false;
                 RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end);
-                if (argKey != "firstkey") return false;
+                if (!string.Equals(argKey, "firstkey", StringComparison.Ordinal)) return false;
                 RespReadUtils.ReadIntegerAsString(out var strFirstKey, ref ptr, end);
                 if (!int.TryParse(strFirstKey, out var firstKey)) return false;
                 RespReadUtils.ReadStringWithLengthHeader(out argKey, ref ptr, end);
-                if (argKey != "keystep") return false;
+                if (!string.Equals(argKey, "keystep", StringComparison.Ordinal)) return false;
                 RespReadUtils.ReadIntegerAsString(out var strKeyStep, ref ptr, end);
                 if (!int.TryParse(strKeyStep, out var keyStep)) return false;
 
-                keySpec = new FindKeysKeyNum(keyNumIdx, firstKey, keyStep);
+                keySpecMethod = new FindKeysKeyNum(keyNumIdx, firstKey, keyStep);
 
                 return true;
             }
@@ -423,14 +440,14 @@ namespace Garnet.server
                 get { return instance ??= new FindKeysUnknownParser(); }
             }
 
-            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecBase keySpec)
+            public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
-                keySpec = default;
+                keySpecMethod = default;
 
                 RespReadUtils.ReadArrayLength(out var ksSpecElemCount, ref ptr, end);
                 if (ksSpecElemCount == 0) return false;
 
-                keySpec = new FindKeysUnknown();
+                keySpecMethod = new FindKeysUnknown();
 
                 return true;
             }

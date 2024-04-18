@@ -298,7 +298,7 @@ namespace Garnet.server
 
                         while (!RespWriteUtils.WriteArrayLength(cmdCount, ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(resultSb.ToString()), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteAsciiDirect(resultSb.ToString(), ref dcurr, dend))
                             SendAndReset();
                     }
                     // Handle COMMAND INFO with command names - return all commands specified
@@ -316,7 +316,7 @@ namespace Garnet.server
                             if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, logger) ||
                                 storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                             {
-                                while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(cmdInfo.RespFormat), ref dcurr, dend))
+                                while (!RespWriteUtils.WriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))
                                     SendAndReset();
                             }
                             else

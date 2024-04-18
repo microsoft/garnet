@@ -19,12 +19,12 @@ namespace Garnet.server
         /// <summary>
         /// BeginSearch value of a specification informs the client of the extraction's beginning
         /// </summary>
-        public KeySpecBase BeginSearch { get; init; }
+        public KeySpecMethodBase BeginSearch { get; init; }
 
         /// <summary>
         /// FindKeys value of a key specification tells the client how to continue the search for key names
         /// </summary>
-        public KeySpecBase FindKeys { get; init; }
+        public KeySpecMethodBase FindKeys { get; init; }
 
         /// <summary>
         /// Notes about non-obvious key specs considerations
@@ -134,22 +134,22 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Base class representing BeginSearch / FindKeys key specification types
+    /// Base class representing key specification methods
     /// </summary>
-    public abstract class KeySpecBase : IRespSerializable
+    public abstract class KeySpecMethodBase : IRespSerializable
     {
         /// <summary>
-        /// Name of the key specification (begin_search / find_keys)
+        /// Name of the key specification method
         /// </summary>
-        public abstract string KeySpecName { get; }
+        public abstract string MethodName { get; }
 
         /// <summary>
-        /// Type of the key specification in RESP format
+        /// Type of the key specification method in RESP format
         /// </summary>
         public abstract string RespFormatType { get; }
 
         /// <summary>
-        /// Spec of the key specification in RESP format
+        /// Spec of the key specification method in RESP format
         /// </summary>
         public abstract string RespFormatSpec { get; }
 
@@ -168,7 +168,7 @@ namespace Garnet.server
         public string ToRespFormat()
         {
             var sb = new StringBuilder();
-            sb.Append($"${this.KeySpecName.Length}\r\n{this.KeySpecName}\r\n");
+            sb.Append($"${this.MethodName.Length}\r\n{this.MethodName}\r\n");
             sb.Append("*4\r\n");
             sb.Append("$4\r\ntype\r\n");
             sb.Append($"{this.RespFormatType}\r\n");
@@ -179,21 +179,21 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Base class representing BeginSearch key specification types
+    /// Base class representing BeginSearch key specification method types
     /// </summary>
-    public abstract class BeginSearchKeySpecBase : KeySpecBase
+    public abstract class BeginSearchKeySpecMethodBase : KeySpecMethodBase
     {
         /// <summary>
         /// Name of the key specification
         /// </summary>
-        public sealed override string KeySpecName => "begin_search";
+        public sealed override string MethodName => "begin_search";
     }
 
     /// <summary>
-    /// Represents BeginSearch key specification of type "index"
+    /// Represents BeginSearch key specification method of type "index"
     /// Indicates that input keys appear at a constant index
     /// </summary>
-    public class BeginSearchIndex : BeginSearchKeySpecBase
+    public class BeginSearchIndex : BeginSearchKeySpecMethodBase
     {
         /// <summary>
         /// The 0-based index from which the client should start extracting key names
@@ -222,10 +222,10 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Represents BeginSearch key specification of type "keyword"
+    /// Represents BeginSearch key specification method of type "keyword"
     /// Indicates that a literal token precedes key name arguments
     /// </summary>
-    public class BeginSearchKeyword : BeginSearchKeySpecBase
+    public class BeginSearchKeyword : BeginSearchKeySpecMethodBase
     {
         /// <summary>
         /// The keyword that marks the beginning of key name arguments
@@ -258,9 +258,9 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Represents BeginSearch key specification of unknown type
+    /// Represents BeginSearch key specification method of unknown type
     /// </summary>
-    public class BeginSearchUnknown : BeginSearchKeySpecBase
+    public class BeginSearchUnknown : BeginSearchKeySpecMethodBase
     {
         [JsonIgnore]
         public sealed override string RespFormatType => "$7\r\nunknown";
@@ -275,21 +275,21 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Base class representing FindKeys key specification types
+    /// Base class representing FindKeys key specification method types
     /// </summary>
-    public abstract class FindKeysKeySpecBase : KeySpecBase
+    public abstract class FindKeysKeySpecMethodBase : KeySpecMethodBase
     {
         /// <summary>
         /// Name of the key specification
         /// </summary>
-        public sealed override string KeySpecName => "find_keys";
+        public sealed override string MethodName => "find_keys";
     }
 
     /// <summary>
-    /// Represents FindKeys key specification of type "range"
+    /// Represents FindKeys key specification method of type "range"
     /// Indicates that keys stop at a specific index or relative to the last argument
     /// </summary>
-    public class FindKeysRange : FindKeysKeySpecBase
+    public class FindKeysRange : FindKeysKeySpecMethodBase
     {
         /// <summary>
         /// The index, relative to BeginSearch, of the last key argument
@@ -328,10 +328,10 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Represents FindKeys key specification of type "keynum"
+    /// Represents FindKeys key specification method of type "keynum"
     /// Indicates that an additional argument specifies the number of input keys
     /// </summary>
-    public class FindKeysKeyNum : FindKeysKeySpecBase
+    public class FindKeysKeyNum : FindKeysKeySpecMethodBase
     {
         /// <summary>
         /// The index, relative to BeginSearch, of the argument containing the number of keys
@@ -370,9 +370,9 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Represents FindKeys key specification of unknown type
+    /// Represents FindKeys key specification method of unknown type
     /// </summary>
-    public class FindKeysUnknown : FindKeysKeySpecBase
+    public class FindKeysUnknown : FindKeysKeySpecMethodBase
     {
         [JsonIgnore]
         public sealed override string RespFormatType => "$7\r\nunknown";
@@ -387,15 +387,15 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// JSON converter for objects implementing KeySpecBase
+    /// JSON converter for objects implementing KeySpecMethodBase
     /// </summary>
-    public class KeySpecConverter : JsonConverter<KeySpecBase>
+    public class KeySpecConverter : JsonConverter<KeySpecMethodBase>
     {
-        public override bool CanConvert(Type typeToConvert) => typeof(KeySpecBase).IsAssignableFrom(typeToConvert);
+        public override bool CanConvert(Type typeToConvert) => typeof(KeySpecMethodBase).IsAssignableFrom(typeToConvert);
 
-        public override KeySpecBase Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        public override KeySpecMethodBase Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            if (!typeof(KeySpecBase).IsAssignableFrom(typeToConvert)) return null;
+            if (!typeof(KeySpecMethodBase).IsAssignableFrom(typeToConvert)) return null;
 
             if (reader.TokenType != JsonTokenType.StartObject)
             {
@@ -510,11 +510,11 @@ namespace Garnet.server
             throw new JsonException();
         }
 
-        public override void Write(Utf8JsonWriter writer, KeySpecBase keySpec, JsonSerializerOptions options)
+        public override void Write(Utf8JsonWriter writer, KeySpecMethodBase keySpecMethod, JsonSerializerOptions options)
         {
             writer.WriteStartObject();
 
-            switch (keySpec)
+            switch (keySpecMethod)
             {
                 case BeginSearchIndex beginSearchIndex:
                     writer.WriteString("TypeDiscriminator", nameof(BeginSearchIndex));
