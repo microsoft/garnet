@@ -13,7 +13,6 @@ namespace CommandInfoUpdater
 {
     public class CommandInfoUpdater
     {
-        private static readonly string RespCommandInfoJsonPath = "RespCommandsInfo.json";
         private static readonly string GarnetCommandInfoJsonPath = "GarnetCommandsInfo.json";
         private static readonly string[] DefaultCommandsToIgnore = new[] { "SETEXXX", "SETEXNX" };
 
@@ -30,9 +29,9 @@ namespace CommandInfoUpdater
         {
             logger.LogInformation("Attempting to update RESP commands info...");
 
-            if (!TryGetRespCommandsInfo(RespCommandInfoJsonPath, logger, out var existingCommandsInfo))
+            if (!RespCommandsInfo.TryGetRespCommandsInfo(out var existingCommandsInfo, logger))
             {
-                logger.LogError($"Unable to read existing RESP commands info from {RespCommandInfoJsonPath}.");
+                logger.LogError($"Unable to get existing RESP commands info.");
                 return false;
             }
 
@@ -94,7 +93,7 @@ namespace CommandInfoUpdater
             var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
 
             var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(resourcePath,
-                streamProvider, logger, out var tmpCommandsInfo);
+                streamProvider, out var tmpCommandsInfo, logger);
 
             if (!importSucceeded) return false;
 
@@ -368,7 +367,7 @@ namespace CommandInfoUpdater
                     // Add sub-commands with updated queried command info
                     foreach (var subCommandToAdd in command.SubCommands!)
                     {
-                        updatedSubCommands.Add(queriedCommandsInfo[subCommandToAdd]);
+                        updatedSubCommands.Add(queriedCommandsInfo[command.Command].SubCommands.First(sc => sc.Name == subCommandToAdd));
                     }
 
                     // Set base command as existing sub-command

@@ -262,7 +262,7 @@ namespace Garnet.server
                 // Handle COMMAND COUNT
                 if (count > 0 && (subCommand.SequenceEqual(CmdStrings.COUNT) || subCommand.SequenceEqual(CmdStrings.count)))
                 {
-                    if (!RespCommandsInfo.TryGetRespCommandsInfoCount(logger, out var respCommandCount))
+                    if (!RespCommandsInfo.TryGetRespCommandsInfoCount(out var respCommandCount, logger))
                     {
                         respCommandCount = 0;
                     }
@@ -287,9 +287,9 @@ namespace Garnet.server
                             resultSb.Append(customCmd.RespFormat);
                         }
 
-                        if (RespCommandsInfo.TryGetRespCommandsInfo(logger, out var respCommandsInfo))
+                        if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, logger))
                         {
-                            foreach (var cmd in respCommandsInfo)
+                            foreach (var cmd in respCommandsInfo.Values)
                             {
                                 cmdCount++;
                                 resultSb.Append(cmd.RespFormat);
@@ -313,7 +313,7 @@ namespace Garnet.server
                             if (!RespReadUtils.ReadStringWithLengthHeader(out var cmdName, ref ptr, recvBufferPtr + bytesRead))
                                 return false;
 
-                            if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, logger, out var cmdInfo) ||
+                            if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, logger) ||
                                 storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
                             {
                                 while (!RespWriteUtils.WriteDirect(Encoding.ASCII.GetBytes(cmdInfo.RespFormat), ref dcurr, dend))

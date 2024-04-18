@@ -18,7 +18,6 @@ using Garnet.server;
 using Garnet.server.Auth;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using StackExchange.Redis;
 using Tsavorite.core;
@@ -40,12 +39,9 @@ namespace Garnet.test
 
         private static int procId = Process.GetCurrentProcess().Id;
         private static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
-        private static string RespCommandInfoJsonPath = "RespCommandsInfo.json";
 
         private static bool CustomCommandsInfoInitialized;
-        private static bool CommandsInfoInitialized;
         private static IReadOnlyDictionary<string, RespCommandsInfo> RespCustomCommandsInfo;
-        private static IReadOnlyDictionary<string, RespCommandsInfo> RespCommandsInfo;
 
         internal static string AzureTestContainer
         {
@@ -75,33 +71,13 @@ namespace Garnet.test
             }
         }
 
-        internal static bool TryGetCommandsInfo(ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
-        {
-            commandsInfo = default;
-
-            if (!CommandsInfoInitialized && !TryInitializeCommandsInfo(logger)) return false;
-
-            commandsInfo = RespCommandsInfo;
-            return true;
-        }
-
-        internal static bool TryGetCustomCommandsInfo(ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> customCommandsInfo)
+        internal static bool TryGetCustomCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> customCommandsInfo, ILogger logger = null)
         {
             customCommandsInfo = default;
 
             if (!CustomCommandsInfoInitialized && !TryInitializeCustomCommandsInfo(logger)) return false;
 
             customCommandsInfo = RespCustomCommandsInfo;
-            return true;
-        }
-
-        private static bool TryInitializeCommandsInfo(ILogger logger)
-        {
-            if (!TryGetRespCommandsInfo(RespCommandInfoJsonPath, logger, out var tmpCommandsInfo))
-                return false;
-
-            RespCommandsInfo = tmpCommandsInfo;
-            CommandsInfoInitialized = true;
             return true;
         }
 
@@ -123,7 +99,7 @@ namespace Garnet.test
             var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
 
             var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(resourcePath,
-                streamProvider, logger, out var tmpCommandsInfo);
+                streamProvider, out var tmpCommandsInfo, logger);
 
             if (!importSucceeded) return false;
 
@@ -514,7 +490,10 @@ namespace Garnet.test
             string authPassword = null,
             X509CertificateCollection certificates = null)
         {
-            var cmds = RespInfo.GetCommands();
+            var cmds = RespCommandsInfo.TryGetRespCommandNames(out var names)
+                ? new HashSet<string>(names)
+                : new HashSet<string>();
+
             if (disablePubSub)
             {
                 cmds.Remove("SUBSCRIBE");

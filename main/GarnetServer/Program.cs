@@ -75,7 +75,7 @@ namespace Garnet
         {
             var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
             var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
-            commandsInfoProvider.TryImportRespCommandsInfo(path, streamProvider, NullLogger.Instance, out var commandsInfo);
+            commandsInfoProvider.TryImportRespCommandsInfo(path, streamProvider, out var commandsInfo);
             return commandsInfo;
         }
     }

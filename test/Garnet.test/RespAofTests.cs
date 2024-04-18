@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Garnet.server;
-using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -30,7 +29,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(NullLogger.Instance, out respCustomCommandsInfo));
+            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             Assert.IsNotNull(respCustomCommandsInfo);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true);
             server.Start();

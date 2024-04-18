@@ -14,7 +14,6 @@ using Garnet.server;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
-using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -34,7 +33,7 @@ namespace Garnet.test
             _extTestDir1 = Path.Combine(TestUtils.MethodTestDir, "test1");
             _extTestDir2 = Path.Combine(TestUtils.MethodTestDir, "test2");
 
-            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(NullLogger.Instance, out respCustomCommandsInfo));
+            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             Assert.IsNotNull(respCustomCommandsInfo);
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);

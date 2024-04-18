@@ -3,7 +3,6 @@
 
 using System.Collections.Generic;
 using Garnet.server;
-using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -20,8 +19,8 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            Assert.IsTrue(TestUtils.TryGetCommandsInfo(NullLogger.Instance, out respCommandsInfo));
-            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(NullLogger.Instance, out respCustomCommandsInfo));
+            Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo));
+            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             Assert.IsNotNull(respCommandsInfo);
             Assert.IsNotNull(respCustomCommandsInfo);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true);

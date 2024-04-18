@@ -120,14 +120,14 @@ namespace Garnet.server
         private readonly string[] respFormatFlags;
         private readonly string[] respFormatAclCategories;
 
-        private static bool TryInitializeRespCommandsInfo(ILogger logger)
+        private static bool TryInitializeRespCommandsInfo(ILogger logger = null)
         {
             var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null,
                 Assembly.GetExecutingAssembly());
             var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
 
             var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(RespCommandsEmbeddedFileName,
-                streamProvider, logger, out var tmpAllRespCommandsInfo);
+                streamProvider, out var tmpAllRespCommandsInfo, logger);
 
             if (!importSucceeded) return false;
 
@@ -170,7 +170,7 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         /// <param name="count">The count value</param>
         /// <returns>True if initialization was successful and data was retrieved successfully</returns>
-        internal static bool TryGetRespCommandsInfoCount(ILogger logger, out int count)
+        internal static bool TryGetRespCommandsInfoCount(out int count, ILogger logger = null)
         {
             count = -1;
             if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
@@ -183,14 +183,14 @@ namespace Garnet.server
         /// Gets all the command info objects of commands supported by Garnet
         /// </summary>
         /// <param name="logger">Logger</param>
-        /// <param name="respCommandsInfo">The commands info</param>
+        /// <param name="respCommandsInfo">Mapping between command name to command info</param>
         /// <returns>True if initialization was successful and data was retrieved successfully</returns>
-        internal static bool TryGetRespCommandsInfo(ILogger logger, out IEnumerable<RespCommandsInfo> respCommandsInfo)
+        public static bool TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> respCommandsInfo, ILogger logger = null)
         {
             respCommandsInfo = default;
             if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
 
-            respCommandsInfo = AllRespCommandsInfo!.Values;
+            respCommandsInfo = AllRespCommandsInfo;
             return true;
         }
 
@@ -200,7 +200,7 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         /// <param name="respCommandNames">The command names</param>
         /// <returns>True if initialization was successful and data was retrieved successfully</returns>
-        internal static bool TryGetRespCommandNames(ILogger logger, out IReadOnlySet<string> respCommandNames)
+        public static bool TryGetRespCommandNames(out IReadOnlySet<string> respCommandNames, ILogger logger = null)
         {
             respCommandNames = default;
             if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
@@ -216,7 +216,7 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         /// <param name="respCommandsInfo">The command info</param>
         /// <returns>True if initialization was successful and command info was found</returns>
-        internal static bool TryGetRespCommandInfo(string cmdName, ILogger logger, out RespCommandsInfo respCommandsInfo)
+        internal static bool TryGetRespCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo, ILogger logger = null)
         {
             respCommandsInfo = default;
             if ((!IsInitialized && !TryInitializeRespCommandsInfo(logger)) ||
@@ -235,8 +235,8 @@ namespace Garnet.server
         /// <param name="subCmd">The sub-command byte, if applicable</param>
         /// <param name="txnOnly">Return only commands that are allowed in a transaction context (False by default)</param>
         /// <returns>True if initialization was successful and command info was found</returns>
-        internal static bool TryGetRespCommandInfo(RespCommand cmd, ILogger logger,
-            out RespCommandsInfo respCommandsInfo, byte subCmd = 0, bool txnOnly = false)
+        internal static bool TryGetRespCommandInfo(RespCommand cmd, 
+            out RespCommandsInfo respCommandsInfo, byte subCmd = 0, bool txnOnly = false, ILogger logger = null)
         {
             respCommandsInfo = default;
             if ((!IsInitialized && !TryInitializeRespCommandsInfo(logger))) return false;

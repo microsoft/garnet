@@ -28,7 +28,7 @@ namespace Garnet.server
         /// <param name="logger">Logger</param>
         /// <param name="commandsInfo">Outputs a read-only dictionary that maps a command name to its matching RespCommandsInfo</param>
         /// <returns>True if import succeeded</returns>
-        bool TryImportRespCommandsInfo(string path, IStreamProvider streamProvider, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo);
+        bool TryImportRespCommandsInfo(string path, IStreamProvider streamProvider, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger = null);
 
         /// <summary>
         /// Export resp commands info to path using a stream provider
@@ -38,7 +38,7 @@ namespace Garnet.server
         /// <param name="commandsInfo">Dictionary that maps a command name to its matching RespCommandsInfo</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if export succeeded</returns>
-        bool TryExportRespCommandsInfo(string path, IStreamProvider streamProvider, IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger);
+        bool TryExportRespCommandsInfo(string path, IStreamProvider streamProvider, IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger = null);
     }
 
     public class RespCommandsInfoProviderFactory
@@ -85,7 +85,7 @@ namespace Garnet.server
         {
         }
 
-        public bool TryImportRespCommandsInfo(string path, IStreamProvider streamProvider, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
+        public bool TryImportRespCommandsInfo(string path, IStreamProvider streamProvider, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger = null)
         {
             using var stream = streamProvider.Read(path);
             using var streamReader = new StreamReader(stream);
@@ -113,7 +113,7 @@ namespace Garnet.server
             return true;
         }
 
-        public bool TryExportRespCommandsInfo(string path, IStreamProvider streamProvider, IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger)
+        public bool TryExportRespCommandsInfo(string path, IStreamProvider streamProvider, IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger = null)
         {
             string jsonSettings;
 

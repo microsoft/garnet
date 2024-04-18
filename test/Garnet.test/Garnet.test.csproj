@@ -50,10 +50,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <EmbeddedResource Include="..\..\libs\server\Resp\RespCommandsInfo.json" Link="RespCommandsInfo.json" />
-	</ItemGroup>
-
-	<ItemGroup>
 	  <EmbeddedResource Include="..\..\main\GarnetServer\CustomRespCommandsInfo.json" Link="CustomRespCommandsInfo.json">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </EmbeddedResource>
