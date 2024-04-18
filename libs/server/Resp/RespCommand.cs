@@ -564,6 +564,9 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSMOVE\r\n"u8))
                                         {
                                             return (RespCommand.Set, (byte)SetOperation.SMOVE);
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSDIFF\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SDIFF);
                                         }
                                         break;
 
@@ -696,6 +699,10 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("STRLEN\r\n"u8))
                                         {
                                             return (RespCommand.STRLEN, 0);
+                                        }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUNION\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SUNION);
                                         }
                                         break;
 
@@ -876,6 +883,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nHRAN"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("DFIELD\r\n"u8))
                                 {
                                     return (RespCommand.Hash, (byte)HashOperation.HRANDFIELD);
+                                }
+                                else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nSDIF"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("FSTORE\r\n"u8))
+                                {
+                                    return (RespCommand.Set, (byte)SetOperation.SDIFFSTORE);
                                 }
                                 break;
 

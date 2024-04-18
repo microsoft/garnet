@@ -26,6 +26,9 @@ namespace Garnet.server
         SMOVE,
         SRANDMEMBER,
         SISMEMBER,
+        SUNION,
+        SDIFF,
+        SDIFFSTORE,
     }
 
 
@@ -144,7 +147,7 @@ namespace Garnet.server
             return true;
         }
 
-        private void UpdateSize(byte[] item, bool add = true)
+        internal void UpdateSize(byte[] item, bool add = true)
         {
             var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.HashSetEntryOverhead;
             this.Size += add ? size : -size;
@@ -197,5 +200,7 @@ namespace Garnet.server
             if (cursor == set.Count)
                 cursor = 0;
         }
+
+        public HashSet<byte[]> Set => set;
     }
 }
