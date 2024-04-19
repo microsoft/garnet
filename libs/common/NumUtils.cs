@@ -125,11 +125,8 @@ namespace Garnet.common
             var digit = *beg - '0';
 
             // Check first digit which needs to be non-zero
-            if (digit is < 0 or > 9)
-                return false;
-
             // Skip zero value
-            if (digit == 0 && end - beg > 1)
+            if (digit is < 0 or > 9 || (digit == 0 && end - beg > 1))
                 return false;
 
             while (beg < end)
