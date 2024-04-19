@@ -74,7 +74,7 @@ namespace Garnet.server
                     var ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
 
                     return sizeof(int) + ndigits + (fNeg ? 1 : 0);
-
+                case RespCommand.DECR:
                 case RespCommand.DECRBY:
                     if (!IsValidNumber(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size, out next))
                         return sizeof(int);
