@@ -21,19 +21,21 @@ namespace Garnet.cluster
         readonly GarnetClient[] clients = null;
         readonly long failoverStart;
         readonly long failoverEnd;
-        FailoverStatus status;
 
-        public FailoverStatus GetStatus => status;
+        public FailoverStatus status { get; private set; }
 
         public bool FailoverTimeout => failoverEnd < DateTimeOffset.UtcNow.Ticks;
+
+        readonly ClusterConfig currentConfig;
 
         /// <summary>
         /// FailoverSession constructor
         /// </summary>
-        /// <param name="clusterProvider"></param>
-        /// <param name="option"></param>
-        /// <param name="clusterTimeout">network request timeout</param>
-        /// <param name="failoverTimeout">failover timeout</param>
+        /// <param name="clusterProvider">ClusterProvider object</param>
+        /// <param name="option">Failover options for replica failover session.</param>
+        /// <param name="clusterTimeout">Timeout for individual communication between replica.</param>
+        /// <param name="failoverTimeout">End to end timeout for failover</param>
+        /// <param name="isReplicaSession">Flag indicating if this session is controlled by a replica</param>
         /// <param name="hostAddress"></param>
         /// <param name="hostPort"></param>
         /// <param name="logger"></param>
@@ -41,7 +43,8 @@ namespace Garnet.cluster
             ClusterProvider clusterProvider,
             FailoverOption option,
             TimeSpan clusterTimeout,
-            TimeSpan failoverTimeout = default,
+            TimeSpan failoverTimeout,
+            bool isReplicaSession = true,
             string hostAddress = "",
             int hostPort = -1,
             ILogger logger = null)
@@ -53,25 +56,30 @@ namespace Garnet.cluster
             this.cts = new();
             this.logger = logger;
 
-            var endpoints = hostPort == -1 ?
-                clusterProvider.clusterManager.CurrentConfig.GetLocalNodePrimaryEndpoints(includeMyPrimaryFirst: true) :
-                    hostPort == 0 ? clusterProvider.clusterManager.CurrentConfig.GetLocalNodeReplicaEndpoints() : null;
+            this.currentConfig = clusterProvider.clusterManager.CurrentConfig;
 
-            clients = endpoints != null ? new GarnetClient[endpoints.Count] : new GarnetClient[1];
-
-            if (clients.Length > 1)
+            // Initialize connections only when failover is initiated by the primary
+            if (!isReplicaSession)
             {
-                for (int i = 0; i < endpoints.Count; i++)
+                var endpoints = hostPort == -1
+                    ? currentConfig.GetLocalNodePrimaryEndpoints(includeMyPrimaryFirst: true)
+                    : hostPort == 0 ? currentConfig.GetLocalNodeReplicaEndpoints() : null;
+                clients = endpoints != null ? new GarnetClient[endpoints.Count] : new GarnetClient[1];
+
+                if (clients.Length > 1)
                 {
-                    clients[i] = new GarnetClient(endpoints[i].Item1, endpoints[i].Item2, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger);
+                    for (var i = 0; i < endpoints.Count; i++)
+                    {
+                        clients[i] = new GarnetClient(endpoints[i].Item1, endpoints[i].Item2, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger);
+                    }
+                }
+                else
+                {
+                    clients[0] = new GarnetClient(hostAddress, hostPort, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger);
                 }
             }
-            else
-            {
-                clients[0] = new GarnetClient(hostAddress, hostPort, clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger);
-            }
 
-            //Timeout deadline
+            // Timeout deadline
             this.failoverStart = DateTimeOffset.UtcNow.Ticks;
             this.failoverEnd = failoverStart + this.failoverTimeout.Ticks;
             this.status = FailoverStatus.BEGIN_FAILOVER;

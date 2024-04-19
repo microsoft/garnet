@@ -103,7 +103,7 @@ namespace Garnet.cluster
         public readonly TimeSpan clusterTimeout;
         private volatile int numActiveTasks = 0;
         private SingleWriterMultiReaderLock activeMergeLock;
-        readonly GarnetClusterConnectionStore clusterConnectionStore;
+        public readonly GarnetClusterConnectionStore clusterConnectionStore;
 
         public GossipStats gossipStats;
         readonly int GossipSamplePercent;
