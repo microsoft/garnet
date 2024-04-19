@@ -233,7 +233,7 @@ namespace Garnet.test
             if (useAzure)
                 TestUtils.IgnoreIfNotRunningAzureTests();
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, UseAzureStorage: useAzure, lowMemory: true, MemorySize: memorySize, PageSize: "1k");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, UseAzureStorage: useAzure, lowMemory: true, MemorySize: memorySize, PageSize: "1k", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -241,12 +241,12 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 for (int i = 0; i < 1000; i++)
                 {
-                    db.StringSet($"SeSaveRecoverTestKey{i:000}", $"SeSaveRecoverTestValue");
+                    db.StringSet($"SeSaveRecoverTestKey{i:0000}", $"SeSaveRecoverTestValue");
                 }
 
                 for (int i = 0; i < 1000; i++)
                 {
-                    var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:000}");
+                    var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:0000}");
                     Assert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
                 }
 
@@ -256,19 +256,32 @@ namespace Garnet.test
                 var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
                 server.Save(SaveType.BackgroundSave);
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+
+                for (int i = 1000; i < 2000; i++)
+                {
+                    db.StringSet($"SeSaveRecoverTestKey{i:0000}", $"SeSaveRecoverTestValue");
+                }
+
+                for (int i = 1000; i < 2000; i++)
+                {
+                    var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:0000}");
+                    Assert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
+                }
+
+                db.Execute("COMMITAOF");
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure, lowMemory: true, MemorySize: recoveryMemorySize, PageSize: "1k");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure, lowMemory: true, MemorySize: recoveryMemorySize, PageSize: "1k", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                for (int i = 0; i < 1000; i++)
+                for (int i = 0; i < 2000; i++)
                 {
-                    var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:000}");
-                    Assert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString());
+                    var recoveredValue = db.StringGet($"SeSaveRecoverTestKey{i:0000}");
+                    Assert.AreEqual("SeSaveRecoverTestValue", recoveredValue.ToString(), $"Key SeSaveRecoverTestKey{i:0000}");
                 }
             }
         }
