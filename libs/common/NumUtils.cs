@@ -113,14 +113,20 @@ namespace Garnet.common
         /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
         public static bool TryBytesToLong(int length, byte* source, out long result)
         {
+            result = 0;
+
+            // Check empty value
+            if (length == 0)
+                return false;
+
             var fNeg = *source == '-';
             var beg = fNeg ? source + 1 : source;
             var end = source + length;
             var digit = *beg - '0';
-            result = 0;
 
             // Check first digit which needs to be non-zero
-            if ((digit is <= 0 or > 9 && end - beg > 1) || length == 0)
+            // Skip zero value
+            if (digit is <= 0 or > 9 && end - beg > 1)
                 return false;
 
             while (beg < end)
