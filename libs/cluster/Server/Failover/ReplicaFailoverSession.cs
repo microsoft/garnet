@@ -249,7 +249,7 @@ namespace Garnet.cluster
             if (option is FailoverOption.DEFAULT)
             {
                 // TODO: enable primary to replica failover
-                // replicaIds.Add(oldPrimaryId);
+                replicaIds.Add(oldPrimaryId);
             }
 
             // Issue gossip and attach request to replicas

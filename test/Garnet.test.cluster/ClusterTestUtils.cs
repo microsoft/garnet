@@ -1819,7 +1819,7 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-                var args = option == null ? new List<object>() { "failover" } : new List<object>() { "failover", option };
+                List<object> args = option == null ? ["failover"] : ["failover", option];
                 var result = (string)server.Execute("cluster", args);
                 Assert.AreEqual("OK", result);
                 return result;
