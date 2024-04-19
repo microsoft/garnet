@@ -104,7 +104,7 @@ namespace Garnet.server
         {
             sremCount = 0;
 
-            if (key.Length == 0 || member.Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
@@ -366,18 +366,15 @@ namespace Garnet.server
         /// If the move was performed, this command returns 1.
         /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
         /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="sourceKey"></param>
         /// <param name="destinationKey"></param>
         /// <param name="member"></param>
         /// <param name="smoveResult"></param>
-        /// <param name="objectStoreContext"></param>
-        internal unsafe GarnetStatus SetMove<TObjectContext>(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        internal unsafe GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
         {
             smoveResult = 0;
 
-            if (sourceKey.Length == 0 || destinationKey.Length == 0 || member.Length == 0)
+            if (sourceKey.Length == 0 || destinationKey.Length == 0)
                 return GarnetStatus.OK;
 
             // If the keys are the same, no operation is performed.
@@ -387,19 +384,38 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            var sremStatus = SetRemove(sourceKey, member, out var sremOps, ref objectStoreContext);
-
-            if (sremStatus == GarnetStatus.NOTFOUND)
+            bool createTransaction = false;
+            if (txnManager.state != TxnState.Running)
             {
-                return GarnetStatus.NOTFOUND;
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                txnManager.Run(true);
             }
 
-            if (sremOps != 1)
-            {
-                return GarnetStatus.OK;
-            }
+            var objectLockableContext = txnManager.ObjectStoreLockableContext;
 
-            SetAdd(destinationKey, member, out smoveResult, ref objectStoreContext);
+            try
+            {
+                var sremStatus = SetRemove(sourceKey, member, out var sremOps, ref objectLockableContext);
+
+                if (sremStatus == GarnetStatus.NOTFOUND)
+                {
+                    return GarnetStatus.NOTFOUND;
+                }
+
+                if (sremOps != 1)
+                {
+                    return GarnetStatus.OK;
+                }
+
+                SetAdd(destinationKey, member, out smoveResult, ref objectLockableContext);
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
 
             return GarnetStatus.OK;
         }

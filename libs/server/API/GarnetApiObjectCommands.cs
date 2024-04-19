@@ -306,7 +306,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
-            => storageSession.SetMove(sourceKey, destinationKey, member, out smoveResult, ref objectContext);
+            => storageSession.SetMove(sourceKey, destinationKey, member, out smoveResult);
 
         #endregion
 

@@ -48,7 +48,7 @@ namespace Garnet.server
                 RespCommand.SortedSet => SortedSetObjectKeys(subCommand, inputCount),
                 RespCommand.List => ListObjectKeys(subCommand),
                 RespCommand.Hash => HashObjectKeys(subCommand),
-                RespCommand.Set => SetObjectKeys(subCommand),
+                RespCommand.Set => SetObjectKeys(subCommand, inputCount),
                 RespCommand.GET => SingleKey(1, false, LockType.Shared),
                 RespCommand.SET => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.GETRANGE => SingleKey(1, false, LockType.Shared),
@@ -172,7 +172,7 @@ namespace Garnet.server
             };
         }
 
-        private int SetObjectKeys(byte subCommand)
+        private int SetObjectKeys(byte subCommand, int inputCount)
         {
             return subCommand switch
             {
@@ -183,6 +183,7 @@ namespace Garnet.server
                 (byte)SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
+                (byte)SetOperation.SMOVE => ListKeys(inputCount, true, LockType.Exclusive),
                 _ => -1
             };
         }
