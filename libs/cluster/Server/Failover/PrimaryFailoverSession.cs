@@ -31,24 +31,24 @@ namespace Garnet.cluster
         {
             if (clients.Length > 1)
             {
-                Task<long>[] tasks = new Task<long>[clients.Length + 1];
+                var tasks = new Task<long>[clients.Length + 1];
 
-                int tcount = 0;
+                var tcount = 0;
                 foreach (var _gclient in clients)
                     tasks[tcount++] = CheckReplicaSync(_gclient);
 
                 tasks[clients.Length] = Task.Delay(failoverTimeout).ContinueWith(_ => default(long));
                 var completedTask = await Task.WhenAny(tasks);
 
-                //No replica was able to catch up with primary so timeout
+                // No replica was able to catch up with primary so timeout
                 if (completedTask == tasks[clients.Length])
                 {
                     logger?.LogError("WaitForReplicasSync timeout");
                     return null;
                 }
 
-                //Return client for replica that has caught up with replication primary
-                for (int i = 0; i < tasks.Length; i++)
+                // Return client for replica that has caught up with replication primary
+                for (var i = 0; i < tasks.Length; i++)
                 {
                     if (completedTask == tasks[i] && tasks[i].Result == clusterProvider.replicationManager.ReplicationOffset)
                         return clients[i];
@@ -61,7 +61,7 @@ namespace Garnet.cluster
                 var timeoutTask = Task.Delay(failoverTimeout, cts.Token);
                 var completedTask = await Task.WhenAny(syncTask, timeoutTask);
 
-                //Replica trying to failover did not caught up on time so timeout
+                // Replica trying to failover did not caught up on time so timeout
                 if (completedTask == timeoutTask)
                 {
                     logger?.LogError("WaitForFirstReplicaSync timeout");
@@ -95,16 +95,16 @@ namespace Garnet.cluster
         {
             try
             {
-                //Change local node role to suspend any write workload
+                // Change local node role to suspend any write workload
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
                 var localId = clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId();
                 var oldRole = clusterProvider.clusterManager.CurrentConfig.GetLocalNodeRole();
                 var replicas = clusterProvider.clusterManager.CurrentConfig.GetReplicaIds(localId);
                 clusterProvider.clusterManager.TryStopWrites(replicas[0]);
-                clusterProvider.WaitForConfigTransition();
+                _ = clusterProvider.WaitForConfigTransition();
 
                 status = FailoverStatus.WAITING_FOR_SYNC;
-                GarnetClient newPrimary = await WaitForFirstReplicaSync();
+                var newPrimary = await WaitForFirstReplicaSync();
                 if (newPrimary == null) return false;
 
                 status = FailoverStatus.TAKING_OVER_AS_PRIMARY;
