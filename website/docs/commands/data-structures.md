@@ -522,6 +522,20 @@ Keys that do not exist are considered to be empty sets.
 
 ---
 
+### SUNIONSTORE
+
+#### Syntax
+
+```bash
+    SUNIONSTORE destination key [key ...]
+```
+
+This command is equal to [SUNION](#SUNION), but instead of returning the resulting set, it is stored in **destination**.
+
+If **destination** already exists, it is overwritten.
+
+---
+
 ### SDIFF
 
 #### Syntax
