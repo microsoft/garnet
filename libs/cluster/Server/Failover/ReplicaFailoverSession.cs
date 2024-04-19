@@ -101,9 +101,9 @@ namespace Garnet.cluster
                 }
 
                 // Acquire connection to node from gossip connection store
-                //var primaryId = currentConfig.GetLocalNodePrimaryId();
-                //var primaryGSN = GetOrAddConnection(primaryId);
-                //var client = primaryGSN.client;
+                // var primaryId = currentConfig.GetLocalNodePrimaryId();
+                // var primaryGSN = GetOrAddConnection(primaryId);
+                // var client = primaryGSN.client;
 
                 // Issue stop writes to the primary
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
@@ -179,8 +179,8 @@ namespace Garnet.cluster
                     logger?.LogError("Failed to initialize connection to replica {primaryId}", replicaId);
                     return;
                 }
-                //var replicaGSN = GetOrAddConnection(replicaId);
-                //var client = replicaGSN.client;
+                // var replicaGSN = GetOrAddConnection(replicaId);
+                // var client = replicaGSN.client;
 
                 // Force send updated config to replica
                 await client.Gossip(configByteArray).ContinueWith(t =>
