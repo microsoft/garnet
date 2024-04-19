@@ -790,12 +790,15 @@ namespace Tsavorite.core
             for (long page = startPage; page < endPage; page += numPagesToReadFirst)
             {
                 var readEndPage = Math.Min(page + numPagesToReadFirst, snapshotEndPage);
-                var numPagesToReadThisIteration = (int)(readEndPage - page);
+                if (page < readEndPage) // Read pages max up to snapshotEndPage
+                {
+                    var numPagesToReadThisIteration = (int)(readEndPage - page);
 
-                // Ensure that page slots that will be read into, have been flushed from previous reads. 
-                WaitUntilAllPagesHaveBeenFlushed(page, readEndPage, recoveryStatus);
+                    // Ensure that page slots that will be read into, have been flushed from previous reads. 
+                    WaitUntilAllPagesHaveBeenFlushed(page, readEndPage, recoveryStatus);
 
-                ReadPagesWithMemoryConstraint(snapshotEndAddress, capacity, recoveryStatus, page, readEndPage, numPagesToReadThisIteration);
+                    ReadPagesWithMemoryConstraint(snapshotEndAddress, capacity, recoveryStatus, page, readEndPage, numPagesToReadThisIteration);
+                }
 
                 long end = Math.Min(page + numPagesToReadFirst, endPage);
                 for (long p = page; p < end; p++)
@@ -833,12 +836,15 @@ namespace Tsavorite.core
             for (long page = startPage; page < endPage; page += numPagesToReadFirst)
             {
                 var readEndPage = Math.Min(page + numPagesToReadFirst, snapshotEndPage);
-                var numPagesToReadThisIteration = (int)(readEndPage - page);
+                if (page < readEndPage) // Read pages max up to snapshotEndPage
+                {
+                    var numPagesToReadThisIteration = (int)(readEndPage - page);
 
-                // Ensure that page slots that will be read into, have been flushed from previous reads. 
-                await WaitUntilAllPagesHaveBeenFlushedAsync(page, readEndPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
+                    // Ensure that page slots that will be read into, have been flushed from previous reads. 
+                    await WaitUntilAllPagesHaveBeenFlushedAsync(page, readEndPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
 
-                ReadPagesWithMemoryConstraint(snapshotEndAddress, capacity, recoveryStatus, page, readEndPage, numPagesToReadThisIteration);
+                    ReadPagesWithMemoryConstraint(snapshotEndAddress, capacity, recoveryStatus, page, readEndPage, numPagesToReadThisIteration);
+                }
 
                 long end = Math.Min(page + numPagesToReadFirst, endPage);
                 for (long p = page; p < end; p++)
