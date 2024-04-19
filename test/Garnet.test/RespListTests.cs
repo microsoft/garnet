@@ -888,12 +888,12 @@ namespace Garnet.test
             _ = lightClientRequest.SendCommand("RPUSH mylist one two three");
             var response = lightClientRequest.SendCommand("LSET mylist 10 four");
             // 
-            var expectedResponse = "-index out of range";
+            var expectedResponse = "-ERR index out of range";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommand("LSET mylist -100 four");
-            expectedResponse = "-index out of range";
+            expectedResponse = "-ERR index out of range";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -904,7 +904,6 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             _ = lightClientRequest.SendCommand("RPUSH mylist one two three");
             var response = lightClientRequest.SendCommand("LSET mylist a");
-            // redis response '-ERR wrong number of arguments for command.\r\n'
             var expectedResponse = "-ERR wrong number of arguments for 'LSET'";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
