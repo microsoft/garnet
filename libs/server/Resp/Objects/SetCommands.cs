@@ -558,6 +558,71 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Moves a member from a source set to a destination set.
+        /// If the move was performed, this command returns 1.
+        /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool SetMove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count != 3)
+            {
+                setItemsDoneCount = setOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("SMOVE", count);
+            }
+
+            ArgSlice sourceKey = default;
+            ArgSlice destinationKey = default;
+            ArgSlice sourceMember = default;
+
+            // Get the source key 
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceKey.ptr, ref sourceKey.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            // Get the destination key
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref destinationKey.ptr, ref destinationKey.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            // Get the member to move
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceMember.ptr, ref sourceMember.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            var keys = new ArgSlice[2] { sourceKey, destinationKey };
+
+            if (NetworkKeyArraySlotVerify(ref keys, false))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count)) return false;
+                return true;
+            }
+
+            var status = storageApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
+
+            if (status == GarnetStatus.NOTFOUND)
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            // Reset session counters
+            setItemsDoneCount = setOpsCount = 0;
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        /// <summary>
         /// When called with just the key argument, return a random element from the set value stored at key.
         /// If the provided count argument is positive, return an array of distinct elements. 
         /// The array's length is either count or the set's cardinality (SCARD), whichever is lower.

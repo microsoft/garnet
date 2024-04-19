@@ -219,6 +219,7 @@ namespace Garnet.server
             {(byte)SetOperation.SRANDMEMBER,new RespCommandsInfo("SRANDMEMBER", RespCommand.Set, -2, null, (byte)SetOperation.SRANDMEMBER)},
             {(byte)SetOperation.SPOP,       new RespCommandsInfo("SPOP",     RespCommand.Set,   -1, null, (byte)SetOperation.SPOP) },
             {(byte)SetOperation.SSCAN,      new RespCommandsInfo("SSCAN",    RespCommand.Set,   -2, null, (byte)SetOperation.SSCAN) },
+            {(byte)SetOperation.SMOVE,      new RespCommandsInfo("SMOVE",    RespCommand.Set,    3, null, (byte)SetOperation.SMOVE) },
             {(byte)SetOperation.SISMEMBER,  new RespCommandsInfo("SISMEMBER",RespCommand.Set,    2, null, (byte)SetOperation.SISMEMBER) },
             {(byte)SetOperation.SUNION,     new RespCommandsInfo("SUNION",   RespCommand.Set,    -1, null, (byte)SetOperation.SUNION) },
             {(byte)SetOperation.SDIFF,      new RespCommandsInfo("SDIFF",    RespCommand.Set,   -1, null, (byte)SetOperation.SDIFF) },
