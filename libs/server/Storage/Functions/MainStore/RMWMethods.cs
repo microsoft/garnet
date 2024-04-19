@@ -142,7 +142,7 @@ namespace Garnet.server
                         return false;
                     CopyUpdateNumber(incrBy, ref value, ref output);
                     break;
-
+                case RespCommand.DECR:
                 case RespCommand.DECRBY:
                     value.UnmarkExtraMetadata();
                     // Check if input contains a valid number

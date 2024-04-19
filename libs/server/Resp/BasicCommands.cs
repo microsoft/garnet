@@ -744,23 +744,13 @@ namespace Garnet.server
                 ((RespInputHeader*)valPtr)->flags = 0;
                 input = new ArgSlice(valPtr, vsize);
             }
-            else if (cmd == RespCommand.INCR)
+            else if (cmd == RespCommand.INCR || cmd == RespCommand.DECR)
             {
                 int vsize = RespInputHeader.Size + 1;
                 byte* valPtr = stackalloc byte[vsize];
                 ((RespInputHeader*)valPtr)->cmd = cmd;
                 ((RespInputHeader*)valPtr)->flags = 0;
                 *(valPtr + RespInputHeader.Size) = (byte)'1';
-                input = new ArgSlice(valPtr, vsize);
-            }
-            else if (cmd == RespCommand.DECR)
-            {
-                int vsize = RespInputHeader.Size + 2;
-                byte* valPtr = stackalloc byte[vsize];
-                ((RespInputHeader*)valPtr)->cmd = cmd;
-                ((RespInputHeader*)valPtr)->flags = 0;
-                *(valPtr + RespInputHeader.Size) = (byte)'-';
-                *(valPtr + RespInputHeader.Size + 1) = (byte)'1';
                 input = new ArgSlice(valPtr, vsize);
             }
 

@@ -550,6 +550,20 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SingleIncrZero()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var strKey = "key1";
+            db.StringSet(strKey, 0);
+            long n = db.StringIncrement(strKey);
+            long nRetVal = Convert.ToInt64(db.StringGet(strKey));
+            Assert.AreEqual(n, nRetVal);
+        }
+
+        [Test]
+        [TestCase("key1", 0)]
         [TestCase("key1", 1000)]
         public void SingleDecr(string strKey, int nVal)
         {

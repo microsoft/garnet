@@ -120,7 +120,7 @@ namespace Garnet.common
             result = 0;
 
             // Check first digit which needs to be non-zero
-            if (digit is <= 0 or > 9)
+            if (digit is <= 0 or > 9 && end - beg > 1)
                 return false;
 
             while (beg < end)
