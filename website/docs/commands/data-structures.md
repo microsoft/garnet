@@ -478,6 +478,23 @@ Returns if **member** is a member of the set stored at **key**.
 
 ---
 
+### SRANDMEMBER
+
+#### Syntax
+
+```bash
+    SRANDMEMBER key [count]
+```
+
+When called with just the **key** argument, return a random element from the set value stored at **key**.
+
+If the provided **count** argument is positive, return an array of **distinct elements**. The array's length is either **count** or the set's cardinality (SCARD), whichever is lower.
+
+If called with a negative **count**, the behavior changes and the command is allowed to return the **same element multiple times**. In this case, the number of returned elements is the absolute value of the specified **count**.
+
+---
+
+
 ### SREM
 
 #### Syntax
@@ -503,6 +520,47 @@ If **key** does not exist, it is treated as an empty set and this command return
 Iterates elements of Sets types. Same as [HSCAN](#hscan) and [ZSCAN](#zscan) commands, SSCAN is used in order to incrementally iterate over the elements of the set stored at **key**.
 
 The **match** parameter allows to apply a filter to elements after they have been retrieved from the collection. The **count** option sets a limit to the maximum number of items returned from the server to this command. This limit is also set in conjunction with the object-scan-count-limit of the global server settings.
+
+---
+
+### SUNION
+
+#### Syntax
+
+```bash
+    SUNION key [key ...]
+```
+
+Returns the members of the set resulting from the union of all the given sets.
+Keys that do not exist are considered to be empty sets.
+
+---
+
+### SDIFF
+
+#### Syntax
+
+```bash
+    SDIFF key [key ...]
+```
+
+Returns the members of the set resulting from the difference between the **first** set and all the successive sets. 
+
+**Keys** that do not exist are considered to be empty sets.
+
+---
+
+### SDIFFSTORE
+
+#### Syntax
+
+```bash
+    SDIFFSTORE destination key [key ...]
+```
+
+This command is equal to [SDIFF](#SDIFF), but instead of returning the resulting set, it is stored in **destination**. 
+
+If **destination** already exists, it is overwritten.
 
 ---
 
