@@ -134,9 +134,22 @@ namespace Garnet.server
                     CopyValueLengthToOutput(ref value, ref output);
                     break;
 
+                case RespCommand.INCRBY:
+                    value.UnmarkExtraMetadata();
+                    // Check if input contains a valid number
+                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
+                    if (!IsValidNumber(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out var incrBy))
+                        return false;
+                    CopyUpdateNumber(incrBy, ref value, ref output);
+                    break;
+
                 case RespCommand.DECRBY:
                     value.UnmarkExtraMetadata();
-                    CopyUpdateNumber(-NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size), ref value, ref output);
+                    // Check if input contains a valid number
+                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
+                    if (!IsValidNumber(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out var decrBy))
+                        return false;
+                    CopyUpdateNumber(-decrBy, ref value, ref output);
                     break;
 
                 default:
@@ -292,24 +305,24 @@ namespace Garnet.server
                     return true;
 
                 case RespCommand.INCR:
-                    long val = NumUtils.BytesToLong(value.AsSpan());
-                    val++;
-                    return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
+                    return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: 1);
 
                 case RespCommand.DECR:
-                    val = NumUtils.BytesToLong(value.AsSpan());
-                    val--;
-                    return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
+                    return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -1);
 
                 case RespCommand.INCRBY:
-                    val = NumUtils.BytesToLong(value.LengthWithoutMetadata, value.ToPointer());
-                    val += NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
-                    return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
+                    var length = input.LengthWithoutMetadata - RespInputHeader.Size;
+                    // Check if input contains a valid number
+                    if (!IsValidNumber(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out var incrBy))
+                        return true;
+                    return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: incrBy);
 
                 case RespCommand.DECRBY:
-                    val = NumUtils.BytesToLong(value.LengthWithoutMetadata, value.ToPointer());
-                    val -= NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size);
-                    return InPlaceUpdateNumber(val, ref value, ref output, ref rmwInfo, ref recordInfo);
+                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
+                    // Check if input contains a valid number
+                    if (!IsValidNumber(length, inputPtr + RespInputHeader.Size, output.SpanByte.AsSpan(), out var decrBy))
+                        return true;
+                    return TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: -decrBy);
 
                 case RespCommand.SETBIT:
                     byte* i = inputPtr + RespInputHeader.Size;
@@ -567,31 +580,35 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.INCR:
-                    // Copy over metadata
-                    newValue.ExtraMetadata = oldValue.ExtraMetadata;
-                    long curr = NumUtils.BytesToLong(oldValue.AsSpan());
-                    CopyUpdateNumber(curr + 1, ref newValue, ref output);
-                    break;
-
-                case RespCommand.INCRBY:
-                    // Copy over metadata
-                    newValue.ExtraMetadata = oldValue.ExtraMetadata;
-                    curr = NumUtils.BytesToLong(oldValue.AsSpan());
-                    CopyUpdateNumber(curr + NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size), ref newValue, ref output);
+                    TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: 1);
                     break;
 
                 case RespCommand.DECR:
-                    // Copy over metadata
-                    newValue.ExtraMetadata = oldValue.ExtraMetadata;
-                    curr = NumUtils.BytesToLong(oldValue.AsSpan());
-                    CopyUpdateNumber(curr - 1, ref newValue, ref output);
+                    TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: -1);
+                    break;
+
+                case RespCommand.INCRBY:
+                    var length = input.LengthWithoutMetadata - RespInputHeader.Size;
+                    // Check if input contains a valid number
+                    if (!IsValidNumber(length, input.ToPointer() + RespInputHeader.Size, output.SpanByte.AsSpan(), out var incrBy))
+                    {
+                        // Move to tail of the log
+                        oldValue.CopyTo(ref newValue);
+                        break;
+                    }
+                    TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: incrBy);
                     break;
 
                 case RespCommand.DECRBY:
-                    // Copy over metadata
-                    newValue.ExtraMetadata = oldValue.ExtraMetadata;
-                    curr = NumUtils.BytesToLong(oldValue.AsSpan());
-                    CopyUpdateNumber(curr - NumUtils.BytesToLong(input.LengthWithoutMetadata - RespInputHeader.Size, inputPtr + RespInputHeader.Size), ref newValue, ref output);
+                    length = input.LengthWithoutMetadata - RespInputHeader.Size;
+                    // Check if input contains a valid number
+                    if (!IsValidNumber(length, input.ToPointer() + RespInputHeader.Size, output.SpanByte.AsSpan(), out var decrBy))
+                    {
+                        // Move to tail of the log
+                        oldValue.CopyTo(ref newValue);
+                        break;
+                    }
+                    TryCopyUpdateNumber(ref oldValue, ref newValue, ref output, input: -decrBy);
                     break;
 
                 case RespCommand.SETBIT:
