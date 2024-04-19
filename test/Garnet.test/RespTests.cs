@@ -551,6 +551,7 @@ namespace Garnet.test
 
         [Test]
         [TestCase("key1", 1000)]
+        [TestCase("key1", 0)]
         public void SingleDecr(string strKey, int nVal)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -559,6 +560,7 @@ namespace Garnet.test
             // Key storing integer
             db.StringSet(strKey, nVal);
             long n = db.StringDecrement(strKey);
+            Assert.AreEqual(nVal - 1, n);
             long nRetVal = Convert.ToInt64(db.StringGet(strKey));
             Assert.AreEqual(n, nRetVal);
         }
@@ -632,7 +634,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01"];
+            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01", "7ab"];
 
             foreach (var value in values)
             {
