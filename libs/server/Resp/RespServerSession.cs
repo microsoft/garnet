@@ -482,6 +482,7 @@ namespace Garnet.server
                 (RespCommand.List, (byte)ListOperation.LREM) => ListRemove(count, ptr, ref storageApi),
                 (RespCommand.List, (byte)ListOperation.RPOPLPUSH) => ListRightPopLeftPush(count, ptr, ref storageApi),
                 (RespCommand.List, (byte)ListOperation.LMOVE) => ListMove(count, ptr, ref storageApi),
+                (RespCommand.List, (byte)ListOperation.BRPOP) => ListBlockingPop(count, ptr, ListOperation.BRPOP, ref storageApi),
                 // Hash Commands
                 (RespCommand.Hash, (byte)HashOperation.HSET) => HashSet(count, ptr, HashOperation.HSET, ref storageApi),
                 (RespCommand.Hash, (byte)HashOperation.HMSET) => HashSet(count, ptr, HashOperation.HMSET, ref storageApi),

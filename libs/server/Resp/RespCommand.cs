@@ -498,6 +498,10 @@ namespace Garnet.server
                                                 }
                                             }
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBRPOP\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.BRPOP);
+                                        }
                                         break;
 
                                     case 'H':

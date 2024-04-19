@@ -28,7 +28,7 @@ namespace Garnet.server
                 // Sorted Set
                 "ZADD", "ZCARD", "ZPOPMAX", "ZSCORE", "ZREM", "ZCOUNT", "ZINCRBY", "ZRANK", "ZRANGE", "ZRANGEBYSCORE", "ZREVRANGE", "ZREVRANK", "ZREMRANGEBYLEX", "ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZLEXCOUNT", "ZPOPMIN", "ZRANDMEMBER", "ZDIFF", "ZSCAN", "ZMSCORE",
                 // List
-                "LPOP", "LPUSH", "RPOP", "RPUSH", "LLEN", "LTRIM", "LRANGE", "LINDEX", "LINSERT", "LREM", "RPOPLPUSH", "LMOVE", "LPUSHX", "RPUSHX",
+                "LPOP", "LPUSH", "RPOP", "RPUSH", "LLEN", "LTRIM", "LRANGE", "LINDEX", "LINSERT", "LREM", "RPOPLPUSH", "LMOVE", "LPUSHX", "RPUSHX", "BLPOP",
                 // Hash
                 "HSET", "HGET", "HMGET", "HMSET", "HDEL", "HLEN", "HEXISTS", "HGETALL", "HKEYS", "HVALS", "HINCRBY", "HINCRBYFLOAT", "HSETNX", "HRANDFIELD", "HSCAN", "HSTRLEN",
                 // Hyperloglog

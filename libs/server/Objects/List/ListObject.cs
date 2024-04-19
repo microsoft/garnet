@@ -31,6 +31,7 @@ namespace Garnet.server
         LREM,
         RPOPLPUSH,
         LMOVE,
+        BRPOP,
     }
 
     /// <summary>
@@ -49,13 +50,12 @@ namespace Garnet.server
         Right,
     }
 
-
     /// <summary>
     /// List
     /// </summary>
     public partial class ListObject : GarnetObjectBase
     {
-        readonly LinkedList<byte[]> list;
+        readonly ObservableLinkedList<byte[]> list;
 
         /// <summary>
         /// Constructor
@@ -63,7 +63,7 @@ namespace Garnet.server
         public ListObject(long expiration = 0)
             : base(expiration, MemoryUtils.ListOverhead)
         {
-            list = new LinkedList<byte[]>();
+            list = new ObservableLinkedList<byte[]>(this);
         }
 
         /// <summary>
@@ -72,7 +72,7 @@ namespace Garnet.server
         public ListObject(BinaryReader reader)
             : base(reader, MemoryUtils.ListOverhead)
         {
-            list = new LinkedList<byte[]>();
+            list = new ObservableLinkedList<byte[]>(this);
 
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
@@ -87,7 +87,7 @@ namespace Garnet.server
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public ListObject(LinkedList<byte[]> list, long expiration, long size)
+        public ListObject(ObservableLinkedList<byte[]> list, long expiration, long size)
             : base(expiration, size)
         {
             this.list = list;
@@ -99,7 +99,7 @@ namespace Garnet.server
         /// <summary>
         /// Public getter for the list
         /// </summary>
-        public LinkedList<byte[]> LnkList => list;
+        public ObservableLinkedList<byte[]> LnkList => list;
 
         /// <inheritdoc />
         public override void DoSerialize(BinaryWriter writer)

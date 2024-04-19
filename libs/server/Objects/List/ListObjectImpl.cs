@@ -73,7 +73,7 @@ namespace Garnet.server
             byte* ptr = startptr;
             byte* end = input + length;
             LinkedListNode<byte[]> current = null;
-
+            
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
@@ -302,7 +302,7 @@ namespace Garnet.server
                     list.AddFirst(value);
                 else
                     list.AddLast(value);
-
+                
                 this.UpdateSize(value);
                 _output->countDone = list.Count;
                 _output->opsDone++;

@@ -2,7 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Diagnostics;
 using System.Linq;
+using System.Runtime.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -139,6 +144,121 @@ namespace Garnet.server
             if (status == GarnetStatus.OK)
                 elements = ProcessRespArrayOutput(outputFooter, out var error);
 
+            return GarnetStatus.OK;
+        }
+
+        public GarnetStatus ListBlockingRightPop(ArgSlice[] keys, double timeout, ListOperation lop, out byte[] element)
+        {
+            element = default;
+            byte[] tmpElement = default;
+            var tmpElementLock = new object();
+            var cts = new CancellationTokenSource();
+            if (timeout > 0)
+                cts.CancelAfter(TimeSpan.FromSeconds(timeout));
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            void OnNodeAddedEvent(object sender, NodeAddedEventArgs args)
+            {
+                if (cts.IsCancellationRequested) return;
+
+                var callingListObj = (ObservableLinkedList<byte[]>)sender;
+                lock (tmpElementLock)
+                {
+                    if (tmpElement != default) return;
+                    tmpElement = callingListObj.Last.Value;
+                }
+
+                callingListObj.RemoveLast();
+                args.ParentObject.UpdateSize(tmpElement, false);
+                cts.Cancel();
+            }
+
+            foreach (var key in keys)
+            {
+                if (cts.IsCancellationRequested) break;
+
+                if (txnManager.state != TxnState.Running)
+                {
+                    Debug.Assert(txnManager.state == TxnState.None);
+                    createTransaction = true;
+                    txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
+                    _ = txnManager.Run(true);
+                }
+
+                var objectLockableContext = txnManager.ObjectStoreLockableContext;
+
+                try
+                {
+                    var statusOp = GET(key.ToArray(), out var osList, ref objectLockableContext);
+
+                    var listObj = (ListObject)osList.garnetObject;
+                    if (statusOp == GarnetStatus.NOTFOUND)
+                    {
+                        continue;
+                    }
+                    else if (listObj.LnkList.Count == 0)
+                    {
+                        listObj.LnkList.NodeAddedEvent += OnNodeAddedEvent;
+                    }
+                    else if (statusOp == GarnetStatus.OK)
+                    {
+                        lock (tmpElementLock)
+                        {
+                            if (tmpElement != default) break;
+                            tmpElement = listObj.LnkList.Last.Value;
+                        }
+                        listObj.LnkList.RemoveLast();
+                        listObj.UpdateSize(tmpElement, false);
+                        break;
+                    }
+                }
+                finally
+                {
+                    if (createTransaction)
+                        txnManager.Commit(true);
+                }
+            }
+
+            if (!cts.IsCancellationRequested)
+            {
+                Task.Delay(Timeout.Infinite, cts.Token).Wait(cts.Token);
+            }
+
+            foreach (var key in keys)
+            {
+                if (txnManager.state != TxnState.Running)
+                {
+                    Debug.Assert(txnManager.state == TxnState.None);
+                    createTransaction = true;
+                    txnManager.SaveKeyEntryToLock(key, true, LockType.Shared);
+                    _ = txnManager.Run(true);
+                }
+
+                var objectLockableContext = txnManager.ObjectStoreLockableContext;
+
+                try
+                {
+                    var statusOp = GET(key.ToArray(), out var osList, ref objectLockableContext);
+
+                    var listObj = (ListObject)osList.garnetObject;
+                    if (statusOp != GarnetStatus.NOTFOUND)
+                    {
+                        listObj.LnkList.NodeAddedEvent -= OnNodeAddedEvent;
+                    }
+                }
+                finally
+                {
+                    if (createTransaction)
+                        txnManager.Commit(true);
+                }
+            }
+
+            element = tmpElement;
+            cts.Dispose();
             return GarnetStatus.OK;
         }
 

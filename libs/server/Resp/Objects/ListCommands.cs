@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.Metrics;
 using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
@@ -168,6 +169,80 @@ namespace Garnet.server
                 statusOp = storageApi.ListLeftPop(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
             else
                 statusOp = storageApi.ListRightPop(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Reset input buffer
+            *inputPtr = save;
+
+            switch (statusOp)
+            {
+                case GarnetStatus.OK:
+                    //process output
+                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ptr += objOutputHeader.bytesDone;
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        private bool ListBlockingPop<TGarnetApi>(int count, byte* ptr, ListOperation lop, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count < 2)
+            {
+                return AbortWithWrongNumberOfArguments(lop.ToString(), count);
+            }
+
+            if (!RespReadUtils.ReadIntWithLengthHeader(out var elementCount, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            var keys = new ArgSlice[elementCount - 1];
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+
+            if (NetworkKeyArraySlotVerify(ref keys, true))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count)) return false;
+                return true;
+            }
+
+            RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
+                recvBufferPtr + bytesRead);
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save old values on buffer for possible revert
+            var save = *inputPtr;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.List;
+            inputPtr->header.ListOp = lop;
+            inputPtr->done = 0;
+            inputPtr->count = 0;
+
+            var statusOp = GarnetStatus.OK;
+            if (lop == ListOperation.BRPOP)
+            {
+                statusOp = storageApi.ListBlockingRightPop(keys, timeout, out var element);
+            }
 
             // Reset input buffer
             *inputPtr = save;
