@@ -13,13 +13,16 @@ namespace Garnet.cluster
 {
     internal sealed partial class FailoverSession : IDisposable
     {
+        bool useGossipConnections = false;
+
+
         /// <summary>
         /// Helper method to re-use gossip connection to perform the failover
         /// </summary>
         /// <param name="nodeId">Node-id to use for search the connection array</param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        private GarnetServerNode GetOrAddConnection(string nodeId)
+        private GarnetClient GetOrAddConnection(string nodeId)
         {
             _ = clusterProvider.clusterManager.clusterConnectionStore.GetConnection(nodeId, out var gsn);
 
@@ -50,17 +53,17 @@ namespace Garnet.cluster
 
             gsn.Initialize();
 
-            return gsn;
+            return gsn.Client;
         }
 
         /// <summary>
         /// Helper method to establish connection towards remote node
         /// </summary>
-        /// <param name="address">IP address of remote node</param>
-        /// <param name="port">Port of remote node</param>
+        /// <param name="nodeId">Id of node to create connection for</param>
         /// <returns></returns>
-        private GarnetClient CreateConnection(string address, int port)
+        private GarnetClient CreateConnection(string nodeId)
         {
+            var (address, port) = currentConfig.GetEndpointFromNodeId(nodeId);
             var client = new GarnetClient(
                 address,
                 port,
@@ -77,10 +80,16 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                client.Dispose();
+                if (!useGossipConnections)
+                    client?.Dispose();
                 logger?.LogError(ex, "ReplicaFailoverSession.CreateConnection");
                 return null;
             }
+        }
+
+        private GarnetClient GetConnection(string nodeId)
+        {
+            return useGossipConnections ? GetOrAddConnection(nodeId) : CreateConnection(nodeId);
         }
 
         /// <summary>
@@ -90,8 +99,7 @@ namespace Garnet.cluster
         private async Task<bool> PauseWritesAndWaitForSync()
         {
             var primaryId = currentConfig.GetLocalNodePrimaryId();
-            var (address, port) = currentConfig.GetEndpointFromNodeId(primaryId);
-            var client = CreateConnection(address, port);
+            var client = GetConnection(primaryId);
             try
             {
                 if (client == null)
@@ -99,11 +107,6 @@ namespace Garnet.cluster
                     logger?.LogError("Failed to initialize connection to primary {primaryId}", primaryId);
                     return false;
                 }
-
-                // Acquire connection to node from gossip connection store
-                // var primaryId = currentConfig.GetLocalNodePrimaryId();
-                // var primaryGSN = GetOrAddConnection(primaryId);
-                // var client = primaryGSN.client;
 
                 // Issue stop writes to the primary
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
@@ -117,7 +120,7 @@ namespace Garnet.cluster
                     // Fail if upper bound time for failover has been reached
                     if (FailoverTimeout)
                     {
-                        logger?.LogError("AwaitReplicationSync timed out failoverStart: {failoverStart} failoverEnd: {failoverEnd} diff: {diff} UtcNow: {UtcNow}", failoverStart, failoverEnd, failoverEnd - failoverStart, DateTimeOffset.UtcNow.Ticks);
+                        logger?.LogError("AwaitReplicationSync timed out failoverStart");
                         return false;
                     }
                     await Task.Yield();
@@ -127,12 +130,13 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError("PauseWritesAndWaitForSync Error: {msg}", ex.Message);
+                logger?.LogError(ex, "PauseWritesAndWaitForSync Error");
                 return false;
             }
             finally
             {
-                client?.Dispose();
+                if (!useGossipConnections)
+                    client?.Dispose();
             }
         }
 
@@ -169,8 +173,7 @@ namespace Garnet.cluster
         private async Task BroadcastConfigAndRequestAttach(string replicaId, byte[] configByteArray)
         {
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
-            var endpoint = newConfig.GetEndpointFromNodeId(replicaId);
-            var client = CreateConnection(endpoint.address, endpoint.port);
+            var client = GetConnection(replicaId);
 
             try
             {
@@ -179,8 +182,6 @@ namespace Garnet.cluster
                     logger?.LogError("Failed to initialize connection to replica {primaryId}", replicaId);
                     return;
                 }
-                // var replicaGSN = GetOrAddConnection(replicaId);
-                // var client = replicaGSN.client;
 
                 // Force send updated config to replica
                 await client.Gossip(configByteArray).ContinueWith(t =>
@@ -225,7 +226,8 @@ namespace Garnet.cluster
             }
             finally
             {
-                client?.Dispose();
+                if (!useGossipConnections)
+                    client?.Dispose();
             }
         }
 
@@ -259,7 +261,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError("IssueAttachReplicas Error: {msg}", ex.Message);
+                    logger?.LogError(ex, "IssueAttachReplicas Error");
                 }
             }
 
@@ -272,7 +274,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogWarning("WaitingForAttachToComplete Error: {msg}", ex.Message);
+                    logger?.LogWarning(ex, "WaitingForAttachToComplete Error");
                 }
             }
         }
@@ -310,7 +312,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogWarning("BeginAsyncReplicaFailover Error: {msg}", ex.Message);
+                logger?.LogWarning(ex, "BeginAsyncReplicaFailover Error");
                 return false;
             }
             finally
