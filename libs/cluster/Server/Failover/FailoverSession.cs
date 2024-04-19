@@ -19,12 +19,11 @@ namespace Garnet.cluster
         readonly ILogger logger;
 
         readonly GarnetClient[] clients = null;
-        readonly long failoverStart;
-        readonly long failoverEnd;
+        readonly DateTime failoverDeadline;
 
         public FailoverStatus status { get; private set; }
 
-        public bool FailoverTimeout => failoverEnd < DateTimeOffset.UtcNow.Ticks;
+        public bool FailoverTimeout => failoverDeadline < DateTime.UtcNow;
 
         readonly ClusterConfig currentConfig;
 
@@ -51,12 +50,10 @@ namespace Garnet.cluster
         {
             this.clusterProvider = clusterProvider;
             this.clusterTimeout = clusterTimeout;
-            this.failoverTimeout = failoverTimeout == default ? TimeSpan.FromSeconds(300) : failoverTimeout;
             this.option = option;
-            this.cts = new();
             this.logger = logger;
-
-            this.currentConfig = clusterProvider.clusterManager.CurrentConfig;
+            currentConfig = clusterProvider.clusterManager.CurrentConfig;
+            cts = new();
 
             // Initialize connections only when failover is initiated by the primary
             if (!isReplicaSession)
@@ -80,9 +77,9 @@ namespace Garnet.cluster
             }
 
             // Timeout deadline
-            this.failoverStart = DateTimeOffset.UtcNow.Ticks;
-            this.failoverEnd = failoverStart + this.failoverTimeout.Ticks;
-            this.status = FailoverStatus.BEGIN_FAILOVER;
+            this.failoverTimeout = failoverTimeout == default ? TimeSpan.FromSeconds(600) : failoverTimeout;
+            failoverDeadline = DateTime.UtcNow.Add(failoverTimeout);
+            status = FailoverStatus.BEGIN_FAILOVER;
         }
 
         public void Dispose()
