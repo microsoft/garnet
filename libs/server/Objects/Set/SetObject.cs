@@ -26,6 +26,7 @@ namespace Garnet.server
         SRANDMEMBER,
         SISMEMBER,
         SUNION,
+        SUNIONSTORE,
         SDIFF,
         SDIFFSTORE,
     }

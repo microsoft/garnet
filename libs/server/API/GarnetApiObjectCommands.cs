@@ -306,7 +306,11 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)
-            => storageSession.SetUnion(keys, out output, ref objectContext);
+            => storageSession.SetUnion(keys, out output);
+
+        /// <inheritdoc />
+        public GarnetStatus SetUnionStore(byte[] key, ArgSlice[] keys, out int count)
+            => storageSession.SetUnionStore(key, keys, out count);
 
         /// <inheritdoc />
         public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)

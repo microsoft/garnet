@@ -904,6 +904,10 @@ namespace Garnet.server
                                 {
                                     return (RespCommand.Set, (byte)SetOperation.SRANDMEMBER);
                                 }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSUNIO"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("NSTORE\r\n"u8))
+                                {
+                                    return (RespCommand.Set, (byte)SetOperation.SUNIONSTORE);
+                                }
                                 break;
 
                             case 12:

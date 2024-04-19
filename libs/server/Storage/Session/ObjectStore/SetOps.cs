@@ -369,11 +369,8 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="output"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <typeparam name="TObjectContext"></typeparam>
         /// <returns></returns>
-        public GarnetStatus SetUnion<TObjectContext>(ArgSlice[] keys, out HashSet<byte[]> output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        public GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)
         {
             output = new HashSet<byte[]>(new ByteArrayComparer());
 
@@ -396,14 +393,7 @@ namespace Garnet.server
 
             try
             {
-                foreach (var key in keys)
-                {
-                    if (GET(key.ToArray(), out var currObject, ref setObjectStoreLockableContext) == GarnetStatus.OK)
-                    {
-                        var currSet = ((SetObject)currObject.garnetObject).Set;
-                        output.UnionWith(currSet);
-                    }
-                }
+                output = SetUnion(keys, ref setObjectStoreLockableContext);
             }
             finally
             {
@@ -414,6 +404,80 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
+        /// <summary>
+        /// This command is equal to SUNION, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public GarnetStatus SetUnionStore(byte[] key, ArgSlice[] keys, out int count)
+        {
+            count = default;
+
+            if (key.Length == 0 || keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var destination = scratchBufferManager.CreateArgSlice(key);
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destination, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var members = SetUnion(keys, ref setObjectStoreLockableContext);
+
+                var newSetObject = new SetObject();
+                foreach (var item in members)
+                {
+                    _ = newSetObject.Set.Add(item);
+                    newSetObject.UpdateSize(item);
+                }
+                _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                count = members.Count;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        private HashSet<byte[]> SetUnion<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            var result = new HashSet<byte[]>(new ByteArrayComparer());
+            if (keys.Length == 0)
+            {
+                return result;
+            }
+
+            foreach (var item in keys)
+            {
+                if (GET(item.ToArray(), out var currObject, ref objectContext) == GarnetStatus.OK)
+                {
+                    var currSet = ((SetObject)currObject.garnetObject).Set;
+                    result.UnionWith(currSet);
+                }
+            }
+
+            return result;
+        }
 
         /// <summary>
         ///  Adds the specified members to the set at key.
