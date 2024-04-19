@@ -92,6 +92,20 @@ namespace Garnet.server
             finally { rwLock.WriteUnlock(); }
         }
 
+        public string GetAllLocksets()
+        {
+            string result = "";
+            var sessions = ((GarnetServerBase)server).ActiveConsumers();
+            foreach (var s in sessions)
+            {
+                var session = (RespServerSession)s;
+                var lockset = session.txnManager.GetLockset();
+                if (lockset != "")
+                    result += session.StoreSessionID + ": " + lockset + "\n";
+            }
+            return result;
+        }
+
         private void UpdateInstantaneousMetrics()
         {
             if (monitor_iterations % instant_metrics_period == 0)
