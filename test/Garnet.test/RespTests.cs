@@ -1767,5 +1767,43 @@ namespace Garnet.test
             Assert.IsTrue(time.Value.TotalSeconds > 0);
         }
 
+        #region Regression tests
+
+        #region #290 INCR DECR operation zero
+        [Test]
+        public void IncrAndDecrTest_290()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = "key1";
+            var result = db.StringIncrement(key1);
+            Assert.AreEqual(1, result);
+
+            result = db.StringIncrement(key1);
+            Assert.AreEqual(2, result);
+
+            result = db.StringDecrement(key1);
+            Assert.AreEqual(1, result);
+
+            result = db.StringDecrement(key1);
+            Assert.AreEqual(0, result);
+
+            result = db.StringDecrement(key1);
+            Assert.AreEqual(-1, result);
+
+            result = db.StringIncrement(key1);
+            Assert.AreEqual(0, result);
+
+            var key2 = "key2";
+            var setResult = db.StringSet(key2, 0);
+            Assert.IsTrue(setResult);
+
+            result = db.StringIncrement(key2);
+            Assert.AreEqual(1, result);
+        }
+        #endregion
+
+        #endregion
     }
 }
