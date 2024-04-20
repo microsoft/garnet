@@ -68,9 +68,9 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - name: Install dependencies
-        run: dotnet restore .\libs\storage\Tsavorite\cs\Tsavorite.sln
+        run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.sln
       - name: Check style format
-        run: dotnet format .\libs\storage\Tsavorite\cs\Tsavorite.sln --no-restore --verify-no-changes --verbosity diagnostic
+        run: dotnet format libs/storage/Tsavorite/cs/Tsavorite.sln --no-restore --verify-no-changes --verbosity diagnostic
   
   # Job to build and test Garnet code
   build-test-garnet:
