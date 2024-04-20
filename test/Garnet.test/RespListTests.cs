@@ -916,7 +916,7 @@ namespace Garnet.test
             int keyCount = 10;
             int ppCount = 100;
             //string[] keys = new string[keyCount];
-            HashSet<string> keys = new();
+            HashSet<string> keys = [];
             for (int i = 0; i < keyCount; i++)
                 while (!keys.Add(r.Next().ToString())) { }
 

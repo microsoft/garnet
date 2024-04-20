@@ -175,7 +175,7 @@ namespace Garnet.test
             int keyCount = 8;
             int keyIter = 256;
             byte[] bitmap = new byte[bitmapBytes];
-            Dictionary<int, Dictionary<long, bool>> state = new Dictionary<int, Dictionary<long, bool>>();
+            Dictionary<int, Dictionary<long, bool>> state = [];
 
             if (preSet)
             {
@@ -213,7 +213,7 @@ namespace Garnet.test
                     }
                     else
                     {
-                        state.Add(key, new Dictionary<long, bool>());
+                        state.Add(key, []);
                         state[key].Add(offset, set);
                     }
 
@@ -312,7 +312,7 @@ namespace Garnet.test
             int maxBitmapLen = 1 << 12;
             int iter = 1024;
 
-            List<long> offsets = new List<long>();
+            List<long> offsets = [];
             long maxOffset = 0;
             for (int i = 0; i < iter; i++)
             {
@@ -456,7 +456,7 @@ namespace Garnet.test
 
             int keyCount = 64;
             byte[] bitmap = new byte[bitmapBytes];
-            List<long> bitmapList = new List<long>();
+            List<long> bitmapList = [];
 
             for (int i = 0; i < keyCount; i++)
             {
@@ -653,7 +653,7 @@ namespace Garnet.test
 
             int keyCount = 64;
             byte[] bitmap = new byte[bitmapBytes];
-            List<long> bitmapList = new List<long>();
+            List<long> bitmapList = [];
 
             for (int i = 0; i < keyCount; i++)
             {
@@ -2098,7 +2098,7 @@ namespace Garnet.test
             for (int j = 1; j <= 64; j++)
             {
                 db.KeyDelete(key);
-                List<long> values = new List<long>();
+                List<long> values = [];
                 bitCount = j;
                 for (int i = 0; i < tests; i++)
                 {
@@ -2174,7 +2174,7 @@ namespace Garnet.test
             for (int j = 1; j <= 64; j++)
             {
                 bitCount = j;
-                List<long> values = new List<long>();
+                List<long> values = [];
 
                 db.KeyDelete(key);
                 for (int i = 0; i < tests; i++)

@@ -766,7 +766,7 @@ namespace Garnet.test
             int valLen = 256;
             int keyLen = 8;
 
-            List<Tuple<string, string>> data = new();
+            List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
                 data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
@@ -809,7 +809,7 @@ namespace Garnet.test
             int valLen = 16;
             int keyLen = 8;
 
-            List<Tuple<string, string>> data = new();
+            List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
                 data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
@@ -837,7 +837,7 @@ namespace Garnet.test
             int valLen = 16;
             int keyLen = 8;
 
-            List<string> keys = new();
+            List<string> keys = [];
             for (int i = 0; i < keyCount; i++)
             {
                 keys.Add(GetRandomString(keyLen));
@@ -877,7 +877,7 @@ namespace Garnet.test
             int valLen = 16;
             int keyLen = 8;
 
-            List<Tuple<string, string>> data = new();
+            List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
                 data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
@@ -904,7 +904,7 @@ namespace Garnet.test
             int valLen = 16;
             int keyLen = 8;
 
-            List<string> keys = new();
+            List<string> keys = [];
             for (int i = 0; i < keyCount; i++)
             {
                 keys.Add(GetRandomString(keyLen));

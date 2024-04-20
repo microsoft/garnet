@@ -685,14 +685,16 @@ namespace Garnet.test
         [Test]
         public void CanHaveEqualScores()
         {
-            SortedSet<(double, byte[])> sortedSet = new(new SortedSetComparer());
-            sortedSet.Add((340, Encoding.ASCII.GetBytes("Dave")));
-            sortedSet.Add((400, Encoding.ASCII.GetBytes("Kendra")));
-            sortedSet.Add((560, Encoding.ASCII.GetBytes("Tom")));
-            sortedSet.Add((650, Encoding.ASCII.GetBytes("Barbara")));
-            sortedSet.Add((690, Encoding.ASCII.GetBytes("Jennifer")));
-            sortedSet.Add((690, Encoding.ASCII.GetBytes("Peter")));
-            sortedSet.Add((740, Encoding.ASCII.GetBytes("Frank")));
+            SortedSet<(double, byte[])> sortedSet = new(new SortedSetComparer())
+            {
+                (340, Encoding.ASCII.GetBytes("Dave")),
+                (400, Encoding.ASCII.GetBytes("Kendra")),
+                (560, Encoding.ASCII.GetBytes("Tom")),
+                (650, Encoding.ASCII.GetBytes("Barbara")),
+                (690, Encoding.ASCII.GetBytes("Jennifer")),
+                (690, Encoding.ASCII.GetBytes("Peter")),
+                (740, Encoding.ASCII.GetBytes("Frank"))
+            };
             var c = sortedSet.Count;
             Assert.AreEqual(7, c);
 

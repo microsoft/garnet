@@ -589,12 +589,14 @@ namespace Garnet.test
         [Test]
         public void CanDoSPOPCommandLC()
         {
-            var myset = new HashSet<string>();
-            myset.Add("one");
-            myset.Add("two");
-            myset.Add("three");
-            myset.Add("four");
-            myset.Add("five");
+            var myset = new HashSet<string>
+            {
+                "one",
+                "two",
+                "three",
+                "four",
+                "five"
+            };
 
             CreateLongSet();
 

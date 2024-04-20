@@ -486,10 +486,7 @@ namespace Garnet.test
             for (int x = 0; x < nKeysObjectStore; x++)
             {
                 // create in the object store
-                List<string> parameters = new();
-                parameters = new List<string>();
-                parameters.AddRange([$"myzset{x}", "1", "KEY1", "2", "KEY2"]);
-                var result = await db.ExecuteForStringResultAsync("ZADD", parameters);
+                var result = await db.ExecuteForStringResultAsync("ZADD", [$"myzset{x}", "1", "KEY1", "2", "KEY2"]);
                 Assert.AreEqual("2", result);
                 keys[nKeys + x] = $"myzset{x}";
                 keysMemoryByte[nKeys + x] = Encoding.ASCII.GetBytes(keys[nKeys + x]);

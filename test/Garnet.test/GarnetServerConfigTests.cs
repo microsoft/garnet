@@ -41,7 +41,7 @@ namespace Garnet.test
                 }
             }
             // Deserialize default.conf to get all defined default options
-            Dictionary<string, string> jsonSettings = new Dictionary<string, string>();
+            Dictionary<string, string> jsonSettings = [];
             try
             {
                 jsonSettings = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);

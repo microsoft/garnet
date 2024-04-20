@@ -739,11 +739,11 @@ namespace Garnet.test
             Assert.IsNull(resp);
 
             // Binary file not contained in allowed paths
-            args = new List<object>
-            {
+            args =
+            [
                 "RMW", "MYDICTSET", 2, "MyDictFactory",
                 "SRC", Path.Combine(TestUtils.MethodTestDir, "testLib1.dll")
-            };
+            ];
 
             try
             {
@@ -756,12 +756,12 @@ namespace Garnet.test
             Assert.IsNull(resp);
 
             // Class not in supplied dlls
-            args = new List<object>
-            {
+            args =
+            [
                 "RMW", "MYDICTSET", 2, "MyDictFactory",
                 "SRC",
-            };
-            args.AddRange(libraryPaths.Skip(1));
+                .. libraryPaths.Skip(1),
+            ];
 
             try
             {
@@ -774,12 +774,12 @@ namespace Garnet.test
             Assert.IsNull(resp);
 
             // Class not in supported
-            args = new List<object>
-            {
+            args =
+            [
                 "RMW", "MYDICTSET", 2, "TestClass",
                 "SRC",
-            };
-            args.AddRange(libraryPaths);
+                .. libraryPaths,
+            ];
 
             try
             {
