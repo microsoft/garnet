@@ -70,8 +70,8 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation(
                         "Updating local Endpoint: From {currentConfig.GetLocalNodeIp()}:{currentConfig.GetLocalNodePort()} to {address}:{opts.Port}",
-                        currentConfig.                        LocalNodeIp,
-                        currentConfig.                        LocalNodePort,
+                        currentConfig.LocalNodeIp,
+                        currentConfig.LocalNodePort,
                         address,
                         opts.Port);
                 }
@@ -142,7 +142,7 @@ namespace Garnet.cluster
             {
                 var conf = currentConfig;
                 TryInitializeLocalWorker(
-                    conf.                    LocalNodeId,
+                    conf.LocalNodeId,
                     address,
                     port,
                     configEpoch: conf.LocalNodeConfigEpoch,
