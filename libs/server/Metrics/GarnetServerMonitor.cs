@@ -127,7 +127,7 @@ namespace Garnet.server
             }
         }
 
-        private void UpdatAllMetricsHistory()
+        private void UpdateAllMetricsHistory()
         {
             //Reset session metrics accumulator
             accSessionMetrics.Reset();
@@ -263,7 +263,7 @@ namespace Garnet.server
                     globalMetrics.total_connections_disposed = garnetServer.get_conn_disp();
 
                     UpdateInstantaneousMetrics();
-                    UpdatAllMetricsHistory();
+                    UpdateAllMetricsHistory();
                     UpdateAllMetrics(server);
 
                     //Reset & Cleanup

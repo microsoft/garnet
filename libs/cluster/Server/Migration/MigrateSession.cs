@@ -159,7 +159,7 @@ namespace Garnet.cluster
                         status = _gcs.Authenticate(_username, _passwd).ContinueWith(resp =>
                         {
                             // Check if authenticate succeeded
-                            if (!resp.Result.Equals("OK"))
+                            if (!resp.Result.Equals("OK", StringComparison.Ordinal))
                             {
                                 logger?.LogError("Migrate CheckConnection Authentication Error: {resp}", resp);
                                 Status = MigrateState.FAIL;
@@ -228,7 +228,7 @@ namespace Garnet.cluster
                 status = _gcs.SetSlotRange(stateBytes, nodeid, _slotRanges).ContinueWith(resp =>
                 {
                     // Check if setslotsrange executed correctly
-                    if (!resp.Result.Equals("OK"))
+                    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
                     {
                         logger?.LogError("TrySetSlot error: {error}", resp);
                         Status = MigrateState.FAIL;

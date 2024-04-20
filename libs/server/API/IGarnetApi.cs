@@ -522,6 +522,18 @@ namespace Garnet.server
         GarnetStatus SetPop(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
+        /// Moves a member from a source set to a destination set.
+        /// If the move was performed, this command returns 1.
+        /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
+        /// </summary>
+        /// <param name="sourceKey"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="member"></param>
+        /// <param name="smoveResult"></param>
+        /// <returns></returns>
+        GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult);
+
+        /// <summary>
         /// When called with just the key argument, return a random element from the set value stored at key.
         /// If the provided count argument is positive, return an array of distinct elements. 
         /// The array's length is either count or the set's cardinality (SCARD), whichever is lower.
