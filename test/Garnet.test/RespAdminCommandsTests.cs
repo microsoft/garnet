@@ -225,11 +225,9 @@ namespace Garnet.test
         public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
         {
             string sizeToString(int size) => size + "k";
-            bool useAzure = false;
-            if (useAzure)
-                TestUtils.IgnoreIfNotRunningAzureTests();
+
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, UseAzureStorage: useAzure, lowMemory: true, MemorySize: sizeToString(memorySize), PageSize: sizeToString(pageSize));
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, MemorySize: sizeToString(memorySize), PageSize: sizeToString(pageSize));
             server.Start();
 
             var ldata = new RedisValue[] { "a", "b", "c", "d" };
@@ -252,7 +250,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, UseAzureStorage: useAzure, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize));
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize));
             server.Start();
 
             Assert.LessOrEqual(server.Provider.StoreWrapper.objectStore.MaxAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);
@@ -279,11 +277,9 @@ namespace Garnet.test
         public void SeSaveRecoverMultipleKeysTest(string memorySize, string recoveryMemorySize)
         {
             bool disableObj = true;
-            bool useAzure = false;
-            if (useAzure)
-                TestUtils.IgnoreIfNotRunningAzureTests();
+
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, UseAzureStorage: useAzure, lowMemory: true, MemorySize: memorySize, PageSize: "1k", enableAOF: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, lowMemory: true, MemorySize: memorySize, PageSize: "1k", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -322,7 +318,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, tryRecover: true, UseAzureStorage: useAzure, lowMemory: true, MemorySize: recoveryMemorySize, PageSize: "1k", enableAOF: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, DisableObjects: disableObj, tryRecover: true, lowMemory: true, MemorySize: recoveryMemorySize, PageSize: "1k", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
