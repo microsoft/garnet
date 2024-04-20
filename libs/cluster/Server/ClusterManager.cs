@@ -352,7 +352,7 @@ namespace Garnet.cluster
 
                 //Requesting node has to be a known replica node
                 var requestingNodeWorker = current.GetWorkerFromNodeId(requestingNodeId);
-                if (requestingNodeWorker.role == NodeRole.UNASSIGNED)
+                if (requestingNodeWorker.Role == NodeRole.UNASSIGNED)
                     return false;
 
                 //Check if configEpoch for claimed slots is lower than the config of the requested epoch.

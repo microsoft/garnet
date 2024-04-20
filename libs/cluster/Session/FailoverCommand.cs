@@ -79,14 +79,14 @@ namespace Garnet.cluster
                 }
 
                 var worker = clusterProvider.clusterManager.CurrentConfig.GetWorkerFromNodeId(replicaNodeId);
-                if (worker.role != NodeRole.REPLICA)
+                if (worker.Role != NodeRole.REPLICA)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Node @{replicaAddress}:{replicaPort} is not a replica.", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
 
-                if (worker.replicaOfNodeId != clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId())
+                if (worker.ReplicaOfNodeId != clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId())
                 {
                     while (!RespWriteUtils.WriteError($"ERR Node @{replicaAddress}:{replicaPort} is not my replica.", ref dcurr, dend))
                         SendAndReset();
