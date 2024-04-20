@@ -35,7 +35,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 disablePubSub: true,
-                extensionBinPaths: new[] { _extTestDir1, _extTestDir2 },
+                extensionBinPaths: [_extTestDir1, _extTestDir2],
                 extensionAllowUnsignedAssemblies: true);
             server.Start();
         }
@@ -625,7 +625,7 @@ namespace Garnet.test
                 File.Copy(Path.Combine(dir1, "testLib1.dll"), notAllowedPath);
             }
 
-            return new[] { Path.Combine(dir1, "testLib1.dll"), dir2 };
+            return [Path.Combine(dir1, "testLib1.dll"), dir2];
         }
 
         [Test]
@@ -726,7 +726,7 @@ namespace Garnet.test
             // Malformed request #2 - binary paths before sub-command
             var args = new List<object>() { "SRC" };
             args.AddRange(libraryPaths);
-            args.AddRange(new object[] { "TXN", "READWRITETX", 3, "ReadWriteTxn" });
+            args.AddRange(["TXN", "READWRITETX", 3, "ReadWriteTxn"]);
 
             try
             {

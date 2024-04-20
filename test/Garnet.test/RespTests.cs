@@ -972,15 +972,15 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var count = db.ListLeftPush("listKey", new RedisValue[] { "a", "b", "c", "d" });
+            var count = db.ListLeftPush("listKey", ["a", "b", "c", "d"]);
             Assert.AreEqual(4, count);
 
-            var zaddItems = db.SortedSetAdd("zset:test", new SortedSetEntry[] { new SortedSetEntry("a", 1), new SortedSetEntry("b", 2) });
+            var zaddItems = db.SortedSetAdd("zset:test", [new SortedSetEntry("a", 1), new SortedSetEntry("b", 2)]);
             Assert.AreEqual(2, zaddItems);
 
             db.StringSet("foo", "bar");
 
-            var exists = db.KeyExists(new RedisKey[] { "key", "listKey", "zset:test", "foo" });
+            var exists = db.KeyExists(["key", "listKey", "zset:test", "foo"]);
             Assert.AreEqual(3, exists);
         }
 
@@ -1278,7 +1278,7 @@ namespace Garnet.test
             if (command.Equals("EXPIRE"))
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
             else
-                db.Execute(command, new object[] { key, 1000 });
+                db.Execute(command, [key, 1000]);
 
             Thread.Sleep(1500);
 
@@ -1295,7 +1295,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var key = "keyA";
-            db.SortedSetAdd(key, new SortedSetEntry[] { new SortedSetEntry("element", 1.0) });
+            db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
 
             var value = db.SortedSetScore(key, "element");
             Assert.AreEqual(1.0, value);
@@ -1318,7 +1318,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var key = "keyA";
-            object[] args = new object[] { key, 1000, "" };
+            object[] args = [key, 1000, ""];
             db.StringSet(key, key);
 
             args[2] = "XX";// XX -- Set expiry only when the key has an existing expiry

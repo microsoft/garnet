@@ -41,7 +41,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var result = db.SetAdd(new RedisKey("user1:set"), new RedisValue[] { "Hello", "World", "World" });
+            var result = db.SetAdd(new RedisKey("user1:set"), ["Hello", "World", "World"]);
             Assert.AreEqual(2, result);
 
             var members = db.SetMembers(new RedisKey("user1:set"));
@@ -62,7 +62,7 @@ namespace Garnet.test
 
             db.KeyDelete(key);
 
-            db.SetAdd(key, new RedisValue[] { "Hello", "World" });
+            db.SetAdd(key, ["Hello", "World"]);
 
             var existingMemberExists = db.SetContains(key, "Hello");
             Assert.IsTrue(existingMemberExists);
@@ -117,7 +117,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var result = db.SetAdd(new RedisKey("user1:set"), new RedisValue[] { "ItemOne", "ItemTwo", "ItemThree", "ItemFour" });
+            var result = db.SetAdd(new RedisKey("user1:set"), ["ItemOne", "ItemTwo", "ItemThree", "ItemFour"]);
             Assert.AreEqual(4, result);
 
             var existingMemberExists = db.SetContains(new RedisKey("user1:set"), "ItemOne");
@@ -144,7 +144,7 @@ namespace Garnet.test
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
-            var longResponse = db.SetRemove(new RedisKey("user1:set"), new RedisValue[] { "ItemTwo", "ItemThree" });
+            var longResponse = db.SetRemove(new RedisKey("user1:set"), ["ItemTwo", "ItemThree"]);
             Assert.AreEqual(2, longResponse);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
@@ -166,7 +166,7 @@ namespace Garnet.test
             var items = db.SetScan(new RedisKey("foo"), new RedisValue("*"), pageSize: 10);
             Assert.IsTrue(items.Count() == 0, "Failed to use SetScan on non existing key");
 
-            RedisValue[] entries = new RedisValue[] { "item-a", "item-b", "item-c", "item-d", "item-e", "item-aaa" };
+            RedisValue[] entries = ["item-a", "item-b", "item-c", "item-d", "item-e", "item-aaa"];
 
             // Add some items
             var added = db.SetAdd("myset", entries);
@@ -195,7 +195,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // Add some items
-            var added = db.SetAdd("myset", new RedisValue[] { "aa", "bb", "cc", "dd", "ee", "aaf" });
+            var added = db.SetAdd("myset", ["aa", "bb", "cc", "dd", "ee", "aaf"]);
             Assert.AreEqual(6, added);
 
             var members = db.SetScan(new RedisKey("myset"), new RedisValue("*aa"));
@@ -284,36 +284,36 @@ namespace Garnet.test
             var result = db.SetAdd(new RedisKey("key1"), redisValues1);
             Assert.AreEqual(4, result);
 
-            result = db.SetAdd(new RedisKey("key2"), new RedisValue[] { "item-c" });
+            result = db.SetAdd(new RedisKey("key2"), ["item-c"]);
             Assert.AreEqual(1, result);
 
-            result = db.SetAdd(new RedisKey("key3"), new RedisValue[] { "item-a", "item-c", "item-e" });
+            result = db.SetAdd(new RedisKey("key3"), ["item-a", "item-c", "item-e"]);
             Assert.AreEqual(3, result);
 
-            var members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2", "key3" });
-            RedisValue[] entries = new RedisValue[] { "item-a", "item-b", "item-c", "item-d", "item-e" };
+            var members = db.SetCombine(SetOperation.Union, ["key1", "key2", "key3"]);
+            RedisValue[] entries = ["item-a", "item-b", "item-c", "item-d", "item-e"];
             Assert.AreEqual(5, members.Length);
             // assert two arrays are equal ignoring order
             Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(entries.OrderBy(x => x)));
 
-            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2", "key3", "_not_exists" });
+            members = db.SetCombine(SetOperation.Union, ["key1", "key2", "key3", "_not_exists"]);
             Assert.AreEqual(5, members.Length);
             Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(entries.OrderBy(x => x)));
 
-            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "_not_exists_1", "_not_exists_2", "_not_exists_3" });
+            members = db.SetCombine(SetOperation.Union, ["_not_exists_1", "_not_exists_2", "_not_exists_3"]);
             Assert.IsEmpty(members);
 
-            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "_not_exists_1", "key1", "_not_exists_2", "_not_exists_3" });
+            members = db.SetCombine(SetOperation.Union, ["_not_exists_1", "key1", "_not_exists_2", "_not_exists_3"]);
             Assert.AreEqual(4, members.Length);
             Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
 
-            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2" });
+            members = db.SetCombine(SetOperation.Union, ["key1", "key2"]);
             Assert.AreEqual(4, members.Length);
             Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
 
             try
             {
-                db.SetCombine(SetOperation.Union, new RedisKey[] { });
+                db.SetCombine(SetOperation.Union, []);
                 Assert.Fail();
             }
             catch (RedisServerException e)
@@ -754,34 +754,34 @@ namespace Garnet.test
             db.Connect();
 
             //If set doesn't exist, then return 0.
-            var response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "destinationSet", "value" });
+            var response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "value"]);
             Assert.AreEqual(response, 0);
-            await db.ExecuteForStringResultAsync("SADD", new string[] { "sourceSet", "sourceValue", "commonValue" });
-            await db.ExecuteForStringResultAsync("SADD", new string[] { "destinationSet", "destinationValue", "commonValue" });
+            await db.ExecuteForStringResultAsync("SADD", ["sourceSet", "sourceValue", "commonValue"]);
+            await db.ExecuteForStringResultAsync("SADD", ["destinationSet", "destinationValue", "commonValue"]);
 
             //Same key.
-            response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "sourceSet", "sourceValue" });
+            response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "sourceSet", "sourceValue"]);
             Assert.AreEqual(response, 0);
 
             //Move non-common member.
-            response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "destinationSet", "sourceValue" });
+            response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "sourceValue"]);
             Assert.AreEqual(response, 1);
-            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "sourceSet" }), 1);
-            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "destinationSet" }), 3);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["sourceSet"]), 1);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["destinationSet"]), 3);
 
-            var sourceSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", new string[] { "sourceSet" });
-            var destinationSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", new string[] { "destinationSet" });
+            var sourceSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["sourceSet"]);
+            var destinationSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["destinationSet"]);
             Assert.IsFalse(sourceSetMembers.Contains("sourceValue"));
             Assert.IsTrue(destinationSetMembers.Contains("sourceValue"));
 
             //Move common member.
-            response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "destinationSet", "commonValue" });
+            response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "commonValue"]);
             Assert.AreEqual(response, 1);
-            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "sourceSet" }), 0);
-            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "destinationSet" }), 3);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["sourceSet"]), 0);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["destinationSet"]), 3);
 
-            sourceSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", new string[] { "sourceSet" });
-            destinationSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", new string[] { "destinationSet" });
+            sourceSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["sourceSet"]);
+            destinationSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", ["destinationSet"]);
             Assert.IsFalse(sourceSetMembers.Contains("commonValue"));
             Assert.IsTrue(destinationSetMembers.Contains("commonValue"));
         }

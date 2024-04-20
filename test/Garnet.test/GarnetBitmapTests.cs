@@ -738,8 +738,8 @@ namespace Garnet.test
 
             //Test AND, OR, XOR
             long srcA, srcB, srcC;
-            RedisKey[] keys = new RedisKey[] { a, b, c };
-            Bitwise[] bitwiseOps = new Bitwise[] { Bitwise.And, Bitwise.Or, Bitwise.Xor };
+            RedisKey[] keys = [a, b, c];
+            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor];
             for (int j = 0; j < bitwiseOps.Length; j++)
             {
                 for (int i = 0; i < tests; i++)
@@ -820,8 +820,8 @@ namespace Garnet.test
 
             //Test AND, OR, XOR
             long srcA, srcB, srcC;
-            RedisKey[] keys = new RedisKey[] { a, b, c };
-            Bitwise[] bitwiseOps = new Bitwise[] { Bitwise.And, Bitwise.Or, Bitwise.Xor };
+            RedisKey[] keys = [a, b, c];
+            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor];
             for (int j = 0; j < bitwiseOps.Length; j++)
             {
                 for (int i = 0; i < tests; i++)
@@ -904,8 +904,8 @@ namespace Garnet.test
             string d = "d";
             string x = "x";
 
-            RedisKey[] keys = new RedisKey[] { a, b, c, d };
-            Bitwise[] bitwiseOps = new Bitwise[] { Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor };
+            RedisKey[] keys = [a, b, c, d];
+            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor];
 
             int maxBytes = 512;
             byte[] dataA = new byte[r.Next(1, maxBytes)];
@@ -1016,8 +1016,8 @@ namespace Garnet.test
             byte[] dataA, dataB, dataC, dataD;
             byte[] dataX;
             int minSize = 512;
-            Bitwise[] bitwiseOps = new Bitwise[] { Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor };
-            RedisKey[] keys = new RedisKey[] { a, b, c, d };
+            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor];
+            RedisKey[] keys = [a, b, c, d];
 
             //Test NOT
             for (int i = 0; i < tests; i++)
@@ -1094,7 +1094,7 @@ namespace Garnet.test
             long indexBit = 0;
             long value = 0;
             int bI = 63;
-            byte[] si = { 1, 2, 4, 8, 16, 32, 64, 128 };
+            byte[] si = [1, 2, 4, 8, 16, 32, 64, 128];
             while (indexBit < (bitmap.Length << 3))
             {
                 for (int i = 7; i >= 0; i--)
@@ -1148,7 +1148,7 @@ namespace Garnet.test
         {
             ulong value = getUnsigned(ref bitmap, offset, bits);
 
-            ulong[] si = {
+            ulong[] si = [
                     1L << 0, 1L << 1, 1L << 2, 1L << 3, 1L << 4, 1L << 5, 1L << 6, 1L << 7,//0
                     1L << 8, 1L << 9, 1L << 10, 1L << 11, 1L << 12, 1L << 13, 1L << 14, 1L << 15,//1
                     1L << 16, 1L << 17, 1L << 18, 1L << 19, 1L << 20, 1L << 21, 1L << 22, 1L << 23,//2
@@ -1157,7 +1157,7 @@ namespace Garnet.test
                     1L << 40, 1L << 41, 1L << 42, 1L << 43, 1L << 44, 1L << 45, 1L << 46, 1L << 47,//5
                     1L << 48, 1L << 49, 1L << 50, 1L << 51, 1L << 52, 1L << 53, 1L << 54, 1L << 55,//6
                     1L << 56, 1L << 57, 1L << 58, 1L << 59, 1L << 60, 1L << 61, 1L << 62, (ulong)1 << 63,//7                 
-                };
+                ];
 
             if (bits < 64 && ((value & si[bits - 1]) > 0))
                 value |= (~(ulong)0) << ((byte)bits);

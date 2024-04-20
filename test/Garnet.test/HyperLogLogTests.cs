@@ -38,7 +38,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            string[] data = new string[] { "a", "b", "c", "d", "e", "f" };
+            string[] data = ["a", "b", "c", "d", "e", "f"];
             string key = "hllKey";
             bool fUpdated = false;
 
@@ -66,8 +66,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            RedisValue[] x = new RedisValue[] { "h", "e", "l", "l", "o" };
-            RedisValue[] y = new RedisValue[] { "w", "o", "r", "l", "d" };
+            RedisValue[] x = ["h", "e", "l", "l", "o"];
+            RedisValue[] y = ["w", "o", "r", "l", "d"];
 
             string keyX = "x";
             var ret = db.HyperLogLogAdd(keyX, x);
@@ -87,8 +87,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            RedisValue[] x = new RedisValue[] { "h", "e", "l", "l", "o" };
-            RedisValue[] y = new RedisValue[] { "w", "o", "r", "l", "d" };
+            RedisValue[] x = ["h", "e", "l", "l", "o"];
+            RedisValue[] y = ["w", "o", "r", "l", "d"];
             string keyX = "x";
             string keyY = "y";
             string keyW = "w";
@@ -117,8 +117,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            RedisValue[] x = new RedisValue[] { "h", "e", "l", "l", "o" };
-            RedisValue[] y = new RedisValue[] { "w", "o", "r", "l", "d" };
+            RedisValue[] x = ["h", "e", "l", "l", "o"];
+            RedisValue[] y = ["w", "o", "r", "l", "d"];
             string keyX = "x";
             string keyY = "y";
             string keyW = "w";
@@ -451,13 +451,13 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            RedisValue[] dataA = new RedisValue[] { "h", "e", "l", "l", "o" };
-            RedisValue[] dataB = new RedisValue[] { "w", "o", "r", "l", "d" };
-            RedisValue[] dataC = new RedisValue[] { "a", "b", "c", "d", "e", "f" };
+            RedisValue[] dataA = ["h", "e", "l", "l", "o"];
+            RedisValue[] dataB = ["w", "o", "r", "l", "d"];
+            RedisValue[] dataC = ["a", "b", "c", "d", "e", "f"];
             string keyA = "HyperLogLogMultiCountTestA";
             string keyB = "HyperLogLogMultiCountTestB";
             string keyC = "HyperLogLogMultiCountTestC";
-            RedisKey[] keys = new RedisKey[] { keyA, keyB, keyC };
+            RedisKey[] keys = [keyA, keyB, keyC];
 
             db.KeyDelete(keyA);
             db.KeyDelete(keyB);

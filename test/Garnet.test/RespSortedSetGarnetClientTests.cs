@@ -23,8 +23,8 @@ namespace Garnet.test
         ManualResetEventSlim waiter;
         const int maxIterations = 3;
 
-        static readonly SortedSetEntry[] leaderBoard = new SortedSetEntry[]
-             {
+        static readonly SortedSetEntry[] leaderBoard =
+             [
                 new SortedSetEntry("Dave", 340),
                 new SortedSetEntry("Kendra", 400),
                 new SortedSetEntry("Tom", 560),
@@ -35,7 +35,7 @@ namespace Garnet.test
                 new SortedSetEntry("Lester", 790),
                 new SortedSetEntry("Alice", 850),
                 new SortedSetEntry("Mary", 980)
-             };
+             ];
 
 
         [SetUp]
@@ -94,7 +94,7 @@ namespace Garnet.test
             using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
             db.Connect();
             List<string> parameters = new();
-            parameters.AddRange(new string[] { "myzset1", "1", "KEY1", "2", "KEY2" });
+            parameters.AddRange(["myzset1", "1", "KEY1", "2", "KEY2"]);
             db.ExecuteForMemoryResult(SimpleMemoryResultCallback, 1, "ZADD", parameters);
             waiter.Wait();
             waiter.Reset();
@@ -107,7 +107,7 @@ namespace Garnet.test
             db.Connect();
             var expectedResult = "2";
             List<string> parameters = new();
-            parameters.AddRange(new string[] { "myzset1", "1", "KEY1", "2", "KEY2" });
+            parameters.AddRange(["myzset1", "1", "KEY1", "2", "KEY2"]);
             db.ExecuteForStringResult((c, s) =>
             {
                 Assert.IsTrue(s == expectedResult); waiter.Set();
@@ -133,7 +133,7 @@ namespace Garnet.test
             using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
             db.Connect();
             List<string> parameters = new();
-            parameters.AddRange(new string[] { "myzset1", "1", "KEY1", "2", "KEY2" });
+            parameters.AddRange(["myzset1", "1", "KEY1", "2", "KEY2"]);
             db.ExecuteForMemoryResult(SimpleMemoryResultCallback, 1, "ZADD", parameters);
             waiter.Wait();
             waiter.Reset();
@@ -192,7 +192,7 @@ namespace Garnet.test
                         await Task.Delay(millisecondsDelay: rnd.Next(10, 50));
 
                         parameters = new List<string>();
-                        parameters.AddRange(new string[] { name, "-inf", "+inf" });
+                        parameters.AddRange([name, "-inf", "+inf"]);
 
                         var result = await db.ExecuteForMemoryResultArrayAsync("ZRANGEBYSCORE", parameters);
 
@@ -251,7 +251,7 @@ namespace Garnet.test
             await db.ExecuteForMemoryResultAsync("ZADD", parameters);
 
             parameters = new List<string>();
-            parameters.AddRange(new string[] { "leaderboard", "-inf", "+inf" });
+            parameters.AddRange(["leaderboard", "-inf", "+inf"]);
             var result = await db.ExecuteForStringArrayResultAsync("ZRANGEBYSCORE", parameters);
 
             // assert the elements
@@ -269,7 +269,7 @@ namespace Garnet.test
             db.Connect();
             List<string> parameters = new();
             parameters = new List<string>();
-            parameters.AddRange(new string[] { "myzset1", "1", "KEY1", "2", "KEY2" });
+            parameters.AddRange(["myzset1", "1", "KEY1", "2", "KEY2"]);
 
             var result = await db.ExecuteForStringResultAsync("ZADD", parameters);
             Assert.AreEqual("2", result);
@@ -307,7 +307,7 @@ namespace Garnet.test
             var token = tokenSource.Token;
 
             parameters = new List<string>();
-            parameters.AddRange(new string[] { "leaderboard", "-inf", "+inf" });
+            parameters.AddRange(["leaderboard", "-inf", "+inf"]);
             var t = db.ExecuteForMemoryResultArrayWithCancellationAsync("ZRANGEBYSCORE", parameters, token);
             var result = t.GetAwaiter().GetResult();
             Assert.IsTrue(t.IsCompletedSuccessfully);
@@ -377,7 +377,7 @@ namespace Garnet.test
             db.Connect();
 
             var parameters = new List<string>();
-            parameters.AddRange(new string[] { "leaderboard", "-inf", "+inf" });
+            parameters.AddRange(["leaderboard", "-inf", "+inf"]);
 
             for (int i = 0; i <= maxIterations; i++)
             {

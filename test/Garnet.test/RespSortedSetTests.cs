@@ -18,8 +18,8 @@ namespace Garnet.test
     {
         protected GarnetServer server;
 
-        static readonly SortedSetEntry[] entries = new SortedSetEntry[]
-              {
+        static readonly SortedSetEntry[] entries =
+              [
                 new SortedSetEntry("a", 1),
                 new SortedSetEntry("b", 2),
                 new SortedSetEntry("c", 3),
@@ -30,10 +30,10 @@ namespace Garnet.test
                 new SortedSetEntry("h", 8),
                 new SortedSetEntry("i", 9),
                 new SortedSetEntry("j", 10)
-              };
+              ];
 
-        static readonly SortedSetEntry[] leaderBoard = new SortedSetEntry[]
-             {
+        static readonly SortedSetEntry[] leaderBoard =
+             [
                 new SortedSetEntry("Dave", 340),
                 new SortedSetEntry("Kendra", 400),
                 new SortedSetEntry("Tom", 560),
@@ -44,10 +44,10 @@ namespace Garnet.test
                 new SortedSetEntry("Lester", 790),
                 new SortedSetEntry("Alice", 850),
                 new SortedSetEntry("Mary", 980)
-             };
+             ];
 
-        static readonly SortedSetEntry[] powOfTwo = new SortedSetEntry[]
-            {
+        static readonly SortedSetEntry[] powOfTwo =
+            [
                 new SortedSetEntry("a", 1),
                 new SortedSetEntry("b", 2),
                 new SortedSetEntry("c", 4),
@@ -58,7 +58,7 @@ namespace Garnet.test
                 new SortedSetEntry("h", 128),
                 new SortedSetEntry("i", 256),
                 new SortedSetEntry("j", 512)
-            };
+            ];
 
 
         [SetUp]
@@ -124,7 +124,7 @@ namespace Garnet.test
             card = db.SortedSetLength(key);
             Assert.AreEqual(entries2.Length, card);
 
-            added = db.SortedSetAdd(key, new[] { new SortedSetEntry("a", 12) });
+            added = db.SortedSetAdd(key, [new SortedSetEntry("a", 12)]);
             Assert.AreEqual(0, added);
 
             response = db.Execute("MEMORY", "USAGE", key);
