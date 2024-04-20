@@ -137,9 +137,7 @@ namespace Garnet.server
                         else
                         {
                             if (ToLowerAscii(pattern[0]) != ToLowerAscii(key[0]))
-                            {
                                 return false; /* no match */
-                            }
                         }
                         key++;
                         stringLen--;
