@@ -266,7 +266,7 @@ namespace Garnet.cluster
                 {
                     var other = ClusterConfig.FromByteArray(resp.Span.ToArray());
                     nodeId = other.GetLocalNodeId();
-                    gsn.nodeid = nodeId;
+                    gsn.NodeId = nodeId;
 
                     logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
                     // Merge without a check because node is trusted as meet was issued by admin
@@ -337,7 +337,7 @@ namespace Garnet.cluster
                 {
                     var gsn = new GarnetServerNode(clusterProvider, address, port, tlsOptions?.TlsClientOptions, logger: logger)
                     {
-                        nodeid = nodeId
+                        NodeId = nodeId
                     };
                     try
                     {
@@ -376,13 +376,13 @@ namespace Garnet.cluster
                     }
 
                     gossipStats.gossip_timeout_count++;
-                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.nodeid, currNode.address, currNode.port);
-                    _ = clusterConnectionStore.TryRemove(currNode.nodeid);
+                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.address, currNode.port);
+                    _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.nodeid, currNode.address, currNode.port);
-                    _ = clusterConnectionStore.TryRemove(currNode.nodeid);
+                    logger?.LogWarning(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.address, currNode.port);
+                    _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     gossipStats.gossip_failed_count++;
                 }
             }
@@ -427,13 +427,13 @@ namespace Garnet.cluster
                     }
 
                     gossipStats.gossip_timeout_count++;
-                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.nodeid, currNode.address, currNode.port);
-                    _ = clusterConnectionStore.TryRemove(currNode.nodeid);
+                    logger?.LogWarning("GOSSIP to remote node [{nodeId} {address}:{port}] timeout!", currNode.NodeId, currNode.address, currNode.port);
+                    _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.nodeid, currNode.address, currNode.port);
-                    _ = clusterConnectionStore.TryRemove(currNode.nodeid);
+                    logger?.LogError(ex, "GOSSIP to remote node [{nodeId} {address} {port}] failed!", currNode.NodeId, currNode.address, currNode.port);
+                    _ = clusterConnectionStore.TryRemove(currNode.NodeId);
                     gossipStats.gossip_failed_count++;
                 }
 

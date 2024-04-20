@@ -57,7 +57,7 @@ namespace Garnet.cluster
                 {
                     var current = currentConfig;
 
-                    if (current.GetLocalNodeId().Equals(nodeid, StringComparison.Ordinal))
+                    if (current.GetLocalNodeId().Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MYSELF;
                         return false;
@@ -69,7 +69,7 @@ namespace Garnet.cluster
                         return false;
                     }
 
-                    if (current.GetLocalNodeRole() == NodeRole.REPLICA && current.GetLocalNodePrimaryId().Equals(nodeid, StringComparison.Ordinal))
+                    if (current.GetLocalNodeRole() == NodeRole.REPLICA && current.GetLocalNodePrimaryId().Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MY_PRIMARY;
                         return false;
@@ -154,7 +154,7 @@ namespace Garnet.cluster
             while (true)
             {
                 var current = CurrentConfig;
-                if (current.GetLocalNodeId().Equals(nodeid, StringComparison.Ordinal))
+                if (current.GetLocalNodeId().Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF;
                     logger?.LogError(Encoding.ASCII.GetString(errorMessage));

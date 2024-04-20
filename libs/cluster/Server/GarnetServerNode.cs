@@ -36,7 +36,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Nodeid of remote node
         /// </summary>
-        public string nodeid;
+        public string NodeId;
 
         /// <summary>
         /// Address of remote node

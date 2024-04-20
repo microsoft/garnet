@@ -68,7 +68,7 @@ namespace Garnet.cluster
                 for (int i = 0; i < numConnection; i++)
                 {
                     var _conn = connections[i];
-                    if (_conn.nodeid.Equals(conn.nodeid, StringComparison.Ordinal))
+                    if (_conn.NodeId.Equals(conn.NodeId, StringComparison.OrdinalIgnoreCase))
                     {
                         return false;
                     }
@@ -107,7 +107,7 @@ namespace Garnet.cluster
                 for (int i = 0; i < numConnection; i++)
                 {
                     var _conn = connections[i];
-                    if (nodeId.Equals(_conn.nodeid, StringComparison.Ordinal))
+                    if (nodeId.Equals(_conn.NodeId, StringComparison.OrdinalIgnoreCase))
                     {
                         connections[i] = null;
                         if (i < numConnection - 1)
@@ -147,7 +147,7 @@ namespace Garnet.cluster
             for (int i = 0; i < numConnection; i++)
             {
                 var _conn = connections[i];
-                if (_conn.nodeid.Equals(nodeId, StringComparison.Ordinal))
+                if (_conn.NodeId.Equals(nodeId, StringComparison.OrdinalIgnoreCase))
                 {
                     conn = _conn;
                     return true;
