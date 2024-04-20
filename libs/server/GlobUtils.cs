@@ -9,11 +9,13 @@ namespace Garnet.server
     public static class GlobUtils
     {
         /// <summary>
-        /// Glob-style pattern matching
+        /// Glob-style ASCII pattern matching
         /// </summary>
         /// <returns>Whether match was found</returns>
-        public static unsafe bool Match(byte* pattern, int patternLen, byte* key, int stringLen, bool nocase = false)
+        public static unsafe bool Match(byte* pattern, int patternLen, byte* key, int stringLen, bool ignoreCase = false)
         {
+            static byte ToLowerAscii(byte value) => (byte)(value | 0x20);
+
             while (patternLen > 0 && stringLen > 0)
             {
                 switch (pattern[0])
@@ -28,7 +30,7 @@ namespace Garnet.server
                             return true; /* match */
                         while (stringLen > 0)
                         {
-                            if (Match(pattern + 1, patternLen - 1, key, stringLen, nocase))
+                            if (Match(pattern + 1, patternLen - 1, key, stringLen, ignoreCase))
                                 return true; /* match */
                             key++;
                             stringLen--;
@@ -42,16 +44,15 @@ namespace Garnet.server
 
                     case (byte)'[':
                         {
-                            bool not, match;
                             pattern++;
                             patternLen--;
-                            not = (pattern[0] == '^');
+                            var not = pattern[0] == '^';
                             if (not)
                             {
                                 pattern++;
                                 patternLen--;
                             }
-                            match = false;
+                            var match = false;
                             while (true)
                             {
                                 if (pattern[0] == '\\' && patternLen >= 2)
@@ -73,20 +74,19 @@ namespace Garnet.server
                                 }
                                 else if (patternLen >= 3 && pattern[1] == '-')
                                 {
-                                    int start = pattern[0];
-                                    int end = pattern[2];
-                                    int c = key[0];
+                                    byte start = pattern[0];
+                                    byte end = pattern[2];
+                                    byte c = key[0];
                                     if (start > end)
                                     {
-                                        int t = start;
-                                        start = end;
-                                        end = t;
+                                        (end, start) = (start, end);
                                     }
-                                    if (nocase)
+
+                                    if (ignoreCase)
                                     {
-                                        start = char.ToLower((char)start);
-                                        end = char.ToLower((char)end);
-                                        c = char.ToLower((char)c);
+                                        start = ToLowerAscii(start);
+                                        end = ToLowerAscii(end);
+                                        c = ToLowerAscii(c);
                                     }
                                     pattern += 2;
                                     patternLen -= 2;
@@ -95,14 +95,14 @@ namespace Garnet.server
                                 }
                                 else
                                 {
-                                    if (!nocase)
+                                    if (!ignoreCase)
                                     {
                                         if (pattern[0] == key[0])
                                             match = true;
                                     }
                                     else
                                     {
-                                        if (char.ToLower((char)pattern[0]) == char.ToLower((char)key[0]))
+                                        if (ToLowerAscii(pattern[0]) == ToLowerAscii(key[0]))
                                             match = true;
                                     }
                                 }
@@ -129,15 +129,17 @@ namespace Garnet.server
 
                     /* fall through */
                     default:
-                        if (!nocase)
+                        if (!ignoreCase)
                         {
                             if (pattern[0] != key[0])
                                 return false; /* no match */
                         }
                         else
                         {
-                            if (char.ToLower((char)pattern[0]) != char.ToLower((char)key[0]))
+                            if (ToLowerAscii(pattern[0]) != ToLowerAscii(key[0]))
+                            {
                                 return false; /* no match */
+                            }
                         }
                         key++;
                         stringLen--;
