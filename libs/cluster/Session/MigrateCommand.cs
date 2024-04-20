@@ -98,7 +98,7 @@ namespace Garnet.cluster
             {
                 pstate = MigrateCmdParseState.SUCCESS;
                 current = clusterProvider.clusterManager.CurrentConfig;
-                sourceNodeId = current.GetLocalNodeId();
+                sourceNodeId = current.LocalNodeId;
                 targetNodeId = current.GetWorkerNodeIdFromAddress(targetAddress, targetPort);
                 if (targetNodeId == null) pstate = MigrateCmdParseState.UNKNOWNTARGET;
             }

@@ -60,7 +60,7 @@ namespace Garnet.cluster
             }
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (clusterProvider.clusterManager.CurrentConfig.GetLocalNodeRole() != NodeRole.PRIMARY)
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole != NodeRole.PRIMARY)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_FAILOVER_FROM_NON_MASTER, ref dcurr, dend))
                     SendAndReset();
@@ -86,7 +86,7 @@ namespace Garnet.cluster
                     return true;
                 }
 
-                if (worker.ReplicaOfNodeId != clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId())
+                if (worker.ReplicaOfNodeId != clusterProvider.clusterManager.CurrentConfig.LocalNodeId)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Node @{replicaAddress}:{replicaPort} is not my replica.", ref dcurr, dend))
                         SendAndReset();

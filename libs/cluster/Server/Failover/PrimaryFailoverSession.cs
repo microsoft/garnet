@@ -97,8 +97,8 @@ namespace Garnet.cluster
             {
                 //Change local node role to suspend any write workload
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
-                var localId = clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId();
-                var oldRole = clusterProvider.clusterManager.CurrentConfig.GetLocalNodeRole();
+                var localId = clusterProvider.clusterManager.CurrentConfig.LocalNodeId;
+                var oldRole = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
                 var replicas = clusterProvider.clusterManager.CurrentConfig.GetReplicaIds(localId);
                 clusterProvider.clusterManager.TryStopWrites(replicas[0]);
                 clusterProvider.WaitForConfigTransition();

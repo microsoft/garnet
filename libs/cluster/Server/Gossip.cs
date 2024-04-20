@@ -134,7 +134,7 @@ namespace Garnet.cluster
         /// <returns>MetricsItem array of all the associated info.</returns>
         public MetricsItem[] GetPrimaryLinkStatus(ClusterConfig config)
         {
-            var primaryId = config.GetLocalNodePrimaryId();
+            var primaryId = config.LocalNodePrimaryId;
             var primaryLinkStatus = new MetricsItem[2]
             {
                 new("master_link_status", "down"),
@@ -198,9 +198,9 @@ namespace Garnet.cluster
             try
             {
                 IncrementConfigMerge();
-                if (workerBanList.ContainsKey(other.GetLocalNodeId()))
+                if (workerBanList.ContainsKey(other.LocalNodeId))
                 {
-                    logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", other.GetLocalNodeId());
+                    logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", other.LocalNodeId);
                     return false;
                 }
 
@@ -265,7 +265,7 @@ namespace Garnet.cluster
                 if (resp.Length > 0)
                 {
                     var other = ClusterConfig.FromByteArray(resp.Span.ToArray());
-                    nodeId = other.GetLocalNodeId();
+                    nodeId = other.LocalNodeId;
                     gsn.NodeId = nodeId;
 
                     logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);

@@ -340,7 +340,7 @@ namespace Garnet.cluster
             {
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
-                while (!RespWriteUtils.WriteAsciiBulkString(clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId(), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiBulkString(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.MYPARENTID) || param.SequenceEqual(CmdStrings.myparentid))
@@ -349,7 +349,7 @@ namespace Garnet.cluster
                 readHead = (int)(ptr - recvBufferPtr);
 
                 var current = clusterProvider.clusterManager.CurrentConfig;
-                var parentId = current.GetLocalNodeRole() == NodeRole.PRIMARY ? current.GetLocalNodeId() : current.GetLocalNodePrimaryId();
+                var parentId = current.LocalNodeRole == NodeRole.PRIMARY ? current.LocalNodeId : current.LocalNodePrimaryId;
                 while (!RespWriteUtils.WriteAsciiBulkString(parentId, ref dcurr, dend))
                     SendAndReset();
             }
@@ -461,12 +461,12 @@ namespace Garnet.cluster
                         var other = ClusterConfig.FromByteArray(gossipMessage);
                         // Accept gossip message if it is a gossipWithMeet or node from node that is already known and trusted
                         // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
-                        if (gossipWithMeet || current.IsKnown(other.GetLocalNodeId()))
+                        if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
                         {
                             _ = clusterProvider.clusterManager.TryMerge(other);
                         }
                         else
-                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.GetLocalNodeId());
+                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                     }
 
                     // Respond if configuration has changed or gossipWithMeet option is specified
@@ -576,7 +576,7 @@ namespace Garnet.cluster
                         else
                         {
                             var current = clusterProvider.clusterManager.CurrentConfig;
-                            var nodeRole = current.GetLocalNodeRole();
+                            var nodeRole = current.LocalNodeRole;
                             if (nodeRole == NodeRole.REPLICA)
                             {
                                 if (!clusterProvider.failoverManager.TryStartReplicaFailover(failoverOption, failoverTimeout))
@@ -1545,8 +1545,8 @@ namespace Garnet.cluster
                 readHead = (int)(ptr - recvBufferPtr);
 
                 var currentConfig = clusterProvider.clusterManager.CurrentConfig;
-                var localRole = currentConfig.GetLocalNodeRole();
-                var primaryId = currentConfig.GetLocalNodePrimaryId();
+                var localRole = currentConfig.LocalNodeRole;
+                var primaryId = currentConfig.LocalNodePrimaryId;
                 if (localRole != NodeRole.REPLICA)
                 {
                     // TODO: handle this

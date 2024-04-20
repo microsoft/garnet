@@ -29,10 +29,10 @@ namespace Garnet.cluster
                     throw new Exception("Replica is recovering cannot sync AOF");
                 }
 
-                if (currentConfig.GetLocalNodeRole() != NodeRole.REPLICA)
+                if (currentConfig.LocalNodeRole != NodeRole.REPLICA)
                 {
-                    logger?.LogWarning("This node {nodeId} is not a replica", currentConfig.GetLocalNodeId());
-                    throw new Exception($"This node {currentConfig.GetLocalNodeId()} is not a replica");
+                    logger?.LogWarning("This node {nodeId} is not a replica", currentConfig.LocalNodeId);
+                    throw new Exception($"This node {currentConfig.LocalNodeId} is not a replica");
                 }
 
                 if (clusterProvider.serverOptions.MainMemoryReplication)

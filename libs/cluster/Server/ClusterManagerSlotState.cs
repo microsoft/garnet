@@ -99,7 +99,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                if (current.GetLocalNodeId().Equals(nodeid, StringComparison.OrdinalIgnoreCase))
+                if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_MIGRATE_TO_MYSELF;
                     return false;
@@ -167,7 +167,7 @@ namespace Garnet.cluster
                 }
 
                 //Check if nodeid is different from local node
-                if (current.GetLocalNodeId().Equals(nodeid, StringComparison.OrdinalIgnoreCase))
+                if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_MIGRATE_TO_MYSELF;
                     return false;
@@ -232,9 +232,9 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                if (current.GetLocalNodeRole() != NodeRole.PRIMARY)
+                if (current.LocalNodeRole != NodeRole.PRIMARY)
                 {
-                    errorMessage = Encoding.ASCII.GetBytes($"ERR Importing node {current.GetLocalNodeRole()} is not a master node.");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR Importing node {current.LocalNodeRole} is not a master node.");
                     return false;
                 }
 
@@ -289,9 +289,9 @@ namespace Garnet.cluster
                 }
 
                 // Check local node is a primary
-                if (current.GetLocalNodeRole() != NodeRole.PRIMARY)
+                if (current.LocalNodeRole != NodeRole.PRIMARY)
                 {
-                    errorMessage = Encoding.ASCII.GetBytes($"ERR Importing node {current.GetLocalNodeRole()} is not a master node.");
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR Importing node {current.LocalNodeRole} is not a master node.");
                     return false;
                 }
 
@@ -365,9 +365,9 @@ namespace Garnet.cluster
             }
             else if (current.GetState((ushort)slot) is SlotState.IMPORTING)
             {
-                if (!current.GetLocalNodeId().Equals(nodeid, StringComparison.OrdinalIgnoreCase))
+                if (!current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
-                    errorMesage = Encoding.ASCII.GetBytes($"ERR Input nodeid {nodeid} different from local nodeid {CurrentConfig.GetLocalNodeId()}.");
+                    errorMesage = Encoding.ASCII.GetBytes($"ERR Input nodeid {nodeid} different from local nodeid {CurrentConfig.LocalNodeId}.");
                     return false;
                 }
 
@@ -408,7 +408,7 @@ namespace Garnet.cluster
                 }
 
                 var newConfig = currentConfig.UpdateMultiSlotState(slots, workerId, SlotState.STABLE);
-                if (current.GetLocalNodeId().Equals(nodeid, StringComparison.OrdinalIgnoreCase)) newConfig = newConfig.BumpLocalNodeConfigEpoch();
+                if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase)) newConfig = newConfig.BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }

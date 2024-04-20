@@ -153,7 +153,7 @@ namespace Garnet.cluster
             => slotMap[slot].workerId == 1 || IsLocalExpensive(slot, readCommand);
 
         private bool IsLocalExpensive(ushort slot, bool readCommand)
-            => (readCommand && workers[1].Role == NodeRole.REPLICA && workers[slotMap[slot]._workerId].Nodeid.Equals(GetLocalNodePrimaryId(), StringComparison.OrdinalIgnoreCase)) ||
+            => (readCommand && workers[1].Role == NodeRole.REPLICA && workers[slotMap[slot]._workerId].Nodeid.Equals(LocalNodePrimaryId, StringComparison.OrdinalIgnoreCase)) ||
             slotMap[slot]._state == SlotState.MIGRATING;
 
         /// <summary>
@@ -174,49 +174,49 @@ namespace Garnet.cluster
         /// Get local node ip
         /// </summary>
         /// <returns>IP of local worker</returns>
-        public string GetLocalNodeIp() => workers[1].Address;
+        public string LocalNodeIp => workers[1].Address;
 
         /// <summary>
         /// Get local node port
         /// </summary>
         /// <returns>Port of local worker</returns>
-        public int GetLocalNodePort() => workers[1].Port;
+        public int LocalNodePort => workers[1].Port;
 
         /// <summary>
         /// Get local node ID
         /// </summary>
         /// <returns>Node-id of local worker.</returns>
-        public string GetLocalNodeId() => workers[1].Nodeid;
+        public string LocalNodeId => workers[1].Nodeid;
 
         /// <summary>
         /// Get local node role
         /// </summary>
         /// <returns>Role of local node.</returns>
-        public NodeRole GetLocalNodeRole() => workers[1].Role;
+        public NodeRole LocalNodeRole => workers[1].Role;
 
         /// <summary>
         /// Get nodeid of primary.
         /// </summary>
         /// <returns>Primary-id of the node this node is replicating.</returns>
-        public string GetLocalNodePrimaryId() => workers[1].ReplicaOfNodeId;
+        public string LocalNodePrimaryId => workers[1].ReplicaOfNodeId;
 
         /// <summary>
         /// Get config epoch for local worker.
         /// </summary>
         /// <returns>Config epoch of local node.</returns>
-        public long GetLocalNodeConfigEpoch() => workers[1].ConfigEpoch;
+        public long LocalNodeConfigEpoch => workers[1].ConfigEpoch;
 
         /// <summary>
         /// Next valid config epoch which can be used as requestedEpoch for voting.
         /// </summary>
         /// <returns>Current config epoch of local node.</returns>
-        public long GetLocalNodeCurrentConfigEpoch() => workers[1].CurrentConfigEpoch;
+        public long LocalNodeCurrentConfigEpoch => workers[1].CurrentConfigEpoch;
 
         /// <summary>
         /// Get last epoch this node has voted for
         /// </summary>
         /// <returns>Last voted config epoch of local node.</returns>
-        public long GetLocalNodeLastVotedEpoch() => workers[1].LastVotedConfigEpoch;
+        public long LocalNodeLastVotedEpoch => workers[1].LastVotedConfigEpoch;
 
         /// <summary>
         /// Return endpoint of primary if this node is a replica.
@@ -228,7 +228,7 @@ namespace Garnet.cluster
         /// Get local node replicas
         /// </summary>
         /// <returns>Returns a list of node-ids representing the replicas that replicate this node.</returns>
-        public List<string> GetLocalNodeReplicaIds() => GetReplicaIds(GetLocalNodeId());
+        public List<string> GetLocalNodeReplicaIds() => GetReplicaIds(LocalNodeId);
 
         /// <summary>
         /// Get list of endpoints for all replicas of this node.
@@ -253,7 +253,7 @@ namespace Garnet.cluster
         /// <returns>List of pairs (address,port) representing known primary endpoints</returns>
         public List<(string, int)> GetLocalNodePrimaryEndpoints(bool includeMyPrimaryFirst = false)
         {
-            string myPrimaryId = includeMyPrimaryFirst ? GetLocalNodePrimaryId() : "";
+            string myPrimaryId = includeMyPrimaryFirst ? LocalNodePrimaryId : "";
             List<(string, int)> primaries = new();
             for (ushort i = 2; i < workers.Length; i++)
             {
@@ -272,7 +272,7 @@ namespace Garnet.cluster
         /// <returns>List of slots.</returns>
         public List<int> GetLocalPrimarySlots()
         {
-            var primaryId = GetLocalNodePrimaryId();
+            var primaryId = LocalNodePrimaryId;
             List<int> result = new();
             for (int i = 0; i < MAX_HASH_SLOT_VALUE; i++)
             {
@@ -856,7 +856,7 @@ namespace Garnet.cluster
         /// <returns>Cluster config object.</returns>
         public ClusterConfig Merge(ClusterConfig other, ConcurrentDictionary<string, long> workerBanList)
         {
-            var localId = GetLocalNodeId();
+            var localId = LocalNodeId;
             var newConfig = this;
             for (ushort i = 1; i < other.NumWorkers + 1; i++)
             {
@@ -1172,7 +1172,7 @@ namespace Garnet.cluster
         /// <returns>ClusterConfig object with updates.</returns>
         public ClusterConfig BumpLocalNodeCurrentConfigEpoch()
         {
-            long nextValidConfigEpoch = GetLocalNodeCurrentConfigEpoch();
+            long nextValidConfigEpoch = LocalNodeCurrentConfigEpoch;
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
             newWorkers[1].CurrentConfigEpoch = nextValidConfigEpoch == 0 ? GetMaxConfigEpoch() : nextValidConfigEpoch + 1;
@@ -1187,11 +1187,11 @@ namespace Garnet.cluster
         public ClusterConfig HandleConfigEpochCollision(ClusterConfig other)
         {
             //if incoming config epoch different than local don't need to do anything
-            if (GetLocalNodeConfigEpoch() != other.GetLocalNodeConfigEpoch())
+            if (LocalNodeConfigEpoch != other.LocalNodeConfigEpoch)
                 return this;
 
-            var remoteNodeId = other.GetLocalNodeId();
-            var localNodeId = GetLocalNodeId();
+            var remoteNodeId = other.LocalNodeId;
+            var localNodeId = LocalNodeId;
 
             //if localNodeId is smaller then do nothing
             if (localNodeId.CompareTo(remoteNodeId) <= 0) return this;
