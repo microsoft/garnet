@@ -26,15 +26,15 @@ namespace Garnet.test
         static readonly SortedSetEntry[] leaderBoard =
              [
                 new SortedSetEntry("Dave", 340),
-                new SortedSetEntry("Kendra", 400),
-                new SortedSetEntry("Tom", 560),
-                new SortedSetEntry("Barbara", 650),
-                new SortedSetEntry("Jennifer", 690),
-                new SortedSetEntry("Peter", 690),
-                new SortedSetEntry("Frank", 740),
-                new SortedSetEntry("Lester", 790),
-                new SortedSetEntry("Alice", 850),
-                new SortedSetEntry("Mary", 980)
+                 new SortedSetEntry("Kendra", 400),
+                 new SortedSetEntry("Tom", 560),
+                 new SortedSetEntry("Barbara", 650),
+                 new SortedSetEntry("Jennifer", 690),
+                 new SortedSetEntry("Peter", 690),
+                 new SortedSetEntry("Frank", 740),
+                 new SortedSetEntry("Lester", 790),
+                 new SortedSetEntry("Alice", 850),
+                 new SortedSetEntry("Mary", 980)
              ];
 
 

@@ -14,9 +14,15 @@ namespace Garnet.test
         GarnetServer server;
         static readonly SortedSetEntry[] entries =
         [
-            new SortedSetEntry("a", 1), new SortedSetEntry("b", 2), new SortedSetEntry("c", 3),
-            new SortedSetEntry("d", 4), new SortedSetEntry("e", 5), new SortedSetEntry("f", 6),
-            new SortedSetEntry("g", 7), new SortedSetEntry("h", 8), new SortedSetEntry("i", 9),
+            new SortedSetEntry("a", 1),
+            new SortedSetEntry("b", 2),
+            new SortedSetEntry("c", 3),
+            new SortedSetEntry("d", 4),
+            new SortedSetEntry("e", 5),
+            new SortedSetEntry("f", 6),
+            new SortedSetEntry("g", 7),
+            new SortedSetEntry("h", 8),
+            new SortedSetEntry("i", 9),
             new SortedSetEntry("j", 10)
         ];
 

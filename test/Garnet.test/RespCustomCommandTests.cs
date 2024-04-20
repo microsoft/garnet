@@ -741,8 +741,12 @@ namespace Garnet.test
             // Binary file not contained in allowed paths
             args =
             [
-                "RMW", "MYDICTSET", 2, "MyDictFactory",
-                "SRC", Path.Combine(TestUtils.MethodTestDir, "testLib1.dll")
+                "RMW",
+                "MYDICTSET",
+                2,
+                "MyDictFactory",
+                "SRC",
+                Path.Combine(TestUtils.MethodTestDir, "testLib1.dll")
             ];
 
             try
@@ -758,7 +762,10 @@ namespace Garnet.test
             // Class not in supplied dlls
             args =
             [
-                "RMW", "MYDICTSET", 2, "MyDictFactory",
+                "RMW",
+                "MYDICTSET",
+                2,
+                "MyDictFactory",
                 "SRC",
                 .. libraryPaths.Skip(1),
             ];
@@ -776,7 +783,10 @@ namespace Garnet.test
             // Class not in supported
             args =
             [
-                "RMW", "MYDICTSET", 2, "TestClass",
+                "RMW",
+                "MYDICTSET",
+                2,
+                "TestClass",
                 "SRC",
                 .. libraryPaths,
             ];
