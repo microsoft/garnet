@@ -301,13 +301,12 @@ namespace Garnet.server
             var key = new ArgSlice(keyPtr, ksize);
             var value = new ArgSlice(valPtr, vsize);
 
-            const int maxOutputSize = 20; // max byte length to store length of appended string in ASCII byte values
-            byte* pbOutput = stackalloc byte[maxOutputSize];
-            var output = new ArgSlice(pbOutput, maxOutputSize);
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
+            var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             var status = storageApi.SETRANGE(key, value, offset, ref output);
 
-            while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+            while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -770,8 +769,9 @@ namespace Garnet.server
                 return true;
 
             var key = new ArgSlice(keyPtr, ksize);
-            var pbOutput = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
-            var output = new ArgSlice(pbOutput, NumUtils.MaximumFormatInt64Length + 1);
+
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
+            var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             var status = storageApi.Increment(key, input, ref output);
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1 ? (OperationError)output.Span[0] : OperationError.SUCCESS;
@@ -779,7 +779,7 @@ namespace Garnet.server
             switch (errorFlag)
             {
                 case OperationError.SUCCESS:
-                    while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                         SendAndReset();
                     break;
                 case OperationError.INVALID_TYPE:
@@ -812,19 +812,17 @@ namespace Garnet.server
             if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
                 return true;
 
-            const int maxOutputSize = 20; // max byte length to store length of appended string in ASCII byte values
-            byte* pbOutput = stackalloc byte[maxOutputSize];
-
             keyPtr -= sizeof(int);
             valPtr -= sizeof(int);
             *(int*)keyPtr = ksize;
             *(int*)valPtr = vsize;
 
-            var output = new SpanByteAndMemory(pbOutput, maxOutputSize);
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
+            var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);
 
             var status = storageApi.APPEND(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr), ref output);
 
-            while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+            while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
 
             return true;

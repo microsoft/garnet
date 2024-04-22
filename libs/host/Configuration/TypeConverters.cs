@@ -33,7 +33,7 @@ namespace Garnet
                 case bool boolVal:
                     return boolVal ? RedisBoolean.Yes : RedisBoolean.No;
                 case string strVal:
-                    return Enum.Parse(typeof(RedisBoolean), strVal, true);
+                    return Enum.Parse<RedisBoolean>(strVal, ignoreCase: true);
                 case null:
                     return RedisBoolean.No;
                 default:
@@ -53,7 +53,7 @@ namespace Garnet
 
             if (destinationType == typeof(string))
             {
-                return rbValue.ToString().ToLower();
+                return rbValue.ToString().ToLowerInvariant();
             }
 
             throw new NotImplementedException();
@@ -99,7 +99,7 @@ namespace Garnet
             }
             else if (value is string strVal)
             {
-                return Enum.Parse(typeof(RedisLogLevel), strVal, true);
+                return Enum.Parse<RedisLogLevel>(strVal, true);
             }
 
             throw new NotSupportedException();
@@ -130,7 +130,7 @@ namespace Garnet
 
             if (destinationType == typeof(string))
             {
-                return rbValue.ToString().ToLower();
+                return rbValue.ToString().ToLowerInvariant();
             }
 
             throw new NotSupportedException();
@@ -159,7 +159,7 @@ namespace Garnet
                 case bool boolVal:
                     return boolVal ? RedisTlsAuthClients.Yes : RedisTlsAuthClients.Optional;
                 case string strVal:
-                    return Enum.Parse(typeof(RedisTlsAuthClients), strVal, true);
+                    return Enum.Parse<RedisTlsAuthClients>(strVal, true);
                 case null:
                     return RedisTlsAuthClients.Optional;
                 default:
@@ -178,7 +178,7 @@ namespace Garnet
 
             if (destinationType == typeof(string))
             {
-                return rtacValue.ToString().ToLower();
+                return rtacValue.ToString().ToLowerInvariant();
             }
 
             throw new NotSupportedException();

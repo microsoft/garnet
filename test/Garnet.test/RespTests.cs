@@ -41,13 +41,14 @@ namespace Garnet.test
         [Test]
         public void UniqueRespCommandIds()
         {
-            var ids = (RespCommand[])Enum.GetValues(typeof(RespCommand));
+            var ids = Enum.GetValues<RespCommand>();
 
             // Isolate command IDs that exist more than once in the array
             var duplicateIds = ids.GroupBy(e => e).Where(e => e.Count() > 1).Select(e => e.First());
 
             Assert.IsEmpty(duplicateIds, "Found ambiguous command IDs");
         }
+
 
         [Test]
         public void SingleSetGet()

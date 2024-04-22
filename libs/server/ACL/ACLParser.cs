@@ -1,13 +1,15 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
 
 namespace Garnet.server.ACL
 {
     class ACLParser
     {
+        private static readonly char[] WhitespaceChars = [' ', '\t', '\r', '\n'];
+
         /// <summary>
         /// Parses a single-line ACL rule and returns a new user according to that rule.
         /// 
@@ -36,10 +38,8 @@ namespace Garnet.server.ACL
         /// <exception cref="ACLUnknownOperationException">Thrown if the given operation does not exist.</exception>
         public static User ParseACLRule(string input, AccessControlList acl = null)
         {
-
             // Tokenize input string 
-            Regex regex = new Regex("\\s+");
-            string[] tokens = regex.Split(input.Trim());
+            string[] tokens = input.Trim().Split(WhitespaceChars, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             // Sanity check for correctness
             if (tokens.Length < 3)
@@ -48,7 +48,7 @@ namespace Garnet.server.ACL
             }
 
             // Expect keyword USER
-            if (tokens[0].ToLower() != "user")
+            if (!tokens[0].Equals("user", StringComparison.OrdinalIgnoreCase))
             {
                 throw new ACLParsingException("ACL rules need to start with the USER keyword");
             }
@@ -97,28 +97,28 @@ namespace Garnet.server.ACL
                 return;
             }
 
-            if (op == "on")
+            if (op.Equals("ON", StringComparison.OrdinalIgnoreCase))
             {
                 // Enable user
                 user.IsEnabled = true;
             }
-            else if (op == "off")
+            else if (op.Equals("OFF", StringComparison.OrdinalIgnoreCase))
             {
                 // Disable user
                 user.IsEnabled = false;
             }
-            else if (op == "nopass")
+            else if (op.Equals("NOPASS", StringComparison.OrdinalIgnoreCase))
             {
                 // Make account passwordless
                 user.ClearPasswords();
                 user.IsPasswordless = true;
             }
-            else if (op == "reset")
+            else if (op.Equals("RESET", StringComparison.OrdinalIgnoreCase))
             {
                 // Remove all passwords and access rights from the user
                 user.Reset();
             }
-            else if (op == "resetpass")
+            else if (op.Equals("RESETPASS", StringComparison.OrdinalIgnoreCase))
             {
                 // Remove all passwords from the user
                 user.ClearPasswords();
@@ -154,7 +154,7 @@ namespace Garnet.server.ACL
                     throw new ACLParsingException($"{exception.Message}");
                 }
             }
-            else if (op.StartsWith("-@") || op.StartsWith("+@"))
+            else if (op.StartsWith("-@", StringComparison.Ordinal) || op.StartsWith("+@", StringComparison.Ordinal))
             {
                 // Parse category name
                 string categoryName = op.Substring(2);
@@ -179,11 +179,11 @@ namespace Garnet.server.ACL
                     user.AddCategory(category);
                 }
             }
-            else if ((op == "~*") || (op == "allkeys"))
+            else if (op.Equals("~*", StringComparison.Ordinal) || op.Equals("ALLKEYS", StringComparison.OrdinalIgnoreCase))
             {
                 // NOTE: No-op, because only wildcard key patterns are currently supported
             }
-            else if ((op == "resetkeys"))
+            else if (op.Equals("RESETKEYS", StringComparison.OrdinalIgnoreCase))
             {
                 // NOTE: No-op, because only wildcard key patterns are currently supported
             }
