@@ -218,6 +218,9 @@ dotnet_diagnostic.CA1827.severity = suggestion
 # CA1829: Use Length/Count property instead of Enumerable.Count method
 dotnet_diagnostic.CA1829.severity = suggestion
 
+# CA1836: Prefer IsEmpty over Count when available
+dotnet_diagnostic.CA1836.severity = warning
+
 # Xml project files
 [*.{csproj,vbproj,vcxproj,vcxproj.filters,proj,nativeproj,locproj}]
 indent_size = 2
