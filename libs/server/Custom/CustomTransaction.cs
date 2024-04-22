@@ -15,7 +15,7 @@ namespace Garnet.server
 
         internal CustomTransaction(string name, byte id, int numParams, Func<CustomTransactionProcedure> proc)
         {
-            nameStr = name.ToUpper();
+            nameStr = name.ToUpperInvariant();
             this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);
             this.id = id;
             NumParams = numParams;

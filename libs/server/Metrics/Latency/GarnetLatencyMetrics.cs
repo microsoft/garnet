@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using Garnet.common;
 using HdrHistogram;
@@ -15,8 +16,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed class GarnetLatencyMetrics
     {
-        public static readonly LatencyMetricsType[] defaultLatencyTypes =
-            Enum.GetValues(typeof(LatencyMetricsType)).Cast<LatencyMetricsType>().ToArray();
+        public static readonly LatencyMetricsType[] defaultLatencyTypes = Enum.GetValues<LatencyMetricsType>();
 
         // Whether each latency type in LatencyMetricsType enum is in ticks or is a directly reported value
         static readonly bool[] defaultLatencyTypesTicks = new bool[6] { true, true, true, false, false, true };
@@ -60,13 +60,13 @@ namespace Garnet.server
 
             if (defaultLatencyTypesTicks[idx])
             {
-                var _min = (curr.GetValueAtPercentile(0) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2");
-                var _5 = (curr.GetValueAtPercentile(5) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2");
-                var _50 = (curr.GetValueAtPercentile(50) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2");
-                var _mean = (curr.GetMean() / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2");
-                var _95 = (curr.GetValueAtPercentile(95) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2");
-                var _99 = (curr.GetValueAtPercentile(99) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2");
-                var _999 = (curr.GetValueAtPercentile(99.9) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2");
+                var _min = (curr.GetValueAtPercentile(0) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2", CultureInfo.InvariantCulture);
+                var _5 = (curr.GetValueAtPercentile(5) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2", CultureInfo.InvariantCulture);
+                var _50 = (curr.GetValueAtPercentile(50) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2", CultureInfo.InvariantCulture);
+                var _mean = (curr.GetMean() / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2", CultureInfo.InvariantCulture);
+                var _95 = (curr.GetValueAtPercentile(95) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2", CultureInfo.InvariantCulture);
+                var _99 = (curr.GetValueAtPercentile(99) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2", CultureInfo.InvariantCulture);
+                var _999 = (curr.GetValueAtPercentile(99.9) / OutputScalingFactor.TimeStampToMicroseconds).ToString("N2", CultureInfo.InvariantCulture);
 
                 List<MetricsItem> percentiles = new()
                 {
@@ -87,7 +87,7 @@ namespace Garnet.server
                 var _min = curr.GetValueAtPercentile(0).ToString();
                 var _5 = curr.GetValueAtPercentile(5).ToString();
                 var _50 = curr.GetValueAtPercentile(50).ToString();
-                var _mean = curr.GetMean().ToString("0.00");
+                var _mean = curr.GetMean().ToString("0.00", CultureInfo.InvariantCulture);
                 var _95 = curr.GetValueAtPercentile(95).ToString();
                 var _99 = curr.GetValueAtPercentile(99).ToString();
                 var _999 = curr.GetValueAtPercentile(99.9).ToString();

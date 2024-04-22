@@ -33,7 +33,7 @@ namespace Garnet.cluster
                 if (clusterProvider.replicationManager.recovering)
                 {
                     // If we are a replica, let primary handle the request
-                    if (config.GetLocalNodeRole() == NodeRole.REPLICA)
+                    if (config.LocalNodeRole == NodeRole.REPLICA)
                         return new(SlotVerifiedState.MOVED, _slot);
                     else // Else report cluster down
                         return new(SlotVerifiedState.CLUSTERDOWN, _slot);
@@ -78,7 +78,7 @@ namespace Garnet.cluster
             var state = config.GetState(_slot);
 
             // Redirect r/w requests towards primary
-            if (config.GetLocalNodeRole() == NodeRole.REPLICA)
+            if (config.LocalNodeRole == NodeRole.REPLICA)
                 return new(SlotVerifiedState.MOVED, _slot);
 
             if (IsLocal && state == SlotState.STABLE) return new(SlotVerifiedState.OK, _slot);
