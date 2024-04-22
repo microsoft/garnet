@@ -1118,7 +1118,7 @@ namespace Tsavorite.core
 
         void IClientSession.AtomicSwitch(long version)
         {
-            store.AtomicSwitch(ctx, ctx.prevCtx, version, store._hybridLogCheckpoint.info.checkpointTokens);
+            TsavoriteKV<Key, Value>.AtomicSwitch(ctx, ctx.prevCtx, version, store._hybridLogCheckpoint.info.checkpointTokens);
         }
 
         /// <inheritdoc/>

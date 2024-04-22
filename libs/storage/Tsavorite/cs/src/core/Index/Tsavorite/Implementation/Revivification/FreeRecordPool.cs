@@ -418,7 +418,7 @@ namespace Tsavorite.core
             isEmpty = true;
         }
 
-        public void Dispose()
+        public static void Dispose()
         {
             // Currently nothing
         }
@@ -575,7 +575,7 @@ namespace Tsavorite.core
         public void Dispose()
         {
             foreach (var bin in bins)
-                bin.Dispose();
+                FreeRecordBin.Dispose();
             checkEmptyWorker.Dispose();
         }
     }
