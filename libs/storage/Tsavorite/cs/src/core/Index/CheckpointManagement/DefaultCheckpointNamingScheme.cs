@@ -51,13 +51,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public Guid Token(FileDescriptor fileDescriptor) => Guid.Parse(new DirectoryInfo(fileDescriptor.directoryName).Name);
         /// <inheritdoc />
-        public long CommitNumber(FileDescriptor fileDescriptor)
-        {
-            // $"commit.{commitNumber}"
-            var extensionDelimiterIndex = fileDescriptor.fileName.LastIndexOf('.');
-            var commitNumberExtension = fileDescriptor.fileName.AsSpan(extensionDelimiterIndex + 1);
-            return long.Parse(commitNumberExtension);
-        }
+        public long CommitNumber(FileDescriptor fileDescriptor) => long.Parse(fileDescriptor.fileName.Split('.')[^2]);
 
         /// <inheritdoc />
         public string IndexCheckpointBasePath => "index-checkpoints";
