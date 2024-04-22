@@ -215,6 +215,9 @@ dotnet_diagnostic.CA1825.severity = suggestion
 # CA1827: Do not use Count()/LongCount() when Any() can be used
 dotnet_diagnostic.CA1827.severity = suggestion
 
+# CA1829: Use Length/Count property instead of Enumerable.Count method
+dotnet_diagnostic.CA1829.severity = suggestion
+
 # Xml project files
 [*.{csproj,vbproj,vcxproj,vcxproj.filters,proj,nativeproj,locproj}]
 indent_size = 2
