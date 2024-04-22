@@ -674,7 +674,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetAdd<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetAdd<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
 
@@ -688,7 +688,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetRemove<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetRemove<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
 
@@ -701,7 +701,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetLength<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetLength<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
 
@@ -716,7 +716,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetRange<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetRange<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
 
@@ -730,7 +730,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetScore<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetScore<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
 
@@ -744,7 +744,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetScores<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetScores<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
 
@@ -758,7 +758,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetPop<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetPop<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
              where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
 
@@ -771,7 +771,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetCount<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus SortedSetCount<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => ReadObjectStoreOperation(key, input, out output, ref objectContext);
 
@@ -785,7 +785,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetRemoveRangeByLex<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus SortedSetRemoveRangeByLex<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperation(key, input, out output, ref objectContext);
 
@@ -800,7 +800,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetLengthByValue<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetLengthByValue<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
              where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
 
@@ -814,7 +814,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetIncrement<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetIncrement<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
              where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
 
@@ -829,7 +829,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetRemoveRange<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus SortedSetRemoveRange<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => RMWObjectStoreOperation(key, input, out output, ref objectContext);
 
@@ -842,7 +842,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetRank<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus SortedSetRank<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => ReadObjectStoreOperation(key, input, out output, ref objectContext);
 
@@ -855,7 +855,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetRandomMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
+        public GarnetStatus SortedSetRandomMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
             => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
 
@@ -869,7 +869,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public static GarnetStatus SortedSetScan<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+        public GarnetStatus SortedSetScan<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
          where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
            => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
     }

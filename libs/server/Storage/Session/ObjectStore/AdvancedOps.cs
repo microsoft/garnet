@@ -8,7 +8,7 @@ namespace Garnet.server
 {
     sealed partial class StorageSession : IDisposable
     {
-        public static GarnetStatus RMW_ObjectStore<TObjectContext>(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
+        public GarnetStatus RMW_ObjectStore<TObjectContext>(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             var status = objectStoreContext.RMW(ref key, ref input, ref output);
@@ -22,7 +22,7 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
         }
 
-        public static GarnetStatus Read_ObjectStore<TObjectContext>(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
+        public GarnetStatus Read_ObjectStore<TObjectContext>(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             var status = objectStoreContext.Read(ref key, ref input, ref output);

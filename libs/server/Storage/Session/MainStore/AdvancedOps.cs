@@ -59,7 +59,7 @@ namespace Garnet.server
             return ret;
         }
 
-        public static GarnetStatus RMW_MainStore<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
+        public GarnetStatus RMW_MainStore<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {
             var status = context.RMW(ref key, ref input, ref output);
@@ -73,7 +73,7 @@ namespace Garnet.server
                 return GarnetStatus.NOTFOUND;
         }
 
-        public static GarnetStatus Read_MainStore<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
+        public GarnetStatus Read_MainStore<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {
             var status = context.Read(ref key, ref input, ref output);
