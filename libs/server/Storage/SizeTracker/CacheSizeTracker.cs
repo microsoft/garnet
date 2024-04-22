@@ -16,8 +16,8 @@ namespace Garnet.server
     /// </summary>
     public class CacheSizeTracker
     {
-        internal readonly LogSizeTracker<byte[], IGarnetObject, LogSizeCalculator> mainLogTracker;
-        internal readonly LogSizeTracker<byte[], IGarnetObject, LogSizeCalculator> readCacheTracker;
+        internal readonly LogSizeTracker<byte[], IGarnetObject, ILogSizeCalculator<byte[], IGarnetObject>> mainLogTracker;
+        internal readonly LogSizeTracker<byte[], IGarnetObject, ILogSizeCalculator<byte[], IGarnetObject>> readCacheTracker;
         internal long targetSize;
 
         private const int deltaFraction = 10; // 10% of target size
@@ -61,13 +61,15 @@ namespace Garnet.server
 
             var (mainLogTargetSizeBytes, readCacheTargetSizeBytes) = CalculateLogTargetSizeBytes(targetSize);
 
-            this.mainLogTracker = new LogSizeTracker<byte[], IGarnetObject, LogSizeCalculator>(store.Log, logSizeCalculator,
+            this.mainLogTracker = new LogSizeTracker<byte[], IGarnetObject, ILogSizeCalculator<byte[], IGarnetObject>>(store.Log, logSizeCalculator,
                 mainLogTargetSizeBytes, mainLogTargetSizeBytes / deltaFraction, loggerFactory?.CreateLogger("ObjSizeTracker"));
             store.Log.SubscribeEvictions(mainLogTracker);
+            store.Log.SubscribeDeserializations(new LogOperationObserver<byte[], IGarnetObject>(mainLogTracker, LogOperationType.Deserialize));
+            store.Log.IsSizeBeyondLimit = () => mainLogTracker.IsSizeBeyondLimit;
 
             if (store.ReadCache != null)
             {
-                this.readCacheTracker = new LogSizeTracker<byte[], IGarnetObject, LogSizeCalculator>(store.ReadCache, logSizeCalculator,
+                this.readCacheTracker = new LogSizeTracker<byte[], IGarnetObject, ILogSizeCalculator<byte[], IGarnetObject>>(store.ReadCache, logSizeCalculator,
                     readCacheTargetSizeBytes, readCacheTargetSizeBytes / deltaFraction, loggerFactory?.CreateLogger("ObjReadCacheSizeTracker"));
                 store.ReadCache.SubscribeEvictions(readCacheTracker);
             }

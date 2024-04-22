@@ -867,6 +867,7 @@ namespace Tsavorite.core
 
             long streamStartPos = stream.Position;
             long start_addr = -1;
+            int start_offset = -1, end_offset = -1;
             if (KeyHasObjects())
             {
                 keySerializer = SerializerSettings.keySerializer();
@@ -882,6 +883,8 @@ namespace Tsavorite.core
             {
                 ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
                 src[ptr / RecordSize].info = record.info;
+                if (start_offset == -1) start_offset = (int)(ptr / RecordSize);
+                end_offset = (int)(ptr / RecordSize) + 1;
 
                 if (!record.info.Invalid)
                 {
@@ -929,6 +932,12 @@ namespace Tsavorite.core
             if (ValueHasObjects())
             {
                 valueSerializer.EndDeserialize();
+            }
+
+            if (OnDeserializationObserver != null && start_offset != -1 && end_offset != -1)
+            {
+                using var iter = new MemoryPageScanIterator<Key, Value>(src, start_offset, end_offset, -1, RecordSize);
+                OnDeserializationObserver.OnNext(iter);
             }
         }
 
