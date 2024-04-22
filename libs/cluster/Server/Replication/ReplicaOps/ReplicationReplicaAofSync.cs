@@ -69,7 +69,7 @@ namespace Garnet.cluster
                     if (payloadLength > 0)
                     {
                         aofProcessor.ProcessAofRecordInternal(null, ptr + entryLength, payloadLength, true);
-                        entryLength += storeWrapper.appendOnlyFile.UnsafeAlign(payloadLength);
+                        entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                     }
                     else if (payloadLength < 0)
                     {
@@ -80,7 +80,7 @@ namespace Garnet.cluster
                         TsavoriteLogRecoveryInfo info = new();
                         info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
                         storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info);
-                        entryLength += storeWrapper.appendOnlyFile.UnsafeAlign(-payloadLength);
+                        entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                     }
                     ptr += entryLength;
                     ReplicationOffset += entryLength;
@@ -111,11 +111,11 @@ namespace Garnet.cluster
             int payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
             if (payloadLength > 0)
             {
-                entryLength += storeWrapper.appendOnlyFile.UnsafeAlign(payloadLength);
+                entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
             }
             else if (payloadLength < 0)
             {
-                entryLength += storeWrapper.appendOnlyFile.UnsafeAlign(-payloadLength);
+                entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
             }
             return entryLength;
         }
