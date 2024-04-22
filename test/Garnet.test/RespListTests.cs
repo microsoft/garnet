@@ -468,7 +468,7 @@ namespace Garnet.test
             db.ListRightPush(key, "Value-three");
 
             var result = db.ListRightPopLeftPush("mylist", "myotherlist");
-            Assert.AreEqual("Value-three", result);
+            Assert.AreEqual("Value-three", result.ToString());
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
@@ -477,15 +477,15 @@ namespace Garnet.test
 
             var lrange = db.ListRange(key, 0, -1);
             Assert.AreEqual(2, lrange.Length);
-            Assert.AreEqual("Value-one", lrange[0]);
-            Assert.AreEqual("Value-two", lrange[1]);
+            Assert.AreEqual("Value-one", lrange[0].ToString());
+            Assert.AreEqual("Value-two", lrange[1].ToString());
 
             lrange = db.ListRange("myotherlist", 0, -1);
             Assert.AreEqual(1, lrange.Length);
-            Assert.AreEqual("Value-three", lrange[0]);
+            Assert.AreEqual("Value-three", lrange[0].ToString());
 
             result = db.ListRightPopLeftPush(key, key);
-            Assert.AreEqual("Value-two", result);
+            Assert.AreEqual("Value-two", result.ToString());
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
@@ -494,8 +494,8 @@ namespace Garnet.test
 
             lrange = db.ListRange(key, 0, -1);
             Assert.AreEqual(2, lrange.Length);
-            Assert.AreEqual("Value-two", lrange[0]);
-            Assert.AreEqual("Value-one", lrange[1]);
+            Assert.AreEqual("Value-two", lrange[0].ToString());
+            Assert.AreEqual("Value-one", lrange[1].ToString());
         }
 
         [Test]
