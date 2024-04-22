@@ -185,7 +185,7 @@ namespace Tsavorite.test
 
         // Tsavorite paths are too long; as a workaround (possibly temporary) remove the class name (many long test method names repeat much of the class name).
         //internal static string MethodTestDir => Path.Combine(TestContext.CurrentContext.TestDirectory, $"{ConvertedClassName()}_{TestContext.CurrentContext.Test.MethodName}");
-        internal static string MethodTestDir => Path.Combine(TestContext.CurrentContext.TestDirectory, $"Tsavorite.test/{TestContext.CurrentContext.Test.MethodName}");
+        internal static string MethodTestDir => Path.Combine(TestContext.CurrentContext.TestDirectory, "Tsavorite.test", TestContext.CurrentContext.Test.MethodName);
 
         internal static string AzureTestContainer
         {

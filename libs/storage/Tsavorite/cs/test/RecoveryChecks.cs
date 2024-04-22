@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -709,14 +710,14 @@ namespace Tsavorite.test.recovery
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactory(),
-                    new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints/"));  // PurgeAll deletes this directory
+                    new DefaultCheckpointNamingScheme(Path.Join(TestUtils.MethodTestDir, "checkpoints")));  // PurgeAll deletes this directory
             }
             else
             {
                 TestUtils.IgnoreIfNotRunningAzureTests();
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
+                    new DefaultCheckpointNamingScheme(Path.Join(TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory)));
             }
 
             await IncrSnapshotRecoveryCheck(checkpointManager);
