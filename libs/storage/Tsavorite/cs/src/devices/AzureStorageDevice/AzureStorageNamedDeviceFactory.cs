@@ -50,7 +50,7 @@ namespace Tsavorite.devices
         {
             var path = baseName.Split(Path.DirectorySeparatorChar);
             var containerName = path[0];
-            var dirName = string.Join(Path.DirectorySeparatorChar, path.Skip(1));
+            var dirName = string.Join('/', path.Skip(1));
 
             pageBlobContainer = BlobUtilsV12.GetContainerClients(pageBlobAccount, containerName);
             if (!await pageBlobContainer.WithRetries.ExistsAsync())
