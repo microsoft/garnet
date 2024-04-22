@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -710,7 +709,7 @@ namespace Tsavorite.test.recovery
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactory(),
-                    new DefaultCheckpointNamingScheme(Path.Join(TestUtils.MethodTestDir, "checkpoints")));  // PurgeAll deletes this directory
+                    new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints/"));  // PurgeAll deletes this directory
             }
             else
             {
