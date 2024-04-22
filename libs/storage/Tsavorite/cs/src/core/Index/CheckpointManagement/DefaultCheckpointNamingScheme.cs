@@ -3,7 +3,6 @@
 
 using System;
 using System.IO;
-using System.Linq;
 
 namespace Tsavorite.core
 {
@@ -52,7 +51,13 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public Guid Token(FileDescriptor fileDescriptor) => Guid.Parse(new DirectoryInfo(fileDescriptor.directoryName).Name);
         /// <inheritdoc />
-        public long CommitNumber(FileDescriptor fileDescriptor) => long.Parse(fileDescriptor.fileName.Split('.').Reverse().Take(2).Last());
+        public long CommitNumber(FileDescriptor fileDescriptor)
+        {
+            // $"commit.{commitNumber}"
+            var extensionDelimiterIndex = fileDescriptor.fileName.LastIndexOf('.');
+            var commitNumberExtension = fileDescriptor.fileName.AsSpan(extensionDelimiterIndex + 1);
+            return long.Parse(commitNumberExtension);
+        }
 
         /// <inheritdoc />
         public string IndexCheckpointBasePath => "index-checkpoints";
