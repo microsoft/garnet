@@ -141,7 +141,7 @@ namespace GarnetClusterManagement
             workers[0].hostname = null;
         }
 
-        private List<int> GetSlotSequence(List<(int, int)> slotRanges)
+        private static List<int> GetSlotSequence(List<(int, int)> slotRanges)
         {
             var slots = new List<int>();
             foreach (var slotRange in slotRanges)
@@ -266,7 +266,7 @@ namespace GarnetClusterManagement
             return result;
         }
 
-        private void PrintOrderedConfigList(List<(string, string)> orderedConfig)
+        private static void PrintOrderedConfigList(List<(string, string)> orderedConfig)
         {
             foreach (var entry in orderedConfig)
                 Console.Write(entry.Item2);

@@ -1860,7 +1860,7 @@ namespace Garnet.test
 
         #endregion
 
-        private void SendCommandWithoutKey(string command, LightClientRequest lightClientRequest)
+        private static void SendCommandWithoutKey(string command, LightClientRequest lightClientRequest)
         {
             var result = lightClientRequest.SendCommand(command);
             var expectedResponse = FormatWrongNumOfArgsError(command);
@@ -1868,7 +1868,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
         }
 
-        private void UpdateSortedSetKey(string keyName)
+        private static void UpdateSortedSetKey(string keyName)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             byte[] res = lightClientRequest.SendCommand($"ZADD {keyName} 4 d");
