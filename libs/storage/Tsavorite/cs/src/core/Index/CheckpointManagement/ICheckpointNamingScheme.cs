@@ -5,7 +5,6 @@ using System;
 
 namespace Tsavorite.core
 {
-
     /// <summary>
     /// Interface to provide paths and names for all checkpoint-related files
     /// </summary>
@@ -15,7 +14,7 @@ namespace Tsavorite.core
         /// Base (or container) name for all checkpoint files
         /// </summary>
         /// <returns></returns>
-        public string BaseName();
+        public string BaseName { get; }
 
         /// <summary>
         /// Hash table (including overflow buckets)
@@ -99,18 +98,18 @@ namespace Tsavorite.core
         /// Get base path holding index checkpoints
         /// </summary>
         /// <returns></returns>
-        string IndexCheckpointBasePath();
+        string IndexCheckpointBasePath { get; }
 
         /// <summary>
         /// Get base path holding log checkpoints
         /// </summary>
         /// <returns></returns>
-        string LogCheckpointBasePath();
+        string LogCheckpointBasePath { get; }
 
         /// <summary>
         /// Get base path holding TsavoriteLog commits
         /// </summary>
         /// <returns></returns>
-        string TsavoriteLogCommitBasePath();
+        string TsavoriteLogCommitBasePath { get; }
     }
 }
