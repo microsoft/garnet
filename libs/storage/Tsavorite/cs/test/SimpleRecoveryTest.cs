@@ -58,7 +58,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
             TestUtils.IgnoreIfNotRunningAzureTests();
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
+                new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
             checkpointManager.PurgeAll();
         }

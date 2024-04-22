@@ -717,7 +717,7 @@ namespace Tsavorite.test.recovery
                 TestUtils.IgnoreIfNotRunningAzureTests();
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                    new DefaultCheckpointNamingScheme(Path.Join(TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory)));
+                    new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             }
 
             await IncrSnapshotRecoveryCheck(checkpointManager);

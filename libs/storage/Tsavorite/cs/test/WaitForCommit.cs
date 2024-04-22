@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using System.Threading;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -20,13 +21,13 @@ namespace Tsavorite.test
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
+            path = TestUtils.MethodTestDir;
 
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(path, wait: true);
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "WaitForCommit", deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(path, "WaitForCommit"), deleteOnClose: true);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device });
         }
 

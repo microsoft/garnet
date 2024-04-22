@@ -48,7 +48,7 @@ namespace Tsavorite.devices
 
         async Task InitializeAsync(string baseName)
         {
-            var path = baseName.Split(Path.DirectorySeparatorChar);
+            var path = baseName.Split('/');
             var containerName = path[0];
             var dirName = string.Join('/', path.Skip(1));
 
