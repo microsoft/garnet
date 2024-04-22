@@ -219,7 +219,7 @@ dotnet_diagnostic.CA1827.severity = suggestion
 dotnet_diagnostic.CA1829.severity = suggestion
 
 # CA1836: Prefer IsEmpty over Count when available
-dotnet_diagnostic.CA1836.severity = warning
+dotnet_diagnostic.CA1836.severity = suggestion
 
 # Xml project files
 [*.{csproj,vbproj,vcxproj,vcxproj.filters,proj,nativeproj,locproj}]
