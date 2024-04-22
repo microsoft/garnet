@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -112,7 +113,7 @@ namespace Garnet.common
         /// <param name="result">Long value extracted from sequence</param>
         /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
         public static bool TryBytesToLong(int length, byte* source, out long result)
-                {
+        {
             var fNeg = *source == '-';
             var beg = fNeg ? source + 1 : source;
             var len = fNeg ? length - 1 : length;
@@ -127,32 +128,6 @@ namespace Garnet.common
                 return false;
 
             // Negate if parsed value has a leading negative sign
-            result = fNeg ? -result : result;
-            return true;
-        }
-            result = 0;
-
-            // Check empty value
-            if (length == 0)
-                return false;
-
-            var fNeg = *source == '-';
-            var beg = fNeg ? source + 1 : source;
-            var end = source + length;
-            var digit = *beg - '0';
-
-            // Check first digit which needs to be non-zero
-            // Skip zero value
-            if (digit is < 0 or > 9 || (digit == 0 && end - beg > 1))
-                return false;
-
-            while (beg < end)
-            {
-                digit = *beg++ - '0';
-                if (digit is < 0 or > 9)
-                    return false;
-                checked { result = (result * 10) + digit; }
-            }
             result = fNeg ? -result : result;
             return true;
         }
