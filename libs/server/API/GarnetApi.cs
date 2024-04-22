@@ -87,7 +87,7 @@ namespace Garnet.server
         #region SET
         /// <inheritdoc />
         public GarnetStatus SET(ref SpanByte key, ref SpanByte value)
-            => storageSession.SET(ref key, ref value, ref context);
+            => StorageSession.SET(ref key, ref value, ref context);
 
         /// <inheritdoc />
         public GarnetStatus SET_Conditional(ref SpanByte key, ref SpanByte input)
@@ -103,11 +103,11 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, ArgSlice value)
-            => storageSession.SET(key, value, ref context);
+            => StorageSession.SET(key, value, ref context);
 
         /// <inheritdoc />
         public GarnetStatus SET(byte[] key, IGarnetObject value)
-            => storageSession.SET(key, value, ref objectContext);
+            => StorageSession.SET(key, value, ref objectContext);
         #endregion
 
         #region SETEX
@@ -177,7 +177,7 @@ namespace Garnet.server
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <inheritdoc />
         public unsafe GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output)
-            => storageSession.Increment(key, input, ref output, ref context);
+            => StorageSession.Increment(key, input, ref output, ref context);
         #endregion
 
         #region DELETE
@@ -223,19 +223,19 @@ namespace Garnet.server
         #region Advanced ops
         /// <inheritdoc />
         public GarnetStatus RMW_MainStore(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            => storageSession.RMW_MainStore(ref key, ref input, ref output, ref context);
+            => StorageSession.RMW_MainStore(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />
         public GarnetStatus Read_MainStore(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            => storageSession.Read_MainStore(ref key, ref input, ref output, ref context);
+            => StorageSession.Read_MainStore(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />
         public GarnetStatus RMW_ObjectStore(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output)
-            => storageSession.RMW_ObjectStore(ref key, ref input, ref output, ref objectContext);
+            => StorageSession.RMW_ObjectStore(ref key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus Read_ObjectStore(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output)
-            => storageSession.Read_ObjectStore(ref key, ref input, ref output, ref objectContext);
+            => StorageSession.Read_ObjectStore(ref key, ref input, ref output, ref objectContext);
         #endregion
 
         #region Bitmap Methods
@@ -246,11 +246,11 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus StringSetBit(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-           => storageSession.StringSetBit(ref key, ref input, ref output, ref context);
+           => StorageSession.StringSetBit(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />
         public GarnetStatus StringGetBit(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            => storageSession.StringGetBit(ref key, ref input, ref output, ref context);
+            => StorageSession.StringGetBit(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />
         public GarnetStatus StringGetBit(ArgSlice key, ArgSlice offset, out bool bValue)
@@ -258,7 +258,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus StringBitCount(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            => storageSession.StringBitCount(ref key, ref input, ref output, ref context);
+            => StorageSession.StringBitCount(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />
         public GarnetStatus StringBitCount(ArgSlice key, long start, long end, out long result, bool useBitInterval = false)
@@ -274,15 +274,15 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus StringBitPosition(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            => storageSession.StringBitPosition(ref key, ref input, ref output, ref context);
+            => StorageSession.StringBitPosition(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />
         public GarnetStatus StringBitField(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output)
-            => storageSession.StringBitField(ref key, ref input, secondaryCommand, ref output, ref context);
+            => StorageSession.StringBitField(ref key, ref input, secondaryCommand, ref output, ref context);
 
         /// <inheritdoc />
         public GarnetStatus StringBitFieldReadOnly(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output)
-            => storageSession.StringBitFieldReadOnly(ref key, ref input, secondaryCommand, ref output, ref context);
+            => StorageSession.StringBitFieldReadOnly(ref key, ref input, secondaryCommand, ref output, ref context);
 
         /// <inheritdoc />
         public GarnetStatus StringBitField(ArgSlice key, List<BitFieldCmdArgs> commandArguments, out List<long?> result)
@@ -293,7 +293,7 @@ namespace Garnet.server
         #region HyperLogLog Methods
         /// <inheritdoc />
         public GarnetStatus HyperLogLogAdd(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output)
-            => storageSession.HyperLogLogAdd(ref key, ref input, ref output, ref context);
+            => StorageSession.HyperLogLogAdd(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />
         public GarnetStatus HyperLogLogAdd(ArgSlice key, string[] elements, out bool updated)
@@ -350,7 +350,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus ObjectScan(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-         => storageSession.ObjectScan(key, input, ref outputFooter, ref objectContext);
+         => StorageSession.ObjectScan(key, input, ref outputFooter, ref objectContext);
 
         #endregion
     }

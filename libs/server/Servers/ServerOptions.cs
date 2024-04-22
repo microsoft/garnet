@@ -292,7 +292,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="v"></param>
         /// <returns></returns>
-        protected long PreviousPowerOf2(long v)
+        protected static long PreviousPowerOf2(long v)
         {
             v |= v >> 1;
             v |= v >> 2;

@@ -69,7 +69,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        public GarnetStatus HyperLogLogAdd<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
+        public static GarnetStatus HyperLogLogAdd<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
           where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
             => RMW_MainStore(ref key, ref input, ref output, ref context);
 

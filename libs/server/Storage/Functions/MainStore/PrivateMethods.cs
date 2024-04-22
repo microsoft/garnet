@@ -490,7 +490,7 @@ namespace Garnet.server
         /// <summary>
         /// Copy length of value to output (as ASCII bytes)
         /// </summary>
-        void CopyValueLengthToOutput(ref SpanByte value, ref SpanByteAndMemory output)
+        static void CopyValueLengthToOutput(ref SpanByte value, ref SpanByteAndMemory output)
         {
             int numDigits = NumUtils.NumDigits(value.LengthWithoutMetadata);
             var outputPtr = output.SpanByte.ToPointer();

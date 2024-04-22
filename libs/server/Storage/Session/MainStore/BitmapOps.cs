@@ -340,23 +340,23 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus StringSetBit<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
+        public static GarnetStatus StringSetBit<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
           where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
             => RMW_MainStore(ref key, ref input, ref output, ref context);
 
-        public GarnetStatus StringGetBit<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
+        public static GarnetStatus StringGetBit<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
             => Read_MainStore(ref key, ref input, ref output, ref context);
 
-        public unsafe GarnetStatus StringBitCount<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
+        public static unsafe GarnetStatus StringBitCount<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
          where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
              => Read_MainStore(ref key, ref input, ref output, ref context);
 
-        public unsafe GarnetStatus StringBitPosition<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
+        public static unsafe GarnetStatus StringBitPosition<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
              => Read_MainStore(ref key, ref input, ref output, ref context);
 
-        public unsafe GarnetStatus StringBitField<TContext>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output, ref TContext context)
+        public static unsafe GarnetStatus StringBitField<TContext>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {
             GarnetStatus status;
@@ -367,7 +367,7 @@ namespace Garnet.server
             return status;
         }
 
-        public unsafe GarnetStatus StringBitFieldReadOnly<TContext>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output, ref TContext context)
+        public static unsafe GarnetStatus StringBitFieldReadOnly<TContext>(ref SpanByte key, ref SpanByte input, byte secondaryCommand, ref SpanByteAndMemory output, ref TContext context)
               where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {
             GarnetStatus status = GarnetStatus.NOTFOUND;

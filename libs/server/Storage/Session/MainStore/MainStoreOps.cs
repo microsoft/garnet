@@ -289,7 +289,7 @@ namespace Garnet.server
             return GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus SET<TContext>(ref SpanByte key, ref SpanByte value, ref TContext context)
+        public static GarnetStatus SET<TContext>(ref SpanByte key, ref SpanByte value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {
             context.Upsert(ref key, ref value);
@@ -347,7 +347,7 @@ namespace Garnet.server
             }
         }
 
-        public GarnetStatus SET<TContext>(ArgSlice key, ArgSlice value, ref TContext context)
+        public static GarnetStatus SET<TContext>(ArgSlice key, ArgSlice value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {
             var _key = key.SpanByte;
@@ -355,7 +355,7 @@ namespace Garnet.server
             return SET(ref _key, ref _value, ref context);
         }
 
-        public GarnetStatus SET<TObjectContext>(byte[] key, IGarnetObject value, ref TObjectContext objectContext)
+        public static GarnetStatus SET<TObjectContext>(byte[] key, IGarnetObject value, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             objectContext.Upsert(key, value);
@@ -819,7 +819,7 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus Increment<TContext>(ArgSlice key, ArgSlice input, ref ArgSlice output, ref TContext context)
+        public static GarnetStatus Increment<TContext>(ArgSlice key, ArgSlice input, ref ArgSlice output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {
             var _key = key.SpanByte;
@@ -848,7 +848,7 @@ namespace Garnet.server
             }
         }
 
-        public unsafe GarnetStatus SCAN<TContext>(long cursor, ArgSlice match, long count, ref TContext context)
+        public static unsafe GarnetStatus SCAN<TContext>(long cursor, ArgSlice match, long count, ref TContext context)
         {
             return GarnetStatus.OK;
         }

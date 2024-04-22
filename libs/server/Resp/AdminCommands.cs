@@ -621,7 +621,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkMONITOR(int count, byte* ptr)
+        private static bool NetworkMONITOR(int count, byte* ptr)
         {
             //todo:Not supported yet.
             return true;
