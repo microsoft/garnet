@@ -207,6 +207,9 @@ dotnet_diagnostic.CA1852.severity = suggestion
 # CA1813: Avoid unsealed attributes
 dotnet_diagnostic.CA1813.severity = suggestion
 
+# CA1825: Avoid zero-length array allocations
+dotnet_diagnostic.CA1825.severity = suggestion
+
 # Xml project files
 [*.{csproj,vbproj,vcxproj,vcxproj.filters,proj,nativeproj,locproj}]
 indent_size = 2

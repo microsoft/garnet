@@ -313,7 +313,7 @@ namespace Garnet.test
 
             try
             {
-                db.SetCombine(SetOperation.Union, new RedisKey[] { });
+                db.SetCombine(SetOperation.Union, []);
                 Assert.Fail();
             }
             catch (RedisServerException e)
