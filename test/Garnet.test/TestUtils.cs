@@ -36,8 +36,6 @@ namespace Garnet.test
         /// </summary>
         public static int Port = 33278;
 
-        private static int procId = Process.GetCurrentProcess().Id;
-
         internal static string AzureTestContainer
         {
             get
@@ -571,7 +569,7 @@ namespace Garnet.test
         internal static string UnitTestWorkingDir(string category = null, bool includeGuid = false)
         {
             // Include process id to avoid conflicts between parallel test runs
-            var testPath = $"{procId}_{TestContext.CurrentContext.Test.ClassName}_{TestContext.CurrentContext.Test.MethodName}";
+            var testPath = $"{Environment.ProcessId}_{TestContext.CurrentContext.Test.ClassName}_{TestContext.CurrentContext.Test.MethodName}";
             var rootPath = Path.Combine(RootTestsProjectPath, ".tmp", testPath);
 
             if (category != null)

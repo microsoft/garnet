@@ -207,6 +207,9 @@ dotnet_diagnostic.CA1852.severity = suggestion
 # CA1813: Avoid unsealed attributes
 dotnet_diagnostic.CA1813.severity = suggestion
 
+# CA1837: Use Environment.ProcessId instead of Process.GetCurrentProcess().Id
+dotnet_diagnostic.CA1837.severity = suggestion
+
 # Xml project files
 [*.{csproj,vbproj,vcxproj,vcxproj.filters,proj,nativeproj,locproj}]
 indent_size = 2
