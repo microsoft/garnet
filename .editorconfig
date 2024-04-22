@@ -210,6 +210,9 @@ dotnet_diagnostic.CA1813.severity = suggestion
 # CA1837: Use Environment.ProcessId instead of Process.GetCurrentProcess().Id
 dotnet_diagnostic.CA1837.severity = suggestion
 
+# CA1840: Use Environment.CurrentManagedThreadId instead of Thread.CurrentThread.ManagedThreadId
+dotnet_diagnostic.CA1840.severity = suggestion
+
 # Xml project files
 [*.{csproj,vbproj,vcxproj,vcxproj.filters,proj,nativeproj,locproj}]
 indent_size = 2
