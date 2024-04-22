@@ -57,7 +57,7 @@ namespace Garnet.cluster
                 {
                     var current = currentConfig;
 
-                    if (current.GetLocalNodeId().Equals(nodeid))
+                    if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MYSELF;
                         return false;
@@ -69,7 +69,7 @@ namespace Garnet.cluster
                         return false;
                     }
 
-                    if (current.GetLocalNodeRole() == NodeRole.REPLICA && current.GetLocalNodePrimaryId().Equals(nodeid))
+                    if (current.LocalNodeRole == NodeRole.REPLICA && current.LocalNodePrimaryId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MY_PRIMARY;
                         return false;
@@ -106,13 +106,13 @@ namespace Garnet.cluster
                 while (true)
                 {
                     var current = currentConfig;
-                    var newNodeId = soft ? current.GetLocalNodeId() : Generator.CreateHexId();
-                    var address = current.GetLocalNodeIp();
-                    var port = current.GetLocalNodePort();
+                    var newNodeId = soft ? current.LocalNodeId : Generator.CreateHexId();
+                    var address = current.LocalNodeIp;
+                    var port = current.LocalNodePort;
 
-                    var configEpoch = soft ? current.GetLocalNodeConfigEpoch() : 0;
-                    var currentConfigEpoch = soft ? current.GetLocalNodeCurrentConfigEpoch() : 0;
-                    var lastVotedConfigEpoch = soft ? current.GetLocalNodeLastVotedEpoch() : 0;
+                    var configEpoch = soft ? current.LocalNodeConfigEpoch : 0;
+                    var currentConfigEpoch = soft ? current.LocalNodeCurrentConfigEpoch : 0;
+                    var lastVotedConfigEpoch = soft ? current.LocalNodeLastVotedEpoch : 0;
 
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
                     foreach (var nodeId in current.GetRemoteNodeIds())
@@ -154,17 +154,17 @@ namespace Garnet.cluster
             while (true)
             {
                 var current = CurrentConfig;
-                if (current.GetLocalNodeId().Equals(nodeid))
+                if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_REPLICATE_SELF;
                     logger?.LogError(Encoding.ASCII.GetString(errorMessage));
                     return false;
                 }
 
-                if (!force && current.GetLocalNodeRole() != NodeRole.PRIMARY)
+                if (!force && current.LocalNodeRole != NodeRole.PRIMARY)
                 {
-                    logger?.LogError("ERR I am already replica of {localNodePrimaryId}", current.GetLocalNodePrimaryId());
-                    errorMessage = Encoding.ASCII.GetBytes($"ERR I am already replica of {current.GetLocalNodePrimaryId()}.");
+                    logger?.LogError("ERR I am already replica of {localNodePrimaryId}", current.LocalNodePrimaryId);
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR I am already replica of {current.LocalNodePrimaryId}.");
                     return false;
                 }
 

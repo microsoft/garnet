@@ -66,12 +66,12 @@ namespace Garnet.cluster
                 var config = ClusterUtils.ReadDevice(clusterConfigDevice, pool, logger);
                 currentConfig = ClusterConfig.FromByteArray(config);
                 // Used to update endpoint if it change when running inside a container.
-                if (address != currentConfig.GetLocalNodeIp() || opts.Port != currentConfig.GetLocalNodePort())
+                if (address != currentConfig.LocalNodeIp || opts.Port != currentConfig.LocalNodePort)
                 {
                     logger?.LogInformation(
                         "Updating local Endpoint: From {currentConfig.GetLocalNodeIp()}:{currentConfig.GetLocalNodePort()} to {address}:{opts.Port}",
-                        currentConfig.GetLocalNodeIp(),
-                        currentConfig.GetLocalNodePort(),
+                        currentConfig.LocalNodeIp,
+                        currentConfig.LocalNodePort,
                         address,
                         opts.Port);
                 }
@@ -142,14 +142,14 @@ namespace Garnet.cluster
             {
                 var conf = currentConfig;
                 TryInitializeLocalWorker(
-                    conf.GetLocalNodeId(),
+                    conf.LocalNodeId,
                     address,
                     port,
-                    configEpoch: conf.GetLocalNodeConfigEpoch(),
-                    currentConfigEpoch: conf.GetLocalNodeCurrentConfigEpoch(),
-                    lastVotedConfigEpoch: conf.GetLocalNodeLastVotedEpoch(),
-                    role: conf.GetLocalNodeRole(),
-                    replicaOfNodeId: conf.GetLocalNodePrimaryId(),
+                    configEpoch: conf.LocalNodeConfigEpoch,
+                    currentConfigEpoch: conf.LocalNodeCurrentConfigEpoch,
+                    lastVotedConfigEpoch: conf.LocalNodeLastVotedEpoch,
+                    role: conf.LocalNodeRole,
+                    replicaOfNodeId: conf.LocalNodePrimaryId,
                     hostname: Format.GetHostName());
             }
             else
@@ -179,7 +179,7 @@ namespace Garnet.cluster
                 $"cluster_known_nodes:{current.NumWorkers}\r\n" +
                 $"cluster_size:{current.GetPrimaryCount()}\r\n" +
                 $"cluster_current_epoch:{current.GetMaxConfigEpoch()}\r\n" +
-                $"cluster_my_epoch:{current.GetLocalNodeConfigEpoch()}\r\n" +
+                $"cluster_my_epoch:{current.LocalNodeConfigEpoch}\r\n" +
                 $"cluster_stats_messages_sent:0\r\n" +
                 $"cluster_stats_messages_received:0\r\n";
             return ClusterInfo;
@@ -342,17 +342,17 @@ namespace Garnet.cluster
                 var current = currentConfig;
 
                 //If I am not a primary or I do not have any assigned slots cannot vote
-                var role = current.GetLocalNodeRole();
+                var role = current.LocalNodeRole;
                 if (role != NodeRole.PRIMARY || current.HasAssignedSlots(1))
                     return false;
 
                 //if I already voted for this epoch return
-                if (current.GetLocalNodeLastVotedEpoch() == requestedEpoch)
+                if (current.LocalNodeLastVotedEpoch == requestedEpoch)
                     return false;
 
                 //Requesting node has to be a known replica node
                 var requestingNodeWorker = current.GetWorkerFromNodeId(requestingNodeId);
-                if (requestingNodeWorker.role == NodeRole.UNASSIGNED)
+                if (requestingNodeWorker.Role == NodeRole.UNASSIGNED)
                     return false;
 
                 //Check if configEpoch for claimed slots is lower than the config of the requested epoch.
