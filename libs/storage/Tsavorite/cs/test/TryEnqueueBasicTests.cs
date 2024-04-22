@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 
@@ -15,7 +16,6 @@ namespace Tsavorite.test
     {
         private TsavoriteLog log;
         private IDevice device;
-        private string path;
         static readonly byte[] entry = new byte[100];
 
         public enum TryEnqueueIteratorType
@@ -36,10 +36,8 @@ namespace Tsavorite.test
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }
 
         [TearDown]
@@ -51,7 +49,7 @@ namespace Tsavorite.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
 
@@ -65,9 +63,9 @@ namespace Tsavorite.test
             int entryFlag = 9999;
 
             // Create devices \ log for test
-            string filename = path + "TryEnqueue" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "TryEnqueue" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
 
 #if WINDOWS
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing

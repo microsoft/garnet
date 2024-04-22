@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -55,7 +56,7 @@ namespace Tsavorite.test.ReadCacheTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
-            log = Devices.CreateLogDevice(MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "NativeReadCacheTests.log"), deleteOnClose: true);
 
             var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -651,7 +652,7 @@ namespace Tsavorite.test.ReadCacheTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
 
-            string filename = MethodTestDir + $"/{GetType().Name}.log";
+            string filename = Path.Join(MethodTestDir, $"{GetType().Name}.log");
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is DeviceType deviceType)
@@ -865,7 +866,7 @@ namespace Tsavorite.test.ReadCacheTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
 
-            string filename = MethodTestDir + $"/{GetType().Name}.log";
+            string filename = Path.Join(MethodTestDir, $"{GetType().Name}.log");
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is DeviceType deviceType)

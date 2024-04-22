@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -62,7 +63,7 @@ namespace Tsavorite.test.ReadCacheTests
             DeleteDirectory(MethodTestDir, wait: true);
 
             ReadCacheSettings readCacheSettings = default;
-            string filename = MethodTestDir + "/BasicTests.log";
+            string filename = Path.Join(MethodTestDir, "BasicTests.log");
 
             var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)

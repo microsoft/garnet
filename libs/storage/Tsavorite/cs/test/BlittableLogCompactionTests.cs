@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -37,7 +38,7 @@ namespace Tsavorite.test
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(MethodTestDir + "/BlittableLogCompactionTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "BlittableLogCompactionTests.log"), deleteOnClose: true);
 
             var concurrencyControlMode = ConcurrencyControlMode.LockTable;
             var hashMod = HashModulo.NoMod;

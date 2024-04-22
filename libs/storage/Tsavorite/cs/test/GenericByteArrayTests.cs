@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Linq;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -20,8 +21,8 @@ namespace Tsavorite.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/GenericStringTests.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "GenericStringTests.obj.log"), deleteOnClose: true);
 
             store = new TsavoriteKV<byte[], byte[]>(
                     1L << 20, // size of hash table in #cache lines; 64 bytes per cache line
