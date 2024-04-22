@@ -14,7 +14,12 @@ namespace Garnet.server
         /// <returns>Whether match was found</returns>
         public static unsafe bool Match(byte* pattern, int patternLen, byte* key, int stringLen, bool ignoreCase = false)
         {
-            static byte ToLowerAscii(byte value) => (byte)(value | 0x20);
+            static byte ToLowerAscii(byte value)
+            {
+                if ((value - 'A') <= ('Z' - 'A')) // Is in [A-Z]
+                    value = (byte)(value | 0x20);
+                return value;
+            }
 
             while (patternLen > 0 && stringLen > 0)
             {
