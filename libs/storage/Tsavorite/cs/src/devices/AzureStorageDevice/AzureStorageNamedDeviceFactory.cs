@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -47,9 +48,9 @@ namespace Tsavorite.devices
 
         async Task InitializeAsync(string baseName)
         {
-            var path = baseName.Split('/');
+            var path = baseName.Split(Path.DirectorySeparatorChar);
             var containerName = path[0];
-            var dirName = string.Join("/", path.Skip(1));
+            var dirName = string.Join(Path.DirectorySeparatorChar, path.Skip(1));
 
             pageBlobContainer = BlobUtilsV12.GetContainerClients(pageBlobAccount, containerName);
             if (!await pageBlobContainer.WithRetries.ExistsAsync())
