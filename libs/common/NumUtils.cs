@@ -112,7 +112,24 @@ namespace Garnet.common
         /// <param name="result">Long value extracted from sequence</param>
         /// <returns>True if sequence contains only numeric digits, otherwise false</returns>
         public static bool TryBytesToLong(int length, byte* source, out long result)
-        {
+                {
+            var fNeg = *source == '-';
+            var beg = fNeg ? source + 1 : source;
+            var len = fNeg ? length - 1 : length;
+            result = 0;
+
+            // Do not allow leading zeros
+            if (len > 1 && *beg == '0')
+                return false;
+
+            // Parse number and check consumed bytes to avoid alphanumeric strings
+            if (!Utf8Parser.TryParse(new Span<byte>(beg, len), out result, out var bytesConsumed) || bytesConsumed != len)
+                return false;
+
+            // Negate if parsed value has a leading negative sign
+            result = fNeg ? -result : result;
+            return true;
+        }
             result = 0;
 
             // Check empty value
