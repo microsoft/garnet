@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -104,7 +106,7 @@ namespace Garnet.server
         {
             sremCount = 0;
 
-            if (key.Length == 0 || member.Length == 0)
+            if (key.Length == 0)
                 return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
@@ -362,6 +364,116 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Moves a member from a source set to a destination set.
+        /// If the move was performed, this command returns 1.
+        /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
+        /// </summary>
+        /// <param name="sourceKey"></param>
+        /// <param name="destinationKey"></param>
+        /// <param name="member"></param>
+        /// <param name="smoveResult"></param>
+        internal unsafe GarnetStatus SetMove(ArgSlice sourceKey, ArgSlice destinationKey, ArgSlice member, out int smoveResult)
+        {
+            smoveResult = 0;
+
+            if (sourceKey.Length == 0 || destinationKey.Length == 0)
+                return GarnetStatus.OK;
+
+            // If the keys are the same, no operation is performed.
+            var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
+            if (sameKey)
+            {
+                return GarnetStatus.OK;
+            }
+
+            bool createTransaction = false;
+            if (txnManager.state != TxnState.Running)
+            {
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
+                txnManager.Run(true);
+            }
+
+            var objectLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var sremStatus = SetRemove(sourceKey, member, out var sremOps, ref objectLockableContext);
+
+                if (sremStatus == GarnetStatus.NOTFOUND)
+                {
+                    return GarnetStatus.NOTFOUND;
+                }
+
+                if (sremOps != 1)
+                {
+                    return GarnetStatus.OK;
+                }
+
+                SetAdd(destinationKey, member, out smoveResult, ref objectLockableContext);
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// Returns the members of the set resulting from the union of all the given sets.
+        /// Keys that do not exist are considered to be empty sets.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="output"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <returns></returns>
+        public GarnetStatus SetUnion<TObjectContext>(ArgSlice[] keys, out HashSet<byte[]> output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            output = new HashSet<byte[]>(new ByteArrayComparer());
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                foreach (var key in keys)
+                {
+                    if (GET(key.ToArray(), out var currObject, ref setObjectStoreLockableContext) == GarnetStatus.OK)
+                    {
+                        var currSet = ((SetObject)currObject.garnetObject).Set;
+                        output.UnionWith(currSet);
+                    }
+                }
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
         ///  Adds the specified members to the set at key.
         ///  Specified members that are already a member of this set are ignored. 
         ///  If key does not exist, a new set is created.
@@ -458,6 +570,138 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetRandomMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+
+        /// <summary>
+        /// Returns the members of the set resulting from the difference between the first set at key and all the successive sets at keys.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="members"></param>
+        /// <returns></returns>
+        public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)
+        {
+            members = default;
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                members = SetDiff(keys, ref setObjectStoreLockableContext);
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// This command is equal to SDIFF, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
+        /// </summary>
+        /// <param name="key">destination</param>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys, out int count)
+        {
+            count = default;
+
+            if (key.Length == 0 || keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var destination = scratchBufferManager.CreateArgSlice(key);
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destination, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var diffSet = SetDiff(keys, ref setObjectStoreLockableContext);
+
+                var newSetObject = new SetObject();
+                foreach (var item in diffSet)
+                {
+                    _ = newSetObject.Set.Add(item);
+                    newSetObject.UpdateSize(item);
+                }
+                _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                count = diffSet.Count;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        private HashSet<byte[]> SetDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            var result = new HashSet<byte[]>();
+            if (keys.Length == 0)
+            {
+                return result;
+            }
+
+            // first SetObject
+            var status = GET(keys[0].ToArray(), out var first, ref objectContext);
+            if (status == GarnetStatus.OK)
+            {
+                if (first.garnetObject is SetObject firstObject)
+                {
+                    result = new HashSet<byte[]>(firstObject.Set, new ByteArrayComparer());
+                }
+            }
+            else
+            {
+                return result;
+            }
+
+            // after SetObjects
+            for (var i = 1; i < keys.Length; i++)
+            {
+                status = GET(keys[i].ToArray(), out var next, ref objectContext);
+                if (status == GarnetStatus.OK)
+                {
+                    if (next.garnetObject is SetObject nextObject)
+                    {
+                        result.ExceptWith(nextObject.Set);
+                    }
+                }
+            }
+
+            return result;
+        }
     }
 }

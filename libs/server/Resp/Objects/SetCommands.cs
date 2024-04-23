@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -91,6 +92,58 @@ namespace Garnet.server
             }
 
             setItemsDoneCount = setOpsCount = 0;
+            return true;
+        }
+
+        /// <summary>
+        /// Returns the members of the set resulting from the union of all the given sets.
+        /// Keys that do not exist are considered to be empty sets.
+        /// </summary>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <returns></returns>
+        private bool SetUnion<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count < 1)
+            {
+                return AbortWithWrongNumberOfArguments("SUNION", count);
+            }
+
+            // Read all the keys
+            ArgSlice[] keys = new ArgSlice[count];
+
+            for (int i = 0; i < keys.Length; i++)
+            {
+                keys[i] = default;
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+
+            if (NetworkKeyArraySlotVerify(ref keys, true))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count)) return false;
+                return true;
+            }
+
+            storageApi.SetUnion(keys, out var result);
+
+            // write the size of result
+            var resultCount = result.Count;
+            while (!RespWriteUtils.WriteArrayLength(resultCount, ref dcurr, dend))
+                SendAndReset();
+
+            foreach (var item in result)
+            {
+                while (!RespWriteUtils.WriteBulkString(item, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            // update read pointers
+            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 
@@ -433,7 +486,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Set;
             inputPtr->header.SetOp = SetOperation.SPOP;
-            inputPtr->count = Int32.MinValue;
+            inputPtr->count = int.MinValue;
 
             int countParameter = 0;
             if (count == 2)
@@ -443,8 +496,9 @@ namespace Garnet.server
                     return false;
 
                 // Prepare response
-                var canParse = Int32.TryParse(Encoding.ASCII.GetString(countParameterByteArray), out countParameter);
-                if (!canParse || countParameter < 0)
+                if (!Utf8Parser.TryParse(countParameterByteArray, out countParameter, out var bytesConsumed, default) ||
+                    bytesConsumed != countParameterByteArray.Length ||
+                    countParameter < 0)
                 {
                     while (!RespWriteUtils.WriteError("ERR value is not an integer or out of range"u8, ref dcurr, dend))
                         SendAndReset();
@@ -495,6 +549,71 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
                     break;
+            }
+
+            // Reset session counters
+            setItemsDoneCount = setOpsCount = 0;
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        /// <summary>
+        /// Moves a member from a source set to a destination set.
+        /// If the move was performed, this command returns 1.
+        /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private unsafe bool SetMove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count != 3)
+            {
+                setItemsDoneCount = setOpsCount = 0;
+                return AbortWithWrongNumberOfArguments("SMOVE", count);
+            }
+
+            ArgSlice sourceKey = default;
+            ArgSlice destinationKey = default;
+            ArgSlice sourceMember = default;
+
+            // Get the source key 
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceKey.ptr, ref sourceKey.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            // Get the destination key
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref destinationKey.ptr, ref destinationKey.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            // Get the member to move
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref sourceMember.ptr, ref sourceMember.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            var keys = new ArgSlice[2] { sourceKey, destinationKey };
+
+            if (NetworkKeyArraySlotVerify(ref keys, false))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count)) return false;
+                return true;
+            }
+
+            var status = storageApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
+
+            if (status == GarnetStatus.NOTFOUND)
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
+                    SendAndReset();
             }
 
             // Reset session counters
@@ -620,6 +739,113 @@ namespace Garnet.server
 
             // Move input head
             readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        /// <summary>
+        /// Returns the members of the set resulting from the difference between the first set and all the successive sets.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private bool SetDiff<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count < 1)
+            {
+                return AbortWithWrongNumberOfArguments("SDIFF", count);
+            }
+
+            var keys = new ArgSlice[count];
+            for (var i = 0; i < count; i++)
+            {
+                keys[i] = default;
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+
+            if (NetworkKeyArraySlotVerify(ref keys, true))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count)) return false;
+                return true;
+            }
+
+            var status = storageApi.SetDiff(keys, out var output);
+
+            if (status == GarnetStatus.OK)
+            {
+                if (output == null || output.Count == 0)
+                {
+                    while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteArrayLength(output.Count, ref dcurr, dend))
+                        SendAndReset();
+                    foreach (var item in output)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(item, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                }
+            }
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+
+            return true;
+        }
+
+        private bool SetDiffStore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count < 2)
+            {
+                return AbortWithWrongNumberOfArguments("SDIFFSTORE", count);
+            }
+
+            // Get the key
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, false))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+                return true;
+            }
+
+            var keys = new ArgSlice[count - 1];
+            for (var i = 0; i < count - 1; i++)
+            {
+                keys[i] = default;
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+
+            if (NetworkKeyArraySlotVerify(ref keys, true))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count)) return false;
+                return true;
+            }
+
+            var status = storageApi.SetDiffStore(key, keys, out var output);
+
+            if (status == GarnetStatus.OK)
+            {
+                while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+
             return true;
         }
     }

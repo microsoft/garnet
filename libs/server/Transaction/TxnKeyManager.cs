@@ -48,7 +48,7 @@ namespace Garnet.server
                 RespCommand.SortedSet => SortedSetObjectKeys(subCommand, inputCount),
                 RespCommand.List => ListObjectKeys(subCommand),
                 RespCommand.Hash => HashObjectKeys(subCommand),
-                RespCommand.Set => SetObjectKeys(subCommand),
+                RespCommand.Set => SetObjectKeys(subCommand, inputCount),
                 RespCommand.GET => SingleKey(1, false, LockType.Shared),
                 RespCommand.SET => SingleKey(1, false, LockType.Exclusive),
                 RespCommand.GETRANGE => SingleKey(1, false, LockType.Shared),
@@ -172,7 +172,7 @@ namespace Garnet.server
             };
         }
 
-        private int SetObjectKeys(byte subCommand)
+        private int SetObjectKeys(byte subCommand, int inputCount)
         {
             return subCommand switch
             {
@@ -180,9 +180,13 @@ namespace Garnet.server
                 (byte)SetOperation.SMEMBERS => SingleKey(1, true, LockType.Shared),
                 (byte)SetOperation.SREM => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SCARD => SingleKey(1, true, LockType.Exclusive),
-                (byte)SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Exclusive),
+                (byte)SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Shared),
                 (byte)SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
+                (byte)SetOperation.SUNION => ListKeys(inputCount, true, LockType.Shared),
+                (byte)SetOperation.SDIFF => ListKeys(inputCount, true, LockType.Shared),
+                (byte)SetOperation.SDIFFSTORE => XSTOREKeys(inputCount, true),
+                (byte)SetOperation.SMOVE => ListKeys(inputCount, true, LockType.Exclusive),
                 _ => -1
             };
         }
@@ -234,6 +238,31 @@ namespace Garnet.server
                 SaveKeyEntryToLock(key, isObject, type);
                 SaveKeyArgSlice(key);
             }
+            return inputCount;
+        }
+
+        /// <summary>
+        /// Returns a list of keys for *STORE commands (e.g. SUNIONSTORE, ZINTERSTORE etc.)
+        /// Where the first key's value is written to and the rest of the keys' values are read from.
+        /// </summary>
+        private int XSTOREKeys(int inputCount, bool isObject)
+        {
+            if (inputCount > 0)
+            {
+                var key = respSession.GetCommandAsArgSlice(out var success);
+                if (!success) return -2;
+                SaveKeyEntryToLock(key, isObject, LockType.Exclusive);
+                SaveKeyArgSlice(key);
+            }
+
+            for (var i = 1; i < inputCount; i++)
+            {
+                var key = respSession.GetCommandAsArgSlice(out var success);
+                if (!success) return -2;
+                SaveKeyEntryToLock(key, isObject, LockType.Shared);
+                SaveKeyArgSlice(key);
+            }
+
             return inputCount;
         }
     }

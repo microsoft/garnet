@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -345,7 +347,7 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var incrementBytes = Encoding.ASCII.GetBytes(increment.ToString());
+            var incrementBytes = Encoding.ASCII.GetBytes(increment.ToString(CultureInfo.InvariantCulture));
 
             fixed (byte* ptr = incrementBytes)
             {
@@ -370,7 +372,7 @@ namespace Garnet.server
                     if (error == default)
                     {
                         // get the new score
-                        double.TryParse(Encoding.ASCII.GetString(result?[0].ToArray()), out newScore);
+                        _ = Utf8Parser.TryParse(result[0].ReadOnlySpan, out newScore, out _, default);
                     }
                 }
             }

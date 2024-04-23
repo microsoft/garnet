@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -272,7 +271,7 @@ namespace Garnet.server
             {
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var offsetType, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                bitOffsetType = offsetType.ToUpper().Equals("BIT") ? (byte)0x1 : (byte)0x0;
+                bitOffsetType = offsetType.Equals("BIT", StringComparison.OrdinalIgnoreCase) ? (byte)0x1 : (byte)0x0;
             }
 
             readHead = (int)(ptr - recvBufferPtr);
@@ -373,7 +372,7 @@ namespace Garnet.server
             {
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var offsetType, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                bitOffsetType = offsetType.ToUpper().Equals("BIT") ? (byte)0x1 : (byte)0x0;
+                bitOffsetType = offsetType.Equals("BIT", StringComparison.OrdinalIgnoreCase) ? (byte)0x1 : (byte)0x0;
             }
 
             readHead = (int)(ptr - recvBufferPtr);
@@ -498,16 +497,16 @@ namespace Garnet.server
                     return false;
 
                 //process overflow command
-                if (command.ToUpper().Equals("OVERFLOW"))
+                if (command.Equals("OVERFLOW", StringComparison.OrdinalIgnoreCase))
                 {
                     //Get overflow parameter
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var overflowArg, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    if (overflowArg.ToUpper().Equals("WRAP"))
+                    if (overflowArg.Equals("WRAP", StringComparison.OrdinalIgnoreCase))
                         overFlowType = (byte)BitFieldOverflow.WRAP;
-                    else if (overflowArg.ToUpper().Equals("SAT"))
+                    else if (overflowArg.Equals("SAT", StringComparison.OrdinalIgnoreCase))
                         overFlowType = (byte)BitFieldOverflow.SAT;
-                    else if (overflowArg.ToUpper().Equals("FAIL"))
+                    else if (overflowArg.Equals("FAIL", StringComparison.OrdinalIgnoreCase))
                         overFlowType = (byte)BitFieldOverflow.FAIL;
                     //At this point processed two arguments
                     else
@@ -530,7 +529,7 @@ namespace Garnet.server
                         return false;
 
                     //Subcommand takes 2 args, encoding and offset
-                    if (command.ToUpper().Equals("GET"))
+                    if (command.Equals("GET", StringComparison.OrdinalIgnoreCase))
                     {
                         secondaryOPcode = (byte)RespCommand.GET;
                         currCount += 3;// Skip 3 args including subcommand
@@ -538,9 +537,9 @@ namespace Garnet.server
                     else
                     {
                         //SET and INCRBY take 3 args, encoding, offset, and valueArg
-                        if (command.ToUpper().Equals("SET"))
+                        if (command.Equals("SET", StringComparison.OrdinalIgnoreCase))
                             secondaryOPcode = (byte)RespCommand.SET;
-                        else if (command.ToUpper().Equals("INCRBY"))
+                        else if (command.Equals("INCRBY", StringComparison.OrdinalIgnoreCase))
                             secondaryOPcode = (byte)RespCommand.INCRBY;
                         else
                         {
@@ -552,20 +551,20 @@ namespace Garnet.server
                         if (!RespReadUtils.ReadStringWithLengthHeader(out var valueArg, ref ptr, recvBufferPtr + bytesRead))
                             return false;
 
-                        value = Int64.Parse(valueArg);
+                        value = long.Parse(valueArg);
                         currCount += 4;// Skip 4 args including subcommand
                     }
 
                     //Identify sign for number
-                    byte sign = encodingArg.StartsWith("i") ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+                    byte sign = encodingArg.StartsWith("i", StringComparison.OrdinalIgnoreCase) ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
                     //Number of bits in signed number
-                    byte bitCount = (byte)Int32.Parse(encodingArg.Substring(1));
-                    //At most 64 bits can fit into enconding info
+                    byte bitCount = (byte)int.Parse(encodingArg.AsSpan(1));
+                    //At most 64 bits can fit into encoding info
                     encodingInfo = (byte)(sign | bitCount);
 
                     //Calculate number offset from bitCount if offsetArg starts with #
-                    bool offsetType = offsetArg.StartsWith("#");
-                    offset = offsetType ? Int64.Parse(offsetArg.Substring(1)) : Int64.Parse(offsetArg);
+                    bool offsetType = offsetArg.StartsWith("#", StringComparison.Ordinal);
+                    offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg);
                     offset = offsetType ? (offset * bitCount) : offset;
                 }
 
@@ -692,16 +691,16 @@ namespace Garnet.server
                     return false;
 
                 //Process overflow subcommand
-                if (command.ToUpper().Equals("OVERFLOW"))
+                if (command.Equals("OVERFLOW", StringComparison.OrdinalIgnoreCase))
                 {
                     //Get overflow parameter
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var overflowArg, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    if (overflowArg.ToUpper().Equals("WRAP"))
+                    if (overflowArg.Equals("WRAP", StringComparison.OrdinalIgnoreCase))
                         overFlowType = (byte)BitFieldOverflow.WRAP;
-                    else if (overflowArg.ToUpper().Equals("SAT"))
+                    else if (overflowArg.Equals("SAT", StringComparison.OrdinalIgnoreCase))
                         overFlowType = (byte)BitFieldOverflow.SAT;
-                    else if (overflowArg.ToUpper().Equals("FAIL"))
+                    else if (overflowArg.Equals("FAIL", StringComparison.OrdinalIgnoreCase))
                         overFlowType = (byte)BitFieldOverflow.FAIL;
                     else
                     {
@@ -724,7 +723,7 @@ namespace Garnet.server
                         return false;
 
                     //Subcommand takes 2 args, encoding and offset
-                    if (command.ToUpper().Equals("GET"))
+                    if (command.Equals("GET", StringComparison.OrdinalIgnoreCase))
                     {
                         secondaryOPcode = (byte)RespCommand.GET;
                         currCount += 3;// Skip 3 args including subcommand
@@ -741,14 +740,14 @@ namespace Garnet.server
                     }
 
                     //Identify sign for number
-                    byte sign = encoding.StartsWith("i") ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
+                    byte sign = encoding.StartsWith("i", StringComparison.OrdinalIgnoreCase) ? (byte)BitFieldSign.SIGNED : (byte)BitFieldSign.UNSIGNED;
                     //Number of bits in signed number
-                    byte bitCount = (byte)Int32.Parse(encoding.Substring(1));
+                    byte bitCount = (byte)int.Parse(encoding.AsSpan(1));
                     encodingInfo = (byte)(sign | bitCount);
 
                     //Calculate number offset from bitCount if offsetArg starts with #
-                    bool offsetType = offsetArg.StartsWith("#");
-                    offset = offsetType ? Int64.Parse(offsetArg.Substring(1)) : Int64.Parse(offsetArg);
+                    bool offsetType = offsetArg.StartsWith("#", StringComparison.Ordinal);
+                    offset = offsetType ? long.Parse(offsetArg.AsSpan(1)) : long.Parse(offsetArg);
                     offset = offsetType ? (offset * bitCount) : offset;
                 }
 

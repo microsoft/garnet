@@ -3,7 +3,7 @@
 
 using System;
 using System.Buffers;
-using System.Collections.Generic;
+using System.Buffers.Text;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -431,41 +431,6 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Read array with length header
-        /// </summary>
-        public static bool ReadArrayWithLengthHeader(out byte[][] result, ref byte* ptr, byte* end)
-        {
-            result = null;
-            if (ptr + 3 >= end)
-                return false;
-
-            Debug.Assert(*ptr == '*');
-            ptr++;
-            bool neg = *ptr == '-';
-            int asize = *ptr++ - '0';
-            while (*ptr != '\r')
-            {
-                Debug.Assert(*ptr >= '0' && *ptr <= '9');
-                asize = asize * 10 + *ptr++ - '0';
-                if (ptr >= end)
-                    return false;
-            }
-            ptr += 2;  // for \r\n
-            if (ptr > end)
-                return false;
-
-            if (neg)
-                return true;
-
-            result = new byte[asize][];
-            for (int z = 0; z < asize; z++)
-                if (!ReadByteArrayWithLengthHeader(out result[z], ref ptr, end))
-                    return false;
-
-            return true;
-        }
-
-        /// <summary>
         /// Read string array with length header
         /// </summary>
         public static bool ReadStringArrayWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
@@ -505,47 +470,6 @@ namespace Garnet.common
                     if (!ReadIntegerAsString(out result[z], ref ptr, end))
                         return false;
                 }
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Read string array with length header
-        /// </summary>
-        public static bool ReadPtrArrayWithLengthHeader(out List<Tuple<long, long>> result, ref byte* ptr, byte* end)
-        {
-            result = null;
-            if (ptr + 3 >= end)
-                return false;
-
-            Debug.Assert(*ptr == '*');
-            ptr++;
-            bool neg = *ptr == '-';
-            int asize = *ptr++ - '0';
-            while (*ptr != '\r')
-            {
-                Debug.Assert(*ptr >= '0' && *ptr <= '9');
-                asize = asize * 10 + *ptr++ - '0';
-                if (ptr >= end)
-                    return false;
-            }
-            ptr += 2;  // for \r\n
-            if (ptr > end)
-                return false;
-
-            if (neg)
-                return true;
-
-            result = new();
-
-            for (int z = 0; z < asize; z++)
-            {
-                byte* keyPtr = null;
-                int ksize = 0;
-                if (!ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, end))
-                    return false;
-                result.Add(new Tuple<long, long>(((IntPtr)keyPtr).ToInt64(), ksize));
             }
 
             return true;
@@ -607,7 +531,8 @@ namespace Garnet.common
                 result = 0;
                 return false;
             }
-            parsed = double.TryParse(Encoding.ASCII.GetString(resultBytes), out result);
+            parsed = Utf8Parser.TryParse(resultBytes, out result, out var bytesConsumed, default) &&
+                bytesConsumed == resultBytes.Length;
             return true;
         }
 

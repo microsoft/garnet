@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using Garnet.common;
 
 namespace Garnet.server
@@ -39,12 +38,11 @@ namespace Garnet.server
                         case InfoHelp.ALL:
                             break;
                         default:
-                            try
+                            if (Enum.TryParse(section, out InfoMetricsType sectionType))
                             {
-                                var sectionType = (InfoMetricsType)Enum.Parse(typeof(InfoMetricsType), section);
                                 sections.Add(sectionType);
                             }
-                            catch
+                            else
                             {
                                 invalid = true;
                                 invalidSection = section;

@@ -5,9 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
+using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
@@ -273,7 +275,137 @@ namespace Garnet.test
             Assert.AreEqual(l, $"value:{setEntries.Length - 1}");
         }
 
+        [Test]
+        public void CanDoSetUnion()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var redisValues1 = new RedisValue[] { "item-a", "item-b", "item-c", "item-d" };
+            var result = db.SetAdd(new RedisKey("key1"), redisValues1);
+            Assert.AreEqual(4, result);
 
+            result = db.SetAdd(new RedisKey("key2"), new RedisValue[] { "item-c" });
+            Assert.AreEqual(1, result);
+
+            result = db.SetAdd(new RedisKey("key3"), new RedisValue[] { "item-a", "item-c", "item-e" });
+            Assert.AreEqual(3, result);
+
+            var members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2", "key3" });
+            RedisValue[] entries = new RedisValue[] { "item-a", "item-b", "item-c", "item-d", "item-e" };
+            Assert.AreEqual(5, members.Length);
+            // assert two arrays are equal ignoring order
+            Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(entries.OrderBy(x => x)));
+
+            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2", "key3", "_not_exists" });
+            Assert.AreEqual(5, members.Length);
+            Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(entries.OrderBy(x => x)));
+
+            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "_not_exists_1", "_not_exists_2", "_not_exists_3" });
+            Assert.IsEmpty(members);
+
+            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "_not_exists_1", "key1", "_not_exists_2", "_not_exists_3" });
+            Assert.AreEqual(4, members.Length);
+            Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
+
+            members = db.SetCombine(SetOperation.Union, new RedisKey[] { "key1", "key2" });
+            Assert.AreEqual(4, members.Length);
+            Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
+
+            try
+            {
+                db.SetCombine(SetOperation.Union, new RedisKey[] { });
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                Assert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, "SUNION"), e.Message);
+            }
+        }
+
+        [Test]
+        public void CanDoSdiff()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = "key1";
+            var key1Value = new RedisValue[] { "a", "b", "c", "d" };
+
+            var key2 = "key2";
+            var key2Value = new RedisValue[] { "c" };
+
+            var addResult = db.SetAdd(key1, key1Value);
+            Assert.AreEqual(4, addResult);
+            addResult = db.SetAdd(key2, key2Value);
+            Assert.AreEqual(1, addResult);
+
+            var result = (RedisResult[])db.Execute("SDIFF", key1, key2);
+            Assert.AreEqual(3, result.Length);
+            var strResult = result.Select(r => r.ToString()).ToArray();
+            var expectedResult = new[] { "a", "b", "d" };
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
+            Assert.IsFalse(strResult.Contains("c"));
+
+            var key3 = "key3";
+            var key3Value = new RedisValue[] { "a", "c", "e" };
+
+            addResult = db.SetAdd(key3, key3Value);
+            Assert.AreEqual(3, addResult);
+
+            result = (RedisResult[])db.Execute("SDIFF", key1, key2, key3);
+            Assert.AreEqual(2, result.Length);
+            strResult = result.Select(r => r.ToString()).ToArray();
+            expectedResult = ["b", "d"];
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
+
+            Assert.IsFalse(strResult.Contains("c"));
+            Assert.IsFalse(strResult.Contains("e"));
+        }
+
+        [Test]
+        public void CanDoSdiffStoreOverwrittenKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "key";
+
+            var key1 = "key1";
+            var key1Value = new RedisValue[] { "a", "b", "c", "d" };
+
+            var key2 = "key2";
+            var key2Value = new RedisValue[] { "c" };
+
+            var addResult = db.SetAdd(key1, key1Value);
+            Assert.AreEqual(4, addResult);
+            addResult = db.SetAdd(key2, key2Value);
+            Assert.AreEqual(1, addResult);
+
+            var result = db.Execute("SDIFFSTORE", key, key1, key2);
+            Assert.AreEqual(3, int.Parse(result.ToString()));
+
+            var membersResult = db.SetMembers("key");
+            Assert.AreEqual(3, membersResult.Length);
+            var strResult = membersResult.Select(m => m.ToString()).ToArray();
+            var expectedResult = new[] { "a", "b", "d" };
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
+            Assert.IsFalse(Array.Exists(membersResult, t => t.ToString().Equals("c")));
+
+            var key3 = "key3";
+            var key3Value = new RedisValue[] { "a", "b", "c" };
+            var key4 = "key4";
+            var key4Value = new RedisValue[] { "a", "b" };
+
+            addResult = db.SetAdd(key3, key3Value);
+            Assert.AreEqual(3, addResult);
+            addResult = db.SetAdd(key4, key4Value);
+            Assert.AreEqual(2, addResult);
+
+            result = db.Execute("SDIFFSTORE", key, key3, key4);
+            membersResult = db.SetMembers("key");
+            Assert.AreEqual(1, membersResult.Length);
+            Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("c")));
+        }
 
         #endregion
 
@@ -303,7 +435,6 @@ namespace Garnet.test
             expectedResponse = "*2\r\n$7\r\n\"Hello\"\r\n$7\r\n\"World\"\r\n";
             strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
-
         }
 
         [Test]
@@ -546,6 +677,116 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoSMOVECommandLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // source set
+            lightClientRequest.SendCommand("SADD \"mySourceSet\" \"oneS\"");
+            lightClientRequest.SendCommand("SADD \"mySourceSet\" \"twoS\"");
+            lightClientRequest.SendCommand("SADD \"mySourceSet\" \"threeS\"");
+            lightClientRequest.SendCommand("SADD \"mySourceSet\" \"fourS\"");
+            lightClientRequest.SendCommand("SADD \"mySourceSet\" \"common\"");
+
+            // destination set
+            lightClientRequest.SendCommand("SADD \"myDestinationSet\" \"oneD\"");
+            lightClientRequest.SendCommand("SADD \"myDestinationSet\" \"twoD\"");
+            lightClientRequest.SendCommand("SADD \"myDestinationSet\" \"threeD\"");
+            lightClientRequest.SendCommand("SADD \"myDestinationSet\" \"fourD\"");
+            lightClientRequest.SendCommand("SADD \"myDestinationSet\" \"common\"");
+
+            var expectedSuccessfulResponse = ":1\r\n";
+            var expectedFailureResponse = ":0\r\n";
+
+            // Successful move
+            var response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"myDestinationSet\" \"oneS\"");
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedSuccessfulResponse.Length);
+            Assert.AreEqual(expectedSuccessfulResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SISMEMBER \"mySourceSet\" \"oneS\"");
+            var mySourceSetContainsMember = Encoding.ASCII.GetString(response).Substring(0, expectedFailureResponse.Length);
+
+            response = lightClientRequest.SendCommand("SISMEMBER \"myDestinationSet\" \"oneS\"");
+            var myDestinationSetContainsMember = Encoding.ASCII.GetString(response).Substring(0, expectedSuccessfulResponse.Length);
+
+            Assert.AreEqual(expectedFailureResponse, mySourceSetContainsMember);
+            Assert.AreEqual(expectedSuccessfulResponse, myDestinationSetContainsMember);
+
+            // Source set doesn't exist
+            response = lightClientRequest.SendCommand("SMOVE \"someRandomSet\" \"mySourceSet\" \"twoS\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedFailureResponse.Length);
+            Assert.AreEqual(expectedFailureResponse, strResponse);
+
+            // Destination set doesn't exist
+            response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"someRandomSet\" \"twoS\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedSuccessfulResponse.Length);
+            Assert.AreEqual(expectedSuccessfulResponse, strResponse);
+
+            // Value not in source
+            response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"mySourceSet\" \"notAValue\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedFailureResponse.Length);
+            Assert.AreEqual(expectedFailureResponse, strResponse);
+
+            // Move into self
+            response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"mySourceSet\" \"twoS\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedFailureResponse.Length);
+            Assert.AreEqual(expectedFailureResponse, strResponse);
+
+            // Common value
+            response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"myDestinationSet\" \"common\"");
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedSuccessfulResponse.Length);
+            Assert.AreEqual(expectedSuccessfulResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SISMEMBER \"mySourceSet\" \"common\"");
+            mySourceSetContainsMember = Encoding.ASCII.GetString(response).Substring(0, expectedFailureResponse.Length);
+
+            response = lightClientRequest.SendCommand("SISMEMBER \"myDestinationSet\" \"common\"");
+            myDestinationSetContainsMember = Encoding.ASCII.GetString(response).Substring(0, expectedSuccessfulResponse.Length);
+
+            Assert.AreEqual(expectedFailureResponse, mySourceSetContainsMember);
+            Assert.AreEqual(expectedSuccessfulResponse, myDestinationSetContainsMember);
+        }
+
+        [Test]
+        public async Task CanDoSMOVECommandGC()
+        {
+            using var db = TestUtils.GetGarnetClient();
+            db.Connect();
+
+            //If set doesn't exist, then return 0.
+            var response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "destinationSet", "value" });
+            Assert.AreEqual(response, 0);
+            await db.ExecuteForStringResultAsync("SADD", new string[] { "sourceSet", "sourceValue", "commonValue" });
+            await db.ExecuteForStringResultAsync("SADD", new string[] { "destinationSet", "destinationValue", "commonValue" });
+
+            //Same key.
+            response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "sourceSet", "sourceValue" });
+            Assert.AreEqual(response, 0);
+
+            //Move non-common member.
+            response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "destinationSet", "sourceValue" });
+            Assert.AreEqual(response, 1);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "sourceSet" }), 1);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "destinationSet" }), 3);
+
+            var sourceSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", new string[] { "sourceSet" });
+            var destinationSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", new string[] { "destinationSet" });
+            Assert.IsFalse(sourceSetMembers.Contains("sourceValue"));
+            Assert.IsTrue(destinationSetMembers.Contains("sourceValue"));
+
+            //Move common member.
+            response = await db.ExecuteForLongResultAsync("SMOVE", new string[] { "sourceSet", "destinationSet", "commonValue" });
+            Assert.AreEqual(response, 1);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "sourceSet" }), 0);
+            Assert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", new string[] { "destinationSet" }), 3);
+
+            sourceSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", new string[] { "sourceSet" });
+            destinationSetMembers = await db.ExecuteForStringArrayResultAsync("SMEMBERS", new string[] { "destinationSet" });
+            Assert.IsFalse(sourceSetMembers.Contains("commonValue"));
+            Assert.IsTrue(destinationSetMembers.Contains("commonValue"));
+        }
+
+        [Test]
         public void MultiWithNonExistingSet()
         {
             var lightClientRequest = TestUtils.CreateRequest();
@@ -568,6 +809,75 @@ namespace Garnet.test
             res = lightClientRequest.SendCommand("SMEMBERS MySet", 2);
             expectedResponse = "*1\r\n$7\r\nItemOne\r\n";
             Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
+        }
+
+        [Test]
+        public void CanDoSetUnionLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SADD myset ItemOne ItemTwo ItemThree ItemFour");
+            var expectedResponse = ":4\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION myset another_set", 5);
+            expectedResponse = "*4\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            lightClientRequest.SendCommand("SADD another_set ItemOne ItemFive ItemTwo ItemSix ItemSeven");
+            response = lightClientRequest.SendCommand("SUNION myset another_set", 8);
+            expectedResponse = "*7\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION myset no_exist_set", 5);
+            expectedResponse = "*4\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION no_exist_set myset no_exist_set another_set", 8);
+            expectedResponse = "*7\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION myset", 5);
+            expectedResponse = "*4\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            response = lightClientRequest.SendCommand("SUNION");
+            expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "SUNION")}\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
+
+        [Test]
+        public void CanDoSdiffLC()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SADD key1 a b c d");
+            lightClientRequest.SendCommand("SADD key2 c");
+            lightClientRequest.SendCommand("SADD key3 a c e");
+            var response = lightClientRequest.SendCommand("SDIFF key1 key2 key3");
+            var expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
+        [Test]
+        public void CanDoSdiffStoreLC()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SADD key1 a b c d");
+            lightClientRequest.SendCommand("SADD key2 c");
+            lightClientRequest.SendCommand("SADD key3 a c e");
+            var response = lightClientRequest.SendCommand("SDIFFSTORE key key1 key2 key3");
+            var expectedResponse = ":2\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
+            Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 
         #endregion
@@ -605,6 +915,30 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, strResponse);
         }
 
+        [Test]
+        public void CanDoSdiffWhenKeyDoesNotExisting()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SDIFF foo");
+            var expectedResponse = "*0\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
+
+        [Test]
+        public void CanDoSdiffStoreWhenMemberKeysNotExisting()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SDIFFSTORE key key1 key2 key3");
+            var expectedResponse = ":0\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*0\r\n";
+            strResponse = Encoding.ASCII.GetString(membersResponse).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
         #endregion
 
 
