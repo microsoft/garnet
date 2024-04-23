@@ -164,7 +164,7 @@ namespace Garnet.test
 
             // Use setscan on non existing key
             var items = db.SetScan(new RedisKey("foo"), new RedisValue("*"), pageSize: 10);
-            Assert.IsTrue(items.Count() == 0, "Failed to use SetScan on non existing key");
+            Assert.IsEmpty(items, "Failed to use SetScan on non existing key");
 
             RedisValue[] entries = new RedisValue[] { "item-a", "item-b", "item-c", "item-d", "item-e", "item-aaa" };
 
@@ -185,7 +185,7 @@ namespace Garnet.test
             // No matching elements
             members = db.SetScan(new RedisKey("myset"), new RedisValue("x"));
             Assert.IsTrue(((IScanningCursor)members).Cursor == 0);
-            Assert.IsTrue(members.Count() == 0);
+            Assert.IsEmpty(members);
         }
 
         [Test]
@@ -313,7 +313,7 @@ namespace Garnet.test
 
             try
             {
-                db.SetCombine(SetOperation.Union, new RedisKey[] { });
+                db.SetCombine(SetOperation.Union, []);
                 Assert.Fail();
             }
             catch (RedisServerException e)
