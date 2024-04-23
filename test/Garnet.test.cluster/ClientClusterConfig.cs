@@ -131,13 +131,13 @@ namespace GarnetClusterManagement
                 slotMap[i]._workerId = 0;
             }
             workers = new Worker[node_count + 1];
-            workers[0].address = "unassigned";
-            workers[0].port = 0;
-            workers[0].nodeid = string.Empty;
-            workers[0].configEpoch = 0;
-            workers[0].role = NodeRole.UNASSIGNED;
-            workers[0].replicaOfNodeId = string.Empty;
-            workers[0].replicationOffset = 0;
+            workers[0].Address = "unassigned";
+            workers[0].Port = 0;
+            workers[0].Nodeid = string.Empty;
+            workers[0].ConfigEpoch = 0;
+            workers[0].Role = NodeRole.UNASSIGNED;
+            workers[0].ReplicaOfNodeId = string.Empty;
+            workers[0].ReplicationOffset = 0;
             workers[0].hostname = null;
         }
 
@@ -162,12 +162,12 @@ namespace GarnetClusterManagement
         {
             int currentWorkerIndex = workerCount++;
 
-            workers[currentWorkerIndex].nodeid = nodeid;
-            workers[currentWorkerIndex].address = address;
-            workers[currentWorkerIndex].port = port;
-            workers[currentWorkerIndex].configEpoch = configEpoch;
-            workers[currentWorkerIndex].role = Role;
-            workers[currentWorkerIndex].replicaOfNodeId = replicaOfNodeId;
+            workers[currentWorkerIndex].Nodeid = nodeid;
+            workers[currentWorkerIndex].Address = address;
+            workers[currentWorkerIndex].Port = port;
+            workers[currentWorkerIndex].ConfigEpoch = configEpoch;
+            workers[currentWorkerIndex].Role = Role;
+            workers[currentWorkerIndex].ReplicaOfNodeId = replicaOfNodeId;
             workers[currentWorkerIndex].hostname = hostname;
             if (slots != null)
             {
@@ -185,7 +185,7 @@ namespace GarnetClusterManagement
             List<(string, string)> config = new List<(string, string)>();
             for (ushort i = 1; i < workerCount; i++)
             {
-                config.Add((workers[i].nodeid, GetNodeInfo(workerId: i)));
+                config.Add((workers[i].Nodeid, GetNodeInfo(workerId: i)));
             }
 
             config = config.OrderBy(x => x.Item1).ToList();
@@ -225,13 +225,13 @@ namespace GarnetClusterManagement
             //<link-state>
             //<slot> <slot> ... <slot>
 
-            return $"{workers[workerId].nodeid} " +
-                $"{workers[workerId].address}:{workers[workerId].port}@{workers[workerId].port + 10000},{workers[workerId].hostname} " +
-                $"{(workerId == 1 ? "myself," : "")}{(workers[workerId].role == NodeRole.PRIMARY ? "master" : "slave")} " +
-                $"{(workers[workerId].role == NodeRole.REPLICA ? workers[workerId].replicaOfNodeId : "-")} " +
+            return $"{workers[workerId].Nodeid} " +
+                $"{workers[workerId].Address}:{workers[workerId].Port}@{workers[workerId].Port + 10000},{workers[workerId].hostname} " +
+                $"{(workerId == 1 ? "myself," : "")}{(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave")} " +
+                $"{(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-")} " +
                 $"0 " +
                 $"0 " +
-                $"{workers[workerId].configEpoch} " +
+                $"{workers[workerId].ConfigEpoch} " +
                 $"connected" +
                 $"{GetSlotRange(workerId)}\n";
         }
@@ -321,7 +321,7 @@ namespace GarnetClusterManagement
         {
             Dictionary<string, string> config = new();
             for (ushort i = 1; i < workerCount; i++)
-                config.Add(workers[i].nodeid, GetNodeInfo(workerId: i));
+                config.Add(workers[i].Nodeid, GetNodeInfo(workerId: i));
 
             return config;
         }
@@ -331,7 +331,7 @@ namespace GarnetClusterManagement
             Dictionary<string, string> config = new();
             for (ushort i = 1; i < workerCount; i++)
             {
-                config.Add(workers[i].nodeid, GetNodeInfo(workerId: i));
+                config.Add(workers[i].Nodeid, GetNodeInfo(workerId: i));
             }
 
             return config;
