@@ -682,6 +682,39 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task CanUseLMoveWithCaseInsensitiveDirectionGC()
+        {
+            using var db = TestUtils.GetGarnetClient();
+            db.Connect();
+
+            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "one" });
+            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "two" });
+            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "three" });
+
+            var response = await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "myotherlist", "right", "left" });
+            Assert.AreEqual("three", response);
+
+            var responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "mylist", "0", "-1" });
+            var expectedResponseArray = new string[] { "one", "two" };
+            Assert.AreEqual(expectedResponseArray, responseArray);
+
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "myotherlist", "0", "-1" });
+            expectedResponseArray = new string[] { "three" };
+            Assert.AreEqual(expectedResponseArray, responseArray);
+
+            response = await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "myotherlist", "LeFT", "RIghT" });
+            Assert.AreEqual("one", response);
+
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "mylist", "0", "-1" });
+            expectedResponseArray = new string[] { "two" };
+            Assert.AreEqual(expectedResponseArray, responseArray);
+
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "myotherlist", "0", "-1" });
+            expectedResponseArray = new string[] { "three", "one" };
+            Assert.AreEqual(expectedResponseArray, responseArray);
+        }
+
+        [Test]
         public async Task CanUseLMoveWithCancellationTokenGC()
         {
             using var db = TestUtils.GetGarnetClient();
