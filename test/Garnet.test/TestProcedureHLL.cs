@@ -49,7 +49,7 @@ namespace Garnet
                 }
                 api.HyperLogLogAdd(hll, elements, out var resultPfAdd);
                 result = resultPfAdd;
-                api.HyperLogLogLength(new ArgSlice[1] { hll }, out long count);
+                api.HyperLogLogLength([hll], out long count);
                 if (count != 7)
                 {
                     result = false;
