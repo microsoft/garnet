@@ -212,18 +212,19 @@ namespace Garnet.server
 
         private static readonly Dictionary<byte, RespCommandsInfo> setCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
         {
-            {(byte)SetOperation.SADD,       new RespCommandsInfo("SADD",     RespCommand.Set,   -2, null, (byte)SetOperation.SADD)},
-            {(byte)SetOperation.SMEMBERS,   new RespCommandsInfo("SMEMBERS", RespCommand.Set,    1, null, (byte)SetOperation.SMEMBERS)},
-            {(byte)SetOperation.SREM,       new RespCommandsInfo("SREM",     RespCommand.Set,   -2, null, (byte)SetOperation.SREM)},
-            {(byte)SetOperation.SCARD,      new RespCommandsInfo("SCARD",    RespCommand.Set,    1, null, (byte)SetOperation.SCARD)},
-            {(byte)SetOperation.SRANDMEMBER,new RespCommandsInfo("SRANDMEMBER", RespCommand.Set, -2, null, (byte)SetOperation.SRANDMEMBER)},
-            {(byte)SetOperation.SPOP,       new RespCommandsInfo("SPOP",     RespCommand.Set,   -1, null, (byte)SetOperation.SPOP) },
-            {(byte)SetOperation.SSCAN,      new RespCommandsInfo("SSCAN",    RespCommand.Set,   -2, null, (byte)SetOperation.SSCAN) },
-            {(byte)SetOperation.SMOVE,      new RespCommandsInfo("SMOVE",    RespCommand.Set,    3, null, (byte)SetOperation.SMOVE) },
-            {(byte)SetOperation.SISMEMBER,  new RespCommandsInfo("SISMEMBER",RespCommand.Set,    2, null, (byte)SetOperation.SISMEMBER) },
-            {(byte)SetOperation.SUNION,     new RespCommandsInfo("SUNION",   RespCommand.Set,    -1, null, (byte)SetOperation.SUNION) },
-            {(byte)SetOperation.SDIFF,      new RespCommandsInfo("SDIFF",    RespCommand.Set,   -1, null, (byte)SetOperation.SDIFF) },
-            {(byte)SetOperation.SDIFFSTORE, new RespCommandsInfo("SDIFFSTORE", RespCommand.Set, -2, null, (byte)SetOperation.SDIFFSTORE) }
+            {(byte)SetOperation.SADD,           new RespCommandsInfo("SADD",            RespCommand.Set,    -2, null, (byte)SetOperation.SADD)},
+            {(byte)SetOperation.SMEMBERS,       new RespCommandsInfo("SMEMBERS",        RespCommand.Set,     1, null, (byte)SetOperation.SMEMBERS)},
+            {(byte)SetOperation.SREM,           new RespCommandsInfo("SREM",            RespCommand.Set,    -2, null, (byte)SetOperation.SREM)},
+            {(byte)SetOperation.SCARD,          new RespCommandsInfo("SCARD",           RespCommand.Set,     1, null, (byte)SetOperation.SCARD)},
+            {(byte)SetOperation.SRANDMEMBER,    new RespCommandsInfo("SRANDMEMBER",     RespCommand.Set,    -2, null, (byte)SetOperation.SRANDMEMBER)},
+            {(byte)SetOperation.SPOP,           new RespCommandsInfo("SPOP",            RespCommand.Set,    -1, null, (byte)SetOperation.SPOP) },
+            {(byte)SetOperation.SSCAN,          new RespCommandsInfo("SSCAN",           RespCommand.Set,    -2, null, (byte)SetOperation.SSCAN) },
+            {(byte)SetOperation.SMOVE,          new RespCommandsInfo("SMOVE",           RespCommand.Set,     3, null, (byte)SetOperation.SMOVE) },
+            {(byte)SetOperation.SISMEMBER,      new RespCommandsInfo("SISMEMBER",       RespCommand.Set,     2, null, (byte)SetOperation.SISMEMBER) },
+            {(byte)SetOperation.SUNION,         new RespCommandsInfo("SUNION",          RespCommand.Set,    -1, null, (byte)SetOperation.SUNION) },
+            {(byte)SetOperation.SUNIONSTORE,    new RespCommandsInfo("SUNIONSTORE",     RespCommand.Set,    -2, null, (byte)SetOperation.SUNIONSTORE) },
+            {(byte)SetOperation.SDIFF,          new RespCommandsInfo("SDIFF",           RespCommand.Set,    -1, null, (byte)SetOperation.SDIFF) },
+            {(byte)SetOperation.SDIFFSTORE,     new RespCommandsInfo("SDIFFSTORE",      RespCommand.Set,    -2, null, (byte)SetOperation.SDIFFSTORE) }
         };
 
         private static readonly Dictionary<RespCommand, RespCommandsInfo> customCommandsInfoMap = new Dictionary<RespCommand, RespCommandsInfo>

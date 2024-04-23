@@ -323,6 +323,35 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("key")]
+        [TestCase("")]
+        public void CanDoSetUnionStore(string key)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = "key1";
+            var key1Value = new RedisValue[] { "a", "b", "c" };
+
+            var key2 = "key2";
+            var key2Value = new RedisValue[] { "c", "d", "e" };
+
+            var addResult = db.SetAdd(key1, key1Value);
+            Assert.AreEqual(3, addResult);
+            addResult = db.SetAdd(key2, key2Value);
+            Assert.AreEqual(3, addResult);
+
+            var result = (int)db.Execute("SUNIONSTORE", key, key1, key2);
+            Assert.AreEqual(5, result);
+
+            var membersResult = db.SetMembers(key);
+            Assert.AreEqual(5, membersResult.Length);
+            var strResult = membersResult.Select(m => m.ToString()).ToArray();
+            var expectedResult = new[] { "a", "b", "c", "d", "e" };
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
+        }
+
+        [Test]
         public void CanDoSdiff()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -855,6 +884,21 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoSunionStoreLC()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            _ = lightClientRequest.SendCommand("SADD key1 a b c");
+            _ = lightClientRequest.SendCommand("SADD key2 c d e");
+            var response = lightClientRequest.SendCommand("SUNIONSTORE key key1 key2");
+            var expectedResponse = ":5\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*5\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n$1\r\ne\r\n";
+            Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
+        [Test]
         public void CanDoSdiffLC()
         {
             var lightClientRequest = TestUtils.CreateRequest();
@@ -932,6 +976,21 @@ namespace Garnet.test
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("SDIFFSTORE key key1 key2 key3");
+            var expectedResponse = ":0\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*0\r\n";
+            strResponse = Encoding.ASCII.GetString(membersResponse).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
+
+        [Test]
+        public void CanDoSunionStoreWhenMemberKeysNotExisting()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SUNIONSTORE key key1 key2 key3");
             var expectedResponse = ":0\r\n";
             var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
