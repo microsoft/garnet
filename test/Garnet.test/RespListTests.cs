@@ -638,6 +638,13 @@ namespace Garnet.test
             using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
+            // Test for Operation direction error.
+            var exception = Assert.ThrowsAsync<Exception>(async () =>
+            {
+                await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "myotherlist", "right", "lef" });
+            });
+            Assert.AreEqual("ERR syntax error", exception.Message);
+
             //If source does not exist, the value nil is returned and no operation is performed.
             var response = await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "myotherlist", "RIGHT", "LEFT" });
             Assert.AreEqual(null, response);
