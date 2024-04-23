@@ -391,6 +391,10 @@ namespace Garnet.server
                                         {
                                             return (RespCommand.List, (byte)ListOperation.LREM);
                                         }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLSET\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LSET);
+                                        }
                                         break;
 
                                     case 'M':

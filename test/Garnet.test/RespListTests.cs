@@ -593,6 +593,27 @@ namespace Garnet.test
             Assert.IsTrue(result[1].ToString().Equals("g"));
         }
 
+        [Test]
+        public void CanDoLSETbasic()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mylist";
+            var values = new RedisValue[] { "one", "two", "three" };
+            var pushResult = db.ListRightPush(key, values);
+            Assert.AreEqual(3, pushResult);
+
+            db.ListSetByIndex(key, 0, "four");
+            db.ListSetByIndex(key, -2, "five");
+
+            var result = db.ListRange(key, 0, -1);
+            var strResult = result.Select(r => r.ToString()).ToArray();
+            Assert.AreEqual(3, result.Length);
+            var expected = new[] { "four", "five", "three" };
+            Assert.IsTrue(expected.SequenceEqual(strResult));
+        }
+
         #region GarnetClientTests
 
         [Test]
@@ -748,7 +769,6 @@ namespace Garnet.test
 
             tokenSource.Dispose();
         }
-
         #endregion
 
         #region LightClientTests
@@ -865,6 +885,66 @@ namespace Garnet.test
             var response = lightClientRequest.SendCommand("HSET myhash onekey onepair");
             lightClientRequest.SendCommand("LINSERT myhash BEFORE one two");
             var expectedResponse = "-ERR wrong key type used in LINSERT command.\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanDoLSETbasicLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            _ = lightClientRequest.SendCommand("RPUSH mylist one two three");
+            var response = lightClientRequest.SendCommand("LSET mylist 0 four");
+            var expectedResponse = "+OK\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanReturnErrorLSETWhenNosuchkey()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("LSET mylist 0 four");
+            var expectedResponse = "-ERR no such key\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanReturnErrorLSETWhenIndexNotInteger()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            _ = lightClientRequest.SendCommand("RPUSH mylist one two three");
+            var response = lightClientRequest.SendCommand("LSET mylist a four");
+            var expectedResponse = "-ERR value is not an integer or out of range.\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanReturnErrorLSETWhenIndexOutRange()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            _ = lightClientRequest.SendCommand("RPUSH mylist one two three");
+            var response = lightClientRequest.SendCommand("LSET mylist 10 four");
+            // 
+            var expectedResponse = "-ERR index out of range";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("LSET mylist -100 four");
+            expectedResponse = "-ERR index out of range";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanReturnErrorLSETWhenArgumentsWrong()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            _ = lightClientRequest.SendCommand("RPUSH mylist one two three");
+            var response = lightClientRequest.SendCommand("LSET mylist a");
+            var expectedResponse = "-ERR wrong number of arguments for 'LSET'";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }

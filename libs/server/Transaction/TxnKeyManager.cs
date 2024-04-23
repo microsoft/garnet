@@ -145,6 +145,7 @@ namespace Garnet.server
                 (byte)ListOperation.LINDEX => SingleKey(1, true, LockType.Shared),
                 (byte)ListOperation.LINSERT => SingleKey(1, true, LockType.Exclusive),
                 (byte)ListOperation.LREM => SingleKey(1, true, LockType.Exclusive),
+                (byte)ListOperation.LSET => SingleKey(1, true, LockType.Exclusive),
                 _ => -1
             };
         }

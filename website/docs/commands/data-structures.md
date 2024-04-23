@@ -337,6 +337,20 @@ Removes the first count occurrences of elements equal to element from the list s
 
 ---
 
+### LSET
+
+#### Syntax
+
+```bash
+    LSET key index element
+```
+
+Sets the list element at **index** to **element**. For more information on the index argument, see [LINDEX](#lindex).
+
+An error is returned for out of range indexes.
+
+---
+
 ### LTRIM
 
 #### Syntax

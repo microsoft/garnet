@@ -164,7 +164,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [LPUSHX](data-structures.md#lpushx) | ➕ |  |
 |  | [LRANGE](data-structures.md#lrange) | ➕ |  |
 |  | [LREM](data-structures.md#lrem) | ➕ |  |
-|  | LSET | ➖ |  |
+|  | [LSET](data-structures.md#lset) | ➕ |  |
 |  | [LTRIM](data-structures.md#ltrim) | ➕ |  |
 |  | [RPOP](data-structures.md#rpop) | ➕ |  |
 |  | [RPOPLPUSH](data-structures.md#rpoplpush) | ➕ |  |
