@@ -231,7 +231,7 @@ namespace Tsavorite.core
         {
             Iterators = new Dictionary<string, long>();
 
-            if (persistedIterators.Count > 0)
+            if (!persistedIterators.IsEmpty)
             {
                 foreach (var kvp in persistedIterators)
                 {

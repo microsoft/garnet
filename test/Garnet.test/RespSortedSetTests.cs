@@ -477,7 +477,7 @@ namespace Garnet.test
 
             // Use sortedsetscan on non existing key
             var items = db.SortedSetScan(new RedisKey("foo"), new RedisValue("*"), pageSize: 10);
-            Assert.IsTrue(items.Count() == 0, "Failed to use SortedSetScan on non existing key");
+            Assert.IsEmpty(items, "Failed to use SortedSetScan on non existing key");
 
             // Add some items
             var added = db.SortedSetAdd("myss", entries);
@@ -590,7 +590,7 @@ namespace Garnet.test
             // Test for no matching members
             members = db.SortedSetScan(key, new RedisValue("key*"), (Int32)ssLen);
             Assert.IsTrue(((IScanningCursor)members).Cursor == 0);
-            Assert.IsTrue(members.Count() == 0);
+            Assert.IsEmpty(members);
         }
 
         [Test]
