@@ -602,32 +602,32 @@ namespace Garnet.test
             db.Connect();
 
             //If source does not exist, the value nil is returned and no operation is performed.
-            var response = await db.ExecuteForStringResultAsync("RPOPLPUSH", new string[] { "mylist", "myotherlist" });
+            var response = await db.ExecuteForStringResultAsync("RPOPLPUSH", ["mylist", "myotherlist"]);
             Assert.AreEqual(null, response);
 
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "one" });
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "two" });
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "three" });
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "one"]);
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "two"]);
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "three"]);
 
-            response = await db.ExecuteForStringResultAsync("RPOPLPUSH", new string[] { "mylist", "myotherlist" });
+            response = await db.ExecuteForStringResultAsync("RPOPLPUSH", ["mylist", "myotherlist"]);
             Assert.AreEqual("three", response);
 
-            var responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "mylist", "0", "-1" });
+            var responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["mylist", "0", "-1"]);
             var expectedResponseArray = new string[] { "one", "two" };
             Assert.AreEqual(expectedResponseArray, responseArray);
 
-            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "myotherlist", "0", "-1" });
-            expectedResponseArray = new string[] { "three" };
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["myotherlist", "0", "-1"]);
+            expectedResponseArray = ["three"];
             Assert.AreEqual(expectedResponseArray, responseArray);
 
             // if source and destination are the same 
             //the operation is equivalent to removing the last element from the list and pushing it as first element of the list,
             //so it can be considered as a list rotation command.
-            response = await db.ExecuteForStringResultAsync("RPOPLPUSH", new string[] { "mylist", "mylist" });
+            response = await db.ExecuteForStringResultAsync("RPOPLPUSH", ["mylist", "mylist"]);
             Assert.AreEqual("two", response);
 
-            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "mylist", "0", "-1" });
-            expectedResponseArray = new string[] { "two", "one" };
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["mylist", "0", "-1"]);
+            expectedResponseArray = ["two", "one"];
             Assert.AreEqual(expectedResponseArray, responseArray);
         }
 
@@ -646,45 +646,45 @@ namespace Garnet.test
             Assert.AreEqual("ERR syntax error", exception.Message);
 
             //If source does not exist, the value nil is returned and no operation is performed.
-            var response = await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "myotherlist", "RIGHT", "LEFT" });
+            var response = await db.ExecuteForStringResultAsync("LMOVE", ["mylist", "myotherlist", "RIGHT", "LEFT"]);
             Assert.AreEqual(null, response);
 
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "one" });
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "two" });
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "three" });
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "one"]);
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "two"]);
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "three"]);
 
-            response = await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "myotherlist", "RIGHT", "LEFT" });
+            response = await db.ExecuteForStringResultAsync("LMOVE", ["mylist", "myotherlist", "RIGHT", "LEFT"]);
             Assert.AreEqual("three", response);
 
-            var responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "mylist", "0", "-1" });
+            var responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["mylist", "0", "-1"]);
             var expectedResponseArray = new string[] { "one", "two" };
             Assert.AreEqual(expectedResponseArray, responseArray);
 
-            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "myotherlist", "0", "-1" });
-            expectedResponseArray = new string[] { "three" };
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["myotherlist", "0", "-1"]);
+            expectedResponseArray = ["three"];
             Assert.AreEqual(expectedResponseArray, responseArray);
 
-            response = await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "myotherlist", "LEFT", "RIGHT" });
+            response = await db.ExecuteForStringResultAsync("LMOVE", ["mylist", "myotherlist", "LEFT", "RIGHT"]);
             Assert.AreEqual("one", response);
 
-            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "mylist", "0", "-1" });
-            expectedResponseArray = new string[] { "two" };
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["mylist", "0", "-1"]);
+            expectedResponseArray = ["two"];
             Assert.AreEqual(expectedResponseArray, responseArray);
 
-            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "myotherlist", "0", "-1" });
-            expectedResponseArray = new string[] { "three", "one" };
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["myotherlist", "0", "-1"]);
+            expectedResponseArray = ["three", "one"];
             Assert.AreEqual(expectedResponseArray, responseArray);
 
             // if source and destination are the same 
             //the operation is equivalent to a list rotation command.
-            response = await db.ExecuteForStringResultAsync("LMOVE", new string[] { "mylist", "mylist", "LEFT", "RIGHT" });
+            response = await db.ExecuteForStringResultAsync("LMOVE", ["mylist", "mylist", "LEFT", "RIGHT"]);
             Assert.AreEqual("two", response);
 
-            response = await db.ExecuteForStringResultAsync("LMOVE", new string[] { "myotherlist", "myotherlist", "LEFT", "RIGHT" });
+            response = await db.ExecuteForStringResultAsync("LMOVE", ["myotherlist", "myotherlist", "LEFT", "RIGHT"]);
             Assert.AreEqual("three", response);
 
-            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "myotherlist", "0", "-1" });
-            expectedResponseArray = new string[] { "one", "three" };
+            responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["myotherlist", "0", "-1"]);
+            expectedResponseArray = ["one", "three"];
             Assert.AreEqual(expectedResponseArray, responseArray);
         }
 
@@ -727,23 +727,23 @@ namespace Garnet.test
             using var db = TestUtils.GetGarnetClient();
             db.Connect();
 
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "one" });
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "two" });
-            await db.ExecuteForStringResultAsync("RPUSH", new string[] { "mylist", "three" });
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "one"]);
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "two"]);
+            await db.ExecuteForStringResultAsync("RPUSH", ["mylist", "three"]);
 
             var tokenSource = new CancellationTokenSource();
             var token = tokenSource.Token;
-            var response = await db.ExecuteForStringResultWithCancellationAsync("LMOVE", new string[] { "mylist", "myotherlist", "RIGHT", "LEFT" }, token);
+            var response = await db.ExecuteForStringResultWithCancellationAsync("LMOVE", ["mylist", "myotherlist", "RIGHT", "LEFT"], token);
             Assert.AreEqual("three", response);
 
             //check contents of mylist sorted set
-            var responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", new string[] { "mylist", "0", "-1" });
+            var responseArray = await db.ExecuteForStringArrayResultAsync("LRANGE", ["mylist", "0", "-1"]);
             var expectedResponseArray = new string[] { "one", "two" };
             Assert.AreEqual(expectedResponseArray, responseArray);
 
             //Assert the cancellation is seen
             tokenSource.Cancel();
-            var t = db.ExecuteForStringResultWithCancellationAsync("LMOVE", new string[] { "myotherlist", "myotherlist", "LEFT", "RIGHT" }, tokenSource.Token);
+            var t = db.ExecuteForStringResultWithCancellationAsync("LMOVE", ["myotherlist", "myotherlist", "LEFT", "RIGHT"], tokenSource.Token);
             Assert.Throws<OperationCanceledException>(() => t.Wait(tokenSource.Token));
 
             tokenSource.Dispose();
@@ -956,7 +956,7 @@ namespace Garnet.test
             int keyCount = 10;
             int ppCount = 100;
             //string[] keys = new string[keyCount];
-            HashSet<string> keys = new();
+            HashSet<string> keys = [];
             for (int i = 0; i < keyCount; i++)
                 while (!keys.Add(r.Next().ToString())) { }
 
