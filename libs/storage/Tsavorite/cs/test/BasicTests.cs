@@ -805,7 +805,7 @@ namespace Tsavorite.test
         public static void LogPathtooLong()
         {
             if (!OperatingSystem.IsWindows())
-                Assert.Inconclusive();
+                Assert.Ignore("Skipped");
 
             string testDir = new('x', Native32.WIN32_MAX_PATH - 11);                       // As in LSD, -11 for ".<segment>"
             using var log = Devices.CreateLogDevice($"{testDir}", deleteOnClose: true);     // Should succeed
