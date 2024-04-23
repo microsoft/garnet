@@ -27,16 +27,14 @@ namespace Tsavorite.test
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactory(),
-                    new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir +
-                                                      "/checkpoints/"), false); // PurgeAll deletes this directory
+                    new DefaultCheckpointNamingScheme(Path.Join(TestUtils.MethodTestDir, "checkpoints")), false); // PurgeAll deletes this directory
             }
             else
             {
                 TestUtils.IgnoreIfNotRunningAzureTests();
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                    new DefaultCheckpointNamingScheme(
-                        $"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"), false);
+                    new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"), false);
             }
 
             using (var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "hlog.log"), deleteOnClose: true))
