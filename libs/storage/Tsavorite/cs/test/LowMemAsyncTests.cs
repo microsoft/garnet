@@ -14,19 +14,17 @@ namespace Tsavorite.test.async
         IDevice log;
         TsavoriteKV<long, long> store1;
         const int numOps = 2000;
-        string path;
 
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir;
-            TestUtils.DeleteDirectory(path, wait: true);
-            log = new LocalMemoryDevice(1L << 28, 1L << 25, 1, latencyMs: 20, fileName: path + "/test.log");
-            Directory.CreateDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            log = new LocalMemoryDevice(1L << 28, 1L << 25, 1, latencyMs: 20, fileName: Path.Join(TestUtils.MethodTestDir, "test.log"));
+            Directory.CreateDirectory(TestUtils.MethodTestDir);
             store1 = new TsavoriteKV<long, long>
                 (1L << 10,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 12, SegmentSizeBits = 26 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
         }
 
@@ -37,7 +35,7 @@ namespace Tsavorite.test.async
             store1 = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         private static async Task Populate(ClientSession<long, long, long, long, Empty, SimpleFunctions<long, long>> s1)

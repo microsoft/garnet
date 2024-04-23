@@ -73,7 +73,7 @@ namespace Garnet.cluster
                     bool status = task.ContinueWith(resp =>
                     {
                         // Check if setslotsrange executed correctly
-                        if (!resp.Result.Equals("OK"))
+                        if (!resp.Result.Equals("OK", StringComparison.Ordinal))
                         {
                             logger?.LogError("TrySetSlot error: {error}", resp);
                             Status = MigrateState.FAIL;

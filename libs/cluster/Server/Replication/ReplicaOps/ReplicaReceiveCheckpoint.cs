@@ -137,7 +137,7 @@ namespace Garnet.cluster
                 recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
                 gcs.Connect();
 
-                var nodeId = current.GetLocalNodeId();
+                var nodeId = current.LocalNodeId;
                 cEntry = GetLatestCheckpointEntryFromDisk();
 
                 storeWrapper.RecoverAOF();

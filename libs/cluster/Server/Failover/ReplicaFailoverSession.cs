@@ -21,7 +21,7 @@ namespace Garnet.cluster
             try
             {
                 if (!clients[0].IsConnected) await clients[0].ConnectAsync().WaitAsync(failoverTimeout, cts.Token);
-                var localIdBytes = Encoding.ASCII.GetBytes(clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId());
+                var localIdBytes = Encoding.ASCII.GetBytes(clusterProvider.clusterManager.CurrentConfig.LocalNodeId);
                 return await clients[0].failstopwrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token);
             }
             catch (Exception ex)
@@ -59,8 +59,8 @@ namespace Garnet.cluster
         {
             Task<long>[] tasks = new Task<long>[clients.Length + 1];
             //Skip primary connection if FORCE option is set
-            var nodeIdBytes = Encoding.ASCII.GetBytes(clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId());
-            var primaryId = clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId();
+            var nodeIdBytes = Encoding.ASCII.GetBytes(clusterProvider.clusterManager.CurrentConfig.LocalNodeId);
+            var primaryId = clusterProvider.clusterManager.CurrentConfig.LocalNodeId;
             var claimedSlots = clusterProvider.clusterManager.CurrentConfig.GetClaimedSlotsFromNodeId(primaryId);
             int firstClientIndex = option == FailoverOption.FORCE ? 1 : 0;
 
@@ -94,10 +94,10 @@ namespace Garnet.cluster
 
         private async Task AttachReplicas(ClusterConfig oldConfig, ClusterConfig newConfig)
         {
-            var oldPrimaryId = oldConfig.GetLocalNodePrimaryId();
+            var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var replicaEndpoints = newConfig.GetReplicaEndpoints(oldPrimaryId);
-            var localAddress = newConfig.GetLocalNodeIp();
-            var localPort = newConfig.GetLocalNodePort();
+            var localAddress = newConfig.LocalNodeIp;
+            var localPort = newConfig.LocalNodePort;
             Task<string>[] tasks = new Task<string>[replicaEndpoints.Count];
             GarnetClient[] clients = new GarnetClient[replicaEndpoints.Count];
             int count = 0;
@@ -119,10 +119,10 @@ namespace Garnet.cluster
                         var other = ClusterConfig.FromByteArray(resp.Span.ToArray());
 
                         // Merge config if receiving config is from a trusted node
-                        if (newConfig.IsKnown(other.GetLocalNodeId()))
+                        if (newConfig.IsKnown(other.LocalNodeId))
                             clusterProvider.clusterManager.TryMerge(other);
                         else
-                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.GetLocalNodeId());
+                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                     }
                     resp.Dispose();
 
@@ -142,7 +142,7 @@ namespace Garnet.cluster
                 {
                     var task = tasks[i];
                     if (task == null) continue;
-                    if (task.Status != TaskStatus.RanToCompletion || !task.Result.Equals("OK"))
+                    if (task.Status != TaskStatus.RanToCompletion || !task.Result.Equals("OK", StringComparison.Ordinal))
                         logger?.LogError("AttachReplicas task failed with status: {taskStatus} {address} {port} {resp}", task.Status, replicaEndpoints[i].Item1, replicaEndpoints[i].Item2, task.Result);
                     clients[0].Dispose();
                 }

@@ -377,7 +377,7 @@ namespace Garnet.test.Resp.ACL
             {
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.IsTrue(user.Count(x => x == '#') == 0);
+                    Assert.IsTrue(!user.Contains('#'));
                 }
             }
         }

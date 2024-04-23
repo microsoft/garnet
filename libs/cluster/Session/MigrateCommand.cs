@@ -98,7 +98,7 @@ namespace Garnet.cluster
             {
                 pstate = MigrateCmdParseState.SUCCESS;
                 current = clusterProvider.clusterManager.CurrentConfig;
-                sourceNodeId = current.GetLocalNodeId();
+                sourceNodeId = current.LocalNodeId;
                 targetNodeId = current.GetWorkerNodeIdFromAddress(targetAddress, targetPort);
                 if (targetNodeId == null) pstate = MigrateCmdParseState.UNKNOWNTARGET;
             }
@@ -116,17 +116,17 @@ namespace Garnet.cluster
                     return false;
                 args--;
 
-                if (option.ToUpper().Equals("COPY"))
+                if (option.Equals("COPY", StringComparison.OrdinalIgnoreCase))
                     copyOption = true;
-                else if (option.ToUpper().Equals("REPLACE"))
+                else if (option.Equals("REPLACE", StringComparison.OrdinalIgnoreCase))
                     replaceOption = true;
-                else if (option.ToUpper().Equals("AUTH"))
+                else if (option.Equals("AUTH", StringComparison.OrdinalIgnoreCase))
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out passwd, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                     args--;
                 }
-                else if (option.ToUpper().Equals("AUTH2"))
+                else if (option.Equals("AUTH2", StringComparison.OrdinalIgnoreCase))
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out username, ref ptr, recvBufferPtr + bytesRead))
                         return false;
@@ -134,7 +134,7 @@ namespace Garnet.cluster
                         return false;
                     args -= 2;
                 }
-                else if (option.ToUpper().Equals("KEYS"))
+                else if (option.Equals("KEYS", StringComparison.OrdinalIgnoreCase))
                 {
                     keysWithSize ??= [];
                     while (args > 0)
@@ -168,7 +168,7 @@ namespace Garnet.cluster
                         keysWithSize.Add(new(((IntPtr)keyPtr).ToInt64(), ksize));
                     }
                 }
-                else if (option.ToUpper().Equals("SLOTS"))
+                else if (option.Equals("SLOTS", StringComparison.OrdinalIgnoreCase))
                 {
                     while (args > 0)
                     {
@@ -204,7 +204,7 @@ namespace Garnet.cluster
                         }
                     }
                 }
-                else if (option.ToUpper().Equals("SLOTSRANGE"))
+                else if (option.Equals("SLOTSRANGE", StringComparison.OrdinalIgnoreCase))
                 {
                     if (args == 0 || (args & 0x1) > 0)
                     {

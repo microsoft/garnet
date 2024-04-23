@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -50,7 +51,7 @@ namespace Tsavorite.test
                 }
             }
 
-            log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
             store = new TsavoriteKV<KeyStruct, ValueStruct>(1L << 20,
                 new LogSettings { LogDevice = log, MemorySizeBits = 24, PageSizeBits = PageSizeBits }, concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
         }

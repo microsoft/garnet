@@ -16,7 +16,7 @@ namespace Garnet.server
 
         internal CustomObjectCommand(string name, byte id, byte subid, int numKeys, int numParams, CommandType type, CustomObjectFactory factory)
         {
-            nameStr = name.ToUpper();
+            nameStr = name.ToUpperInvariant();
             this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);
             this.id = id;
             this.subid = subid;

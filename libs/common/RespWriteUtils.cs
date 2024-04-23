@@ -333,19 +333,15 @@ namespace Garnet.common
         /// <summary>
         /// Write integer from bytes
         /// </summary>
-        public static bool WriteIntegerFromBytes(byte* src, int srclen, ref byte* curr, byte* end)
+        public static bool WriteIntegerFromBytes(ReadOnlySpan<byte> integerBytes, ref byte* curr, byte* end)
         {
-            int totalLen = 1 + srclen + 2;
+            int totalLen = 1 + integerBytes.Length + 2;
             if ((int)(end - curr) < totalLen)
                 return false;
 
             *curr++ = (byte)':';
-            int digit = 0;
-            while (digit < srclen)
-            {
-                *curr++ = *src++;
-                digit++;
-            }
+            integerBytes.CopyTo(new Span<byte>(curr, integerBytes.Length));
+            curr += integerBytes.Length;
             WriteNewline(ref curr);
             return true;
         }

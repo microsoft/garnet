@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -14,20 +15,18 @@ namespace Tsavorite.test.async
         private TsavoriteKV<MyKey, MyLargeValue> store1;
         private TsavoriteKV<MyKey, MyLargeValue> store2;
         private IDevice log, objlog;
-        private string test_path;
         private readonly MyLargeFunctions functions = new();
 
         [SetUp]
         public void Setup()
         {
-            test_path = TestUtils.MethodTestDir;
-            TestUtils.RecreateDirectory(test_path);
+            TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
         }
 
         [TearDown]
         public void TearDown()
         {
-            TestUtils.DeleteDirectory(test_path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
@@ -37,12 +36,12 @@ namespace Tsavorite.test.async
             MyInput input = default;
             MyLargeOutput output = new();
 
-            log = Devices.CreateLogDevice(test_path + "/LargeObjectTest.log");
-            objlog = Devices.CreateLogDevice(test_path + "/LargeObjectTest.obj.log");
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "LargeObjectTest.log"));
+            objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "LargeObjectTest.obj.log"));
 
             store1 = new(128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = test_path },
+                new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 
@@ -67,12 +66,12 @@ namespace Tsavorite.test.async
             log.Dispose();
             objlog.Dispose();
 
-            log = Devices.CreateLogDevice(test_path + "/LargeObjectTest.log");
-            objlog = Devices.CreateLogDevice(test_path + "/LargeObjectTest.obj.log");
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "LargeObjectTest.log"));
+            objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "LargeObjectTest.obj.log"));
 
             store2 = new(128,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
-                new CheckpointSettings { CheckpointDir = test_path },
+                new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
                 new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }
                 );
 

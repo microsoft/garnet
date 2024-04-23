@@ -23,9 +23,11 @@ namespace Garnet.server
         SMEMBERS,
         SCARD,
         SSCAN,
+        SMOVE,
         SRANDMEMBER,
         SISMEMBER,
         SUNION,
+        SUNIONSTORE,
         SDIFF,
         SDIFFSTORE,
     }

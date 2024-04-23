@@ -35,7 +35,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 disablePubSub: true,
-                extensionBinPaths: new[] { _extTestDir1, _extTestDir2 },
+                extensionBinPaths: [_extTestDir1, _extTestDir2],
                 extensionAllowUnsignedAssemblies: true);
             server.Start();
         }
@@ -625,7 +625,7 @@ namespace Garnet.test
                 File.Copy(Path.Combine(dir1, "testLib1.dll"), notAllowedPath);
             }
 
-            return new[] { Path.Combine(dir1, "testLib1.dll"), dir2 };
+            return [Path.Combine(dir1, "testLib1.dll"), dir2];
         }
 
         [Test]
@@ -726,7 +726,7 @@ namespace Garnet.test
             // Malformed request #2 - binary paths before sub-command
             var args = new List<object>() { "SRC" };
             args.AddRange(libraryPaths);
-            args.AddRange(new object[] { "TXN", "READWRITETX", 3, "ReadWriteTxn" });
+            args.AddRange(["TXN", "READWRITETX", 3, "ReadWriteTxn"]);
 
             try
             {
@@ -739,11 +739,15 @@ namespace Garnet.test
             Assert.IsNull(resp);
 
             // Binary file not contained in allowed paths
-            args = new List<object>
-            {
-                "RMW", "MYDICTSET", 2, "MyDictFactory",
-                "SRC", Path.Combine(TestUtils.MethodTestDir, "testLib1.dll")
-            };
+            args =
+            [
+                "RMW",
+                "MYDICTSET",
+                2,
+                "MyDictFactory",
+                "SRC",
+                Path.Combine(TestUtils.MethodTestDir, "testLib1.dll")
+            ];
 
             try
             {
@@ -756,12 +760,15 @@ namespace Garnet.test
             Assert.IsNull(resp);
 
             // Class not in supplied dlls
-            args = new List<object>
-            {
-                "RMW", "MYDICTSET", 2, "MyDictFactory",
+            args =
+            [
+                "RMW",
+                "MYDICTSET",
+                2,
+                "MyDictFactory",
                 "SRC",
-            };
-            args.AddRange(libraryPaths.Skip(1));
+                .. libraryPaths.Skip(1),
+            ];
 
             try
             {
@@ -774,12 +781,15 @@ namespace Garnet.test
             Assert.IsNull(resp);
 
             // Class not in supported
-            args = new List<object>
-            {
-                "RMW", "MYDICTSET", 2, "TestClass",
+            args =
+            [
+                "RMW",
+                "MYDICTSET",
+                2,
+                "TestClass",
                 "SRC",
-            };
-            args.AddRange(libraryPaths);
+                .. libraryPaths,
+            ];
 
             try
             {

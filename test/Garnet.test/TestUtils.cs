@@ -42,7 +42,7 @@ namespace Garnet.test
         {
             get
             {
-                var container = "Garnet.test".Replace('.', '-').ToLower();
+                var container = "Garnet.test".Replace('.', '-').ToLowerInvariant();
                 return container;
             }
         }
@@ -548,7 +548,7 @@ namespace Garnet.test
         public static EndPointCollection GetEndPoints(int shards, int port = default)
         {
             Port = port == default ? Port : port;
-            EndPointCollection endPoints = new();
+            EndPointCollection endPoints = [];
             for (int i = 0; i < shards; i++)
                 endPoints.Add(IPAddress.Parse("127.0.0.1"), Port + i);
             return endPoints;

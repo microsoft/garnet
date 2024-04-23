@@ -240,7 +240,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SREM](data-structures.md#srem) | ➕ |  |
 |  | [SSCAN](data-structures.md#sscan) | ➕ |  |
 |  | [SUNION](data-structures.md#sunion) | ➕ |  |
-|  | SUNIONSTORE | ➖ |  |
+|  | [SUNIONSTORE](data-structures.md#sunionstore) | ➕ |  |
 | <span id="sorted-set">**SORTED SET**</span> | BZPOP | ➖ |  |
 |  | BZPOPMAX | ➖ |  |
 |  | BZPOPMIN | ➖ |  |

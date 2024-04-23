@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Threading;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -16,7 +17,6 @@ namespace Tsavorite.test
         private TsavoriteLog logUncommitted;
         private IDevice deviceUnCommitted;
 
-        private string path;
         static byte[] entry;
         const int entryLength = 100;
         const int numEntries = 1000;
@@ -27,10 +27,8 @@ namespace Tsavorite.test
         public void Setup()
         {
             entry = new byte[100];
-            path = TestUtils.MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }
 
         [TearDown]
@@ -46,7 +44,7 @@ namespace Tsavorite.test
             logUncommitted = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         public void PopulateLog(TsavoriteLog log)
@@ -104,9 +102,9 @@ namespace Tsavorite.test
         public void ScanBasicDefaultTest([Values] TestUtils.DeviceType deviceType)
         {
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = path + "LogScanDefault" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "LogScanDefault" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
             PopulateLog(log);
 
             // Basic default scan from start to end 
@@ -137,9 +135,9 @@ namespace Tsavorite.test
         public void ScanBehindBeginAddressTest([Values] TestUtils.DeviceType deviceType)
         {
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = path + "LogScanDefault" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "LogScanDefault" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
             PopulateLog(log);
 
             // Basic default scan from start to end 
@@ -202,9 +200,9 @@ namespace Tsavorite.test
         public void ScanConsumerTest([Values] TestUtils.DeviceType deviceType)
         {
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = path + "LogScanDefault" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "LogScanDefault" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
             PopulateLog(log);
 
             // Basic default scan from start to end 
@@ -228,9 +226,9 @@ namespace Tsavorite.test
             // Test where all params are set just to make sure handles it ok
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = path + "LogScanNoDefault" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "LogScanNoDefault" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
             PopulateLog(log);
 
             // Read the log - Look for the flag so know each entry is unique
@@ -260,9 +258,9 @@ namespace Tsavorite.test
             //You can persist iterators(or more precisely, their CompletedUntilAddress) as part of a commit by simply naming them during their creation. 
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = path + "LogScanByName" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "LogScanByName" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
             PopulateLog(log);
 
             // Read the log - Look for the flag so know each entry is unique
@@ -292,9 +290,9 @@ namespace Tsavorite.test
             // You may also force an iterator to start at the specified begin address, i.e., without recovering: recover parameter = false
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = path + "LogScanWithoutRecover" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "LogScanWithoutRecover" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
             PopulateLog(log);
 
             // Read the log 
@@ -324,9 +322,9 @@ namespace Tsavorite.test
             // Same as default, but do it just to make sure have test in case default changes
 
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = path + "LogScanDoublePage" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "LogScanDoublePage" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
             PopulateLog(log);
 
             // Read the log - Look for the flag so know each entry is unique
@@ -354,9 +352,9 @@ namespace Tsavorite.test
         public void ScanBufferingModeSinglePageTest([Values] TestUtils.DeviceType deviceType)
         {
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = path + "LogScanSinglePage" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "LogScanSinglePage" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
             PopulateLog(log);
 
             // Read the log - Look for the flag so know each entry is unique
@@ -384,9 +382,9 @@ namespace Tsavorite.test
         public void ScanUncommittedTest([Values] TestUtils.DeviceType deviceType)
         {
             // Create log and device here (not in setup) because using DeviceType Enum which can't be used in Setup
-            string filename = path + "LogScan" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "LogScan" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path, AutoRefreshSafeTailAddress = true });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir, AutoRefreshSafeTailAddress = true });
             PopulateUncommittedLog(log);
 
             // Setting scanUnCommitted to true is actual test here.
