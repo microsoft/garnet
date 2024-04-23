@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -17,7 +18,6 @@ namespace Tsavorite.test
         public IDevice device;
         static byte[] entry;
         static ReadOnlySpanBatch spanBatch;
-        private string path;
 
         public enum EnqueueIteratorType
         {
@@ -40,13 +40,11 @@ namespace Tsavorite.test
             entry = new byte[entryLength];
             spanBatch = new(numEntries);
 
-            path = TestUtils.MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "EnqueueAndWaitForCommit.log", deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "EnqueueAndWaitForCommit.log"), deleteOnClose: true);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device });
         }
 
@@ -59,7 +57,7 @@ namespace Tsavorite.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]

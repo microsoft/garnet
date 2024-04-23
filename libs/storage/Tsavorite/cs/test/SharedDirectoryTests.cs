@@ -21,7 +21,6 @@ namespace Tsavorite.test.recovery.sumstore
         const long keySpace = (1L << 5);
         const long numOps = (1L << 10);
         const long completePendingInterval = (1L << 10);
-        private string rootPath;
         private string sharedLogDirectory;
         TsavoriteTestInstance original;
         TsavoriteTestInstance clone;
@@ -29,9 +28,8 @@ namespace Tsavorite.test.recovery.sumstore
         [SetUp]
         public void Setup()
         {
-            rootPath = TestUtils.MethodTestDir;
-            TestUtils.RecreateDirectory(rootPath);
-            sharedLogDirectory = $"{rootPath}/SharedLogs";
+            TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
+            sharedLogDirectory = Path.Join(TestUtils.MethodTestDir, "SharedLogs");
             Directory.CreateDirectory(sharedLogDirectory);
 
             original = new TsavoriteTestInstance();
@@ -43,7 +41,7 @@ namespace Tsavorite.test.recovery.sumstore
         {
             original.TearDown();
             clone.TearDown();
-            TestUtils.DeleteDirectory(rootPath);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
@@ -52,7 +50,7 @@ namespace Tsavorite.test.recovery.sumstore
         [Category("Smoke")]
         public async ValueTask SharedLogDirectory([Values] bool isAsync)
         {
-            original.Initialize($"{rootPath}/OriginalCheckpoint", sharedLogDirectory);
+            original.Initialize(Path.Join(TestUtils.MethodTestDir, "OriginalCheckpoint"), sharedLogDirectory);
             Assert.IsTrue(IsDirectoryEmpty(sharedLogDirectory)); // sanity check
             Populate(original.Store);
 
@@ -65,7 +63,7 @@ namespace Tsavorite.test.recovery.sumstore
             Test(original, checkpointGuid);
 
             // Copy checkpoint directory
-            var cloneCheckpointDirectory = $"{rootPath}/CloneCheckpoint";
+            var cloneCheckpointDirectory = Path.Join(TestUtils.MethodTestDir, "CloneCheckpoint");
             CopyDirectory(new DirectoryInfo(original.CheckpointDirectory), new DirectoryInfo(cloneCheckpointDirectory));
 
             // Recover from original checkpoint
@@ -112,7 +110,7 @@ namespace Tsavorite.test.recovery.sumstore
                 LogDirectory = logDirectory;
 
                 string logFileName = "log";
-                string deviceFileName = $"{LogDirectory}/{logFileName}";
+                string deviceFileName = Path.Join(LogDirectory, logFileName);
                 KeyValuePair<int, SafeFileHandle>[] initialHandles = null;
                 if (populateLogHandles)
                 {

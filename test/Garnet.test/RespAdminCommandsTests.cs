@@ -465,9 +465,9 @@ namespace Garnet.test
             string[] p = default;
 
             if (async && unsafetruncatelog)
-                p = new string[] { "ASYNC", "UNSAFETRUNCATELOG" };
+                p = ["ASYNC", "UNSAFETRUNCATELOG"];
             else if (unsafetruncatelog)
-                p = new string[] { "UNSAFETRUNCATELOG" };
+                p = ["UNSAFETRUNCATELOG"];
 
             if (async)
             {

@@ -31,6 +31,7 @@ namespace Garnet.server
         LREM,
         RPOPLPUSH,
         LMOVE,
+        LSET,
     }
 
     /// <summary>
@@ -47,6 +48,7 @@ namespace Garnet.server
         /// Right or tail
         /// </summary>
         Right,
+        Unknown,
     }
 
 
@@ -172,6 +174,9 @@ namespace Garnet.server
                         break;
                     case ListOperation.LREM:
                         ListRemove(_input, input.Length, _output);
+                        break;
+                    case ListOperation.LSET:
+                        ListSet(_input, input.Length, ref output);
                         break;
 
                     default:

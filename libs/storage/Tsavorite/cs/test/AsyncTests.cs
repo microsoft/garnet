@@ -28,9 +28,9 @@ namespace Tsavorite.test.async
         public async Task AsyncRecoveryTest1(CheckpointType checkpointType)
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/AsyncRecoveryTest1.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "AsyncRecoveryTest1.log"), deleteOnClose: true);
 
-            string testPath = TestUtils.MethodTestDir + "/checkpoints4";
+            string testPath = Path.Join(TestUtils.MethodTestDir, "checkpoints4");
             Directory.CreateDirectory(testPath);
 
             store1 = new TsavoriteKV<AdId, NumClicks>

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 using Tsavorite.devices;
@@ -16,7 +17,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public void LocalStorageWriteRead()
         {
-            TestDeviceWriteRead(Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskTests.log", deleteOnClose: true));
+            TestDeviceWriteRead(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests.log"), deleteOnClose: true));
         }
 
         [Test]
@@ -44,7 +45,7 @@ namespace Tsavorite.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             IDevice tested;
-            IDevice localDevice = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskTests.log", deleteOnClose: true, capacity: 1 << 30);
+            IDevice localDevice = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests.log"), deleteOnClose: true, capacity: 1 << 30);
             if (TestUtils.IsRunningAzureTests)
             {
                 IDevice cloudDevice = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "BasicDiskTests", logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
@@ -53,7 +54,7 @@ namespace Tsavorite.test
             else
             {
                 // If no Azure is enabled, just use another disk
-                IDevice localDevice2 = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskTests2.log", deleteOnClose: true, capacity: 1 << 30);
+                IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1 << 30);
                 tested = new TieredStorageDevice(1, localDevice, localDevice2);
 
             }
@@ -65,8 +66,8 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void ShardedWriteRead()
         {
-            IDevice localDevice1 = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskTests1.log", deleteOnClose: true, capacity: 1 << 30);
-            IDevice localDevice2 = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/BasicDiskTests2.log", deleteOnClose: true, capacity: 1 << 30);
+            IDevice localDevice1 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests1.log"), deleteOnClose: true, capacity: 1 << 30);
+            IDevice localDevice2 = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "BasicDiskTests2.log"), deleteOnClose: true, capacity: 1 << 30);
             var device = new ShardedStorageDevice(new UniformPartitionScheme(512, localDevice1, localDevice2));
             TestDeviceWriteRead(device);
         }
@@ -76,7 +77,7 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void OmitSegmentIdTest([Values] TestUtils.DeviceType deviceType)
         {
-            var filename = TestUtils.MethodTestDir + "/test.log";
+            var filename = Path.Join(TestUtils.MethodTestDir, "test.log");
             var omit = false;
             for (var ii = 0; ii < 2; ++ii)
             {

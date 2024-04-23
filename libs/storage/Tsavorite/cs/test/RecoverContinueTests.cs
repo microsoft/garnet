@@ -18,14 +18,13 @@ namespace Tsavorite.test.recovery.sumstore.cntinue
         private TsavoriteKV<AdId, NumClicks> store3;
         private IDevice log;
         private int numOps;
-        private string checkpointDir;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/test.log", deleteOnClose: true);
-            checkpointDir = TestUtils.MethodTestDir + "/checkpoints3";
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
+            string checkpointDir = Path.Join(TestUtils.MethodTestDir, "checkpoints3");
             Directory.CreateDirectory(checkpointDir);
 
             store1 = new TsavoriteKV<AdId, NumClicks>
@@ -61,7 +60,6 @@ namespace Tsavorite.test.recovery.sumstore.cntinue
             log?.Dispose();
             log = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
-            TestUtils.DeleteDirectory(checkpointDir);
         }
 
         [Test]

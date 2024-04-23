@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -22,7 +23,6 @@ namespace Tsavorite.test.recovery
         protected IDevice log;
         protected const int numOps = 5000;
         protected AdId[] inputArray;
-        protected string path;
 
         protected void BaseSetup()
         {
@@ -32,16 +32,15 @@ namespace Tsavorite.test.recovery
                 inputArray[i].adId = i;
             }
 
-            path = TestUtils.MethodTestDir + "/";
-            log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: false);
-            TestUtils.RecreateDirectory(path);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "hlog.log"), deleteOnClose: false);
+            TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
         }
 
         protected void BaseTearDown()
         {
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         public class MyFunctions : SimpleFunctions<long, long>
@@ -90,7 +89,7 @@ namespace Tsavorite.test.recovery
             using var store1 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
 
             using var s1 = store1.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
@@ -120,7 +119,7 @@ namespace Tsavorite.test.recovery
             using var store2 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
 
             if (isAsync)
@@ -170,7 +169,7 @@ namespace Tsavorite.test.recovery
             using var store1 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
 
             using var s1 = store1.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
@@ -178,7 +177,7 @@ namespace Tsavorite.test.recovery
             using var store2 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
 
             for (int i = 0; i < 5; i++)
@@ -247,7 +246,7 @@ namespace Tsavorite.test.recovery
                 using var store = new TsavoriteKV<long, long>
                     (128,
                     logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20 },
-                    checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                     );
 
                 if (i > 0)
@@ -295,7 +294,7 @@ namespace Tsavorite.test.recovery
             using var store = new TsavoriteKV<long, long>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 11, SegmentSizeBits = 11 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
 
             using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
@@ -439,7 +438,7 @@ namespace Tsavorite.test.recovery
             using var store1 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
 
             using var s1 = store1.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
@@ -447,7 +446,7 @@ namespace Tsavorite.test.recovery
             using var store2 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
 
             for (int i = 0; i < 5; i++)
@@ -523,7 +522,7 @@ namespace Tsavorite.test.recovery
             using var store1 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
 
             using var s1 = store1.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
@@ -531,7 +530,7 @@ namespace Tsavorite.test.recovery
             using var store2 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
 
             for (int i = 0; i < 5; i++)
@@ -611,7 +610,7 @@ namespace Tsavorite.test.recovery
             using var store1 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path },
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
                 concurrencyControlMode: ConcurrencyControlMode.RecordIsolation
                 );
 
@@ -656,7 +655,7 @@ namespace Tsavorite.test.recovery
             using var store2 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 20, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
 
             if (isAsync)
@@ -716,7 +715,7 @@ namespace Tsavorite.test.recovery
                 TestUtils.IgnoreIfNotRunningAzureTests();
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                    new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
+                    new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             }
 
             await IncrSnapshotRecoveryCheck(checkpointManager);
