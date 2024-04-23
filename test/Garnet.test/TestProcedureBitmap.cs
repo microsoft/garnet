@@ -46,7 +46,7 @@ namespace Garnet
         {
             int offset = 0;
             bool result = true;
-            BitmapOperation[] bitwiseOps = new BitmapOperation[] { BitmapOperation.AND, BitmapOperation.OR, BitmapOperation.XOR };
+            BitmapOperation[] bitwiseOps = [BitmapOperation.AND, BitmapOperation.OR, BitmapOperation.XOR];
 
             //get paramaters
             var bitmapA = GetNextArg(input, ref offset);
@@ -78,7 +78,7 @@ namespace Garnet
             api.SET(bitmapA, data);
 
             //Not operator
-            api.StringBitOperation(BitmapOperation.NOT, destinationKeyBitOp, new ArgSlice[] { bitmapA }, out long size);
+            api.StringBitOperation(BitmapOperation.NOT, destinationKeyBitOp, [bitmapA], out long size);
             if (size != 8)
             {
                 result = false;
@@ -101,7 +101,7 @@ namespace Garnet
             //apply operators
             for (int i = 0; i < bitwiseOps.Length; i++)
             {
-                api.StringBitOperation(bitwiseOps[i], destinationKeyBitOp, new ArgSlice[] { bitmapA, bitmapB }, out size);
+                api.StringBitOperation(bitwiseOps[i], destinationKeyBitOp, [bitmapA, bitmapB], out size);
                 if (size != 8)
                 {
                     result = false;
@@ -129,7 +129,7 @@ namespace Garnet
             }
 
             //bitfield command
-            data = new byte[1] { (byte)'P' };
+            data = [(byte)'P'];
             api.SET(bitmapA, data);
             var listCommands = new List<BitFieldCmdArgs>();
 
