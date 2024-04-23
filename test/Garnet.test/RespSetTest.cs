@@ -322,12 +322,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CanDoSetUnionStore()
+        [TestCase("key")]
+        [TestCase("")]
+        public void CanDoSetUnionStore(string key)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-
-            var key = "key";
 
             var key1 = "key1";
             var key1Value = new RedisValue[] { "a", "b", "c" };

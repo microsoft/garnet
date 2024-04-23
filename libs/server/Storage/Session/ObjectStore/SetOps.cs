@@ -416,9 +416,6 @@ namespace Garnet.server
         {
             count = default;
 
-            if (key.Length == 0 || keys.Length == 0)
-                return GarnetStatus.OK;
-
             var destination = scratchBufferManager.CreateArgSlice(key);
 
             var createTransaction = false;
