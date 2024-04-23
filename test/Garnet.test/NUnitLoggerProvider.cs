@@ -18,15 +18,15 @@ namespace Garnet.test
         private readonly bool matchLevel;
         private readonly LogLevel logLevel;
 
-        static readonly string[] lvl = new string[]
-        {
+        static readonly string[] lvl =
+        [
             "trce",
             "dbug",
             "info",
             "warn",
             "errr",
             "crit",
-        };
+        ];
 
         public NUnitLoggerProvider(TextWriter textWriter, string scope = "", HashSet<string> skipCmd = null, bool recvOnly = false, bool matchLevel = false, LogLevel logLevel = LogLevel.None)
         {

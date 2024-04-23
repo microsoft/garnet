@@ -38,7 +38,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            string[] data = new string[] { "a", "b", "c", "d", "e", "f" };
+            string[] data = ["a", "b", "c", "d", "e", "f"];
             string key = "hllKey";
             bool fUpdated = false;
 
@@ -66,8 +66,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            RedisValue[] x = new RedisValue[] { "h", "e", "l", "l", "o" };
-            RedisValue[] y = new RedisValue[] { "w", "o", "r", "l", "d" };
+            RedisValue[] x = ["h", "e", "l", "l", "o"];
+            RedisValue[] y = ["w", "o", "r", "l", "d"];
 
             string keyX = "x";
             var ret = db.HyperLogLogAdd(keyX, x);
@@ -87,8 +87,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            RedisValue[] x = new RedisValue[] { "h", "e", "l", "l", "o" };
-            RedisValue[] y = new RedisValue[] { "w", "o", "r", "l", "d" };
+            RedisValue[] x = ["h", "e", "l", "l", "o"];
+            RedisValue[] y = ["w", "o", "r", "l", "d"];
             string keyX = "x";
             string keyY = "y";
             string keyW = "w";
@@ -117,8 +117,8 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            RedisValue[] x = new RedisValue[] { "h", "e", "l", "l", "o" };
-            RedisValue[] y = new RedisValue[] { "w", "o", "r", "l", "d" };
+            RedisValue[] x = ["h", "e", "l", "l", "o"];
+            RedisValue[] y = ["w", "o", "r", "l", "d"];
             string keyX = "x";
             string keyY = "y";
             string keyW = "w";
@@ -451,13 +451,13 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            RedisValue[] dataA = new RedisValue[] { "h", "e", "l", "l", "o" };
-            RedisValue[] dataB = new RedisValue[] { "w", "o", "r", "l", "d" };
-            RedisValue[] dataC = new RedisValue[] { "a", "b", "c", "d", "e", "f" };
+            RedisValue[] dataA = ["h", "e", "l", "l", "o"];
+            RedisValue[] dataB = ["w", "o", "r", "l", "d"];
+            RedisValue[] dataC = ["a", "b", "c", "d", "e", "f"];
             string keyA = "HyperLogLogMultiCountTestA";
             string keyB = "HyperLogLogMultiCountTestB";
             string keyC = "HyperLogLogMultiCountTestC";
-            RedisKey[] keys = new RedisKey[] { keyA, keyB, keyC };
+            RedisKey[] keys = [keyA, keyB, keyC];
 
             db.KeyDelete(keyA);
             db.KeyDelete(keyB);
@@ -491,14 +491,14 @@ namespace Garnet.test
 
         public List<long> RandomSubSeq(List<long> list, int count)
         {
-            List<long> rss = new List<long>();
+            List<long> rss = [];
             for (int i = 0; i < count; i++) rss.Add(list[r.Next(list.Count)]);
             return rss;
         }
 
         public RedisValue[] RandomRedisValueSubseq(List<long> list, int count)
         {
-            List<RedisValue> rss = new List<RedisValue>();
+            List<RedisValue> rss = [];
             for (int i = 0; i < count; i++)
                 rss.Add(list[r.Next(list.Count)]);
             return rss.ToArray();
@@ -521,8 +521,8 @@ namespace Garnet.test
             var keyA = System.Text.Encoding.ASCII.GetBytes("HyperLogLogTestPFADDA");//sparse
             var keyB = System.Text.Encoding.ASCII.GetBytes("HyperLogLogTestPFADDB");//sparse            
 
-            HashSet<long> setA = new HashSet<long>();
-            HashSet<long> setB = new HashSet<long>();
+            HashSet<long> setA = [];
+            HashSet<long> setB = [];
 
             for (int i = 0; i < smallSeq; i++)
             {
@@ -584,7 +584,7 @@ namespace Garnet.test
             int keyCount = sparse ? 32 : 4;
             int smallSeq = seqSize;
 
-            Dictionary<int, HashSet<long>> hllKeyCollection = new Dictionary<int, HashSet<long>>();
+            Dictionary<int, HashSet<long>> hllKeyCollection = [];
 
             //1. Populate HLL
             for (int i = 0; i < keyCount; i++)
@@ -592,7 +592,7 @@ namespace Garnet.test
                 int key = i;
                 string sKey = key.ToString();
 
-                hllKeyCollection.Add(key, new HashSet<long>());
+                hllKeyCollection.Add(key, []);
                 for (int j = 0; j < smallSeq; j++)
                 {
                     long valA = LongRandom();
@@ -622,8 +622,8 @@ namespace Garnet.test
             int smallSeq = 1 << 10;
             int largeSeq = 1 << 15;
             var keyA = System.Text.Encoding.ASCII.GetBytes("keyA");//sparse
-            HashSet<long> setA = new HashSet<long>();
-            List<long> largeInput = new List<long>();
+            HashSet<long> setA = [];
+            List<long> largeInput = [];
 
             for (int i = 0; i < largeSeq; i++)
                 largeInput.Add(LongRandom());
@@ -651,11 +651,11 @@ namespace Garnet.test
 
             var keyA = System.Text.Encoding.ASCII.GetBytes("SSkeyA");//sparse
             var keyB = System.Text.Encoding.ASCII.GetBytes("SSkeyB");//sparse
-            HashSet<long> setA = new HashSet<long>();
-            HashSet<long> setB = new HashSet<long>();
+            HashSet<long> setA = [];
+            HashSet<long> setB = [];
             long estimate = 0;
 
-            List<long> largeInput = new List<long>();
+            List<long> largeInput = [];
             RedisValue[] rss;
             for (int i = 0; i < largeSeq; i++)
                 largeInput.Add(LongRandom());
@@ -697,7 +697,7 @@ namespace Garnet.test
             int keyCount = 64;
             int smallSeq = 32;
 
-            Dictionary<int, HashSet<long>> hllKeyCollection = new Dictionary<int, HashSet<long>>();
+            Dictionary<int, HashSet<long>> hllKeyCollection = [];
 
             //1. Populate HLL
             for (int i = 0; i < keyCount; i++)
@@ -705,7 +705,7 @@ namespace Garnet.test
                 int key = i;
                 string sKey = key.ToString();
 
-                hllKeyCollection.Add(key, new HashSet<long>());
+                hllKeyCollection.Add(key, []);
                 for (int j = 0; j < smallSeq; j++)
                 {
                     long valA = LongRandom();
@@ -752,12 +752,12 @@ namespace Garnet.test
             var keyA = System.Text.Encoding.ASCII.GetBytes("SDkeyA");//sparse
             var keyB = System.Text.Encoding.ASCII.GetBytes("SDkeyB");//dense
             var keyC = System.Text.Encoding.ASCII.GetBytes("SDkeyC");//dense
-            HashSet<long> setA = new HashSet<long>();
-            HashSet<long> setB = new HashSet<long>();
-            HashSet<long> setC = new HashSet<long>();
+            HashSet<long> setA = [];
+            HashSet<long> setB = [];
+            HashSet<long> setC = [];
             long estimate = 0;
 
-            List<long> largeInput = new List<long>();
+            List<long> largeInput = [];
             RedisValue[] rss;
             for (int i = 0; i < largeSeq; i++)
                 largeInput.Add(LongRandom());
@@ -807,7 +807,7 @@ namespace Garnet.test
             int smallSeq = 32;
             int largeSeq = 1 << 13;
 
-            Dictionary<int, HashSet<long>> hllKeyCollection = new Dictionary<int, HashSet<long>>();
+            Dictionary<int, HashSet<long>> hllKeyCollection = [];
 
             //1. Populate HLL
             for (int i = 0; i < keyCount; i++)
@@ -815,7 +815,7 @@ namespace Garnet.test
                 int key = i;
                 string sKey = key.ToString();
 
-                hllKeyCollection.Add(key, new HashSet<long>());
+                hllKeyCollection.Add(key, []);
                 int seq = i % 2 == 0 ? smallSeq : largeSeq;
                 for (int j = 0; j < seq; j++)
                 {
@@ -863,12 +863,12 @@ namespace Garnet.test
             var keyA = System.Text.Encoding.ASCII.GetBytes("DDkeyA");//dense
             var keyB = System.Text.Encoding.ASCII.GetBytes("DDkeyB");//dense
             var keyC = System.Text.Encoding.ASCII.GetBytes("DDkeyC");//dense
-            HashSet<long> setA = new HashSet<long>();
-            HashSet<long> setB = new HashSet<long>();
-            HashSet<long> setC = new HashSet<long>();
+            HashSet<long> setA = [];
+            HashSet<long> setB = [];
+            HashSet<long> setC = [];
             long estimate = 0;
 
-            List<long> largeInput = new List<long>();
+            List<long> largeInput = [];
             RedisValue[] rss;
             for (int i = 0; i < largeSeq; i++)
                 largeInput.Add(LongRandom());
@@ -916,7 +916,7 @@ namespace Garnet.test
             int keyCount = 4;
             int largeSeq = 1 << 13;
 
-            Dictionary<int, HashSet<long>> hllKeyCollection = new Dictionary<int, HashSet<long>>();
+            Dictionary<int, HashSet<long>> hllKeyCollection = [];
 
             //1. Populate HLL
             for (int i = 0; i < keyCount; i++)
@@ -924,7 +924,7 @@ namespace Garnet.test
                 int key = i;
                 string sKey = key.ToString();
 
-                hllKeyCollection.Add(key, new HashSet<long>());
+                hllKeyCollection.Add(key, []);
                 for (int j = 0; j < largeSeq; j++)
                 {
                     long valA = LongRandom();
@@ -967,11 +967,11 @@ namespace Garnet.test
             int smallSeq = 1 << 10;
             int largeSeq = 1 << 14;
             int hllCount = 10;
-            HashSet<long> dstSet = new HashSet<long>();
+            HashSet<long> dstSet = [];
             int srcKey = r.Next(1024, 2048);
             RedisKey[] srcKeys = new RedisKey[hllCount];
 
-            List<long> values = new List<long>();
+            List<long> values = [];
             for (int i = 0; i < largeSeq; i++)
                 values.Add(LongRandom());
 
