@@ -145,6 +145,7 @@ namespace Garnet.server
                 (byte)ListOperation.LINDEX => SingleKey(1, true, LockType.Shared),
                 (byte)ListOperation.LINSERT => SingleKey(1, true, LockType.Exclusive),
                 (byte)ListOperation.LREM => SingleKey(1, true, LockType.Exclusive),
+                (byte)ListOperation.LSET => SingleKey(1, true, LockType.Exclusive),
                 _ => -1
             };
         }
@@ -184,6 +185,7 @@ namespace Garnet.server
                 (byte)SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
                 (byte)SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
                 (byte)SetOperation.SUNION => ListKeys(inputCount, true, LockType.Shared),
+                (byte)SetOperation.SUNIONSTORE => XSTOREKeys(inputCount, true),
                 (byte)SetOperation.SDIFF => ListKeys(inputCount, true, LockType.Shared),
                 (byte)SetOperation.SDIFFSTORE => XSTOREKeys(inputCount, true),
                 (byte)SetOperation.SMOVE => ListKeys(inputCount, true, LockType.Exclusive),

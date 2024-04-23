@@ -413,5 +413,17 @@ namespace Garnet.server
              where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
              => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
 
+        /// <summary>
+        /// Sets the list element at index to element.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="outputFooter"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <returns></returns>
+        public unsafe GarnetStatus ListSet<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            => RMWObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
     }
 }
