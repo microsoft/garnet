@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -49,7 +50,7 @@ namespace Tsavorite.test
             }
 
             DeleteDirectory(MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
             store = new TsavoriteKV<SpanByte, SpanByte>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = PageSizeBits }, concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
         }
@@ -366,7 +367,7 @@ namespace Tsavorite.test
         public unsafe void SpanByteJumpToBeginAddressTest()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            using var log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
+            using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
             using var store = new TsavoriteKV<SpanByte, SpanByte>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 20, PageSizeBits = 15 }, concurrencyControlMode: ConcurrencyControlMode.None);
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());

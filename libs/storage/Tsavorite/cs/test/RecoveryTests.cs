@@ -20,7 +20,6 @@ namespace Tsavorite.test.recovery.sumstore
         internal const long checkpointInterval = (1L << 14);
 
         private TsavoriteKV<AdId, NumClicks> store;
-        private string path;
         private readonly List<Guid> logTokens = new();
         private readonly List<Guid> indexTokens = new();
         private IDevice log;
@@ -28,20 +27,18 @@ namespace Tsavorite.test.recovery.sumstore
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-
             // Only clean these in the initial Setup, as tests use the other Setup() overload to recover
             logTokens.Clear();
             indexTokens.Clear();
-            TestUtils.DeleteDirectory(path, true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, true);
         }
 
         private void Setup(TestUtils.DeviceType deviceType)
         {
-            log = TestUtils.CreateTestDevice(deviceType, path + "Test.log");
+            log = TestUtils.CreateTestDevice(deviceType, Path.Join(TestUtils.MethodTestDir, "Test.log"));
             store = new TsavoriteKV<AdId, NumClicks>(keySpace,
                 new LogSettings { LogDevice = log, SegmentSizeBits = 25 }, //new LogSettings { LogDevice = log, MemorySizeBits = 14, PageSizeBits = 9 },  // locks ups at session.RMW line in Populate() for Local Memory
-                new CheckpointSettings { CheckpointDir = path }
+                new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
             );
         }
 
@@ -57,7 +54,7 @@ namespace Tsavorite.test.recovery.sumstore
 
             // Do NOT clean up here unless specified, as tests use this TearDown() to prepare for recovery
             if (deleteDir)
-                TestUtils.DeleteDirectory(path);
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         private void PrepareToRecover(TestUtils.DeviceType deviceType)
@@ -203,7 +200,7 @@ namespace Tsavorite.test.recovery.sumstore
                 new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactory(),
                         new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(path).FullName)));
+                          new DirectoryInfo(TestUtils.MethodTestDir).FullName)));
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
@@ -246,7 +243,6 @@ namespace Tsavorite.test.recovery.sumstore
         private static long ExpectedValue(int key) => expectedValueBase + key;
 
         private IDisposable storeDisp;
-        private string path;
         private Guid logToken;
         private Guid indexToken;
         private IDevice log;
@@ -262,24 +258,22 @@ namespace Tsavorite.test.recovery.sumstore
             smallSector = false;
             serializerSettingsObj = null;
 
-            path = TestUtils.MethodTestDir + "/";
-
             // Only clean these in the initial Setup, as tests use the other Setup() overload to recover
             logToken = Guid.Empty;
             indexToken = Guid.Empty;
-            TestUtils.DeleteDirectory(path, true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, true);
         }
 
         private TsavoriteKV<TData, TData> Setup<TData>()
         {
-            log = new LocalMemoryDevice(1L << 26, 1L << 22, 2, sector_size: smallSector ? 64 : (uint)512, fileName: $"{path}{typeof(TData).Name}.log");
+            log = new LocalMemoryDevice(1L << 26, 1L << 22, 2, sector_size: smallSector ? 64 : (uint)512, fileName: Path.Join(TestUtils.MethodTestDir, $"{typeof(TData).Name}.log"));
             objlog = serializerSettingsObj is null
                 ? null
-                : new LocalMemoryDevice(1L << 26, 1L << 22, 2, fileName: $"{path}{typeof(TData).Name}.obj.log");
+                : new LocalMemoryDevice(1L << 26, 1L << 22, 2, fileName: Path.Join(TestUtils.MethodTestDir, $"{typeof(TData).Name}.obj.log"));
 
             var result = new TsavoriteKV<TData, TData>(DeviceTypeRecoveryTests.keySpace,
                 new LogSettings { LogDevice = log, ObjectLogDevice = objlog, SegmentSizeBits = 25 },
-                new CheckpointSettings { CheckpointDir = path },
+                new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
                 serializerSettingsObj as SerializerSettings<TData, TData>
             );
 
@@ -301,7 +295,7 @@ namespace Tsavorite.test.recovery.sumstore
 
             // Do NOT clean up here unless specified, as tests use this TearDown() to prepare for recovery
             if (deleteDir)
-                TestUtils.DeleteDirectory(path);
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         private TsavoriteKV<TData, TData> PrepareToRecover<TData>()

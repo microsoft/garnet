@@ -16,22 +16,19 @@ namespace Tsavorite.test
         private TsavoriteLog logFullParams;
         private IDevice deviceFullParams;
         static readonly byte[] entry = new byte[100];
-        private string path;
 
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
             // We loop to ensure clean-up as deleteOnClose does not always work for MLSD
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test
-            device = new ManagedLocalStorageDevice(path + "ManagedLocalStore.log", deleteOnClose: true);
+            device = new ManagedLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStore.log"), deleteOnClose: true);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
 
-            deviceFullParams = new ManagedLocalStorageDevice(path + "ManagedLocalStoreFullParams.log", deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
+            deviceFullParams = new ManagedLocalStorageDevice(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStoreFullParams.log"), deleteOnClose: false, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
             logFullParams = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14 });
         }
 
@@ -48,7 +45,7 @@ namespace Tsavorite.test
             deviceFullParams = null;
 
             // Clean up log 
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
 
@@ -149,7 +146,6 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public void ManagedLocalStoreFullParamsTest()
         {
-
             int entryLength = 10;
 
             // Set Default entry data
@@ -163,8 +159,8 @@ namespace Tsavorite.test
             logFullParams.Commit(true);
 
             // Verify  
-            Assert.IsTrue(File.Exists(path + "/log-commits/commit.1.0"));
-            Assert.IsTrue(File.Exists(path + "/ManagedLocalStore.log.0"));
+            Assert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "log-commits", "commit.1.0")));
+            Assert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "ManagedLocalStore.log.0")));
 
             // Read the log just to verify can actually read it
             int currentEntry = 0;

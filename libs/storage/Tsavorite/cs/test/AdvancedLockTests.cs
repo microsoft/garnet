@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -136,7 +137,7 @@ namespace Tsavorite.test.LockTests
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(MethodTestDir + "/GenericStringTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
 
             var concurrencyControlMode = ConcurrencyControlMode.None;
@@ -310,8 +311,8 @@ namespace Tsavorite.test.LockTests
             public void Setup()
             {
                 DeleteDirectory(MethodTestDir, wait: true);
-                checkpointDir = MethodTestDir + $"/checkpoints";
-                log = Devices.CreateLogDevice(MethodTestDir + "/test.log", deleteOnClose: true);
+                checkpointDir = Path.Join(MethodTestDir, "checkpoints");
+                log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
 
                 store1 = new TsavoriteKV<int, int>(128,
                     logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },

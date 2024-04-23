@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -58,7 +59,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
             TestUtils.IgnoreIfNotRunningAzureTests();
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
+                new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
             checkpointManager.PurgeAll();
         }
@@ -72,7 +73,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
         {
             checkpointManager = new DeviceLogCommitCheckpointManager(
                 new LocalStorageNamedDeviceFactory(),
-                new DefaultCheckpointNamingScheme($"{TestUtils.MethodTestDir}/chkpt"));
+                new DefaultCheckpointNamingScheme(Path.Join(TestUtils.MethodTestDir, "chkpt")));
             await SimpleRecoveryTest1_Worker(checkpointType, isAsync, testCommitCookie);
             checkpointManager.PurgeAll();
         }
@@ -93,9 +94,9 @@ namespace Tsavorite.test.recovery.sumstore.simple
             }
 
             if (checkpointManager is null)
-                checkpointDir = TestUtils.MethodTestDir + $"/checkpoints";
+                checkpointDir = Path.Join(TestUtils.MethodTestDir, "checkpoints");
 
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest1.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "SimpleRecoveryTest1.log"), deleteOnClose: true);
 
             store1 = new TsavoriteKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
@@ -160,8 +161,8 @@ namespace Tsavorite.test.recovery.sumstore.simple
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask SimpleRecoveryTest2([Values] CheckpointType checkpointType, [Values] bool isAsync)
         {
-            checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints4"), false);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest2.log", deleteOnClose: true);
+            checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(TestUtils.MethodTestDir, "checkpoints4")), false);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
 
             store1 = new TsavoriteKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
@@ -212,8 +213,8 @@ namespace Tsavorite.test.recovery.sumstore.simple
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask ShouldRecoverBeginAddress([Values] bool isAsync)
         {
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleRecoveryTest2.log", deleteOnClose: true);
-            checkpointDir = TestUtils.MethodTestDir + "/checkpoints6";
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "SimpleRecoveryTest2.log"), deleteOnClose: true);
+            checkpointDir = Path.Join(TestUtils.MethodTestDir, "checkpoints6");
 
             store1 = new TsavoriteKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },
@@ -256,8 +257,8 @@ namespace Tsavorite.test.recovery.sumstore.simple
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void SimpleReadAndUpdateInfoTest()
         {
-            checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints"), false);
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/SimpleReadAndUpdateInfoTest.log", deleteOnClose: true);
+            checkpointManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(Path.Join(TestUtils.MethodTestDir, "checkpoints")), false);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "SimpleReadAndUpdateInfoTest.log"), deleteOnClose: true);
 
             store1 = new TsavoriteKV<AdId, NumClicks>(128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, MemorySizeBits = 29 },

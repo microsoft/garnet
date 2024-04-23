@@ -24,7 +24,6 @@ namespace Tsavorite.test.recovery.objectstore
         const long completePendingInterval = (1L << 10);
         const long checkpointInterval = (1L << 16);
         private TsavoriteKV<AdId, NumClicks> store;
-        private string test_path;
         private Guid token;
         private IDevice log, objlog;
 
@@ -33,18 +32,17 @@ namespace Tsavorite.test.recovery.objectstore
 
         public void Setup(bool deleteDir)
         {
-            test_path = TestUtils.MethodTestDir;
             if (deleteDir)
-                TestUtils.RecreateDirectory(test_path);
+                TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
 
-            log = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.log", false);
-            objlog = Devices.CreateLogDevice(test_path + "/ObjectRecoveryTests.obj.log", false);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.log"), false);
+            objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.obj.log"), false);
 
             store = new TsavoriteKV<AdId, NumClicks>
                 (
                     keySpace,
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog },
-                    new CheckpointSettings { CheckpointDir = test_path },
+                    new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
                     new SerializerSettings<AdId, NumClicks> { keySerializer = () => new AdIdSerializer(), valueSerializer = () => new NumClicksSerializer() }
                     );
         }
@@ -62,7 +60,7 @@ namespace Tsavorite.test.recovery.objectstore
             objlog = null;
 
             if (deleteDir)
-                TestUtils.DeleteDirectory(test_path);
+                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         private void PrepareToRecover()
@@ -173,7 +171,7 @@ namespace Tsavorite.test.recovery.objectstore
                 new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactory(),
                         new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(test_path).FullName)), null);
+                          new DirectoryInfo(TestUtils.MethodTestDir).FullName)), null);
 
             // Compute expected array
             long[] expected = new long[numUniqueKeys];
