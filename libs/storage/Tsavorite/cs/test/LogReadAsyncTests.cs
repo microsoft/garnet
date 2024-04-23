@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Buffers;
+using System.IO;
 using System.Threading;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -13,7 +14,6 @@ namespace Tsavorite.test
     {
         private TsavoriteLog log;
         private IDevice device;
-        private string path;
 
         public enum ParameterDefaultsIteratorType
         {
@@ -25,10 +25,8 @@ namespace Tsavorite.test
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
         }
 
@@ -52,9 +50,9 @@ namespace Tsavorite.test
             int entryLength = 20;
             int numEntries = 500;
             int entryFlag = 9999;
-            string filename = path + "LogReadAsync" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, $"LogReadAsync{deviceType}.log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
 
             byte[] entry = new byte[entryLength];
 

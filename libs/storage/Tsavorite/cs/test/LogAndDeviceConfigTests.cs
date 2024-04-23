@@ -17,19 +17,16 @@ namespace Tsavorite.test
     {
         private TsavoriteLog log;
         private IDevice device;
-        private string path;
         static readonly byte[] entry = new byte[100];
 
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "DeviceConfig", deleteOnClose: true, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
+            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "DeviceConfig"), deleteOnClose: true, recoverDevice: true, preallocateFile: true, capacity: 1 << 30);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
         }
 
@@ -42,7 +39,7 @@ namespace Tsavorite.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
@@ -63,8 +60,8 @@ namespace Tsavorite.test
             log.Commit(true);
 
             // Verify  
-            Assert.IsTrue(File.Exists(path + "/log-commits/commit.1.0"));
-            Assert.IsTrue(File.Exists(path + "/DeviceConfig.0"));
+            Assert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "log-commits", "commit.1.0")));
+            Assert.IsTrue(File.Exists(Path.Join(TestUtils.MethodTestDir, "DeviceConfig.0")));
 
             // Read the log just to verify can actually read it
             int currentEntry = 0;

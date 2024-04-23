@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 
@@ -17,7 +18,7 @@ namespace Tsavorite.test.ReadCacheTests
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 10 };
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "NativeReadCacheTests.log"), deleteOnClose: true);
             store = new TsavoriteKV<KeyStruct, ValueStruct>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings });
         }
