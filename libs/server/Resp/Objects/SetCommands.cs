@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -485,7 +486,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Set;
             inputPtr->header.SetOp = SetOperation.SPOP;
-            inputPtr->count = Int32.MinValue;
+            inputPtr->count = int.MinValue;
 
             int countParameter = 0;
             if (count == 2)
@@ -495,8 +496,9 @@ namespace Garnet.server
                     return false;
 
                 // Prepare response
-                var canParse = Int32.TryParse(Encoding.ASCII.GetString(countParameterByteArray), out countParameter);
-                if (!canParse || countParameter < 0)
+                if (!Utf8Parser.TryParse(countParameterByteArray, out countParameter, out var bytesConsumed, default) ||
+                    bytesConsumed != countParameterByteArray.Length ||
+                    countParameter < 0)
                 {
                     while (!RespWriteUtils.WriteError("ERR value is not an integer or out of range"u8, ref dcurr, dend))
                         SendAndReset();

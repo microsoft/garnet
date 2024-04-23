@@ -294,7 +294,7 @@ namespace Garnet.test
             // HSCAN non existing key
             var members = db.HashScan("foo");
             Assert.IsTrue(((IScanningCursor)members).Cursor == 0);
-            Assert.IsTrue(members.Count() == 0, "HSCAN non existing key failed.");
+            Assert.IsEmpty(members, "HSCAN non existing key failed.");
 
             db.HashSet("user:user1", [new HashEntry("name", "Alice"), new HashEntry("email", "email@example.com"), new HashEntry("age", "30")]);
 

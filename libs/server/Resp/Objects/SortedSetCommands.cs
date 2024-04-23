@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Globalization;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -1223,7 +1224,7 @@ namespace Garnet.server
 
                             if (withscoresInclude)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Value.ToString(), ref dcurr, dend))
+                                while (!RespWriteUtils.WriteAsciiBulkString(item.Value.ToString(CultureInfo.InvariantCulture), ref dcurr, dend))
                                     SendAndReset();
                             }
                         }

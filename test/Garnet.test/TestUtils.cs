@@ -42,7 +42,7 @@ namespace Garnet.test
         {
             get
             {
-                var container = "Garnet.test".Replace('.', '-').ToLower();
+                var container = "Garnet.test".Replace('.', '-').ToLowerInvariant();
                 return container;
             }
         }
