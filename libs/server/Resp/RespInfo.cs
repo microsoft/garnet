@@ -28,7 +28,7 @@ namespace Garnet.server
                 // Sorted Set
                 "ZADD", "ZCARD", "ZPOPMAX", "ZSCORE", "ZREM", "ZCOUNT", "ZINCRBY", "ZRANK", "ZRANGE", "ZRANGEBYSCORE", "ZREVRANGE", "ZREVRANK", "ZREMRANGEBYLEX", "ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZLEXCOUNT", "ZPOPMIN", "ZRANDMEMBER", "ZDIFF", "ZSCAN", "ZMSCORE",
                 // List
-                "LPOP", "LPUSH", "RPOP", "RPUSH", "LLEN", "LTRIM", "LRANGE", "LINDEX", "LINSERT", "LREM", "RPOPLPUSH", "LMOVE", "LPUSHX", "RPUSHX",
+                "LPOP", "LPUSH", "RPOP", "RPUSH", "LLEN", "LTRIM", "LRANGE", "LINDEX", "LINSERT", "LREM", "RPOPLPUSH", "LMOVE", "LPUSHX", "RPUSHX", "LSET",
                 // Hash
                 "HSET", "HGET", "HMGET", "HMSET", "HDEL", "HLEN", "HEXISTS", "HGETALL", "HKEYS", "HVALS", "HINCRBY", "HINCRBYFLOAT", "HSETNX", "HRANDFIELD", "HSCAN", "HSTRLEN",
                 // Hyperloglog
@@ -38,7 +38,7 @@ namespace Garnet.server
                 // Pub/sub
                 "PUBLISH", "SUBSCRIBE", "PSUBSCRIBE", "UNSUBSCRIBE", "PUNSUBSCRIBE",
                 // Set
-                "SADD", "SREM", "SPOP", "SMEMBERS", "SCARD", "SSCAN", "SRANDMEMBER", "SISMEMBER", "SUNION", "SDIFF", "SDIFFSTORE", "SMOVE",
+                "SADD", "SREM", "SPOP", "SMEMBERS", "SCARD", "SSCAN", "SRANDMEMBER", "SISMEMBER", "SUNION", "SUNIONSTORE", "SDIFF", "SDIFFSTORE", "SMOVE",
                 //Scan ops
                 "DBSIZE", "KEYS","SCAN",
                 // Geospatial commands

@@ -391,6 +391,10 @@ namespace Garnet.server
                                         {
                                             return (RespCommand.List, (byte)ListOperation.LREM);
                                         }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLSET\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.LSET);
+                                        }
                                         break;
 
                                     case 'M':
@@ -907,6 +911,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSRAND"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("MEMBER\r\n"u8))
                                 {
                                     return (RespCommand.Set, (byte)SetOperation.SRANDMEMBER);
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSUNIO"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("NSTORE\r\n"u8))
+                                {
+                                    return (RespCommand.Set, (byte)SetOperation.SUNIONSTORE);
                                 }
                                 break;
 

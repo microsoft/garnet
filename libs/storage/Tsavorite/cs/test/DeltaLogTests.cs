@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 
@@ -12,15 +13,12 @@ namespace Tsavorite.test
     {
         private TsavoriteLog log;
         private IDevice device;
-        private string path;
 
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }
 
         [TearDown]
@@ -32,7 +30,7 @@ namespace Tsavorite.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }
 
         [Test]
@@ -41,8 +39,8 @@ namespace Tsavorite.test
         public void DeltaLogTest1([Values] TestUtils.DeviceType deviceType)
         {
             const int TotalCount = 200;
-            string filename = $"{path}delta_{deviceType}.log";
-            TestUtils.RecreateDirectory(path);
+            string filename = Path.Join(TestUtils.MethodTestDir, $"delta_{deviceType}.log");
+            TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
 
             device = TestUtils.CreateTestDevice(deviceType, filename);
             device.Initialize(-1);

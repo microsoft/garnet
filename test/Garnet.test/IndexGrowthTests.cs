@@ -36,8 +36,8 @@ namespace Garnet.test
 
             var store = server.Provider.StoreWrapper.store;
 
-            RedisKey[] keys = { "abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey" };
-            RedisValue[] values = { "abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval" };
+            RedisKey[] keys = ["abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey"];
+            RedisValue[] values = ["abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval"];
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -74,8 +74,8 @@ namespace Garnet.test
 
             var objectStore = server.Provider.StoreWrapper.objectStore;
 
-            RedisKey[] keys = { "abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey" };
-            RedisValue[] values = { "abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval" };
+            RedisKey[] keys = ["abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey"];
+            RedisValue[] values = ["abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval"];
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -121,8 +121,8 @@ namespace Garnet.test
 
             var store = server.Provider.StoreWrapper.store;
 
-            RedisKey[] keys = { "abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey" };
-            RedisValue[] values = { "abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval" };
+            RedisKey[] keys = ["abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey"];
+            RedisValue[] values = ["abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval"];
 
             Random rnd = new Random(42);
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -185,8 +185,8 @@ namespace Garnet.test
 
             var objectStore = server.Provider.StoreWrapper.objectStore;
 
-            RedisKey[] keys = { "abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey" };
-            RedisValue[] values = { "abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval" };
+            RedisKey[] keys = ["abcdkey", "bcdekey", "cdefkey", "defgkey", "efghkey", "fghikey", "ghijkey", "hijkkey"];
+            RedisValue[] values = ["abcdval", "bcdeval", "cdefval", "defgval", "efghval", "fghival", "ghijval", "hijkval"];
 
             Random rnd = new Random(42);
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))

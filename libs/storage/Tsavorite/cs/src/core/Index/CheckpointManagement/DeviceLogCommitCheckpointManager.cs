@@ -75,7 +75,7 @@ namespace Tsavorite.core
                 // // We only keep the latest TsavoriteLog commit
                 flogCommitHistory = new long[flogCommitCount];
             }
-            deviceFactory.Initialize(checkpointNamingScheme.BaseName());
+            deviceFactory.Initialize(checkpointNamingScheme.BaseName);
         }
 
         /// <inheritdoc />
@@ -144,7 +144,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IEnumerable<long> ListCommits()
         {
-            return deviceFactory.ListContents(checkpointNamingScheme.TsavoriteLogCommitBasePath()).Select(checkpointNamingScheme.CommitNumber).OrderByDescending(e => e);
+            return deviceFactory.ListContents(checkpointNamingScheme.TsavoriteLogCommitBasePath).Select(checkpointNamingScheme.CommitNumber).OrderByDescending(e => e);
         }
 
         /// <inheritdoc />
@@ -207,7 +207,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IEnumerable<Guid> GetIndexCheckpointTokens()
         {
-            return deviceFactory.ListContents(checkpointNamingScheme.IndexCheckpointBasePath()).Select(checkpointNamingScheme.Token);
+            return deviceFactory.ListContents(checkpointNamingScheme.IndexCheckpointBasePath).Select(checkpointNamingScheme.Token);
         }
 
         /// <inheritdoc />
@@ -276,7 +276,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IEnumerable<Guid> GetLogCheckpointTokens()
         {
-            return deviceFactory.ListContents(checkpointNamingScheme.LogCheckpointBasePath()).Select(checkpointNamingScheme.Token);
+            return deviceFactory.ListContents(checkpointNamingScheme.LogCheckpointBasePath).Select(checkpointNamingScheme.Token);
         }
 
         /// <inheritdoc />

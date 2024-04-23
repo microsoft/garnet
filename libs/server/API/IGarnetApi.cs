@@ -547,6 +547,16 @@ namespace Garnet.server
         GarnetStatus SetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
+        /// This command is equal to SUNION, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        GarnetStatus SetUnionStore(byte[] key, ArgSlice[] keys, out int count);
+
+        /// <summary>
         /// This command is equal to SDIFF, but instead of returning the resulting set, it is stored in destination.
         /// If destination already exists, it is overwritten.
         /// </summary>
@@ -722,6 +732,15 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         GarnetStatus ListRemove(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+
+        /// <summary>
+        /// Sets the list element at index to element.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus ListSet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput output);
 
         #endregion
 

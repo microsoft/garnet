@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -20,21 +21,18 @@ namespace Tsavorite.test.UnsafeContext
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> fullSession;
         private UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> uContext;
         private IDevice log;
-        private string path;
         DeviceType deviceType;
 
         [SetUp]
         public void Setup()
         {
-            path = MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(path, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
         }
 
         private void Setup(long size, LogSettings logSettings, DeviceType deviceType)
         {
-            string filename = path + TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log";
+            string filename = Path.Join(MethodTestDir, TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log");
             log = CreateTestDevice(deviceType, filename);
             logSettings.LogDevice = log;
             store = new TsavoriteKV<KeyStruct, ValueStruct>(size, logSettings);
@@ -52,7 +50,7 @@ namespace Tsavorite.test.UnsafeContext
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(path);
+            DeleteDirectory(MethodTestDir);
         }
 
         private void AssertCompleted(Status expected, Status actual)

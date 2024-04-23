@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -144,16 +145,14 @@ namespace Tsavorite.test.readaddress
         {
             internal TsavoriteKV<Key, Value> store;
             internal IDevice logDevice;
-            internal string testDir;
             private readonly bool flush;
 
             internal long[] InsertAddresses = new long[numKeys];
 
             internal TestStore(bool useReadCache, ReadCopyOptions readCopyOptions, bool flush, ConcurrencyControlMode concurrencyControlMode)
             {
-                testDir = MethodTestDir;
-                DeleteDirectory(testDir, wait: true);
-                logDevice = Devices.CreateLogDevice($"{testDir}/hlog.log");
+                DeleteDirectory(MethodTestDir, wait: true);
+                logDevice = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"));
                 this.flush = flush;
 
                 var logSettings = new LogSettings
@@ -170,7 +169,7 @@ namespace Tsavorite.test.readaddress
                 store = new TsavoriteKV<Key, Value>(
                     size: 1L << 20,
                     logSettings: logSettings,
-                    checkpointSettings: new CheckpointSettings { CheckpointDir = $"{testDir}/chkpt" },
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = Path.Join(MethodTestDir, "chkpt") },
                     serializerSettings: null,
                     comparer: new Key.Comparer(),
                     concurrencyControlMode: concurrencyControlMode
@@ -259,7 +258,7 @@ namespace Tsavorite.test.readaddress
                 store = null;
                 logDevice?.Dispose();
                 logDevice = null;
-                DeleteDirectory(testDir);
+                DeleteDirectory(MethodTestDir);
             }
         }
 
