@@ -136,7 +136,7 @@ namespace Garnet.test
             string value = "value100";
             double score = 100;
 
-            db.SortedSetAdd(sortedSet1key, new SortedSetEntry[] { new SortedSetEntry(value, score) });
+            db.SortedSetAdd(sortedSet1key, [new SortedSetEntry(value, score)]);
 
             string sortedSetSecondkey = "sortedSetkey2";
             string secondValue = "value200";
@@ -229,7 +229,7 @@ namespace Garnet.test
             double score = 100;
             string value = "value100";
 
-            db.SortedSetAdd(sortedSetKey, new SortedSetEntry[] { new SortedSetEntry(value, score) });
+            db.SortedSetAdd(sortedSetKey, [new SortedSetEntry(value, score)]);
 
             var result = db.Execute("SORTEDSETREMOVETX", sortedSetKey, value);
 

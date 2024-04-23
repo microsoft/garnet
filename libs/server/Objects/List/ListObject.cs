@@ -47,6 +47,7 @@ namespace Garnet.server
         /// Right or tail
         /// </summary>
         Right,
+        Unknown,
     }
 
 

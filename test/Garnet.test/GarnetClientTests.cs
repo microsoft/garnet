@@ -187,8 +187,8 @@ namespace Garnet.test
             db.Connect();
 
             long n = stringParams ?
-                int.Parse(await db.ExecuteForStringResultAsync("INCRBY", new string[] { "myKey", "10" })) :
-                int.Parse(await db.ExecuteForStringResultAsync(Encoding.ASCII.GetBytes("$6\r\nINCRBY\r\n"), new Memory<byte>[] { Encoding.ASCII.GetBytes("myKey"), Encoding.ASCII.GetBytes("10") }));
+                int.Parse(await db.ExecuteForStringResultAsync("INCRBY", ["myKey", "10"])) :
+                int.Parse(await db.ExecuteForStringResultAsync(Encoding.ASCII.GetBytes("$6\r\nINCRBY\r\n"), [Encoding.ASCII.GetBytes("myKey"), Encoding.ASCII.GetBytes("10")]));
 
             Assert.AreEqual(10, n);
         }
@@ -342,10 +342,10 @@ namespace Garnet.test
             var db = TestUtils.GetGarnetClient();
             db.Connect();
 
-            var result = await db.ExecuteForStringResultAsync("SET", new string[] { "mykey", "Hello", "NX" });
+            var result = await db.ExecuteForStringResultAsync("SET", ["mykey", "Hello", "NX"]);
             Assert.AreEqual("OK", result);
 
-            result = await db.ExecuteForStringResultAsync("SET", new string[] { "mykey", "World", "NX" });
+            result = await db.ExecuteForStringResultAsync("SET", ["mykey", "World", "NX"]);
             Assert.AreEqual(null, result);
 
             var resultMykey = await db.StringGetAsync("mykey");
@@ -366,7 +366,7 @@ namespace Garnet.test
 
             for (int i = 0; i < nKeys; i++)
             {
-                var result = await db.ExecuteForStringResultAsync("SET", new string[] { worldcities[i, 1], worldcities[i, 0] });
+                var result = await db.ExecuteForStringResultAsync("SET", [worldcities[i, 1], worldcities[i, 0]]);
                 keys[i] = worldcities[i, 1];
                 keysMemory[i] = Encoding.ASCII.GetBytes(keys[i]);
                 Assert.AreEqual("OK", result);
@@ -477,7 +477,7 @@ namespace Garnet.test
             for (int i = 0; i < nKeys; i++)
             {
                 // create in the main store
-                var result = await db.ExecuteForStringResultAsync("SET", new string[] { worldcities[i, 1], worldcities[i, 0] });
+                var result = await db.ExecuteForStringResultAsync("SET", [worldcities[i, 1], worldcities[i, 0]]);
                 keys[i] = worldcities[i, 1];
                 keysMemoryByte[i] = Encoding.ASCII.GetBytes(keys[i]);
                 Assert.AreEqual("OK", result);
@@ -486,10 +486,7 @@ namespace Garnet.test
             for (int x = 0; x < nKeysObjectStore; x++)
             {
                 // create in the object store
-                List<string> parameters = new();
-                parameters = new List<string>();
-                parameters.AddRange(new string[] { $"myzset{x}", "1", "KEY1", "2", "KEY2" });
-                var result = await db.ExecuteForStringResultAsync("ZADD", parameters);
+                var result = await db.ExecuteForStringResultAsync("ZADD", [$"myzset{x}", "1", "KEY1", "2", "KEY2"]);
                 Assert.AreEqual("2", result);
                 keys[nKeys + x] = $"myzset{x}";
                 keysMemoryByte[nKeys + x] = Encoding.ASCII.GetBytes(keys[nKeys + x]);
@@ -553,7 +550,7 @@ namespace Garnet.test
             //check that none of the keys exist
             foreach (var key in keys)
             {
-                var result = await db.ExecuteForStringResultAsync("EXISTS", new string[] { key });
+                var result = await db.ExecuteForStringResultAsync("EXISTS", [key]);
                 Assert.AreEqual("0", result);
             }
         }
