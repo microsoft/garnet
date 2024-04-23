@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 
@@ -57,7 +58,7 @@ namespace Tsavorite.test
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
-            log = Devices.CreateLogDevice($"{TestUtils.MethodTestDir}/PostOperations.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "PostOperations.log"), deleteOnClose: true);
             store = new TsavoriteKV<int, int>
                        (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
             session = store.NewSession<int, int, Empty, PostFunctions>(new PostFunctions());

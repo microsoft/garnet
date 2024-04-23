@@ -47,7 +47,7 @@ namespace Garnet.server
             }
             else
             {
-                while (rem_count < Math.Abs(count) && list.Count() > 0)
+                while (rem_count < Math.Abs(count) && list.Count > 0)
                 {
                     var node = count > 0 ? list.FirstOrDefault(i => i.SequenceEqual(item)) : list.LastOrDefault(i => i.SequenceEqual(item));
                     if (node != null)

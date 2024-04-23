@@ -3,13 +3,14 @@
 
 using System;
 using System.IO;
+using Tsavorite.core;
 
-namespace Tsavorite.core
+namespace Tsavorite.devices
 {
     /// <summary>
-    /// Default checkpoint naming scheme used by Tsavorite
+    /// Represents a checkpoint naming scheme used for Azure Blob Storage backed <see cref="DeviceLogCommitCheckpointManager"/> instances.
     /// </summary>
-    public class DefaultCheckpointNamingScheme : ICheckpointNamingScheme
+    public class AzureCheckpointNamingScheme : ICheckpointNamingScheme
     {
         /// <inheritdoc />
         public string BaseName { get; }
@@ -18,28 +19,28 @@ namespace Tsavorite.core
         /// Create instance of default naming scheme
         /// </summary>
         /// <param name="baseName">Overall location specifier (e.g., local path or cloud container name)</param>
-        public DefaultCheckpointNamingScheme(string baseName = "")
+        public AzureCheckpointNamingScheme(string baseName = "")
         {
             BaseName = baseName;
         }
 
         /// <inheritdoc />
-        public FileDescriptor LogCheckpointBase(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), null);
+        public FileDescriptor LogCheckpointBase(Guid token) => new(string.Join('/', LogCheckpointBasePath, token.ToString()), null);
         /// <inheritdoc />
-        public FileDescriptor LogCheckpointMetadata(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), "info.dat");
+        public FileDescriptor LogCheckpointMetadata(Guid token) => new(string.Join('/', LogCheckpointBasePath, token.ToString()), "info.dat");
         /// <inheritdoc />
-        public FileDescriptor LogSnapshot(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), "snapshot.dat");
+        public FileDescriptor LogSnapshot(Guid token) => new(string.Join('/', LogCheckpointBasePath, token.ToString()), "snapshot.dat");
         /// <inheritdoc />
-        public FileDescriptor ObjectLogSnapshot(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), "snapshot.obj.dat");
+        public FileDescriptor ObjectLogSnapshot(Guid token) => new(string.Join('/', LogCheckpointBasePath, token.ToString()), "snapshot.obj.dat");
         /// <inheritdoc />
-        public FileDescriptor DeltaLog(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), "delta.dat");
+        public FileDescriptor DeltaLog(Guid token) => new(string.Join('/', LogCheckpointBasePath, token.ToString()), "delta.dat");
 
         /// <inheritdoc />
-        public FileDescriptor IndexCheckpointBase(Guid token) => new(Path.Join(IndexCheckpointBasePath, token.ToString()), null);
+        public FileDescriptor IndexCheckpointBase(Guid token) => new(string.Join('/', IndexCheckpointBasePath, token.ToString()), null);
         /// <inheritdoc />
-        public FileDescriptor IndexCheckpointMetadata(Guid token) => new(Path.Join(IndexCheckpointBasePath, token.ToString()), "info.dat");
+        public FileDescriptor IndexCheckpointMetadata(Guid token) => new(string.Join('/', IndexCheckpointBasePath, token.ToString()), "info.dat");
         /// <inheritdoc />
-        public FileDescriptor HashTable(Guid token) => new(Path.Join(IndexCheckpointBasePath, token.ToString()), "ht.dat");
+        public FileDescriptor HashTable(Guid token) => new(string.Join('/', IndexCheckpointBasePath, token.ToString()), "ht.dat");
         /// <inheritdoc />
         public FileDescriptor TsavoriteLogCommitMetadata(long commitNumber) => new(TsavoriteLogCommitBasePath, $"commit.{commitNumber}");
 

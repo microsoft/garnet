@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -26,22 +27,19 @@ namespace Tsavorite.test
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactory(),
-                    new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir +
-                                                      "/checkpoints/"), false); // PurgeAll deletes this directory
+                    new DefaultCheckpointNamingScheme(Path.Join(TestUtils.MethodTestDir, "checkpoints")), false); // PurgeAll deletes this directory
             }
             else
             {
                 TestUtils.IgnoreIfNotRunningAzureTests();
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                    new DefaultCheckpointNamingScheme(
-                        $"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"), false);
+                    new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"), false);
             }
 
-            var path = TestUtils.MethodTestDir + "/";
-            using (var log = Devices.CreateLogDevice(path + "hlog.log", deleteOnClose: true))
+            using (var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "hlog.log"), deleteOnClose: true))
             {
-                TestUtils.RecreateDirectory(path);
+                TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
 
                 using var store = new TsavoriteKV<long, long>
                 (1 << 10,
@@ -142,7 +140,7 @@ namespace Tsavorite.test
                 Assert.IsEmpty(checkpointManager.GetIndexCheckpointTokens());
             }
             checkpointManager.Dispose();
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }
     }
 }

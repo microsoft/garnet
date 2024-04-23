@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -17,7 +18,7 @@ namespace Tsavorite.test.recovery
 
             seed = 123;
             var rand1 = new Random(seed);
-            device = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/MallocFixedPageSizeRecoveryTest.dat", deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "MallocFixedPageSizeRecoveryTest.dat"), deleteOnClose: true);
             var allocator = new MallocFixedPageSize<HashBucket>();
 
             //do something
@@ -98,8 +99,8 @@ namespace Tsavorite.test.recovery
             seed = 123;
             size = 1 << 16;
             numAdds = 1 << 18;
-            ht_device = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/TestFuzzyIndexRecoveryht.dat", deleteOnClose: true);
-            ofb_device = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/TestFuzzyIndexRecoveryofb.dat", deleteOnClose: true);
+            ht_device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TestFuzzyIndexRecoveryht.dat"), deleteOnClose: true);
+            ofb_device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "TestFuzzyIndexRecoveryofb.dat"), deleteOnClose: true);
             hash_table1 = new TsavoriteBase();
             hash_table1.Initialize(size, 512);
 

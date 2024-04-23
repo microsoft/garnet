@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -16,7 +17,6 @@ namespace Tsavorite.test.async
         TsavoriteKV<long, long> store;
         const int numOps = 5000;
         AdId[] inputArray;
-        string path;
 
         [SetUp]
         public void Setup()
@@ -27,13 +27,12 @@ namespace Tsavorite.test.async
                 inputArray[i].adId = i;
             }
 
-            path = TestUtils.MethodTestDir + "/";
-            TestUtils.RecreateDirectory(path);
-            log = Devices.CreateLogDevice(path + "Async.log", deleteOnClose: true);
+            TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Async.log"), deleteOnClose: true);
             store = new TsavoriteKV<long, long>
                 (1L << 10,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 15 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = path }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir }
                 );
         }
 
@@ -44,7 +43,7 @@ namespace Tsavorite.test.async
             store = null;
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         // Test that does .ReadAsync with minimum parameters (ref key)
