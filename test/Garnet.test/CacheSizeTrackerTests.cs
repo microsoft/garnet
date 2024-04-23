@@ -41,7 +41,7 @@ namespace Garnet.test
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Faster") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Faster")]);
             string r = db.HashGet("user:user1", "Title");
             Assert.AreEqual("Faster", r);
 
@@ -60,7 +60,7 @@ namespace Garnet.test
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Faster") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Faster")]);
             string r = db.HashGet("user:user1", "Title");
             Assert.AreEqual("Faster", r);
 
@@ -70,7 +70,7 @@ namespace Garnet.test
             // Have enough records (24 bytes each) to cross a page boundary (512)
             for (int i = 2; i <= 24; i++)
             {
-                db.HashSet($"user:user{i}", new HashEntry[] { new HashEntry("Title", "Faster") });
+                db.HashSet($"user:user{i}", [new HashEntry("Title", "Faster")]);
             }
 
             Assert.AreEqual(5952, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes); // 24 * 248 for each hashset object
