@@ -130,7 +130,7 @@ namespace Tsavorite.test
             switch (testDeviceType)
             {
                 case DeviceType.LSD when !OperatingSystem.IsWindows():
-                    Assert.Inconclusive();
+                    Assert.Ignore($"Skipping {nameof(DeviceType.LSD)} on non-Windows platforms");
                     break;
                 case DeviceType.LSD when OperatingSystem.IsWindows():
                     bool useIoCompletionPort = false;
