@@ -50,7 +50,7 @@ namespace Garnet.test
         {
             int len = 0;
             int index = offset;
-            List<long> values = new();
+            List<long> values = [];
 
             fixed (byte* buf = buffer, opBuf = opHeader)
             {

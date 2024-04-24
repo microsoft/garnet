@@ -55,7 +55,7 @@ namespace Garnet.test
 
             var key = new byte[] { 0 };
             var obj = new SortedSetObject();
-            obj.Add(new byte[] { 15 }, 10);
+            obj.Add([15], 10);
 
             session.Upsert(key, obj);
 
@@ -86,7 +86,7 @@ namespace Garnet.test
 
             var key = new byte[] { 0 };
             IGarnetObject obj = new SortedSetObject();
-            ((SortedSetObject)obj).Add(new byte[] { 15 }, 10);
+            ((SortedSetObject)obj).Add([15], 10);
 
             session.Upsert(key, obj);
 

@@ -195,7 +195,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.GeoAdd(new RedisKey("Sicily"), 13.361389, 38.115556, new RedisValue("Palermo"), CommandFlags.None);
-            var response = db.GeoPosition(new RedisKey("Sicily"), new RedisValue[] { "Palermo", "Unknown" });
+            var response = db.GeoPosition(new RedisKey("Sicily"), ["Palermo", "Unknown"]);
             Assert.AreEqual(2, response.Length);
             Assert.AreEqual(default(GeoPosition), response[1]);
 
@@ -205,7 +205,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
 
             db.GeoAdd(new RedisKey("SecondKey"), 13.361389, 38.115556, new RedisValue("Palermo"));
-            response = db.GeoPosition(new RedisKey("SecondKey"), new RedisValue[] { "Palermo" });
+            response = db.GeoPosition(new RedisKey("SecondKey"), ["Palermo"]);
             Assert.AreEqual(1, response.Length);
             Assert.IsNotNull(response[0]);
 
@@ -214,7 +214,7 @@ namespace Garnet.test
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
-            var responseHash = db.GeoHash(new RedisKey("SecondKey"), new RedisValue[] { "Palermo" });
+            var responseHash = db.GeoHash(new RedisKey("SecondKey"), ["Palermo"]);
             Assert.AreEqual(1, responseHash.Length);
             Assert.AreEqual("sqc8b49rnyt", responseHash[0]);
 

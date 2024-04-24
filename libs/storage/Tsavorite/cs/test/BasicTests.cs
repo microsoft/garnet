@@ -3,9 +3,11 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Internal;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -20,21 +22,18 @@ namespace Tsavorite.test
         private TsavoriteKV<KeyStruct, ValueStruct> store;
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> session;
         private IDevice log;
-        private string path;
         DeviceType deviceType;
 
         [SetUp]
         public void Setup()
         {
-            path = MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(path, wait: true);
+            DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }
 
         private void Setup(long size, LogSettings logSettings, DeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
         {
-            string filename = path + TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log";
+            string filename = Path.Join(MethodTestDir, TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log");
             log = CreateTestDevice(deviceType, filename, latencyMs: latencyMs);
             logSettings.LogDevice = log;
             store = new TsavoriteKV<KeyStruct, ValueStruct>(size, logSettings);
@@ -50,7 +49,7 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(path);
+            DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         private void AssertCompleted(Status expected, Status actual)
@@ -785,8 +784,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public static void KVBasicsSampleEndToEndInDocs()
         {
-            string testDir = MethodTestDir;
-            using var log = Devices.CreateLogDevice($"{testDir}/hlog.log", deleteOnClose: false);
+            using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             using var store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
             using var s = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
             long key = 1, value = 1, input = 10, output = 0;
@@ -799,22 +797,23 @@ namespace Tsavorite.test
             Assert.AreEqual(10, output);
         }
 
-#if WINDOWS
         [Test]
         [Category("TsavoriteKV")]
         public static void LogPathtooLong()
         {
+            if (!OperatingSystem.IsWindows())
+                Assert.Ignore("Skipped");
+
             string testDir = new('x', Native32.WIN32_MAX_PATH - 11);                       // As in LSD, -11 for ".<segment>"
-            using var log = Devices.CreateLogDevice($"{testDir}", deleteOnClose: true);     // Should succeed
-            Assert.Throws(typeof(TsavoriteException), () => Devices.CreateLogDevice($"{testDir}y", deleteOnClose: true));
+            using var log = Devices.CreateLogDevice(testDir, deleteOnClose: true);     // Should succeed
+            Assert.Throws(typeof(TsavoriteException), () => Devices.CreateLogDevice(testDir + "y", deleteOnClose: true));
         }
-#endif
 
         [Test]
         [Category("TsavoriteKV")]
         public static void UshortKeyByteValueTest()
         {
-            using var log = Devices.CreateLogDevice($"{MethodTestDir}/hlog.log", deleteOnClose: false);
+            using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             using var store = new TsavoriteKV<ushort, byte>(1L << 20, new LogSettings { LogDevice = log });
             using var s = store.NewSession<byte, byte, Empty, SimpleFunctions<ushort, byte>>(new SimpleFunctions<ushort, byte>());
             ushort key = 1024;
@@ -849,7 +848,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public static void BasicSyncOperationsTest()
         {
-            using var log = Devices.CreateLogDevice($"{MethodTestDir}/hlog.log", deleteOnClose: false);
+            using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             using var store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
             using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
             const int numRecords = 500;
@@ -941,7 +940,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         public static async Task BasicAsyncOperationsTest()
         {
-            using var log = Devices.CreateLogDevice($"{MethodTestDir}/hlog.log", deleteOnClose: false);
+            using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             using var store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
             using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
             const int numRecords = 500;

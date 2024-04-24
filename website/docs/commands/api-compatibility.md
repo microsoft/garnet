@@ -164,7 +164,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [LPUSHX](data-structures.md#lpushx) | ➕ |  |
 |  | [LRANGE](data-structures.md#lrange) | ➕ |  |
 |  | [LREM](data-structures.md#lrem) | ➕ |  |
-|  | LSET | ➖ |  |
+|  | [LSET](data-structures.md#lset) | ➕ |  |
 |  | [LTRIM](data-structures.md#ltrim) | ➕ |  |
 |  | [RPOP](data-structures.md#rpop) | ➕ |  |
 |  | [RPOPLPUSH](data-structures.md#rpoplpush) | ➕ |  |
@@ -240,7 +240,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SREM](data-structures.md#srem) | ➕ |  |
 |  | [SSCAN](data-structures.md#sscan) | ➕ |  |
 |  | [SUNION](data-structures.md#sunion) | ➕ |  |
-|  | SUNIONSTORE | ➖ |  |
+|  | [SUNIONSTORE](data-structures.md#sunionstore) | ➕ |  |
 | <span id="sorted-set">**SORTED SET**</span> | BZPOP | ➖ |  |
 |  | BZPOPMAX | ➖ |  |
 |  | BZPOPMIN | ➖ |  |

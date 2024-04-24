@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -18,7 +19,7 @@ namespace Tsavorite.test.async
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
             store = new TsavoriteKV<KeyStruct, ValueStruct>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 });
         }
