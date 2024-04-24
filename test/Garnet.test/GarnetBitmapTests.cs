@@ -861,7 +861,7 @@ namespace Garnet.test
             }
         }
 
-        private void InitBitmap(ref byte[] dst, byte[] srcA, bool invert = false)
+        private static void InitBitmap(ref byte[] dst, byte[] srcA, bool invert = false)
         {
             dst = new byte[srcA.Length];
             if (invert)
@@ -870,7 +870,7 @@ namespace Garnet.test
                 for (int i = 0; i < srcA.Length; i++) dst[i] = srcA[i];
         }
 
-        private void ApplyBitop(ref byte[] dst, byte[] srcA, Func<byte, byte, byte> f8)
+        private static void ApplyBitop(ref byte[] dst, byte[] srcA, Func<byte, byte, byte> f8)
         {
             if (dst.Length < srcA.Length)
             {
@@ -958,7 +958,7 @@ namespace Garnet.test
             }
         }
 
-        private void AssertNegatedEqual(byte[] dstVal, byte[] srcVal)
+        private static void AssertNegatedEqual(byte[] dstVal, byte[] srcVal)
         {
             for (int i = 0; i < srcVal.Length; i++)
             {
@@ -1086,7 +1086,7 @@ namespace Garnet.test
             }
         }
 
-        private long GetValueFromBitmap(ref byte[] bitmap, long offset, int bitCount, bool signed)
+        private static long GetValueFromBitmap(ref byte[] bitmap, long offset, int bitCount, bool signed)
         {
             long startBit = offset;
             long endBit = offset + bitCount;
@@ -1123,7 +1123,7 @@ namespace Garnet.test
             }
         }
 
-        private ulong getUnsigned(ref byte[] p, ulong offset, ulong bits)
+        private static ulong getUnsigned(ref byte[] p, ulong offset, ulong bits)
         {
             ulong byteIndex = 0;
             ulong bit = 0;
@@ -1144,7 +1144,7 @@ namespace Garnet.test
             return value;
         }
 
-        private long getSigned(ref byte[] bitmap, ulong offset, ulong bits)
+        private static long getSigned(ref byte[] bitmap, ulong offset, ulong bits)
         {
             ulong value = getUnsigned(ref bitmap, offset, bits);
 
@@ -1156,7 +1156,7 @@ namespace Garnet.test
             return (long)value;
         }
 
-        private long GetFromBitmapRedis(ref byte[] bitmap, ulong offset, ulong bits, bool signed)
+        private static long GetFromBitmapRedis(ref byte[] bitmap, ulong offset, ulong bits, bool signed)
         {
             return signed ? getSigned(ref bitmap, offset, bits) : (long)getUnsigned(ref bitmap, offset, bits);
         }
@@ -1347,7 +1347,7 @@ namespace Garnet.test
             }
         }
 
-        private void setUnsignedBitfield(ref byte[] bitmap, ulong offset, ulong bitCount, ulong value)
+        private static void setUnsignedBitfield(ref byte[] bitmap, ulong offset, ulong bitCount, ulong value)
         {
             ulong byteIndex, bit, byteVal, bitVal, j;
 
@@ -1364,7 +1364,7 @@ namespace Garnet.test
             }
         }
 
-        private void setSignedBitfield(ref byte[] bitmap, ulong offset, ulong bitCount, long value)
+        private static void setSignedBitfield(ref byte[] bitmap, ulong offset, ulong bitCount, long value)
         {
             ulong uv = (ulong)value; /* Casting will add UINT64_MAX + 1 if v is negative. */
             setUnsignedBitfield(ref bitmap, offset, bitCount, uv);

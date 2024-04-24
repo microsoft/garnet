@@ -72,7 +72,7 @@ namespace MetricsMonitor
             }
         }
 
-        private bool ProcessLatencyHistogram(RedisResult[] resp, ref int iter)
+        private static bool ProcessLatencyHistogram(RedisResult[] resp, ref int iter)
         {
             if (resp.Length != 2)
                 return false;

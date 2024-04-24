@@ -502,7 +502,7 @@ namespace Garnet.test
             Assert.AreEqual(null, retValue);
         }
 
-        public void CreateTestLibrary(string[] namespaces, string[] referenceFiles, string[] filesToCompile, string dstFilePath)
+        public static void CreateTestLibrary(string[] namespaces, string[] referenceFiles, string[] filesToCompile, string dstFilePath)
         {
             if (File.Exists(dstFilePath))
             {
@@ -616,7 +616,7 @@ namespace Garnet.test
 
             foreach (var ltf in libPathToFiles)
             {
-                this.CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
+                CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
             }
 
             var notAllowedPath = Path.Combine(TestUtils.MethodTestDir, "testLib1.dll");

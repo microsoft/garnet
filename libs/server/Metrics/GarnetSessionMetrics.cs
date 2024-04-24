@@ -51,9 +51,9 @@ namespace Garnet.server
 
         public ulong get_total_read_commands_processed() => 0;
 
-        public void incr_total_number_resp_server_session_exceptions(ulong count) { }
+        public static void incr_total_number_resp_server_session_exceptions(ulong count) { }
 
-        public ulong get_total_number_resp_server_session_exceptions() => 0;
+        public static ulong get_total_number_resp_server_session_exceptions() => 0;
     }
 
     /// <summary>

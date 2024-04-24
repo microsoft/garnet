@@ -84,7 +84,7 @@ namespace Garnet.server
             };
         }
 
-        private int AdminCommands(RespCommand command)
+        private static int AdminCommands(RespCommand command)
         {
             return command switch
             {

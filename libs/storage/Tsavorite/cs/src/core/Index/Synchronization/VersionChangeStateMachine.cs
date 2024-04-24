@@ -62,7 +62,7 @@ namespace Tsavorite.core
 
                         if (!_ctx.markers[EpochPhaseIdx.InProgress])
                         {
-                            store.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version, tokens);
+                            TsavoriteKV<Key, Value>.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version, tokens);
                             TsavoriteKV<Key, Value>.InitContext(ctx, ctx.prevCtx.sessionID, ctx.prevCtx.sessionName, ctx.prevCtx.serialNum);
 
                             // Has to be prevCtx, not ctx

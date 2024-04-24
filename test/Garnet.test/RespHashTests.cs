@@ -924,7 +924,7 @@ namespace Garnet.test
         }
 
 
-        private void UpdateHashMap(string keyName)
+        private static void UpdateHashMap(string keyName)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             byte[] res = lightClientRequest.SendCommand($"HSET {keyName} field3 3");

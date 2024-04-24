@@ -13,7 +13,7 @@ namespace Tsavorite.core
         internal RevivificationStats stats = new();
 
         internal readonly bool IsEnabled = false;
-        internal readonly int FixedValueLength => Unsafe.SizeOf<Value>();
+        internal static int FixedValueLength => Unsafe.SizeOf<Value>();
         internal bool restoreDeletedRecordsIfBinIsFull;
         internal bool useFreeRecordPoolForCTT;
 

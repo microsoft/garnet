@@ -126,7 +126,7 @@ namespace Garnet.cluster
 
                 if (!ClusterSession.Expired(ref value.garnetObject))
                 {
-                    byte[] objectData = clusterProvider.storeWrapper.GarnetObjectSerializer.Serialize(value.garnetObject);
+                    byte[] objectData = GarnetObjectSerializer.Serialize(value.garnetObject);
 
                     if (!WriteOrSendObjectStoreKeyValuePair(key, objectData, value.garnetObject.Expiration))
                         return false;

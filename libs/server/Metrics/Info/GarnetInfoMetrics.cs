@@ -280,7 +280,7 @@ namespace Garnet.server
             };
         }
 
-        private string GetSectionRespInfo(InfoMetricsType infoType, MetricsItem[] info)
+        private static string GetSectionRespInfo(InfoMetricsType infoType, MetricsItem[] info)
         {
             if (info == null)
                 return "";

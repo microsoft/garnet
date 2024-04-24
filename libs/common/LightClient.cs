@@ -160,7 +160,7 @@ namespace Garnet.common
             networkSender.GetResponseObject();
         }
 
-        private Socket GetSendSocket(string address, int port, int millisecondsTimeout = -2)
+        private static Socket GetSendSocket(string address, int port, int millisecondsTimeout = -2)
         {
             var ip = IPAddress.Parse(address);
             var endPoint = new IPEndPoint(ip, port);

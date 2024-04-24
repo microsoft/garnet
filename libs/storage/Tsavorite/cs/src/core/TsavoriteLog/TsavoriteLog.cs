@@ -2815,7 +2815,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="length"></param>
         /// <returns></returns>
-        public int UnsafeAlign(int length)
+        public static int UnsafeAlign(int length)
             => Align(length);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
