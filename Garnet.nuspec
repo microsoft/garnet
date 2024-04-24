@@ -16,9 +16,9 @@
     <language>en-US</language>
     <tags>Garnet key-value store cache dictionary hashtable concurrent persistent remote cluster Redis RESP</tags>
     <dependencies>
-		<dependency id="Microsoft.Extensions.Logging" version="7.0.0" />
-		<dependency id="Microsoft.Extensions.Logging.Configuration" version="7.0.0" />
-		<dependency id="Microsoft.Extensions.Logging.Console" version="7.0.0" />
+		<dependency id="Microsoft.Extensions.Logging" version="8.0.0" />
+		<dependency id="Microsoft.Extensions.Logging.Configuration" version="8.0.0" />
+		<dependency id="Microsoft.Extensions.Logging.Console" version="8.0.0" />
 		<dependency id="Newtonsoft.Json" version="13.0.3" />
 		<dependency id="CommandLineParser" version="2.9.1" />
 		<dependency id="Microsoft.IdentityModel.Protocols.OpenIdConnect" version="6.28.1" />

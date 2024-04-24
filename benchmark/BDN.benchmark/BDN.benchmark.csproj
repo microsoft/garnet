@@ -1,14 +1,14 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
-    <ImplicitUsings>enable</ImplicitUsings>
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFrameworks>net6.0;net8.0</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<LangVersion>latest</LangVersion>
 		<SignAssembly>true</SignAssembly>
 		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
 		<DelaySign>false</DelaySign>
-  </PropertyGroup>
+	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="BenchmarkDotNet" Version="0.13.12" />
 	</ItemGroup>

@@ -33,9 +33,9 @@
 		<ProjectReference Include="..\cluster\Garnet.cluster.csproj" />
 		<ProjectReference Include="..\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
 		<PackageReference Include="CommandLineParser" Version="2.9.1" />
-		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="7.0.0" />
-		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-		<PackageReference Include="Microsoft.Extensions.Logging" Version="7.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+		<PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 	</ItemGroup>
 

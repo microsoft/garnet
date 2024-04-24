@@ -30,8 +30,8 @@
 		<ProjectReference Include="..\common\Garnet.common.csproj" />
 		<ProjectReference Include="..\server\Garnet.server.csproj" />
 		<ProjectReference Include="..\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
-		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-		<PackageReference Include="Microsoft.Extensions.Logging" Version="7.0.0" />
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+		<PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
 	</ItemGroup>
 
 </Project>
