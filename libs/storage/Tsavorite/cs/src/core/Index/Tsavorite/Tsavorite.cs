@@ -34,6 +34,11 @@ namespace Tsavorite.core
         public long EntryCount => GetEntryCount();
 
         /// <summary>
+        /// Maximum number of memory pages ever allocated
+        /// </summary>
+        public long MaxAllocatedPageCount => hlog.MaxAllocatedPageCount;
+
+        /// <summary>
         /// Size of index in #cache lines (64 bytes each)
         /// </summary>
         public long IndexSize => state[resizeInfo.version].size;
