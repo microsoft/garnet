@@ -79,7 +79,7 @@ namespace Garnet.test
 
             // No import path, include command line args, export to file
             // Check values from command line override values from defaults.conf
-            var args = new string[] { "--config-export-path", configPath, "-p", "4m", "-m", "8g", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", "../../../../../../test/Garnet.test,../../../../../../test/Garnet.test.cluster" };
+            var args = new string[] { "--config-export-path", configPath, "-p", "4m", "-m", "8g", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", "../../../../../test/Garnet.test,../../../../../test/Garnet.test.cluster" };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
             Assert.IsTrue(parseSuccessful);
             Assert.AreEqual(invalidOptions.Count, 0);
