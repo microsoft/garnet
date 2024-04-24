@@ -250,7 +250,7 @@ namespace Garnet.server
         {
             var metricsDisabled = storeWrapper.monitor == null;
             var globalMetrics = metricsDisabled ? default : storeWrapper.monitor.GlobalMetrics;
-            clientsInfo = [new("connected_clients", metricsDisabled ? "0" : globalMetrics.total_connections_received.ToString())];
+            clientsInfo = [new("connected_clients", metricsDisabled ? "0" : (globalMetrics.total_connections_received - globalMetrics.total_connections_disposed).ToString())];
         }
 
         private void PopulateKeyspaceInfo(StoreWrapper storeWrapper)
