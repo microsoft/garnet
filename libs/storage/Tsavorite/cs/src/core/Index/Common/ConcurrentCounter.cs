@@ -45,7 +45,7 @@ namespace Tsavorite.core
         {
             if (incrValue == 0) return;
 
-            var partition = Thread.CurrentThread.ManagedThreadId % partitionCount;
+            var partition = Environment.CurrentManagedThreadId % partitionCount;
             Interlocked.Add(ref partitionsPtr[partition].value, incrValue);
         }
 
