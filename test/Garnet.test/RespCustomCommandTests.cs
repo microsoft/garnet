@@ -518,7 +518,7 @@ namespace Garnet.test
 
             foreach (var fileToCompile in filesToCompile)
             {
-                Assert.IsTrue(File.Exists(fileToCompile));
+                Assert.IsTrue(File.Exists(fileToCompile), $"File at '{fileToCompile}' does not exist.");
             }
 
             var parseFunc = new Func<string, SyntaxTree>(filePath =>
@@ -605,11 +605,11 @@ namespace Garnet.test
 
             var libPathToFiles = new Dictionary<string, string[]>
             {
-                { Path.Combine(dir1, "testLib1.dll"), new [] {@"../../../../../../main/GarnetServer/Extensions/MyDictObject.cs"}},
-                { Path.Combine(dir2, "testLib2.dll"), new [] {@"../../../../../../main/GarnetServer/Extensions/SetIfPM.cs"}},
+                { Path.Combine(dir1, "testLib1.dll"), new [] {@"../../../../../main/GarnetServer/Extensions/MyDictObject.cs"}},
+                { Path.Combine(dir2, "testLib2.dll"), new [] {@"../../../../../main/GarnetServer/Extensions/SetIfPM.cs"}},
                 { Path.Combine(dir2, "testLib3.dll"), new []
                 {
-                    @"../../../../../../main/GarnetServer/Extensions/ReadWriteTxn.cs",
+                    @"../../../../../main/GarnetServer/Extensions/ReadWriteTxn.cs",
                     testFilePath,
                 }}
             };
