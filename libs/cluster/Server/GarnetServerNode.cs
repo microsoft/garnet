@@ -33,6 +33,8 @@ namespace Garnet.cluster
 
         public long GossipRecv => gossip_recv;
 
+        public GarnetClient Client => gc;
+
         /// <summary>
         /// Nodeid of remote node
         /// </summary>

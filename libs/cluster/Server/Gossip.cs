@@ -103,7 +103,7 @@ namespace Garnet.cluster
         public readonly TimeSpan clusterTimeout;
         private volatile int numActiveTasks = 0;
         private SingleWriterMultiReaderLock activeMergeLock;
-        readonly GarnetClusterConnectionStore clusterConnectionStore;
+        public readonly GarnetClusterConnectionStore clusterConnectionStore;
 
         public GossipStats gossipStats;
         readonly int GossipSamplePercent;
@@ -114,7 +114,7 @@ namespace Garnet.cluster
 
         public List<string> GetBanList()
         {
-            List<string> banlist = new List<string>();
+            var banlist = new List<string>();
             foreach (var w in workerBanList)
             {
                 var nodeId = w.Key;

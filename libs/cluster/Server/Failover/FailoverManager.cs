@@ -41,7 +41,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public string GetFailoverStatus()
         {
-            var status = currentFailoverSession?.GetStatus;
+            var status = currentFailoverSession?.status;
             return status.HasValue ? FailoverUtils.GetFailoverStatus(status) :
                 FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER);
         }
@@ -57,29 +57,19 @@ namespace Garnet.cluster
             if (!failoverTaskLock.TryWriteLock())
                 return false;
 
-            var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetLocalNodePrimaryAddress();
-            if (address == null)
-            {
-                failoverTaskLock.WriteUnlock();
-                return false;
-            }
-
             currentFailoverSession = new FailoverSession(
                 clusterProvider,
                 option,
                 clusterTimeout: clusterTimeout,
                 failoverTimeout: failoverTimeout,
-                hostAddress: address,
-                hostPort: port,
+                isReplicaSession: true,
                 logger: logger);
-            Task.Run(ReplicaFailoverAsyncTask);
+            _ = Task.Run(async () =>
+            {
+                _ = await currentFailoverSession.BeginAsyncReplicaFailover();
+                Reset();
+            });
             return true;
-        }
-
-        private async void ReplicaFailoverAsyncTask()
-        {
-            await currentFailoverSession.BeginAsyncReplicaFailover();
-            Reset();
         }
 
         /// <summary>
@@ -96,21 +86,20 @@ namespace Garnet.cluster
                 return false;
 
             currentFailoverSession = new FailoverSession(
-                clusterProvider,
-                option,
-                clusterTimeout,
-                timeout,
+                clusterProvider: clusterProvider,
+                option: option,
+                clusterTimeout: clusterTimeout,
+                failoverTimeout: timeout,
+                isReplicaSession: false,
                 hostAddress: replicaAddress,
                 hostPort: replicaPort,
                 logger: logger);
-            Task.Run(PrimaryFailoverAsyncTask);
+            _ = Task.Run(async () =>
+            {
+                _ = await currentFailoverSession.BeginAsyncPrimaryFailover();
+                Reset();
+            });
             return true;
-        }
-
-        private async void PrimaryFailoverAsyncTask()
-        {
-            await currentFailoverSession.BeginAsyncPrimaryFailover();
-            Reset();
         }
     }
 }
