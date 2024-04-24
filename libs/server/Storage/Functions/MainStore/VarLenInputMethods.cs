@@ -134,7 +134,8 @@ namespace Garnet.server
 
                         // We don't need to TryParse here because InPlaceUpdater will raise an error before we reach this point
                         curr = NumUtils.BytesToLong(t.AsSpan());
-                        next = curr - NumUtils.BytesToLong(slicedInputData);
+                        var decrBy = NumUtils.BytesToLong(slicedInputData);
+                        next = curr + (cmd == (byte)RespCommand.DECR ? decrBy : -decrBy);
 
                         fNeg = false;
                         ndigits = NumUtils.NumDigitsInLong(next, ref fNeg);
