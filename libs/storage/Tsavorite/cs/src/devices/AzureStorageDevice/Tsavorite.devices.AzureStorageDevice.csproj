@@ -13,14 +13,14 @@
     <OutputType>Library</OutputType>
     <AssemblyOriginatorKeyFile>../../../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
-	<EmbedUntrackedSources>true</EmbedUntrackedSources>
+	  <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
 
 	<ItemGroup>
-	<PackageReference Include="Azure.Storage.Blobs" Version="12.14.1" />
-	<PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
-	<PackageReference Include="System.Interactive.Async" Version="6.0.1" />
+	  <PackageReference Include="Azure.Storage.Blobs" Version="12.14.1" />
+	  <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+	  <PackageReference Include="System.Interactive.Async" Version="6.0.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\core\Tsavorite.core.csproj" />

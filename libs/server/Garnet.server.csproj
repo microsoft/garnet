@@ -1,5 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		<TargetFrameworks>net6.0;net8.0</TargetFrameworks>
@@ -11,17 +10,6 @@
 		<DelaySign>false</DelaySign>
 		<EmbedUntrackedSources>true</EmbedUntrackedSources>
 		<DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-		<DefineConstants>DEBUG</DefineConstants>
-		<DebugType>full</DebugType>
-		<OutputPath>bin\$(Platform)\Debug\</OutputPath>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
-		<Optimize>true</Optimize>
-		<OutputPath>bin\$(Platform)\Release\</OutputPath>
 	</PropertyGroup>
 
 	<ItemGroup>

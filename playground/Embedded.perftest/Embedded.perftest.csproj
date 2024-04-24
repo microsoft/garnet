@@ -10,7 +10,6 @@
     <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
   </PropertyGroup>
-
  
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="2.9.1" />

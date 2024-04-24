@@ -3,8 +3,8 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
-	<LangVersion>latest</LangVersion>
-	<ServerGarbageCollection>true</ServerGarbageCollection>
+	  <LangVersion>latest</LangVersion>
+	  <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>

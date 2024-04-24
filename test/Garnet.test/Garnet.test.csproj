@@ -4,34 +4,15 @@
     <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
     <Platforms>AnyCPU</Platforms>
     <LangVersion>latest</LangVersion>
-    <HighEntropyVA>true</HighEntropyVA>
   </PropertyGroup>
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>Garnet.test</RootNamespace>
-    <AssemblyName>Garnet.test</AssemblyName>
-    <ErrorReport>prompt</ErrorReport>
     <SignAssembly>true</SignAssembly>
-    <ApplicationIcon />
     <OutputType>Library</OutputType>
-    <StartupObject />
     <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
     <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-    <DefineConstants>DEBUG</DefineConstants>
-    <DebugType>full</DebugType>
-    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <DefineConstants></DefineConstants>
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
 
   <PropertyGroup>
