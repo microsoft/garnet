@@ -219,7 +219,7 @@ namespace Tsavorite.core
                     srcRecordInfo.Tombstone = false;
 
                     if (RevivificationManager.IsFixedLength)
-                        upsertInfo.UsedValueLength = upsertInfo.FullValueLength = RevivificationManager.FixedValueLength;
+                        upsertInfo.UsedValueLength = upsertInfo.FullValueLength = RevivificationManager<Key, Value>.FixedValueLength;
                     else
                     {
                         var recordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);

@@ -175,7 +175,7 @@ namespace Garnet.test
             int keyCount = 8;
             int keyIter = 256;
             byte[] bitmap = new byte[bitmapBytes];
-            Dictionary<int, Dictionary<long, bool>> state = new Dictionary<int, Dictionary<long, bool>>();
+            Dictionary<int, Dictionary<long, bool>> state = [];
 
             if (preSet)
             {
@@ -213,7 +213,7 @@ namespace Garnet.test
                     }
                     else
                     {
-                        state.Add(key, new Dictionary<long, bool>());
+                        state.Add(key, []);
                         state[key].Add(offset, set);
                     }
 
@@ -312,7 +312,7 @@ namespace Garnet.test
             int maxBitmapLen = 1 << 12;
             int iter = 1024;
 
-            List<long> offsets = new List<long>();
+            List<long> offsets = [];
             long maxOffset = 0;
             for (int i = 0; i < iter; i++)
             {
@@ -456,7 +456,7 @@ namespace Garnet.test
 
             int keyCount = 64;
             byte[] bitmap = new byte[bitmapBytes];
-            List<long> bitmapList = new List<long>();
+            List<long> bitmapList = [];
 
             for (int i = 0; i < keyCount; i++)
             {
@@ -653,7 +653,7 @@ namespace Garnet.test
 
             int keyCount = 64;
             byte[] bitmap = new byte[bitmapBytes];
-            List<long> bitmapList = new List<long>();
+            List<long> bitmapList = [];
 
             for (int i = 0; i < keyCount; i++)
             {
@@ -738,8 +738,8 @@ namespace Garnet.test
 
             //Test AND, OR, XOR
             long srcA, srcB, srcC;
-            RedisKey[] keys = new RedisKey[] { a, b, c };
-            Bitwise[] bitwiseOps = new Bitwise[] { Bitwise.And, Bitwise.Or, Bitwise.Xor };
+            RedisKey[] keys = [a, b, c];
+            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor];
             for (int j = 0; j < bitwiseOps.Length; j++)
             {
                 for (int i = 0; i < tests; i++)
@@ -820,8 +820,8 @@ namespace Garnet.test
 
             //Test AND, OR, XOR
             long srcA, srcB, srcC;
-            RedisKey[] keys = new RedisKey[] { a, b, c };
-            Bitwise[] bitwiseOps = new Bitwise[] { Bitwise.And, Bitwise.Or, Bitwise.Xor };
+            RedisKey[] keys = [a, b, c];
+            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor];
             for (int j = 0; j < bitwiseOps.Length; j++)
             {
                 for (int i = 0; i < tests; i++)
@@ -861,7 +861,7 @@ namespace Garnet.test
             }
         }
 
-        private void InitBitmap(ref byte[] dst, byte[] srcA, bool invert = false)
+        private static void InitBitmap(ref byte[] dst, byte[] srcA, bool invert = false)
         {
             dst = new byte[srcA.Length];
             if (invert)
@@ -870,7 +870,7 @@ namespace Garnet.test
                 for (int i = 0; i < srcA.Length; i++) dst[i] = srcA[i];
         }
 
-        private void ApplyBitop(ref byte[] dst, byte[] srcA, Func<byte, byte, byte> f8)
+        private static void ApplyBitop(ref byte[] dst, byte[] srcA, Func<byte, byte, byte> f8)
         {
             if (dst.Length < srcA.Length)
             {
@@ -904,8 +904,8 @@ namespace Garnet.test
             string d = "d";
             string x = "x";
 
-            RedisKey[] keys = new RedisKey[] { a, b, c, d };
-            Bitwise[] bitwiseOps = new Bitwise[] { Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor };
+            RedisKey[] keys = [a, b, c, d];
+            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor];
 
             int maxBytes = 512;
             byte[] dataA = new byte[r.Next(1, maxBytes)];
@@ -958,7 +958,7 @@ namespace Garnet.test
             }
         }
 
-        private void AssertNegatedEqual(byte[] dstVal, byte[] srcVal)
+        private static void AssertNegatedEqual(byte[] dstVal, byte[] srcVal)
         {
             for (int i = 0; i < srcVal.Length; i++)
             {
@@ -1016,8 +1016,8 @@ namespace Garnet.test
             byte[] dataA, dataB, dataC, dataD;
             byte[] dataX;
             int minSize = 512;
-            Bitwise[] bitwiseOps = new Bitwise[] { Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor };
-            RedisKey[] keys = new RedisKey[] { a, b, c, d };
+            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor];
+            RedisKey[] keys = [a, b, c, d];
 
             //Test NOT
             for (int i = 0; i < tests; i++)
@@ -1086,7 +1086,7 @@ namespace Garnet.test
             }
         }
 
-        private long GetValueFromBitmap(ref byte[] bitmap, long offset, int bitCount, bool signed)
+        private static long GetValueFromBitmap(ref byte[] bitmap, long offset, int bitCount, bool signed)
         {
             long startBit = offset;
             long endBit = offset + bitCount;
@@ -1094,7 +1094,7 @@ namespace Garnet.test
             long indexBit = 0;
             long value = 0;
             int bI = 63;
-            byte[] si = { 1, 2, 4, 8, 16, 32, 64, 128 };
+            byte[] si = [1, 2, 4, 8, 16, 32, 64, 128];
             while (indexBit < (bitmap.Length << 3))
             {
                 for (int i = 7; i >= 0; i--)
@@ -1123,7 +1123,7 @@ namespace Garnet.test
             }
         }
 
-        private ulong getUnsigned(ref byte[] p, ulong offset, ulong bits)
+        private static ulong getUnsigned(ref byte[] p, ulong offset, ulong bits)
         {
             ulong byteIndex = 0;
             ulong bit = 0;
@@ -1144,27 +1144,19 @@ namespace Garnet.test
             return value;
         }
 
-        private long getSigned(ref byte[] bitmap, ulong offset, ulong bits)
+        private static long getSigned(ref byte[] bitmap, ulong offset, ulong bits)
         {
             ulong value = getUnsigned(ref bitmap, offset, bits);
 
-            ulong[] si = {
-                    1L << 0, 1L << 1, 1L << 2, 1L << 3, 1L << 4, 1L << 5, 1L << 6, 1L << 7,//0
-                    1L << 8, 1L << 9, 1L << 10, 1L << 11, 1L << 12, 1L << 13, 1L << 14, 1L << 15,//1
-                    1L << 16, 1L << 17, 1L << 18, 1L << 19, 1L << 20, 1L << 21, 1L << 22, 1L << 23,//2
-                    1L << 24, 1L << 25, 1L << 26, 1L << 27, 1L << 28, 1L << 29, 1L << 30, 1L << 31,//3
-                    1L << 32, 1L << 33, 1L << 34, 1L << 35, 1L << 36, 1L << 37, 1L << 38, 1L << 39,//4
-                    1L << 40, 1L << 41, 1L << 42, 1L << 43, 1L << 44, 1L << 45, 1L << 46, 1L << 47,//5
-                    1L << 48, 1L << 49, 1L << 50, 1L << 51, 1L << 52, 1L << 53, 1L << 54, 1L << 55,//6
-                    1L << 56, 1L << 57, 1L << 58, 1L << 59, 1L << 60, 1L << 61, 1L << 62, (ulong)1 << 63,//7                 
-                };
+            if (bits < 64 && (value & (1UL << (int)(bits - 1))) != 0)
+            {
+                value |= ulong.MaxValue << (byte)bits;
+            }
 
-            if (bits < 64 && ((value & si[bits - 1]) > 0))
-                value |= (~(ulong)0) << ((byte)bits);
             return (long)value;
         }
 
-        private long GetFromBitmapRedis(ref byte[] bitmap, ulong offset, ulong bits, bool signed)
+        private static long GetFromBitmapRedis(ref byte[] bitmap, ulong offset, ulong bits, bool signed)
         {
             return signed ? getSigned(ref bitmap, offset, bits) : (long)getUnsigned(ref bitmap, offset, bits);
         }
@@ -1355,7 +1347,7 @@ namespace Garnet.test
             }
         }
 
-        private void setUnsignedBitfield(ref byte[] bitmap, ulong offset, ulong bitCount, ulong value)
+        private static void setUnsignedBitfield(ref byte[] bitmap, ulong offset, ulong bitCount, ulong value)
         {
             ulong byteIndex, bit, byteVal, bitVal, j;
 
@@ -1372,7 +1364,7 @@ namespace Garnet.test
             }
         }
 
-        private void setSignedBitfield(ref byte[] bitmap, ulong offset, ulong bitCount, long value)
+        private static void setSignedBitfield(ref byte[] bitmap, ulong offset, ulong bitCount, long value)
         {
             ulong uv = (ulong)value; /* Casting will add UINT64_MAX + 1 if v is negative. */
             setUnsignedBitfield(ref bitmap, offset, bitCount, uv);
@@ -2098,7 +2090,7 @@ namespace Garnet.test
             for (int j = 1; j <= 64; j++)
             {
                 db.KeyDelete(key);
-                List<long> values = new List<long>();
+                List<long> values = [];
                 bitCount = j;
                 for (int i = 0; i < tests; i++)
                 {
@@ -2174,7 +2166,7 @@ namespace Garnet.test
             for (int j = 1; j <= 64; j++)
             {
                 bitCount = j;
-                List<long> values = new List<long>();
+                List<long> values = [];
 
                 db.KeyDelete(key);
                 for (int i = 0; i < tests; i++)

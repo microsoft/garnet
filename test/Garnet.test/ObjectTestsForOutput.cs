@@ -388,7 +388,7 @@ namespace Garnet.test
         }
 
 
-        private async Task<string> CreateKeyOfSize(int size, string name)
+        private static async Task<string> CreateKeyOfSize(int size, string name)
         {
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();

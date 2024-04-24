@@ -466,7 +466,7 @@ namespace Garnet.server
         /// Get memory size
         /// </summary>
         /// <returns></returns>
-        public int MemorySizeBits(string memorySize, string storePageSize, out int emptyPageCount)
+        public static int MemorySizeBits(string memorySize, string storePageSize, out int emptyPageCount)
         {
             emptyPageCount = 0;
             long size = ParseSize(memorySize);

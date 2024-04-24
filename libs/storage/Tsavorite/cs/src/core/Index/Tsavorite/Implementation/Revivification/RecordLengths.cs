@@ -58,7 +58,7 @@ namespace Tsavorite.core
         {
             // FixedLen may be GenericAllocator which does not point physicalAddress to the actual record location, so calculate fullRecordLength via GetAverageRecordSize().
             if (RevivificationManager.IsFixedLength)
-                return (RevivificationManager.FixedValueLength, RevivificationManager.FixedValueLength, hlog.GetAverageRecordSize());
+                return (RevivificationManager<Key, Value>.FixedValueLength, RevivificationManager<Key, Value>.FixedValueLength, hlog.GetAverageRecordSize());
 
             int usedValueLength, fullValueLength, allocatedSize, valueOffset = GetValueOffset(physicalAddress, ref recordValue);
             if (recordInfo.Filler)
@@ -88,7 +88,7 @@ namespace Tsavorite.core
         {
             // Called after a new record is allocated
             if (RevivificationManager.IsFixedLength)
-                return (RevivificationManager.FixedValueLength, RevivificationManager.FixedValueLength);
+                return (RevivificationManager<Key, Value>.FixedValueLength, RevivificationManager<Key, Value>.FixedValueLength);
 
             int valueOffset = GetValueOffset(newPhysicalAddress, ref recordValue);
             int usedValueLength = actualSize - valueOffset;
@@ -127,7 +127,7 @@ namespace Tsavorite.core
                 : GetRecordLengths(physicalAddress, ref hlog.GetValue(physicalAddress), ref recordInfo).fullRecordLength;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void ClearExtraValueSpace(ref RecordInfo recordInfo, ref Value recordValue, int usedValueLength, int fullValueLength)
+        static void ClearExtraValueSpace(ref RecordInfo recordInfo, ref Value recordValue, int usedValueLength, int fullValueLength)
         {
             // SpanByte's implementation of GetAndInitializeValue does not clear the space after usedValueLength. This may be
             // considerably less than the previous value length, so we clear it here before DisposeForRevivification. This space

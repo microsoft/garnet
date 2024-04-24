@@ -482,6 +482,7 @@ namespace Garnet.server
                 (RespCommand.List, (byte)ListOperation.LREM) => ListRemove(count, ptr, ref storageApi),
                 (RespCommand.List, (byte)ListOperation.RPOPLPUSH) => ListRightPopLeftPush(count, ptr, ref storageApi),
                 (RespCommand.List, (byte)ListOperation.LMOVE) => ListMove(count, ptr, ref storageApi),
+                (RespCommand.List, (byte)ListOperation.LSET) => ListSet(count, ptr, ref storageApi),
                 // Hash Commands
                 (RespCommand.Hash, (byte)HashOperation.HSET) => HashSet(count, ptr, HashOperation.HSET, ref storageApi),
                 (RespCommand.Hash, (byte)HashOperation.HMSET) => HashSet(count, ptr, HashOperation.HMSET, ref storageApi),
@@ -510,6 +511,7 @@ namespace Garnet.server
                 (RespCommand.Set, (byte)SetOperation.SSCAN) => ObjectScan(count, ptr, GarnetObjectType.Set, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SMOVE) => SetMove(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SUNION) => SetUnion(count, ptr, ref storageApi),
+                (RespCommand.Set, (byte)SetOperation.SUNIONSTORE) => SetUnionStore(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SDIFF) => SetDiff(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SDIFFSTORE) => SetDiffStore(count, ptr, ref storageApi),
                 _ => ProcessOtherCommands(cmd, subcmd, count, ref storageApi),

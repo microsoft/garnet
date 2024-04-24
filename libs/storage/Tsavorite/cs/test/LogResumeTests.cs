@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,16 +15,13 @@ namespace Tsavorite.test
     internal class LogResumeTests
     {
         private IDevice device;
-        private string path;
 
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
-            TestUtils.DeleteDirectory(path, wait: true);
-
-            device = Devices.CreateLogDevice(path + "Tsavoritelog.log", deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
         }
 
         [TearDown]
@@ -31,7 +29,7 @@ namespace Tsavorite.test
         {
             device?.Dispose();
             device = null;
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
@@ -109,7 +107,7 @@ namespace Tsavorite.test
             var input3 = new byte[] { 11, 12 };
             string readerName = "abc";
 
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(path), removeOutdated))
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), removeOutdated))
             {
                 long originalCompleted;
 
@@ -152,7 +150,7 @@ namespace Tsavorite.test
             var input3 = new byte[] { 11, 12 };
             string readerName = "abcd";
 
-            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(path), removeOutdated))
+            using (var logCommitManager = new DeviceLogCommitCheckpointManager(new LocalStorageNamedDeviceFactory(), new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), removeOutdated))
             {
                 long originalCompleted;
 

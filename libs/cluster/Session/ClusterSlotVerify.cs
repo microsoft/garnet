@@ -115,7 +115,7 @@ namespace Garnet.cluster
             }
         }
 
-        ClusterSlotVerificationResult ArrayCrosslotVerify(int keyCount, ref byte* ptr, byte* endPtr, bool interleavedKeys, out bool retVal, out byte* keyPtr, out int ksize)
+        static ClusterSlotVerificationResult ArrayCrosslotVerify(int keyCount, ref byte* ptr, byte* endPtr, bool interleavedKeys, out bool retVal, out byte* keyPtr, out int ksize)
         {
             retVal = false;
             var crossSlot = false;
@@ -171,7 +171,7 @@ namespace Garnet.cluster
             }
         }
 
-        ClusterSlotVerificationResult ArrayCrossSlotVerify(ref ArgSlice[] keys, int count)
+        static ClusterSlotVerificationResult ArrayCrossSlotVerify(ref ArgSlice[] keys, int count)
         {
             var _offset = 0;
             var _end = count < 0 ? keys.Length : count;

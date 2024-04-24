@@ -320,7 +320,7 @@ namespace Garnet.cluster
             FlushConfig();
         }
 
-        private bool slotBitmapGetBit(ref byte[] bitmap, int pos)
+        private static bool slotBitmapGetBit(ref byte[] bitmap, int pos)
         {
             int BYTE = (pos / 8);
             int BIT = pos & 7;

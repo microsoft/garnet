@@ -118,7 +118,7 @@ namespace Tsavorite.core
                 ioCompletionPort = Native32.CreateIoCompletionPort(new SafeFileHandle(new IntPtr(-1), false), IntPtr.Zero, UIntPtr.Zero, (uint)(workerThreads + NumCompletionThreads));
                 for (int i = 0; i < NumCompletionThreads; i++)
                 {
-                    var thread = new Thread(() => new LocalStorageDeviceCompletionWorker().Start(ioCompletionPort, _callback))
+                    var thread = new Thread(() => LocalStorageDeviceCompletionWorker.Start(ioCompletionPort, _callback))
                     {
                         IsBackground = true
                     };
@@ -553,7 +553,7 @@ namespace Tsavorite.core
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     sealed unsafe class LocalStorageDeviceCompletionWorker
     {
-        public void Start(IntPtr ioCompletionPort, IOCompletionCallback _callback)
+        public static void Start(IntPtr ioCompletionPort, IOCompletionCallback _callback)
         {
             while (true)
             {

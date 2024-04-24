@@ -25,8 +25,8 @@ namespace Tsavorite.test.statemachine
                 inputArray[i].adId = i;
             }
 
-            log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/StateMachineTest1.log", deleteOnClose: true);
-            string checkpointDir = TestUtils.MethodTestDir + "/statemachinetest";
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "StateMachineTest1.log"), deleteOnClose: true);
+            string checkpointDir = Path.Join(TestUtils.MethodTestDir, "statemachinetest");
             Directory.CreateDirectory(checkpointDir);
             store = new TsavoriteKV<AdId, NumClicks>
                 (128,
@@ -151,7 +151,7 @@ namespace Tsavorite.test.statemachine
             var store = new TsavoriteKV<AdId, NumClicks>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir + "/statemachinetest" }
+                checkpointSettings: new CheckpointSettings { CheckpointDir = Path.Join(TestUtils.MethodTestDir, "statemachinetest") }
                 );
 
             store.Recover(); // sync, does not require session

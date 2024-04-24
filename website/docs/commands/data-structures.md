@@ -337,6 +337,20 @@ Removes the first count occurrences of elements equal to element from the list s
 
 ---
 
+### LSET
+
+#### Syntax
+
+```bash
+    LSET key index element
+```
+
+Sets the list element at **index** to **element**. For more information on the index argument, see [LINDEX](#lindex).
+
+An error is returned for out of range indexes.
+
+---
+
 ### LTRIM
 
 #### Syntax
@@ -519,6 +533,20 @@ The **match** parameter allows to apply a filter to elements after they have bee
 
 Returns the members of the set resulting from the union of all the given sets.
 Keys that do not exist are considered to be empty sets.
+
+---
+
+### SUNIONSTORE
+
+#### Syntax
+
+```bash
+    SUNIONSTORE destination key [key ...]
+```
+
+This command is equal to [SUNION](#SUNION), but instead of returning the resulting set, it is stored in **destination**.
+
+If **destination** already exists, it is overwritten.
 
 ---
 
