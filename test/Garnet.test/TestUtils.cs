@@ -36,6 +36,11 @@ namespace Garnet.test
         /// </summary>
         public static int Port = 33278;
 
+        /// <summary>
+        /// Whether to use a test progress logger
+        /// </summary>
+        static readonly bool useTestLogger = false;
+
         internal static string AzureTestContainer
         {
             get
@@ -197,7 +202,20 @@ namespace Garnet.test
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
             }
 
-            return new GarnetServer(opts);
+            if (useTestLogger)
+            {
+                var loggerFactory = LoggerFactory.Create(builder =>
+                {
+                    builder.AddProvider(new NUnitLoggerProvider(TestContext.Progress, "GarnetServer", null, false, false, LogLevel.Trace));
+                    builder.SetMinimumLevel(LogLevel.Trace);
+                });
+
+                return new GarnetServer(opts, loggerFactory);
+            }
+            else
+            {
+                return new GarnetServer(opts);
+            }
         }
 
         /// <summary>
