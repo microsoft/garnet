@@ -19,16 +19,17 @@ namespace CommandInfoUpdater
         /// Tries to generate an updated JSON file containing Garnet's supported commands' info
         /// </summary>
         /// <param name="outputPath">Output path for the updated JSON file</param>
-        /// <param name="redisPort">Redis port to query commands info</param>
-        /// <param name="redisHost">Redis host to query commands info</param>
+        /// <param name="respServerPort">RESP server port to query commands info</param>
+        /// <param name="respServerHost">RESP server host to query commands info</param>
         /// <param name="ignoreCommands">Commands to ignore</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if file generated successfully</returns>
-        public static bool TryUpdateCommandInfo(string outputPath, ushort redisPort, IPAddress redisHost, IEnumerable<string>? ignoreCommands, ILogger logger)
+        public static bool TryUpdateCommandInfo(string outputPath, int respServerPort, IPAddress respServerHost, IEnumerable<string>? ignoreCommands, bool force, ILogger logger)
         {
             logger.LogInformation("Attempting to update RESP commands info...");
 
-            if (!RespCommandsInfo.TryGetRespCommandsInfo(out var existingCommandsInfo, false, logger))
+            IReadOnlyDictionary<string, RespCommandsInfo> existingCommandsInfo = new Dictionary<string, RespCommandsInfo>();
+            if (!force && !RespCommandsInfo.TryGetRespCommandsInfo(out existingCommandsInfo, false, logger))
             {
                 logger.LogError($"Unable to get existing RESP commands info.");
                 return false;
@@ -52,9 +53,9 @@ namespace CommandInfoUpdater
             IDictionary<string, RespCommandsInfo> additionalCommandsInfo;
             IDictionary<string, RespCommandsInfo> queriedCommandsInfo = default;
             var commandsToQuery = commandsToAdd.Select(c => c.Key.Command).Except(garnetCommandsInfo.Keys).ToArray();
-            if (commandsToQuery.Length > 0 && !TryGetCommandsInfo(commandsToQuery, redisPort, redisHost, logger, out queriedCommandsInfo))
+            if (commandsToQuery.Length > 0 && !TryGetCommandsInfo(commandsToQuery, respServerPort, respServerHost, logger, out queriedCommandsInfo))
             {
-                logger.LogError("Unable to get RESP command info from local Redis server.");
+                logger.LogError("Unable to get RESP command info from local RESP server.");
                 return false;
             }
 
@@ -238,15 +239,15 @@ namespace CommandInfoUpdater
         }
 
         /// <summary>
-        /// Query Redis server to get missing commands' info
+        /// Query RESP server to get missing commands' info
         /// </summary>
         /// <param name="commandsToQuery">Command to query</param>
-        /// <param name="redisPort">Redis port to query</param>
-        /// <param name="redisHost">Redis host to query</param>
+        /// <param name="respServerPort">RESP server port to query</param>
+        /// <param name="respServerHost">RESP server host to query</param>
         /// <param name="logger">Logger</param>
         /// <param name="commandsInfo">Queried commands info</param>
         /// <returns>True if succeeded</returns>
-        private static unsafe bool TryGetCommandsInfo(string[] commandsToQuery, ushort redisPort, IPAddress redisHost, ILogger logger, out IDictionary<string, RespCommandsInfo> commandsInfo)
+        private static unsafe bool TryGetCommandsInfo(string[] commandsToQuery, int respServerPort, IPAddress respServerHost, ILogger logger, out IDictionary<string, RespCommandsInfo> commandsInfo)
         {
             commandsInfo = default;
 
@@ -254,15 +255,15 @@ namespace CommandInfoUpdater
             if (commandsToQuery.Length == 0) return true;
 
             byte[] response;
-            // Query the Redis server
+            // Query the RESP server
             try
             {
-                var lightClient = new LightClientRequest(redisHost.ToString(), redisPort, 0);
+                var lightClient = new LightClientRequest(respServerHost.ToString(), respServerPort, 0);
                 response = lightClient.SendCommand($"COMMAND INFO {string.Join(' ', commandsToQuery)}");
             }
             catch (Exception e)
             {
-                logger.LogError(e, "Encountered an error while querying local Redis server");
+                logger.LogError(e, "Encountered an error while querying local RESP server");
                 return false;
             }
 
@@ -287,7 +288,7 @@ namespace CommandInfoUpdater
                     if (!RespCommandInfoParser.TryReadFromResp(ref ptr, end, supportedCommands, out RespCommandsInfo command) ||
                         command == null)
                     {
-                        logger.LogError($"Unable to read RESP command info from Redis for command {commandsToQuery[cmdIdx]}");
+                        logger.LogError($"Unable to read RESP command info from server for command {commandsToQuery[cmdIdx]}");
                         return false;
                     }
                     tmpCommandsInfo.Add(command.Name, command);
