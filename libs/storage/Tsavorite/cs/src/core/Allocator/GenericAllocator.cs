@@ -290,7 +290,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long SnapToLogicalAddressBoundary(ref long logicalAddress)
+        internal static long SnapToLogicalAddressBoundary(ref long logicalAddress)
         {
             return logicalAddress = ((logicalAddress - Constants.kFirstValidAddress) / RecordSize) * RecordSize + Constants.kFirstValidAddress;
         }

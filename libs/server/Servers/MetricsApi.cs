@@ -48,7 +48,7 @@ namespace Garnet.server
         /// <summary>
         /// Get header for given info metrics type
         /// </summary>
-        public string GetHeader(InfoMetricsType infoMetricsType)
+        public static string GetHeader(InfoMetricsType infoMetricsType)
             => GarnetInfoMetrics.GetSectionHeader(infoMetricsType);
 
         /// <summary>

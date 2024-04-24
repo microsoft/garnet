@@ -140,7 +140,7 @@ namespace Tsavorite.core
 
         // Given the current global state, return the starting point of the state machine cycle
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private SystemState StartOfCurrentCycle(SystemState currentGlobalState)
+        private static SystemState StartOfCurrentCycle(SystemState currentGlobalState)
         {
             return currentGlobalState.Phase < Phase.REST
                 ? SystemState.Make(Phase.REST, currentGlobalState.Version - 1)
@@ -150,7 +150,7 @@ namespace Tsavorite.core
         // Given the current thread state and global state, fast forward the thread state to the
         // current state machine cycle if needed
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private SystemState FastForwardToCurrentCycle(SystemState threadState, SystemState targetStartState)
+        private static SystemState FastForwardToCurrentCycle(SystemState threadState, SystemState targetStartState)
         {
             if (threadState.Version < targetStartState.Version ||
                 threadState.Version == targetStartState.Version && threadState.Phase < targetStartState.Phase)
@@ -311,7 +311,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Issue completion callback if needed, for the given context's prevCtx
         /// </summary>
-        internal void IssueCompletionCallback<Input, Output, Context, TsavoriteSession>(TsavoriteExecutionContext<Input, Output, Context> ctx, TsavoriteSession tsavoriteSession)
+        internal static void IssueCompletionCallback<Input, Output, Context, TsavoriteSession>(TsavoriteExecutionContext<Input, Output, Context> ctx, TsavoriteSession tsavoriteSession)
              where TsavoriteSession : ITsavoriteSession
         {
             CommitPoint commitPoint = default;

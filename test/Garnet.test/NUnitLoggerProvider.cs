@@ -68,7 +68,7 @@ namespace Garnet.test
 
             public bool IsEnabled(LogLevel logLevel) => true;
 
-            private string GetLevelStr(LogLevel ll) => lvl[(int)ll];
+            private static string GetLevelStr(LogLevel ll) => lvl[(int)ll];
 
             public void Log<TState>(
                 LogLevel logLevel,

@@ -120,7 +120,7 @@ namespace Tsavorite.core
             {
                 if (!ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
                 {
-                    store.IssueCompletionCallback(ctx, storeSession);
+                    TsavoriteKV<Key, Value>.IssueCompletionCallback(ctx, storeSession);
                     ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
                 }
             }

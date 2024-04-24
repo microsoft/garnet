@@ -58,7 +58,7 @@ namespace Garnet.cluster
 
                     if (slots.Contains(slot) && !ClusterSession.Expired(ref value))
                     {
-                        byte[] objectData = session.clusterProvider.storeWrapper.GarnetObjectSerializer.Serialize(value);
+                        byte[] objectData = GarnetObjectSerializer.Serialize(value);
                         if (!session.WriteOrSendObjectStoreKeyValuePair(key, objectData, value.Expiration))
                             return false;
                     }

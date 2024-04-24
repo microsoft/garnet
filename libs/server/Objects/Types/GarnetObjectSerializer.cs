@@ -68,7 +68,7 @@ namespace Garnet.server
         /// <summary>Thread safe version of Serialize.</summary>
         /// <param name="obj"></param>
         /// <returns></returns>
-        public byte[] Serialize(IGarnetObject obj)
+        public static byte[] Serialize(IGarnetObject obj)
         {
             Debug.Assert(obj != null);
 
@@ -78,7 +78,7 @@ namespace Garnet.server
             return ms.ToArray();
         }
 
-        private void SerializeInternal(BinaryWriter binaryWriter, IGarnetObject obj)
+        private static void SerializeInternal(BinaryWriter binaryWriter, IGarnetObject obj)
         {
             if (obj == null)
                 binaryWriter.Write((byte)GarnetObjectType.Null);
