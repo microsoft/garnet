@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -115,21 +116,18 @@ namespace Garnet.common
         {
             var fNeg = *source == '-';
             var beg = fNeg ? source + 1 : source;
-            var end = source + length;
-            var digit = *beg - '0';
+            var len = fNeg ? length - 1 : length;
             result = 0;
 
-            // Check first digit which needs to be non-zero
-            if (digit is <= 0 or > 9)
+            // Do not allow leading zeros
+            if (len > 1 && *beg == '0')
                 return false;
 
-            while (beg < end)
-            {
-                digit = *beg++ - '0';
-                if (digit is < 0 or > 9)
-                    return false;
-                checked { result = (result * 10) + digit; }
-            }
+            // Parse number and check consumed bytes to avoid alphanumeric strings
+            if (!Utf8Parser.TryParse(new Span<byte>(beg, len), out result, out var bytesConsumed) || bytesConsumed != len)
+                return false;
+
+            // Negate if parsed value has a leading negative sign
             result = fNeg ? -result : result;
             return true;
         }

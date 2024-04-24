@@ -133,7 +133,6 @@ namespace Garnet.server
 
                     CopyValueLengthToOutput(ref value, ref output);
                     break;
-
                 case RespCommand.INCRBY:
                     value.UnmarkExtraMetadata();
                     // Check if input contains a valid number
@@ -142,7 +141,6 @@ namespace Garnet.server
                         return false;
                     CopyUpdateNumber(incrBy, ref value, ref output);
                     break;
-
                 case RespCommand.DECRBY:
                     value.UnmarkExtraMetadata();
                     // Check if input contains a valid number
@@ -151,7 +149,6 @@ namespace Garnet.server
                         return false;
                     CopyUpdateNumber(-decrBy, ref value, ref output);
                     break;
-
                 default:
                     value.UnmarkExtraMetadata();
 
