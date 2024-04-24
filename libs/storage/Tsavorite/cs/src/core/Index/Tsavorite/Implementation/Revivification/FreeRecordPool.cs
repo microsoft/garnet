@@ -417,11 +417,6 @@ namespace Tsavorite.core
             }
             isEmpty = true;
         }
-
-        public void Dispose()
-        {
-            // Currently nothing
-        }
     }
 
     internal unsafe class FreeRecordPool<Key, Value> : IDisposable
@@ -574,8 +569,6 @@ namespace Tsavorite.core
 
         public void Dispose()
         {
-            foreach (var bin in bins)
-                bin.Dispose();
             checkEmptyWorker.Dispose();
         }
     }

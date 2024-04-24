@@ -1034,7 +1034,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal bool AtomicSwitch<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> fromCtx, TsavoriteExecutionContext<Input, Output, Context> toCtx, long version, ConcurrentDictionary<int, (string, CommitPoint)> tokens)
+        internal static bool AtomicSwitch<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> fromCtx, TsavoriteExecutionContext<Input, Output, Context> toCtx, long version, ConcurrentDictionary<int, (string, CommitPoint)> tokens)
         {
             lock (toCtx)
             {

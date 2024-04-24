@@ -146,7 +146,7 @@ namespace Garnet.cluster
             return primaryLinkStatus;
         }
 
-        private bool Expired(long expiry)
+        private static bool Expired(long expiry)
             => expiry < DateTimeOffset.UtcNow.Ticks;
 
         /// <summary>

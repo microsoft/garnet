@@ -306,7 +306,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus PrepareIOForConditionalScan<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
+        internal static OperationStatus PrepareIOForConditionalScan<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
                                         ref TsavoriteKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value value, ref Output output, Context userContext, long lsn,
                                         ref OperationStackContext<Key, Value> stackCtx, long minAddress, ScanCursorState<Key, Value> scanCursorState)

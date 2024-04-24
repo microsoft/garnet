@@ -1005,14 +1005,14 @@ namespace Garnet.test
 
         #region commonmethods
 
-        private void CreateSet()
+        private static void CreateSet()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("SADD myset \"Hello\"", 1);
             response = lightClientRequest.SendCommand("SADD myset \"World\"", 1);
         }
 
-        private void CreateLongSet()
+        private static void CreateLongSet()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("SADD myset one", 1);
