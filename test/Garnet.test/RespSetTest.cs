@@ -33,7 +33,6 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-
         #region SEClientTests
         [Test]
         [TestCase("")]
@@ -91,7 +90,6 @@ namespace Garnet.test
             Assert.IsFalse(setDoesNotExist);
         }
 
-
         [Test]
         public void CanAddAndGetAllMembersWithPendingStatus()
         {
@@ -115,18 +113,35 @@ namespace Garnet.test
             Assert.AreEqual(100, members.Length);
         }
 
-
         [Test]
         public void CanReturnEmptySet()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var members = db.SetMembers(new RedisKey("myset"));
+            _ = db.SetMembers(new RedisKey("myset"));
 
             var response = db.Execute("MEMORY", "USAGE", "myset");
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Type ? int.Parse(response.ToString()) : -1;
             var expectedResponse = -1;
             Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanDoMembersWhenEmptyKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var empty = "";
+
+            var addResult = db.SetAdd(empty, ["one", "two", "three", "four", "five"]);
+            Assert.AreEqual(5, addResult);
+
+            var result = db.SetMembers(empty);
+            Assert.AreEqual(5, result.Length);
+            var strResult = result.Select(r => r.ToString());
+            var expectedResult = new[] { "one", "two", "three", "four", "five" };
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
         }
 
         [Test]
@@ -480,7 +495,7 @@ namespace Garnet.test
             Assert.AreEqual(1, membersResult.Length);
 
             var strResult = membersResult.Select(r => r.ToString()).ToArray();
-            var expectedResult = new[] { "one"};
+            var expectedResult = new[] { "one" };
             Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
 
             membersResult = db.SetMembers(destination);
