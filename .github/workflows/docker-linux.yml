@@ -6,6 +6,8 @@ on:
     workflows: ['Garnet .NET CI']
     types: [completed]
     branches: [main]
+  push:
+    tags: 'v*'
 
 jobs:
   docker:
