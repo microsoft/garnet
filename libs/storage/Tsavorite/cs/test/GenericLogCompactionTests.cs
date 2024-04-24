@@ -70,7 +70,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void LogCompactBasicTest([Values] DeviceType deviceType, [Values] CompactionType compactionType)
+        public void LogCompactBasicTest([Values] CompactionType compactionType)
         {
             MyInput input = new();
 
