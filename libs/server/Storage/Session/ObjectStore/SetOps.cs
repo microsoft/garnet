@@ -376,9 +376,6 @@ namespace Garnet.server
         {
             smoveResult = 0;
 
-            if (sourceKey.Length == 0 || destinationKey.Length == 0)
-                return GarnetStatus.OK;
-
             // If the keys are the same, no operation is performed.
             var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
             if (sameKey)
@@ -474,6 +471,9 @@ namespace Garnet.server
         public GarnetStatus SetUnionStore(byte[] key, ArgSlice[] keys, out int count)
         {
             count = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
 
             var destination = scratchBufferManager.CreateArgSlice(key);
 
@@ -643,6 +643,7 @@ namespace Garnet.server
         public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)
         {
             members = default;
+
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
@@ -685,7 +686,7 @@ namespace Garnet.server
         {
             count = default;
 
-            if (key.Length == 0 || keys.Length == 0)
+            if (keys.Length == 0)
                 return GarnetStatus.OK;
 
             var destination = scratchBufferManager.CreateArgSlice(key);
