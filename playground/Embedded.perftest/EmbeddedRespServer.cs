@@ -28,6 +28,8 @@ namespace Embedded.perftest
         /// </summary>
         public new void Dispose() => base.Dispose();
 
+        public StoreWrapper StoreWrapper => storeWrapper;
+
         /// <summary>
         /// Return a RESP session to this server
         /// </summary>
