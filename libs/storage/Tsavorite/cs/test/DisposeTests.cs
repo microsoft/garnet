@@ -35,8 +35,8 @@ namespace Tsavorite.test.Dispose
             sutGate = new(0);
             otherGate = new(0);
 
-            log = Devices.CreateLogDevice(MethodTestDir + "/ObjectTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(MethodTestDir + "/ObjectTests.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectTests.obj.log"), deleteOnClose: true);
 
             LogSettings logSettings = new() { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 10 };
             var concurrencyControlMode = ConcurrencyControlMode.None;

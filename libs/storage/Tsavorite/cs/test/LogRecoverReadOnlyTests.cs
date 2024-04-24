@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,7 +19,6 @@ namespace Tsavorite.test.recovery
         const int RestorePeriodMs = 5;
         const int NumElements = 100;
 
-        string path;
         string deviceName;
         CancellationTokenSource cts;
         SemaphoreSlim done;
@@ -26,11 +26,10 @@ namespace Tsavorite.test.recovery
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-            deviceName = path + "testlog";
+            deviceName = Path.Join(TestUtils.MethodTestDir, "testlog");
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             cts = new CancellationTokenSource();
             done = new SemaphoreSlim(0);
@@ -43,7 +42,7 @@ namespace Tsavorite.test.recovery
             cts = default;
             done?.Dispose();
             done = default;
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -18,8 +19,8 @@ namespace Tsavorite.test
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(MethodTestDir + "/MiscTests.log", deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(MethodTestDir + "/MiscTests.obj.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "MiscTests.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "MiscTests.obj.log"), deleteOnClose: true);
 
             store = new TsavoriteKV<int, MyValue>
                 (128,
@@ -114,8 +115,8 @@ namespace Tsavorite.test
 
             try
             {
-                var checkpointDir = MethodTestDir + $"/checkpoints";
-                log = Devices.CreateLogDevice(MethodTestDir + "/hlog1.log", deleteOnClose: true);
+                var checkpointDir = Path.Join(MethodTestDir, "checkpoints");
+                log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
                 store = new TsavoriteKV<KeyStruct, ValueStruct>
                     (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 },
                     checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir },

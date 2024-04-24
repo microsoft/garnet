@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -13,21 +14,18 @@ namespace Tsavorite.test
         private TsavoriteKV<MyKey, MyValue> store;
         private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
         private IDevice log, objlog;
-        private string path;
 
         [SetUp]
         public void Setup()
         {
-            path = MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(path, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
 
             if (TestContext.CurrentContext.Test.Arguments.Length == 0)
             {
                 // Default log creation
-                log = Devices.CreateLogDevice(path + "/GenericLogCompactionTests.log", deleteOnClose: true);
-                objlog = Devices.CreateLogDevice(path + "/GenericLogCompactionTests.obj.log", deleteOnClose: true);
+                log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericLogCompactionTests.log"), deleteOnClose: true);
+                objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericLogCompactionTests.obj.log"), deleteOnClose: true);
 
                 store = new TsavoriteKV<MyKey, MyValue>
                     (128,
@@ -41,8 +39,8 @@ namespace Tsavorite.test
                 // so for multi-parameter tests it is probably better to stay with the "separate SetUp method" approach.
                 var deviceType = (DeviceType)TestContext.CurrentContext.Test.Arguments[0];
 
-                log = CreateTestDevice(deviceType, $"{path}LogCompactBasicTest_{deviceType}.log");
-                objlog = CreateTestDevice(deviceType, $"{path}LogCompactBasicTest_{deviceType}.obj.log");
+                log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"LogCompactBasicTest_{deviceType}.log"));
+                objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"LogCompactBasicTest_{deviceType}.obj.log"));
 
                 store = new TsavoriteKV<MyKey, MyValue>
                     (128,
@@ -65,7 +63,7 @@ namespace Tsavorite.test
             objlog?.Dispose();
             objlog = null;
 
-            DeleteDirectory(path);
+            DeleteDirectory(MethodTestDir);
         }
 
         // Basic test that where shift begin address to untilAddress after compact

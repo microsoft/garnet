@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -510,7 +511,6 @@ namespace Tsavorite.test.Expiration
                 => SpanByteFunctions<Empty>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
         }
 
-        private string path;
         IDevice log;
         ExpirationFunctions functions;
         TsavoriteKV<SpanByte, SpanByte> store;
@@ -519,10 +519,9 @@ namespace Tsavorite.test.Expiration
         [SetUp]
         public void Setup()
         {
-            path = MethodTestDir + "/";
             DeleteDirectory(MethodTestDir, wait: true);
 
-            log = Devices.CreateLogDevice(MethodTestDir + "/hlog.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: true);
             store = new TsavoriteKV<SpanByte, SpanByte>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 19, PageSizeBits = 14 },
@@ -541,7 +540,7 @@ namespace Tsavorite.test.Expiration
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(path);
+            DeleteDirectory(MethodTestDir);
         }
 
         private unsafe void Populate(Random rng)

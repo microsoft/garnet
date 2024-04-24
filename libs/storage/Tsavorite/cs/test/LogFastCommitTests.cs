@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -26,7 +27,7 @@ namespace Tsavorite.test
             var cookie = new byte[100];
             new Random().NextBytes(cookie);
 
-            var filename = path + "fastCommit" + deviceType.ToString() + ".log";
+            var filename = Path.Join(TestUtils.MethodTestDir, $"fastCommit{deviceType}.log");
             device = TestUtils.CreateTestDevice(deviceType, filename, deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true, TryRecoverLatest = false, SegmentSizeBits = 26 };
             log = new TsavoriteLog(logSettings);
@@ -101,7 +102,7 @@ namespace Tsavorite.test
             var cookie = new byte[100];
             new Random().NextBytes(cookie);
 
-            var filename = path + "boundedGrowth" + deviceType.ToString() + ".log";
+            var filename = Path.Join(TestUtils.MethodTestDir, $"boundedGrowth{deviceType}.log");
             device = TestUtils.CreateTestDevice(deviceType, filename, deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, FastCommitMode = true, SegmentSizeBits = 26 };
             log = new TsavoriteLog(logSettings);
