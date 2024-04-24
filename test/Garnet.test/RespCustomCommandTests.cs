@@ -511,14 +511,14 @@ namespace Garnet.test
 
             foreach (var referenceFile in referenceFiles)
             {
-                Assert.IsTrue(File.Exists(referenceFile), $"File '{referenceFile}' does not exist.");
+                Assert.IsTrue(File.Exists(referenceFile), $"File '{Path.GetFullPath(referenceFile)}' does not exist.");
             }
 
             var references = referenceFiles.Select(f => MetadataReference.CreateFromFile(f));
 
             foreach (var fileToCompile in filesToCompile)
             {
-                Assert.IsTrue(File.Exists(fileToCompile), $"File '{fileToCompile}' does not exist.");
+                Assert.IsTrue(File.Exists(fileToCompile), $"File '{Path.GetFullPath(fileToCompile)}' does not exist.");
             }
 
             var parseFunc = new Func<string, SyntaxTree>(filePath =>
