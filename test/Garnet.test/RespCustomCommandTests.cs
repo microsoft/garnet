@@ -511,14 +511,14 @@ namespace Garnet.test
 
             foreach (var referenceFile in referenceFiles)
             {
-                Assert.IsTrue(File.Exists(referenceFile));
+                Assert.IsTrue(File.Exists(referenceFile), $"File '{referenceFile}' does not exist.");
             }
 
             var references = referenceFiles.Select(f => MetadataReference.CreateFromFile(f));
 
             foreach (var fileToCompile in filesToCompile)
             {
-                Assert.IsTrue(File.Exists(fileToCompile));
+                Assert.IsTrue(File.Exists(fileToCompile), $"File '{fileToCompile}' does not exist.");
             }
 
             var parseFunc = new Func<string, SyntaxTree>(filePath =>
@@ -577,25 +577,18 @@ namespace Garnet.test
                 Path.Combine(runtimePath, "System.Core.dll"),
                 Path.Combine(runtimePath, "System.Private.CoreLib.dll"),
                 Path.Combine(runtimePath, "System.Runtime.dll"),
-                Path.Combine(binPath, $"Tsavorite.core.dll"),
-                Path.Combine(binPath, $"Garnet.common.dll"),
-                Path.Combine(binPath, $"Garnet.server.dll"),
+                Path.Combine(binPath, "Tsavorite.core.dll"),
+                Path.Combine(binPath, "Garnet.common.dll"),
+                Path.Combine(binPath, "Garnet.server.dll"),
             };
 
             var dir1 = Path.Combine(this._extTestDir1, Path.GetFileName(TestUtils.MethodTestDir));
             var dir2 = Path.Combine(this._extTestDir2, Path.GetFileName(TestUtils.MethodTestDir));
 
-            if (!Directory.Exists(this._extTestDir1))
-                Directory.CreateDirectory(this._extTestDir1);
-
-            if (!Directory.Exists(dir1))
-                Directory.CreateDirectory(dir1);
-
-            if (!Directory.Exists(this._extTestDir2))
-                Directory.CreateDirectory(this._extTestDir2);
-
-            if (!Directory.Exists(dir2))
-                Directory.CreateDirectory(dir2);
+            Directory.CreateDirectory(this._extTestDir1);
+            Directory.CreateDirectory(dir1);
+            Directory.CreateDirectory(this._extTestDir2);
+            Directory.CreateDirectory(dir2);
 
             var testFilePath = Path.Combine(TestUtils.MethodTestDir, "test.cs");
             using (var testFile = File.CreateText(testFilePath))
