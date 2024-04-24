@@ -119,13 +119,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(StressTestCategory)]
         //[Repeat(300)]
         public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode,
-                                                [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ReadCacheMode readCacheMode,
-#if WINDOWS
-                                                [Values(DeviceType.LSD
-#else
-                                                [Values(DeviceType.MLSD
-#endif
-                                                )] DeviceType deviceType)
+                                                [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ReadCacheMode readCacheMode)
         {
             if (numThreads == 1 && keyContentionMode == KeyContentionMode.Contention)
                 Assert.Ignore("Skipped because 1 thread cannot have contention");

@@ -8,13 +8,8 @@
 
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <RootNamespace>Tsavorite.core</RootNamespace>
-    <AssemblyName>Tsavorite.core</AssemblyName>
-    <ErrorReport>prompt</ErrorReport>
     <SignAssembly>true</SignAssembly>
-    <ApplicationIcon />
     <OutputType>Library</OutputType>
-    <StartupObject />
     <AssemblyOriginatorKeyFile>../../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
 	<EmbedUntrackedSources>true</EmbedUntrackedSources>
@@ -22,16 +17,7 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-    <DefineConstants>DEBUG</DefineConstants>
-    <DebugType>full</DebugType>
     <WarningsAsErrors>;NU1605</WarningsAsErrors>
-    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
-  </PropertyGroup>
-  
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <DefineConstants></DefineConstants>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
   
   <ItemGroup>
