@@ -4,6 +4,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Garnet.server.Objects.List;
 
 namespace Garnet.server;
 

@@ -2,12 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.ComponentModel.DataAnnotations.Schema;
-using System.Diagnostics;
 using System.Linq;
-using System.Runtime.Serialization;
-using System.Threading;
-using System.Threading.Tasks;
+using Garnet.server.Objects.List;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -54,6 +50,7 @@ namespace Garnet.server
             RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.countDone;
+            listItemBroker.TryAssignNextItem(key.Span.ToArray());
             return GarnetStatus.OK;
         }
 
@@ -87,6 +84,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ToArray(), element, out var output, ref objectStoreContext);
             itemsDoneCount = output.countDone;
 
+            listItemBroker.TryAssignNextItem(key.Span.ToArray());
             return status;
         }
 
@@ -149,116 +147,8 @@ namespace Garnet.server
 
         public GarnetStatus ListBlockingRightPop(ArgSlice[] keys, double timeout, ListOperation lop, out byte[] element)
         {
-            element = default;
-            byte[] tmpElement = default;
-            var tmpElementLock = new object();
-            var cts = new CancellationTokenSource();
-            if (timeout > 0)
-                cts.CancelAfter(TimeSpan.FromSeconds(timeout));
-
-            if (keys.Length == 0)
-                return GarnetStatus.OK;
-
-            var createTransaction = false;
-
-            void OnNodeAddedEvent(object sender, NodeAddedEventArgs args)
-            {
-                if (cts.IsCancellationRequested) return;
-
-                var callingListObj = (ObservableLinkedList<byte[]>)sender;
-                lock (tmpElementLock)
-                {
-                    if (tmpElement != default) return;
-                    tmpElement = callingListObj.Last.Value;
-                }
-
-                callingListObj.RemoveLast();
-                args.ParentObject.UpdateSize(tmpElement, false);
-                cts.Cancel();
-            }
-
-            foreach (var key in keys)
-            {
-                if (cts.IsCancellationRequested) break;
-
-                if (txnManager.state != TxnState.Running)
-                {
-                    Debug.Assert(txnManager.state == TxnState.None);
-                    createTransaction = true;
-                    txnManager.SaveKeyEntryToLock(key, true, LockType.Exclusive);
-                    _ = txnManager.Run(true);
-                }
-
-                var objectLockableContext = txnManager.ObjectStoreLockableContext;
-
-                try
-                {
-                    var statusOp = GET(key.ToArray(), out var osList, ref objectLockableContext);
-
-                    var listObj = (ListObject)osList.garnetObject;
-                    if (statusOp == GarnetStatus.NOTFOUND)
-                    {
-                        continue;
-                    }
-                    else if (listObj.LnkList.Count == 0)
-                    {
-                        listObj.LnkList.NodeAddedEvent += OnNodeAddedEvent;
-                    }
-                    else if (statusOp == GarnetStatus.OK)
-                    {
-                        lock (tmpElementLock)
-                        {
-                            if (tmpElement != default) break;
-                            tmpElement = listObj.LnkList.Last.Value;
-                        }
-                        listObj.LnkList.RemoveLast();
-                        listObj.UpdateSize(tmpElement, false);
-                        break;
-                    }
-                }
-                finally
-                {
-                    if (createTransaction)
-                        txnManager.Commit(true);
-                }
-            }
-
-            if (!cts.IsCancellationRequested)
-            {
-                Task.Delay(Timeout.Infinite, cts.Token).Wait(cts.Token);
-            }
-
-            foreach (var key in keys)
-            {
-                if (txnManager.state != TxnState.Running)
-                {
-                    Debug.Assert(txnManager.state == TxnState.None);
-                    createTransaction = true;
-                    txnManager.SaveKeyEntryToLock(key, true, LockType.Shared);
-                    _ = txnManager.Run(true);
-                }
-
-                var objectLockableContext = txnManager.ObjectStoreLockableContext;
-
-                try
-                {
-                    var statusOp = GET(key.ToArray(), out var osList, ref objectLockableContext);
-
-                    var listObj = (ListObject)osList.garnetObject;
-                    if (statusOp != GarnetStatus.NOTFOUND)
-                    {
-                        listObj.LnkList.NodeAddedEvent -= OnNodeAddedEvent;
-                    }
-                }
-                finally
-                {
-                    if (createTransaction)
-                        txnManager.Commit(true);
-                }
-            }
-
-            element = tmpElement;
-            cts.Dispose();
+            var observer = new ListObserver(keys.Select(k => k.Span.ToArray()).ToArray(), lop, timeout, listItemBroker);
+            element = observer.GetNextItemAsync().Result;
             return GarnetStatus.OK;
         }
 
@@ -397,6 +287,7 @@ namespace Garnet.server
                     txnManager.Commit(true);
             }
 
+            listItemBroker.TryAssignNextItem(destinationKey.Span.ToArray());
             return true;
 
         }
@@ -438,7 +329,12 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus ListPush<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        {
+            
+            var status = RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            listItemBroker.TryAssignNextItem(key);
+            return status;
+        }
 
         /// <summary>
         /// Trim an existing list so it only contains the specified range of elements.
@@ -476,7 +372,11 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus ListInsert<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        {
+            var status = RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            listItemBroker.TryAssignNextItem(key);
+            return status;
+        }
 
         /// <summary>
         /// Returns the element at index.
@@ -532,6 +432,5 @@ namespace Garnet.server
         public unsafe GarnetStatus ListLength<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
              where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
              => ReadObjectStoreOperation(key, input, out output, ref objectStoreContext);
-
     }
 }

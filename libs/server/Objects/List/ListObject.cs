@@ -32,6 +32,7 @@ namespace Garnet.server
         RPOPLPUSH,
         LMOVE,
         BRPOP,
+        BLPOP,
     }
 
     /// <summary>

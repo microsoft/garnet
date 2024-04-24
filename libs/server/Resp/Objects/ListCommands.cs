@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics.Metrics;
 using System.Linq;
+using System.Xml.Linq;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -199,13 +200,11 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(lop.ToString(), count);
             }
 
-            if (!RespReadUtils.ReadIntWithLengthHeader(out var elementCount, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            var keys = new ArgSlice[elementCount - 1];
+            var keys = new ArgSlice[count - 1];
 
             for (var i = 0; i < keys.Length; i++)
             {
+                keys[i] = default;
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
                     return false;
             }
@@ -239,10 +238,7 @@ namespace Garnet.server
             inputPtr->count = 0;
 
             var statusOp = GarnetStatus.OK;
-            if (lop == ListOperation.BRPOP)
-            {
-                statusOp = storageApi.ListBlockingRightPop(keys, timeout, out var element);
-            }
+            statusOp = storageApi.ListBlockingRightPop(keys, timeout, out var element);
 
             // Reset input buffer
             *inputPtr = save;
@@ -251,8 +247,16 @@ namespace Garnet.server
             {
                 case GarnetStatus.OK:
                     //process output
-                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                    ptr += objOutputHeader.bytesDone;
+                    if (element != null)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                            SendAndReset();
+                    }
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))

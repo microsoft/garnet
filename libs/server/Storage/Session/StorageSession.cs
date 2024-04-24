@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.server.Objects.List;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -47,6 +48,8 @@ namespace Garnet.server
 
         public readonly int ObjectScanCountLimit;
 
+        private readonly ListItemBroker listItemBroker;
+
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
@@ -56,6 +59,7 @@ namespace Garnet.server
             this.LatencyMetrics = LatencyMetrics;
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
+            listItemBroker = new ListItemBroker(this);
 
             functionsState = storeWrapper.CreateFunctionsState();
 
