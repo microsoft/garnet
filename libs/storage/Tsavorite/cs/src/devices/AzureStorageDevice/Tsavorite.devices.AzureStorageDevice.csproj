@@ -1,15 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Platforms>AnyCPU;x64</Platforms>
-    <LangVersion>latest</LangVersion>
-  </PropertyGroup>
-
-  <PropertyGroup>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Tsavorite.devices</RootNamespace>
     <SignAssembly>true</SignAssembly>
-    <OutputType>Library</OutputType>
     <AssemblyOriginatorKeyFile>../../../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
 	  <EmbedUntrackedSources>true</EmbedUntrackedSources>

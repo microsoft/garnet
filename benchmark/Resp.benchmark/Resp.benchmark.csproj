@@ -2,9 +2,7 @@
 
 	<PropertyGroup>
     <OutputType>Exe</OutputType>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
-    <LangVersion>latest</LangVersion>
 	  <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
 

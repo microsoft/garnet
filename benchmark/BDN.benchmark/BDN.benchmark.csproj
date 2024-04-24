@@ -3,8 +3,6 @@
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<LangVersion>latest</LangVersion>
 		<SignAssembly>true</SignAssembly>
 		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
 		<DelaySign>false</DelaySign>

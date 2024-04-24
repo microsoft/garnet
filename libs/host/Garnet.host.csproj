@@ -1,9 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<Platforms>AnyCPU</Platforms>
-		<LangVersion>latest</LangVersion>
 		<SignAssembly>true</SignAssembly>
 		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
 		<DelaySign>false</DelaySign>

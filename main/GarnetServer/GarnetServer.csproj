@@ -2,10 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <Platforms>AnyCPU</Platforms>
-    <LangVersion>latest</LangVersion>
     <ServerGarbageCollection>true</ServerGarbageCollection>
-    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
