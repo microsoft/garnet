@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -63,17 +64,11 @@ namespace Garnet.client
         /// <summary>
         /// Previous power of 2
         /// </summary>
-        /// <param name="v"></param>
-        /// <returns></returns>
         public static long PreviousPowerOf2(long v)
         {
-            v |= v >> 1;
-            v |= v >> 2;
-            v |= v >> 4;
-            v |= v >> 8;
-            v |= v >> 16;
-            v |= v >> 32;
-            return v - (v >> 1);
+            // Adjusted from BitOperations.RoundUpToPowerOf2
+            int shift = 63 - BitOperations.LeadingZeroCount((ulong)v);
+            return (long)(1UL ^ (ulong)(shift >> 6)) << shift;
         }
 
         /// <summary>
