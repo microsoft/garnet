@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -16,14 +17,11 @@ namespace Tsavorite.test
         const int entryLength = 1024;
         SectorAlignedBufferPool bufferPool;
         readonly byte[] entry = new byte[entryLength];
-        string path;
         SemaphoreSlim semaphore;
 
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/test.log";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
@@ -49,7 +47,7 @@ namespace Tsavorite.test
         public void NativeDeviceTest1()
         {
             // Create devices \ log for test for in memory device
-            using var device = new NativeStorageDevice(path, true); // Devices.CreateLogDevice(path, deleteOnClose: true)
+            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), true); // Devices.CreateLogDevice(path, deleteOnClose: true)
 
             WriteInto(device, 0, entry, entryLength);
             ReadInto(device, 0, out var readEntry, entryLength);
@@ -74,7 +72,7 @@ namespace Tsavorite.test
                 var buffer = buffers[i];
                 IntPtr alignedBufferPtr = (IntPtr)(((long)Unsafe.AsPointer(ref buffer[0]) + (sector_size - 1)) & ~(sector_size - 1));
 
-                using var device = new NativeStorageDevice(path, true);
+                using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), true);
 
                 device.WriteAsync(alignedBufferPtr, 0, (uint)size, IOCallback, null);
                 semaphore.Wait();

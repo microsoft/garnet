@@ -413,7 +413,7 @@ namespace Garnet.client
             }
         }
 
-        private Socket GetSendSocket(string address, int port, int millisecondsTimeout)
+        private static Socket GetSendSocket(string address, int port, int millisecondsTimeout)
         {
             var ip = IPAddress.Parse(address);
             var endPoint = new IPEndPoint(ip, port);

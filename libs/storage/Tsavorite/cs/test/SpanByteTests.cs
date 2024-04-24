@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using NUnit.Framework;
@@ -25,7 +26,7 @@ namespace Tsavorite.test
 
             try
             {
-                using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/hlog1.log", deleteOnClose: true);
+                using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "hlog1.log"), deleteOnClose: true);
                 using var store = new TsavoriteKV<SpanByte, SpanByte>
                     (128, new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 });
                 using var s = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
@@ -79,7 +80,7 @@ namespace Tsavorite.test
 
             try
             {
-                using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/test.log", deleteOnClose: true);
+                using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
                 using var store = new TsavoriteKV<SpanByte, SpanByte>(
                     size: 1L << 10,
                     new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
@@ -203,7 +204,7 @@ namespace Tsavorite.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
-            using var log = Devices.CreateLogDevice(TestUtils.MethodTestDir + "/vl-iter.log", deleteOnClose: true);
+            using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "vl-iter.log"), deleteOnClose: true);
             using var store = new TsavoriteKV<SpanByte, SpanByte>
                 (128,
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page

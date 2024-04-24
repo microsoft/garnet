@@ -13,8 +13,12 @@ namespace Garnet.cluster
 {
     internal sealed partial class FailoverSession : IDisposable
     {
+        /// <summary>
+        /// Set to true to re-use established gossip connections for failover.
+        /// Note connection might abruptly close due to timeout.
+        /// Increase gossip-delay to avoid shutting down connections prematurely during a failover.
+        /// </summary>
         bool useGossipConnections = false;
-
 
         /// <summary>
         /// Helper method to re-use gossip connection to perform the failover
@@ -87,6 +91,11 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Acquire a connection to the node identified by given node-id.
+        /// </summary>
+        /// <param name="nodeId"></param>
+        /// <returns></returns>
         private GarnetClient GetConnection(string nodeId)
         {
             return useGossipConnections ? GetOrAddConnection(nodeId) : CreateConnection(nodeId);
@@ -98,7 +107,7 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         private async Task<bool> PauseWritesAndWaitForSync()
         {
-            var primaryId = currentConfig.GetLocalNodePrimaryId();
+            var primaryId = currentConfig.LocalNodePrimaryId;
             var client = GetConnection(primaryId);
             try
             {
@@ -110,7 +119,7 @@ namespace Garnet.cluster
 
                 // Issue stop writes to the primary
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
-                var localIdBytes = Encoding.ASCII.GetBytes(currentConfig.GetLocalNodeId());
+                var localIdBytes = Encoding.ASCII.GetBytes(currentConfig.LocalNodeId);
                 var primaryReplicationOffset = await client.failstopwrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token);
 
                 // Wait for replica to catch up
@@ -197,10 +206,10 @@ namespace Garnet.cluster
                             var other = ClusterConfig.FromByteArray(returnedConfigArray);
 
                             // Check if gossip is from a node that is known and trusted before merging
-                            if (current.IsKnown(other.GetLocalNodeId()))
+                            if (current.IsKnown(other.LocalNodeId))
                                 _ = clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
                             else
-                                logger?.LogWarning("Received gossip from unknown node: {node-id}", other.GetLocalNodeId());
+                                logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                         }
                         resp.Dispose();
                     }
@@ -214,8 +223,8 @@ namespace Garnet.cluster
                     }
                 }, TaskContinuationOptions.RunContinuationsAsynchronously).WaitAsync(failoverTimeout, cts.Token);
 
-                var localAddress = currentConfig.GetLocalNodeIp();
-                var localPort = currentConfig.GetLocalNodePort();
+                var localAddress = currentConfig.LocalNodeIp;
+                var localPort = currentConfig.LocalNodePort;
 
                 // Ask replica to attach and sync
                 var replicaOfResp = await client.ReplicaOf(localAddress, localPort).WaitAsync(failoverTimeout, cts.Token);
@@ -240,7 +249,7 @@ namespace Garnet.cluster
             // Get information of local node from newConfig
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
             // Get replica ids for old primary from old configuration
-            var oldPrimaryId = currentConfig.GetLocalNodePrimaryId();
+            var oldPrimaryId = currentConfig.LocalNodePrimaryId;
             var replicaIds = newConfig.GetReplicaIds(oldPrimaryId);
             var configByteArray = newConfig.ToByteArray();
             var attachReplicaTasks = new List<Task>();

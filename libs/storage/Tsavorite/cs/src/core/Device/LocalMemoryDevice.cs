@@ -183,7 +183,7 @@ namespace Tsavorite.core
         public override void Dispose()
         {
             foreach (var q in ioQueue)
-                while (q.Count != 0) { }
+                while (!q.IsEmpty) { }
             terminated = true;
             for (int i = 0; i != ioProcessors.Length; i++)
                 ioProcessors[i].Join();

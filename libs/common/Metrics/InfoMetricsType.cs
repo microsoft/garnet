@@ -75,10 +75,8 @@ namespace Garnet.common
     /// </summary>
     public static class InfoCommandUtils
     {
-        static readonly byte[][] infoSections =
-            Enum.GetValues(typeof(InfoMetricsType)).
-            Cast<InfoMetricsType>().
-            Select(x => Encoding.ASCII.GetBytes($"${x.ToString().Length}\r\n{x}\r\n")).ToArray();
+        static readonly byte[][] infoSections = Enum.GetValues<InfoMetricsType>()
+            .Select(x => Encoding.ASCII.GetBytes($"${x.ToString().Length}\r\n{x}\r\n")).ToArray();
 
         /// <summary>
         /// Return resp formatted info section

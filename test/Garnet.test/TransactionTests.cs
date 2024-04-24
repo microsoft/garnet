@@ -303,7 +303,7 @@ namespace Garnet.test
             Assert.AreEqual(res.AsSpan().Slice(0, expectedResponse.Length).ToArray(), expectedResponse);
         }
 
-        private void updateKey(string key, string value)
+        private static void updateKey(string key, string value)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             byte[] res = lightClientRequest.SendCommand("SET " + key + " " + value);

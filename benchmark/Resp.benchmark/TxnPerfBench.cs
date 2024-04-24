@@ -83,7 +83,7 @@ namespace Resp.benchmark
             throw new Exception($"Invalid percent range {percent}");
         }
 
-        private void DumpHistogram(HistogramBase histogram)
+        private static void DumpHistogram(HistogramBase histogram)
         {
             Console.WriteLine("<<< History >>>");
             Console.WriteLine("min (us); 5th (us); median (us); avg (us); 95th (us); 99th (us); 99.9th (us)");

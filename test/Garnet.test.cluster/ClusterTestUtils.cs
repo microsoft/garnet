@@ -234,7 +234,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        private List<(int, int)>[] GetSlotRanges(int primary_count)
+        private static List<(int, int)>[] GetSlotRanges(int primary_count)
         {
             List<(int, int)>[] slotRanges = new List<(int, int)>[primary_count];
             int slotCount = 16384;
@@ -278,7 +278,7 @@ namespace Garnet.test.cluster
             return clusterConfig;
         }
 
-        private bool NodesEqual(ClientClusterNode ccNode, ClusterNode cNode)
+        private static bool NodesEqual(ClientClusterNode ccNode, ClusterNode cNode)
         {
             if (!ccNode.NodeId.Equals(cNode.NodeId)) return false;
             if (ccNode.IsReplica != cNode.IsReplica) return false;
@@ -1055,7 +1055,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        public bool MatchConfig(ClusterConfiguration configA, ClusterConfiguration configB)
+        public static bool MatchConfig(ClusterConfiguration configA, ClusterConfiguration configB)
         {
             foreach (var nodeA in configA.Nodes)
             {
@@ -1998,7 +1998,7 @@ namespace Garnet.test.cluster
                             nodeid = (string)node[1],
                             port = (int)node[3],
                             address = (string)node[5],
-                            role = (Role)Enum.Parse(typeof(Role), (string)node[7]),
+                            role = Enum.Parse<Role>((string)node[7]),
                             replicationOffset = (long)node[9]
                         };
                         shardInfo.nodes.Add(nodeInfo);

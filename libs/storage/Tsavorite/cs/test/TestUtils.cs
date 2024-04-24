@@ -3,9 +3,6 @@
 
 using System;
 using System.IO;
-#if WINDOWS
-using System.Runtime.InteropServices;
-#endif
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -115,9 +112,7 @@ namespace Tsavorite.test
         // Cannot use LocalStorageDevice from non-Windows OS platform
         public enum DeviceType
         {
-#if WINDOWS
             LSD,
-#endif
             EmulatedAzure,
             MLSD,
             LocalMemory
@@ -134,14 +129,14 @@ namespace Tsavorite.test
 
             switch (testDeviceType)
             {
-#if WINDOWS
-                case DeviceType.LSD:
+                case DeviceType.LSD when !OperatingSystem.IsWindows():
+                    Assert.Ignore($"Skipping {nameof(DeviceType.LSD)} on non-Windows platforms");
+                    break;
+                case DeviceType.LSD when OperatingSystem.IsWindows():
                     bool useIoCompletionPort = false;
                     bool disableFileBuffering = true;
-                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))    // avoids CA1416 // Validate platform compatibility
-                        device = new LocalStorageDevice(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
+                    device = new LocalStorageDevice(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
                     break;
-#endif
                 case DeviceType.EmulatedAzure:
                     IgnoreIfNotRunningAzureTests();
                     device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose, logger: TestLoggerFactory.CreateLogger("asd"));
