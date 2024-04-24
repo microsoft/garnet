@@ -8,11 +8,11 @@
     <None Include="..\..\test\testcerts\testcert.pfx" />
   </ItemGroup>
 
-	<ItemGroup>
-		<None Update="..\..\test\testcerts\testcert.pfx" Link="testcert.pfx">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-	</ItemGroup>
+  <ItemGroup>
+    <None Update="..\..\test\testcerts\testcert.pfx" Link="testcert.pfx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\test\Garnet.test.cluster\Garnet.test.cluster.csproj" />

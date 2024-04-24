@@ -1,12 +1,12 @@
 <Project>
 
-	<PropertyGroup>
+	<PropertyGroup Label="Targets">
 		<Platforms>AnyCPU</Platforms>
-		<LangVersion>latest</LangVersion>
 		<TargetFrameworks>net6.0;net8.0</TargetFrameworks>
 	</PropertyGroup>
 
-	<PropertyGroup>
+	<PropertyGroup Label="Configuration">
+		<LangVersion>latest</LangVersion>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>

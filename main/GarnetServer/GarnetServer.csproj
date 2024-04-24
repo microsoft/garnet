@@ -6,15 +6,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-	  <None Include="..\..\test\testcerts\testcert.pfx" Link="testcert.pfx">
-	  	<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-	  </None>
+    <None Include="..\..\test\testcerts\testcert.pfx" Link="testcert.pfx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
-	  <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
-	  <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
-	  <ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
+    <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
+    <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
+    <ProjectReference Include="..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
   </ItemGroup>
 
   <ItemGroup>

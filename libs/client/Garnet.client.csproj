@@ -12,7 +12,10 @@
     <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />
     <ProjectReference Include="..\common\Garnet.common.csproj" />
     <ProjectReference Include="..\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>

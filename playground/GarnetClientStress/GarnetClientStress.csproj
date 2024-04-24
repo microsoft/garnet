@@ -10,9 +10,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-	<ItemGroup>
-		<PackageReference Include="CommandLineParser" Version="2.9.1" />
-	</ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\libs\client\Garnet.client.csproj" />
   </ItemGroup>

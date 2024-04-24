@@ -4,36 +4,36 @@
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>../../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
-	  <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <WarningsAsErrors>;NU1605</WarningsAsErrors>
   </PropertyGroup>
-  
+
   <ItemGroup>
-	  <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
-  </ItemGroup>
-  
-  <ItemGroup>
-	  <ContentWithTargetPath Include="Device/runtimes/win-x64/native/native_device.dll">
-		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		  <TargetPath>runtimes/win-x64/native/native_device.dll</TargetPath>
-	  </ContentWithTargetPath>
-	  <ContentWithTargetPath Include="Device/runtimes/win-x64/native/native_device.pdb">
-		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		  <TargetPath>runtimes/win-x64/native/native_device.pdb</TargetPath>
-	  </ContentWithTargetPath>
-	  <ContentWithTargetPath Include="Device/runtimes/linux-x64/native/libnative_device.so">
-		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		  <TargetPath>runtimes/linux-x64/native/libnative_device.so</TargetPath>
-	  </ContentWithTargetPath>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 
   <ItemGroup>
-	  <InternalsVisibleTo Include="Garnet.test" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
-	  <InternalsVisibleTo Include="Tsavorite.test" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
+    <ContentWithTargetPath Include="Device/runtimes/win-x64/native/native_device.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>runtimes/win-x64/native/native_device.dll</TargetPath>
+    </ContentWithTargetPath>
+    <ContentWithTargetPath Include="Device/runtimes/win-x64/native/native_device.pdb">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>runtimes/win-x64/native/native_device.pdb</TargetPath>
+    </ContentWithTargetPath>
+    <ContentWithTargetPath Include="Device/runtimes/linux-x64/native/libnative_device.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>runtimes/linux-x64/native/libnative_device.so</TargetPath>
+    </ContentWithTargetPath>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Garnet.test" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
+    <InternalsVisibleTo Include="Tsavorite.test" Key="0024000004800000940000000602000000240000525341310004000001000100011b1661238d3d3c76232193c8aa2de8c05b8930d6dfe8cd88797a8f5624fdf14a1643141f31da05c0f67961b0e3a64c7120001d2f8579f01ac788b0ff545790d44854abe02f42bfe36a056166a75c6a694db8c5b6609cff8a2dbb429855a1d9f79d4d8ec3e145c74bfdd903274b7344beea93eab86b422652f8dd8eecf530d2" />
   </ItemGroup>
 </Project>
