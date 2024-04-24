@@ -173,10 +173,9 @@ namespace Tsavorite.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
 
-#if WINDOWS
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
+            if (OperatingSystem.IsWindows() && deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
-#endif
+
             CancellationToken cancellationToken = default;
             ReadOnlyMemory<byte> readOnlyMemoryEntry = entry;
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(5);

@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using NUnit.Framework.Internal;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
@@ -796,16 +797,17 @@ namespace Tsavorite.test
             Assert.AreEqual(10, output);
         }
 
-#if WINDOWS
         [Test]
         [Category("TsavoriteKV")]
         public static void LogPathtooLong()
         {
+            if (!OperatingSystem.IsWindows())
+                Assert.Ignore("Skipped");
+
             string testDir = new('x', Native32.WIN32_MAX_PATH - 11);                       // As in LSD, -11 for ".<segment>"
             using var log = Devices.CreateLogDevice(testDir, deleteOnClose: true);     // Should succeed
             Assert.Throws(typeof(TsavoriteException), () => Devices.CreateLogDevice(testDir + "y", deleteOnClose: true));
         }
-#endif
 
         [Test]
         [Category("TsavoriteKV")]

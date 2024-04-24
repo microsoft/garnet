@@ -9,28 +9,12 @@
   <PropertyGroup>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Tsavorite.devices</RootNamespace>
-    <AssemblyName>Tsavorite.devices.AzureStorageDevice</AssemblyName>
-    <ErrorReport>prompt</ErrorReport>
     <SignAssembly>true</SignAssembly>
-    <ApplicationIcon />
     <OutputType>Library</OutputType>
-    <StartupObject />
     <AssemblyOriginatorKeyFile>../../../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
 	<EmbedUntrackedSources>true</EmbedUntrackedSources>
     <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-    <DefineConstants>TRACE;DEBUG</DefineConstants>
-    <DebugType>full</DebugType>
-    <OutputPath>bin\$(Platform)\Debug\</OutputPath>
-  </PropertyGroup>
-  
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <DefineConstants>TRACE</DefineConstants>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\$(Platform)\Release\</OutputPath>
   </PropertyGroup>
 
 	<ItemGroup>
