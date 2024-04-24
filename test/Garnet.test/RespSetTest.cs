@@ -35,6 +35,23 @@ namespace Garnet.test
 
 
         #region SEClientTests
+        [Test]
+        [TestCase("")]
+        [TestCase("myset")]
+        public void CandDoSaddBasic(string key)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = db.SetAdd(key, "Hello");
+            Assert.IsTrue(result);
+
+            result = db.SetAdd(key, "World");
+            Assert.IsTrue(result);
+
+            result = db.SetAdd(key, "World");
+            Assert.IsFalse(result);
+        }
 
         [Test]
         public void CanAddAndListMembers()
@@ -442,7 +459,7 @@ namespace Garnet.test
         [Test]
         [TestCase("myset", "myotherset")]
         [TestCase("", "myotherset")]
-        //[TestCase("myset", "")]
+        [TestCase("myset", "")]
         public void CanDoSmoveBasic(string source, string destination)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

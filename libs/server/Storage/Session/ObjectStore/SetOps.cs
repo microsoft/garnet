@@ -31,9 +31,6 @@ namespace Garnet.server
         {
             saddCount = 0;
 
-            if (key.Length == 0)
-                return GarnetStatus.OK;
-
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
 
             // Prepare header in input buffer
@@ -43,7 +40,7 @@ namespace Garnet.server
             rmwInput->count = 1;
             rmwInput->done = 0;
 
-            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            _ = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             saddCount = output.opsDone;
             return GarnetStatus.OK;
@@ -105,9 +102,6 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             sremCount = 0;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
 
@@ -383,13 +377,13 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            bool createTransaction = false;
+            var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
                 txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
                 txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
-                txnManager.Run(true);
+                _ = txnManager.Run(true);
             }
 
             var objectLockableContext = txnManager.ObjectStoreLockableContext;
@@ -408,7 +402,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                SetAdd(destinationKey, member, out smoveResult, ref objectLockableContext);
+                _ = SetAdd(destinationKey, member, out smoveResult, ref objectLockableContext);
             }
             finally
             {
