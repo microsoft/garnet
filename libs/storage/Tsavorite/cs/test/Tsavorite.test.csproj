@@ -4,6 +4,7 @@
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
+    <OutputPath>bin\$(Platform)\$(Configuration)</OutputPath>
     <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
   </PropertyGroup>
 
