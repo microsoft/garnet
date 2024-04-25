@@ -12,6 +12,7 @@
     <AssemblyOriginatorKeyFile>../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
     <SignAssembly>true</SignAssembly>
+    <OutputPath>bin\$(Platform)\$(Configuration)</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>
