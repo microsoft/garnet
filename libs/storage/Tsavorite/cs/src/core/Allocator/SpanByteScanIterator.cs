@@ -149,6 +149,8 @@ namespace Tsavorite.core
             return logicalAddress += totalSizes - offset;
         }
 
+        private bool CheckExpiry(ref SpanByte value) => value.MetadataSize > 0 && value.ExtraMetadata < DateTimeOffset.Now.UtcTicks;
+
         /// <summary>
         /// Get next record in iterator
         /// </summary>
@@ -177,7 +179,8 @@ namespace Tsavorite.core
                 nextAddress = currentAddress + recordSize;
 
                 recordInfo = hlog.GetInfo(physicalAddress);
-                bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                bool skipOnScan = (includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan)
+                                || CheckExpiry(ref hlog.GetValue(physicalAddress));
                 if (skipOnScan || recordInfo.IsNull())
                 {
                     epoch?.Suspend();
@@ -249,7 +252,8 @@ namespace Tsavorite.core
 
                 recordInfo = hlog.GetInfo(physicalAddress);
                 nextAddress = recordInfo.PreviousAddress;
-                bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                bool skipOnScan = (includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan)
+                                || CheckExpiry(ref hlog.GetValue(physicalAddress));
                 if (skipOnScan || recordInfo.IsNull() || !comparer.Equals(ref hlog.GetKey(physicalAddress), ref key))
                 {
                     epoch?.Suspend();

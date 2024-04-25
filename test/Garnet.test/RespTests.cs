@@ -183,11 +183,19 @@ namespace Garnet.test
             db.StringSet("mykey", origValue, TimeSpan.FromSeconds(1));
 
             string retValue = db.StringGet("mykey");
-            Assert.AreEqual(origValue, retValue);
+            Assert.AreEqual(origValue, retValue, "Expected to Get() the value");
 
+            var actualDbSize = db.Execute("DBSIZE");
+            Assert.AreEqual(1, (ulong)actualDbSize, "Expected DBSIZE");
+
+            // Sleep to allow expiration
             Thread.Sleep(2000);
+
             retValue = db.StringGet("mykey");
-            Assert.AreEqual(null, retValue);
+            Assert.AreEqual(null, retValue, "Expected null value due to expiration");
+
+            actualDbSize = db.Execute("DBSIZE");
+            Assert.AreEqual(0, (ulong)actualDbSize, "Expected DBSIZE of zero due to expiration");
         }
 
         [Test]
