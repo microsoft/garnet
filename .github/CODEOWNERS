@@ -2,4 +2,4 @@
 # NOTE: Order is important; the last matching pattern takes the most precedence.
 
 # For Workflows used by GitHub Actions
-/github/workflows/ @darrenge
+/.github/workflows/ @darrenge
