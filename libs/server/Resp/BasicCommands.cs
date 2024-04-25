@@ -745,8 +745,8 @@ namespace Garnet.server
             }
             else if (cmd == RespCommand.INCR)
             {
-                int vsize = RespInputHeader.Size + 1;
-                byte* valPtr = stackalloc byte[vsize];
+                var vsize = RespInputHeader.Size + 1;
+                var valPtr = stackalloc byte[vsize];
                 ((RespInputHeader*)valPtr)->cmd = cmd;
                 ((RespInputHeader*)valPtr)->flags = 0;
                 *(valPtr + RespInputHeader.Size) = (byte)'1';
@@ -754,8 +754,8 @@ namespace Garnet.server
             }
             else if (cmd == RespCommand.DECR)
             {
-                int vsize = RespInputHeader.Size + 2;
-                byte* valPtr = stackalloc byte[vsize];
+                var vsize = RespInputHeader.Size + 2;
+                var valPtr = stackalloc byte[vsize];
                 ((RespInputHeader*)valPtr)->cmd = cmd;
                 ((RespInputHeader*)valPtr)->flags = 0;
                 *(valPtr + RespInputHeader.Size) = (byte)'-';

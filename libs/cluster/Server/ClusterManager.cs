@@ -305,7 +305,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Takeover as new primary but forcefully claiming ownernship of old primary's slots.
+        /// Takeover as new primary but forcefully claim ownership of old primary's slots.
         /// </summary>
         public void TryTakeOverForPrimary()
         {
