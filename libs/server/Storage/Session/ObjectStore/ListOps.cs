@@ -147,7 +147,7 @@ namespace Garnet.server
 
         public GarnetStatus ListBlockingRightPop(ArgSlice[] keys, double timeout, ListOperation lop, out byte[] element)
         {
-            var observer = new ListObserver(keys.Select(k => k.Span.ToArray()).ToArray(), lop, timeout, itemBroker, this);
+            using var observer = new ListObserver(keys.Select(k => k.Span.ToArray()).ToArray(), lop, timeout, itemBroker, this);
             element = observer.GetNextItemAsync().Result;
             return GarnetStatus.OK;
         }
