@@ -9,22 +9,13 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// Serializer for SpanByte. Used only on server-side.
+    /// Serializer for SpanByte.
     /// </summary>
-    public sealed unsafe class SpanByteKeySerializer : IKeyInputSerializer<SpanByte, SpanByte>
+    public sealed unsafe class SpanByteKeySerializer : IKeySerializer<SpanByte>
     {
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref SpanByte ReadKeyByRef(ref byte* src)
-        {
-            ref var ret = ref Unsafe.AsRef<SpanByte>(src);
-            src += ret.TotalSize;
-            return ref ret;
-        }
-
-        /// <inheritdoc />
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref SpanByte ReadInputByRef(ref byte* src)
         {
             ref var ret = ref Unsafe.AsRef<SpanByte>(src);
             src += ret.TotalSize;
