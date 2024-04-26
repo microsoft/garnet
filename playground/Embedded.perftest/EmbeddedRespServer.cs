@@ -47,7 +47,7 @@ namespace Embedded.perftest
                     storeWrapper.serverOptions,
                     loggerFactory: storeWrapper.loggerFactory
                 );
-            return new RespServerSession(new DummyNetworkSender(), tempStoreWrapper, null);
+            return new RespServerSession(new DummyNetworkSender(), tempStoreWrapper, null, null);
         }
     }
 }

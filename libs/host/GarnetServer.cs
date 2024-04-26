@@ -9,6 +9,7 @@ using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
+using Garnet.server.Objects.List;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -29,6 +30,7 @@ namespace Garnet
         private TsavoriteLog appendOnlyFile;
         private SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
         private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
+        private ListItemBroker itemBroker;
         private LogSettings logSettings, objLogSettings;
         private INamedDeviceFactory logFactory;
         private MemoryLogger initLogger;
@@ -235,6 +237,8 @@ namespace Garnet
                         revivificationSettings: objRevivSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"));
                 if (objTotalMemorySize > 0)
                     objectStoreSizeTracker = new CacheSizeTracker(objectStore, objLogSettings, objTotalMemorySize, this.loggerFactory);
+
+                itemBroker = new ListItemBroker();
             }
 
             if (!opts.DisablePubSub)
@@ -281,7 +285,7 @@ namespace Garnet
             storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker, customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
-            Provider = new GarnetProvider(storeWrapper, kvBroker, broker);
+            Provider = new GarnetProvider(storeWrapper, kvBroker, broker, itemBroker);
 
             // Create user facing API endpoints
             Metrics = new MetricsApi(Provider);

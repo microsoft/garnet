@@ -6,6 +6,7 @@ using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Xml.Linq;
 using Garnet.common;
+using Garnet.server.Objects.List;
 using Tsavorite.core;
 
 namespace Garnet.server

@@ -22,12 +22,16 @@ namespace Garnet.server.Objects.List
         public byte[][] Keys { get; }
         public ListOperation ListOperation { get; }
 
-        public ListObserver(byte[][] keys, ListOperation lop, double timeout, ListItemBroker broker)
+        public StorageSession StorageSession { get; }
+
+
+        public ListObserver(byte[][] keys, ListOperation lop, double timeout, ListItemBroker broker, StorageSession storageSession)
         {
             Keys = keys;
             ListOperation = lop;
             this.timeout = timeout > 0 ? TimeSpan.FromSeconds(timeout) : Timeout.InfiniteTimeSpan;
             this.broker = broker;
+            this.StorageSession = storageSession;
         }
 
         public async Task<byte[]> GetNextItemAsync()
@@ -36,7 +40,15 @@ namespace Garnet.server.Objects.List
             
             using (unsubscriber = broker.Subscribe(this))
             {
-                await Task.Delay(timeout, cancellationTokenSource.Token);
+                if (!cancellationTokenSource.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(timeout, cancellationTokenSource.Token);
+                    }
+                    catch (OperationCanceledException) { }
+                }
+                    
             }
             return nextItem;
         }
@@ -54,7 +66,7 @@ namespace Garnet.server.Objects.List
         public void OnNext(byte[] value)
         {
             nextItem = value;
-            unsubscriber.Dispose();
+            unsubscriber?.Dispose();
             cancellationTokenSource.Cancel(false);
         }
 
@@ -70,13 +82,6 @@ namespace Garnet.server.Objects.List
         private readonly ConcurrentDictionary<byte[], ConcurrentQueue<ListObserver>> keysToObservers = new(new ByteArrayComparer());
         private readonly ConcurrentDictionary<ListObserver, byte> activeObservers = new();
 
-        private readonly StorageSession storageSession;
-
-        internal ListItemBroker(StorageSession storageSession)
-        {
-            this.storageSession = storageSession;
-        }
-
         public IDisposable Subscribe(IObserver<byte[]> observer)
         {
             if (observer is not ListObserver listObserver) 
@@ -87,17 +92,17 @@ namespace Garnet.server.Objects.List
             foreach (var key in listObserver.Keys)
             {
                 EnqueueObserver(key, listObserver);
-                TryAssignNextItem(key, listObserver.ListOperation);
+                TryAssignNextItem(key, listObserver.StorageSession, listObserver.ListOperation);
             }
 
             return new ListUnsubscriber(activeObservers, listObserver);
         }
 
-        public bool TryAssignNextItem(byte[] key, ListOperation lop = ListOperation.BRPOP)
+        internal bool TryAssignNextItem(byte[] key, StorageSession storageSession, ListOperation lop = ListOperation.BRPOP)
         {
             if (!keysToObservers.ContainsKey(key)) return false;
 
-            var nextItem = TryGetNextItem(key, lop);
+            var nextItem = TryGetNextItem(key, storageSession, lop);
 
             if (nextItem == null) return false;
 
@@ -107,13 +112,14 @@ namespace Garnet.server.Objects.List
                 if (!activeObservers.TryGetValue(observer, out _)) continue;
                 
                 observer.OnNext(nextItem);
+                activeObservers.TryRemove(observer, out _);
                 return true;
             }
 
             return false;
         }
 
-        private byte[] TryGetNextItem(byte[] key, ListOperation lop)
+        private byte[] TryGetNextItem(byte[] key, StorageSession storageSession, ListOperation lop)
         {
             var createTransaction = false;
 
@@ -131,7 +137,7 @@ namespace Garnet.server.Objects.List
             byte[] nextItem = null;
             try
             {
-                var statusOp = storageSession.GET(key.ToArray(), out var osList, ref objectLockableContext);
+                var statusOp = storageSession.GET(key, out var osList, ref objectLockableContext);
 
                 var listObj = (ListObject)osList.garnetObject;
                 if (statusOp == GarnetStatus.NOTFOUND || listObj.LnkList.Count == 0)

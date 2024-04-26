@@ -42,24 +42,25 @@ namespace Garnet.server
 
         public TransactionManager txnManager;
         readonly ILogger logger;
+        private readonly ListItemBroker itemBroker;
 
         public int SessionID => session.ID;
         public int ObjectStoreSessionID => objectStoreSession.ID;
 
         public readonly int ObjectScanCountLimit;
 
-        private readonly ListItemBroker listItemBroker;
-
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
-            GarnetLatencyMetricsSession LatencyMetrics, ILogger logger = null)
+            GarnetLatencyMetricsSession LatencyMetrics, 
+            ListItemBroker itemBroker, 
+            ILogger logger = null)
         {
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
-            listItemBroker = new ListItemBroker(this);
+            this.itemBroker = itemBroker;
 
             functionsState = storeWrapper.CreateFunctionsState();
 

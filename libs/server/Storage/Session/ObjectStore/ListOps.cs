@@ -50,7 +50,7 @@ namespace Garnet.server
             RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.countDone;
-            listItemBroker.TryAssignNextItem(key.Span.ToArray());
+            itemBroker.TryAssignNextItem(key.Span.ToArray(), this);
             return GarnetStatus.OK;
         }
 
@@ -84,7 +84,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ToArray(), element, out var output, ref objectStoreContext);
             itemsDoneCount = output.countDone;
 
-            listItemBroker.TryAssignNextItem(key.Span.ToArray());
+            itemBroker.TryAssignNextItem(key.Span.ToArray(), this);
             return status;
         }
 
@@ -147,7 +147,7 @@ namespace Garnet.server
 
         public GarnetStatus ListBlockingRightPop(ArgSlice[] keys, double timeout, ListOperation lop, out byte[] element)
         {
-            var observer = new ListObserver(keys.Select(k => k.Span.ToArray()).ToArray(), lop, timeout, listItemBroker);
+            var observer = new ListObserver(keys.Select(k => k.Span.ToArray()).ToArray(), lop, timeout, itemBroker, this);
             element = observer.GetNextItemAsync().Result;
             return GarnetStatus.OK;
         }
@@ -287,7 +287,7 @@ namespace Garnet.server
                     txnManager.Commit(true);
             }
 
-            listItemBroker.TryAssignNextItem(destinationKey.Span.ToArray());
+            itemBroker.TryAssignNextItem(destinationKey.Span.ToArray(), this);
             return true;
 
         }
@@ -332,7 +332,7 @@ namespace Garnet.server
         {
             
             var status = RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
-            listItemBroker.TryAssignNextItem(key);
+            itemBroker.TryAssignNextItem(key, this);
             return status;
         }
 
@@ -374,7 +374,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             var status = RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
-            listItemBroker.TryAssignNextItem(key);
+            itemBroker.TryAssignNextItem(key, this);
             return status;
         }
 

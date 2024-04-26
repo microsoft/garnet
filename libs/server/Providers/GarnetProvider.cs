@@ -3,6 +3,7 @@
 
 using Garnet.common;
 using Garnet.networking;
+using Garnet.server.Objects.List;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -20,6 +21,8 @@ namespace Garnet.server
         /// </summary>
         internal StoreWrapper StoreWrapper => storeWrapper;
 
+        internal ListItemBroker itemBroker;
+
         /// <summary>
         /// Create SpanByte TsavoriteKV backend for Garnet
         /// </summary>
@@ -30,10 +33,12 @@ namespace Garnet.server
         public GarnetProvider(StoreWrapper storeWrapper,
             SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null,
+            ListItemBroker itemBroker = null,
             MaxSizeSettings maxSizeSettings = default)
             : base(storeWrapper.store, new(), kvBroker, broker, false, maxSizeSettings)
         {
             this.storeWrapper = storeWrapper;
+            this.itemBroker = itemBroker;
         }
 
         /// <summary>
@@ -62,7 +67,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)
             => (wireFormat == WireFormat.ASCII)
-                ? new RespServerSession(networkSender, storeWrapper, broker)
+                ? new RespServerSession(networkSender, storeWrapper, broker, itemBroker)
                 : throw new GarnetException($"Unsupported wireFormat {wireFormat}");
     }
 }

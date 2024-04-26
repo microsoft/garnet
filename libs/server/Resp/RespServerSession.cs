@@ -11,6 +11,7 @@ using Garnet.common;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
+using Garnet.server.Objects.List;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -63,6 +64,7 @@ namespace Garnet.server
         public readonly StorageSession storageSession;
         internal BasicGarnetApi basicGarnetApi;
         internal LockableGarnetApi lockableGarnetApi;
+        internal ListItemBroker itemBroker;
 
         readonly IGarnetAuthenticator _authenticator;
 
@@ -106,7 +108,8 @@ namespace Garnet.server
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker)
+            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
+            ListItemBroker itemBroker)
             : base(networkSender)
         {
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
@@ -120,13 +123,14 @@ namespace Garnet.server
             this.scratchBufferManager = new ScratchBufferManager();
 
             // Create storage session and API
-            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger);
+            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, itemBroker, logger);
 
             this.basicGarnetApi = new BasicGarnetApi(storageSession, storageSession.basicContext, storageSession.objectStoreBasicContext);
             this.lockableGarnetApi = new LockableGarnetApi(storageSession, storageSession.lockableContext, storageSession.objectStoreLockableContext);
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
+            this.itemBroker = itemBroker;
             this._authenticator = storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
             // Associate new session with default user and automatically authenticate, if possible
