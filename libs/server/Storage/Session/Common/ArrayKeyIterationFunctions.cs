@@ -11,8 +11,8 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         // These are classes so instantiate once and re-initialize
-        private ArrayKeyIterationFunctions.GetDBSize<SpanByte, SpanByte> mainStoreDbSizeFuncs;
-        private ArrayKeyIterationFunctions.GetDBSize<byte[], IGarnetObject> objectStoreDbSizeFuncs;
+        private ArrayKeyIterationFunctions.MainStoreGetDBSize mainStoreDbSizeFuncs;
+        private ArrayKeyIterationFunctions.ObjectStoreGetDBSize objectStoreDbSizeFuncs;
 
         // Iterators for SCAN command
         private ArrayKeyIterationFunctions.MainStoreGetDBKeys mainStoreDbScanFuncs;
@@ -212,7 +212,8 @@ namespace Garnet.server
 
                 public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    if (patternB != null && !GlobUtils.Match(patternB, patternLength, key.ToPointer(), key.Length, true))
+                    if ((patternB != null && !GlobUtils.Match(patternB, patternLength, key.ToPointer(), key.Length, true))
+                        || (value.MetadataSize != 0 && MainStoreFunctions.CheckExpiry(ref value)))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
                     }
@@ -249,6 +250,12 @@ namespace Garnet.server
 
                 public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
+                    if (value.Expiration > 0 && ObjectStoreFunctions.CheckExpiry(value))
+                    {
+                        cursorRecordResult = CursorRecordResult.Skip;
+                        return true;
+                    }
+
                     if (patternB != null)
                     {
                         fixed (byte* keyPtr = key)
@@ -277,20 +284,50 @@ namespace Garnet.server
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal sealed class GetDBSize<TKey, TValue> : IScanIteratorFunctions<TKey, TValue>
+            internal sealed class MainStoreGetDBSize : IScanIteratorFunctions<SpanByte, SpanByte>
             {
                 // This must be a class as it is passed through pending IO operations
                 internal int count;
 
                 internal void Initialize() => count = 0;
 
-                public bool SingleReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    ++count;
+                    if (value.MetadataSize != 0 && MainStoreFunctions.CheckExpiry(ref value))
+                        cursorRecordResult = CursorRecordResult.Skip;
+                    else
+                    {
+                        cursorRecordResult = CursorRecordResult.Accept;
+                        ++count;
+                    }
                     return true;
                 }
-                public bool ConcurrentReader(ref TKey key, ref TValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+                public bool OnStart(long beginAddress, long endAddress) => true;
+                public void OnStop(bool completed, long numberOfRecords) { }
+                public void OnException(Exception exception, long numberOfRecords) { }
+            }
+
+            internal sealed class ObjectStoreGetDBSize : IScanIteratorFunctions<byte[], IGarnetObject>
+            {
+                // This must be a class as it is passed through pending IO operations
+                internal int count;
+
+                internal void Initialize() => count = 0;
+
+                public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                {
+                    if (value.Expiration > 0 && ObjectStoreFunctions.CheckExpiry(value))
+                        cursorRecordResult = CursorRecordResult.Skip;
+                    else
+                    {
+                        cursorRecordResult = CursorRecordResult.Accept;
+                        ++count;
+                    }
+                    return true;
+                }
+                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
