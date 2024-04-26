@@ -226,7 +226,7 @@ namespace Garnet.server
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, ServerSessionBase>());
             if (subscriptions.TryGetValue(subscriptionKey, out var val))
-                val.TryAdd(sid, session);
+                val.TryAdd(id, session);
             return id;
         }
 
@@ -256,7 +256,7 @@ namespace Garnet.server
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
             prefixSubscriptions.TryAdd(subscriptionPrefix, (ascii, new ConcurrentDictionary<int, ServerSessionBase>()));
             if (prefixSubscriptions.TryGetValue(subscriptionPrefix, out var val))
-                val.Item2.TryAdd(sid, session);
+                val.Item2.TryAdd(id, session);
             return id;
         }
 
