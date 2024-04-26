@@ -1,12 +1,7 @@
 <Project>
 
   <PropertyGroup Label="Targets">
-    <Platforms>AnyCPU</Platforms>
     <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
-  </PropertyGroup>
-
-  <PropertyGroup Label="Artifacts">
-    <OutputPath>bin\$(Platform)\$(Configuration)\</OutputPath>
   </PropertyGroup>
 
   <PropertyGroup Label="Configuration">
