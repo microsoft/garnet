@@ -469,7 +469,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Read string with length header
+        /// Read boolean value with length header
         /// </summary>
         public static bool ReadBoolWithLengthHeader(out bool result, ref byte* ptr, byte* end)
         {
@@ -478,26 +478,34 @@ namespace Garnet.common
             if (ptr + 7 > end)
                 return false;
 
-            // Parse RESP string header
-            if (!ReadLengthHeader(out int length, ref ptr, end))
-                return false;
 
-            if (length != 1)
+            // Fast path: RESP string header should have length 1
+            if (*(uint*)(ptr) == MemoryMarshal.Read<uint>("$1\r\n"u8))
             {
-                RespParsingException.ThrowInvalidLength(length);
+                ptr += 4;
+            }
+            else
+            {
+                // Parse malformed RESP string header
+                if (!ReadLengthHeader(out int length, ref ptr, end))
+                    return false;
+
+                if (length != 1)
+                {
+                    RespParsingException.ThrowInvalidLength(length);
+                }
             }
 
             // Parse contents (needs to be 1 character)
-            result = (ptr[0] == '1' ? true : false);
-
-            ptr += 3;
+            result = (*ptr++ == '1' ? true : false);
 
             // Ensure terminator has been received
-            if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
+            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
             {
-                RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
-                return false;
+                RespParsingException.ThrowUnexpectedToken(*ptr);
             }
+
+            ptr += 2;
 
             return true;
         }
