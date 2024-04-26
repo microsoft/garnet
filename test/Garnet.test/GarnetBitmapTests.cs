@@ -762,15 +762,15 @@ namespace Garnet.test
                     {
                         case Bitwise.And:
                             dst = srcA & srcB & srcC;
-                            response = lightClientRequest.SendCommandChunks("BITOP AND " + d + " " + a + " " + b + " " + " " + c, bytesPerSend);
+                            response = lightClientRequest.SendCommandChunks("BITOP AND " + d + " " + a + " " + b + " " + c, bytesPerSend);
                             break;
                         case Bitwise.Or:
                             dst = srcA | srcB | srcC;
-                            response = lightClientRequest.SendCommandChunks("BITOP OR " + d + " " + a + " " + b + " " + " " + c, bytesPerSend);
+                            response = lightClientRequest.SendCommandChunks("BITOP OR " + d + " " + a + " " + b + " " + c, bytesPerSend);
                             break;
                         case Bitwise.Xor:
                             dst = srcA ^ srcB ^ srcC;
-                            response = lightClientRequest.SendCommandChunks("BITOP XOR " + d + " " + a + " " + b + " " + " " + c, bytesPerSend);
+                            response = lightClientRequest.SendCommandChunks("BITOP XOR " + d + " " + a + " " + b + " " + c, bytesPerSend);
                             break;
                     }
 

@@ -643,7 +643,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01", "7ab"];
+            string[] values = ["7 3", "02+(34", "笑い男", "01", "-01", "7ab"];
 
             foreach (var value in values)
             {

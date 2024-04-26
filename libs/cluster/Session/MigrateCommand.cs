@@ -70,7 +70,7 @@ namespace Garnet.cluster
             //3. Key
             byte* singleKeyPtr = null;
             var sksize = 0;
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref singleKeyPtr, ref sksize, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref singleKeyPtr, ref sksize, ref ptr, recvBufferPtr + bytesRead, 0))
                 return false;
 
             //4. Destination DB
