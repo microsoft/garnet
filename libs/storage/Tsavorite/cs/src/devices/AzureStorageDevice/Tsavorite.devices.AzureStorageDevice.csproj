@@ -1,27 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
-    <Platforms>AnyCPU;x64</Platforms>
-    <LangVersion>latest</LangVersion>
-  </PropertyGroup>
-
-  <PropertyGroup>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Tsavorite.devices</RootNamespace>
     <SignAssembly>true</SignAssembly>
-    <OutputType>Library</OutputType>
     <AssemblyOriginatorKeyFile>../../../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
-  	<EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <OutputPath>bin\$(Platform)\$(Configuration)</OutputPath>
-    <DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
 
-	<ItemGroup>
-	<PackageReference Include="Azure.Storage.Blobs" Version="12.14.1" />
-	<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-	<PackageReference Include="System.Interactive.Async" Version="6.0.1" />
+  <ItemGroup>
+    <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="System.Interactive.Async" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\core\Tsavorite.core.csproj" />
