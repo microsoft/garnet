@@ -23,11 +23,13 @@ namespace Garnet.common.Parsing
         /// <summary>
         /// Throw an "Unexcepted Token" exception.
         /// </summary>
-        /// <param name="c">The character that was unexpected.</param>
+        /// <param name="token">The character that was unexpected.</param>
         [DoesNotReturn]
-        public static void ThrowUnexpectedToken(byte c)
+        public static void ThrowUnexpectedToken(byte token)
         {
-            Throw($"Unexpected byte ({c}) in RESP command package.");
+            var c = (char)token;
+            var escaped = char.IsControl(c) ? $"\\x{token:x2}" : c.ToString();
+            Throw($"Unexpected character '{escaped}'.");
         }
 
         /// <summary>
@@ -37,7 +39,7 @@ namespace Garnet.common.Parsing
         [DoesNotReturn]
         public static void ThrowInvalidStringLength(long len)
         {
-            Throw($"Invalid string length '{len}' in RESP command package.");
+            Throw($"Invalid string length '{len}'.");
         }
 
         /// <summary>
@@ -47,7 +49,7 @@ namespace Garnet.common.Parsing
         [DoesNotReturn]
         public static void ThrowInvalidLength(long len)
         {
-            Throw($"Invalid length '{len}' in RESP command package.");
+            Throw($"Invalid length '{len}'.");
         }
 
         /// <summary>
