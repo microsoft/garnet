@@ -225,7 +225,9 @@ namespace Garnet.server
             {(byte)SetOperation.SUNION,         new RespCommandsInfo("SUNION",          RespCommand.Set,    -1, null, (byte)SetOperation.SUNION) },
             {(byte)SetOperation.SUNIONSTORE,    new RespCommandsInfo("SUNIONSTORE",     RespCommand.Set,    -2, null, (byte)SetOperation.SUNIONSTORE) },
             {(byte)SetOperation.SDIFF,          new RespCommandsInfo("SDIFF",           RespCommand.Set,    -1, null, (byte)SetOperation.SDIFF) },
-            {(byte)SetOperation.SDIFFSTORE,     new RespCommandsInfo("SDIFFSTORE",      RespCommand.Set,    -2, null, (byte)SetOperation.SDIFFSTORE) }
+            {(byte)SetOperation.SDIFFSTORE,     new RespCommandsInfo("SDIFFSTORE",      RespCommand.Set,    -2, null, (byte)SetOperation.SDIFFSTORE) },
+            {(byte)SetOperation.SINTER,         new RespCommandsInfo("SINTER",          RespCommand.Set,    -1, null, (byte)SetOperation.SINTER) },
+            {(byte)SetOperation.SINTERSTORE,    new RespCommandsInfo("SINTERSTORE",     RespCommand.Set,    -2, null, (byte)SetOperation.SINTERSTORE) },
         };
 
         private static readonly Dictionary<RespCommand, RespCommandsInfo> customCommandsInfoMap = new Dictionary<RespCommand, RespCommandsInfo>

@@ -261,6 +261,15 @@ namespace Garnet.server
             return garnetApi.SetUnion(keys, out output);
         }
 
+        /// <inheritdoc />
+        public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SetIntersect(keys, out output);
+        }
 
         /// <inheritdoc />
         public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> output)

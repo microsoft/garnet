@@ -351,6 +351,35 @@ namespace Garnet.test
             Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
         }
 
+        [Test]   
+        public void CanDoSetInterStore()
+        {
+            string key = "key";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = "key1";
+            var key1Value = new RedisValue[] { "a", "b", "c" };
+
+            var key2 = "key2";
+            var key2Value = new RedisValue[] { "c", "d", "e" };
+
+            var addResult = db.SetAdd(key1, key1Value);
+            Assert.AreEqual(3, addResult);
+            addResult = db.SetAdd(key2, key2Value);
+            Assert.AreEqual(3, addResult);
+
+            var result = (int)db.Execute("SINTERSTORE", key, key1, key2);
+            Assert.AreEqual(1, result);
+
+            var membersResult = db.SetMembers(key);
+            Assert.AreEqual(1, membersResult.Length);
+            var strResult = membersResult.Select(m => m.ToString()).ToArray();
+            var expectedResult = new[] { "c" };
+            Assert.IsTrue(expectedResult.SequenceEqual(strResult));
+        }
+
+
         [Test]
         public void CanDoSdiff()
         {
@@ -910,6 +939,36 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 
+
+        [Test]
+        public void CanDoSinterLC()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SADD key1 a b c d");
+            lightClientRequest.SendCommand("SADD key2 c");
+            lightClientRequest.SendCommand("SADD key3 a c e");
+            var response = lightClientRequest.SendCommand("SINTER key1 key2 key3");
+            var expectedResponse = "*1\r\n$1\r\nc\r\n";  
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
+
+        [Test]
+        public void CanDoSinterStoreLC()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SADD key1 a b c d");
+            lightClientRequest.SendCommand("SADD key2 c");
+            lightClientRequest.SendCommand("SADD key3 a c e");
+            var response = lightClientRequest.SendCommand("SINTERSTORE key key1 key2");
+            var expectedResponse = ":1\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*1\r\n$1\r\nc\r\n";
+            Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
         [Test]
         public void CanDoSdiffStoreLC()
         {
@@ -1000,6 +1059,22 @@ namespace Garnet.test
             strResponse = Encoding.ASCII.GetString(membersResponse).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
         }
+
+        [Test]
+        public void CanDoSinterStoreWhenMemberKeysNotExisting()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SINTERSTORE key key1 key2 key3");
+            var expectedResponse = ":0\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*0\r\n";
+            strResponse = Encoding.ASCII.GetString(membersResponse).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
+
         #endregion
 
 
