@@ -53,7 +53,7 @@ namespace Garnet.common.Parsing
         /// <summary>
         /// Throw NaN (not a number) exception.
         /// </summary>
-        /// <param name="buffer">The input buffer that could not be converted into a number/</param>
+        /// <param name="buffer">The input buffer that could not be converted into a number.</param>
         [DoesNotReturn]
         public static void ThrowNotANumber(ReadOnlySpan<byte> buffer)
         {
