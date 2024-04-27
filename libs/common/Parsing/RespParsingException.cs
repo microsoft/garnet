@@ -55,22 +55,25 @@ namespace Garnet.common.Parsing
         /// <summary>
         /// Throw NaN (not a number) exception.
         /// </summary>
-        /// <param name="buffer">The input buffer that could not be converted into a number.</param>
+        /// <param name="buffer">Pointer to an ASCII-encoded byte buffer containing the string that could not be converted.</param>
+        /// <param name="length">Length of the buffer.</param>
         [DoesNotReturn]
-        public static void ThrowNotANumber(ReadOnlySpan<byte> buffer)
+        public static unsafe void ThrowNotANumber(byte* buffer, int length)
         {
             var ascii = new System.Text.ASCIIEncoding();
-            Throw($"Unable to parse number: {ascii.GetString(buffer)}");
+            Throw($"Unable to parse number: {ascii.GetString(buffer, length)}");
         }
 
         /// <summary>
         /// Throw a exception indicating that an integer overflow has occurred.
         /// </summary>
+        /// <param name="buffer">Pointer to an ASCII-encoded byte buffer containing the string that caused the overflow.</param>
+        /// <param name="length">Length of the buffer.</param>
         [DoesNotReturn]
-        public static void ThrowIntegerOverflow()
+        public static unsafe void ThrowIntegerOverflow(byte* buffer, int length)
         {
             var ascii = new System.Text.ASCIIEncoding();
-            Throw($"Unable to parse integer. The given number is larger than allowed.");
+            Throw($"Unable to parse integer. The given number is larger than allowed: {ascii.GetString(buffer, length)}");
         }
 
         /// <summary>

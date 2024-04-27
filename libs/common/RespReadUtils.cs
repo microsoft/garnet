@@ -84,7 +84,7 @@ namespace Garnet.common
 
                 if ((value == 1844674407370955161UL && ((int)nextDigit > 5)) || (value > 1844674407370955161UL))
                 {
-                    RespParsingException.ThrowIntegerOverflow();
+                    RespParsingException.ThrowIntegerOverflow(ptr, (int)(readHead - ptr));
                 }
 
                 value = (10 * value) + nextDigit;
@@ -135,7 +135,7 @@ namespace Garnet.common
             {
                 if (number > ((ulong)long.MaxValue) + 1)
                 {
-                    RespParsingException.ThrowIntegerOverflow();
+                    RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
                 }
 
                 value = -1 - (long)(number - 1);
@@ -144,7 +144,7 @@ namespace Garnet.common
             {
                 if (number > long.MaxValue)
                 {
-                    RespParsingException.ThrowIntegerOverflow();
+                    RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
                 }
                 value = (long)number;
             }
@@ -189,7 +189,7 @@ namespace Garnet.common
             {
                 if (number > ((ulong)int.MaxValue) + 1)
                 {
-                    RespParsingException.ThrowIntegerOverflow();
+                    RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
                 }
 
                 value = (int)(0 - (long)number);
@@ -198,7 +198,7 @@ namespace Garnet.common
             {
                 if (number > int.MaxValue)
                 {
-                    RespParsingException.ThrowIntegerOverflow();
+                    RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
                 }
                 value = (int)number;
             }
@@ -249,12 +249,12 @@ namespace Garnet.common
             }
 
             // Parse length
-            if (!TryReadUlong(ref readHead, end, out var value, out var bytesRead))
+            if (!TryReadUlong(ref readHead, end, out var value, out var digitsRead))
             {
                 return false;
             }
 
-            if (bytesRead == 0)
+            if (digitsRead == 0)
             {
                 RespParsingException.ThrowUnexpectedToken(*ptr);
             }
@@ -269,7 +269,7 @@ namespace Garnet.common
 
             if (value > int.MaxValue)
             {
-                RespParsingException.ThrowIntegerOverflow();
+                RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
             }
 
             // Ensure terminator has been received
@@ -350,7 +350,7 @@ namespace Garnet.common
 
             if ((int)bytesRead != numberLength)
             {
-                RespParsingException.ThrowNotANumber(new ReadOnlySpan<byte>(numberStart, numberLength));
+                RespParsingException.ThrowNotANumber(numberStart, numberLength);
             }
 
             // Ensure terminator has been received
@@ -387,7 +387,7 @@ namespace Garnet.common
 
             if ((int)bytesRead != numberLength)
             {
-                RespParsingException.ThrowNotANumber(new ReadOnlySpan<byte>(numberStart, numberLength));
+                RespParsingException.ThrowNotANumber(numberStart, numberLength);
             }
 
             // Ensure terminator has been received
@@ -424,7 +424,7 @@ namespace Garnet.common
 
             if ((int)bytesRead != numberLength)
             {
-                RespParsingException.ThrowNotANumber(new ReadOnlySpan<byte>(numberStart, numberLength));
+                RespParsingException.ThrowNotANumber(numberStart, numberLength);
             }
 
             // Ensure terminator has been received
