@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 
 namespace Garnet.common.Parsing
 {
@@ -60,8 +61,7 @@ namespace Garnet.common.Parsing
         [DoesNotReturn]
         public static unsafe void ThrowNotANumber(byte* buffer, int length)
         {
-            var ascii = new System.Text.ASCIIEncoding();
-            Throw($"Unable to parse number: {ascii.GetString(buffer, length)}");
+            Throw($"Unable to parse number: {Encoding.ASCII.GetString(buffer, length)}");
         }
 
         /// <summary>
@@ -72,8 +72,7 @@ namespace Garnet.common.Parsing
         [DoesNotReturn]
         public static unsafe void ThrowIntegerOverflow(byte* buffer, int length)
         {
-            var ascii = new System.Text.ASCIIEncoding();
-            Throw($"Unable to parse integer. The given number is larger than allowed: {ascii.GetString(buffer, length)}");
+            Throw($"Unable to parse integer. The given number is larger than allowed: {Encoding.ASCII.GetString(buffer, length)}");
         }
 
         /// <summary>
