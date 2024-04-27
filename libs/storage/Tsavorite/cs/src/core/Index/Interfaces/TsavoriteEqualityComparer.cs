@@ -11,19 +11,18 @@ namespace Tsavorite.core
     {
         public static ITsavoriteEqualityComparer<T> Get<T>()
         {
-            var t = typeof(T);
-            if (t == typeof(string))
-                return new StringTsavoriteEqualityComparer() as ITsavoriteEqualityComparer<T>;
-            else if (t == typeof(byte[]))
-                return new ByteArrayTsavoriteEqualityComparer() as ITsavoriteEqualityComparer<T>;
-            else if (t == typeof(long))
-                return new LongTsavoriteEqualityComparer() as ITsavoriteEqualityComparer<T>;
-            else if (t == typeof(int))
-                return new IntTsavoriteEqualityComparer() as ITsavoriteEqualityComparer<T>;
-            else if (t == typeof(Guid))
-                return new GuidTsavoriteEqualityComparer() as ITsavoriteEqualityComparer<T>;
-            else if (t == typeof(SpanByte))
-                return new SpanByteComparer() as ITsavoriteEqualityComparer<T>;
+            if (typeof(T) == typeof(string))
+                return (ITsavoriteEqualityComparer<T>)(object)new StringTsavoriteEqualityComparer();
+            else if (typeof(T) == typeof(byte[]))
+                return (ITsavoriteEqualityComparer<T>)(object)new ByteArrayTsavoriteEqualityComparer();
+            else if (typeof(T) == typeof(long))
+                return (ITsavoriteEqualityComparer<T>)(object)new LongTsavoriteEqualityComparer();
+            else if (typeof(T) == typeof(int))
+                return (ITsavoriteEqualityComparer<T>)(object)new IntTsavoriteEqualityComparer();
+            else if (typeof(T) == typeof(Guid))
+                return (ITsavoriteEqualityComparer<T>)(object)new GuidTsavoriteEqualityComparer();
+            else if (typeof(T) == typeof(SpanByte))
+                return (ITsavoriteEqualityComparer<T>)(object)new SpanByteComparer();
             else
             {
                 Debug.WriteLine("***WARNING*** Creating default Tsavorite key equality comparer based on potentially slow EqualityComparer<Key>.Default."
