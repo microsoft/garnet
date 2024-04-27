@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
@@ -16,7 +15,7 @@ namespace Garnet.common.Parsing
         /// Construct a new RESP parsing exception with the given message.
         /// </summary>
         /// <param name="message">Message that described the exception that has occurred.</param>
-        RespParsingException(String message) : base(message)
+        RespParsingException(string message) : base(message)
         {
             // Nothing...
         }

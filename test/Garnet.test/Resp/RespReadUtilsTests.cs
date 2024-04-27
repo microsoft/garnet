@@ -28,7 +28,7 @@ namespace Garnet.test.Resp
             {
                 var start = ptr;
                 var end = ptr + bytes.Length;
-                var success = RespReadUtils.ReadLengthHeader(out int length, ref start, end);
+                var success = RespReadUtils.ReadLengthHeader(out var length, ref start, end);
 
                 Assert.IsTrue(success);
                 Assert.AreEqual(expected, length);
@@ -55,7 +55,7 @@ namespace Garnet.test.Resp
                 fixed (byte* ptr = bytes)
                 {
                     var start = ptr;
-                    _ = RespReadUtils.ReadLengthHeader(out int length, ref start, ptr + bytes.Length);
+                    _ = RespReadUtils.ReadLengthHeader(out var length, ref start, ptr + bytes.Length);
                 }
             });
         }
@@ -75,7 +75,7 @@ namespace Garnet.test.Resp
             {
                 var start = ptr;
                 var end = ptr + bytes.Length;
-                var success = RespReadUtils.ReadArrayLength(out int length, ref start, end);
+                var success = RespReadUtils.ReadArrayLength(out var length, ref start, end);
 
                 Assert.IsTrue(success);
                 Assert.AreEqual(expected, length);
@@ -102,13 +102,13 @@ namespace Garnet.test.Resp
                 fixed (byte* ptr = bytes)
                 {
                     var start = ptr;
-                    _ = RespReadUtils.ReadArrayLength(out int length, ref start, ptr + bytes.Length);
+                    _ = RespReadUtils.ReadArrayLength(out var length, ref start, ptr + bytes.Length);
                 }
             });
         }
 
         /// <summary>
-        /// Tests that ReadIntWithLengthHeader successfully parses valid ints.
+        /// Tests that ReadIntWithLengthHeader successfully parses valid integers.
         /// </summary>
         /// <param name="text">Int encoded as an ASCII string.</param>
         /// <param name="expected">Expected parsed value.</param>
@@ -199,7 +199,7 @@ namespace Garnet.test.Resp
         }
 
         /// <summary>
-        /// Tests that ReadULongWithLengthHeader successfully parses valid ulongs.
+        /// Tests that ReadULongWithLengthHeader successfully parses valid ulong integers.
         /// </summary>
         /// <param name="text">Unsigned long int encoded as an ASCII string.</param>
         /// <param name="expected">Expected parsed value.</param>
@@ -255,7 +255,7 @@ namespace Garnet.test.Resp
             fixed (byte* ptr = bytes)
             {
                 byte* result = null;
-                int length = -1;
+                var length = -1;
                 var start = ptr;
                 var end = ptr + bytes.Length;
                 var success = RespReadUtils.ReadPtrWithLengthHeader(ref result, ref length, ref start, end, minLength);

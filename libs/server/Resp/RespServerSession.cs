@@ -222,8 +222,7 @@ namespace Garnet.server
                     logger?.LogDebug(ex, "RespParsingException in ProcessMessages:");
 
                     // Forward parsing error as RESP error
-                    var resp = new ReadOnlySpan<byte>(Encoding.ASCII.GetBytes($"ERR Protocol Error: {ex.Message}"));
-                    while (!RespWriteUtils.WriteError(resp, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
                         SendAndReset();
 
                     // Send message and dispose the network sender to end the session
