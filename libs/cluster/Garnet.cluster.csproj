@@ -1,37 +1,23 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-	<PropertyGroup>
-		<TargetFrameworks>net6.0;net8.0</TargetFrameworks>
-		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<Platforms>AnyCPU</Platforms>
-		<LangVersion>latest</LangVersion>
-		<SignAssembly>true</SignAssembly>
-		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
-		<DelaySign>false</DelaySign>
-		<EmbedUntrackedSources>true</EmbedUntrackedSources>
-		<DocumentationFile>bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
-	</PropertyGroup>
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
+    <DelaySign>false</DelaySign>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-		<DefineConstants>DEBUG</DefineConstants>
-		<DebugType>full</DebugType>
-		<OutputPath>bin\$(Platform)\Debug\</OutputPath>
-	</PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />
+    <ProjectReference Include="..\client\Garnet.client.csproj" />
+    <ProjectReference Include="..\common\Garnet.common.csproj" />
+    <ProjectReference Include="..\server\Garnet.server.csproj" />
+    <ProjectReference Include="..\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
+  </ItemGroup>
 
-	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
-		<DefineConstants></DefineConstants>
-		<Optimize>true</Optimize>
-		<OutputPath>bin\$(Platform)\Release\</OutputPath>
-	</PropertyGroup>
-
-	<ItemGroup>
-		<ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />
-		<ProjectReference Include="..\client\Garnet.client.csproj" />
-		<ProjectReference Include="..\common\Garnet.common.csproj" />
-		<ProjectReference Include="..\server\Garnet.server.csproj" />
-		<ProjectReference Include="..\storage\Tsavorite\cs\src\core\Tsavorite.core.csproj" />
-		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-		<PackageReference Include="Microsoft.Extensions.Logging" Version="7.0.0" />
-	</ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
 
 </Project>

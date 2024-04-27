@@ -2,9 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-	<LangVersion>latest</LangVersion>
-	<ServerGarbageCollection>true</ServerGarbageCollection>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,8 +11,8 @@
     </None>
   </ItemGroup>
 
-  <ItemGroup>    
-    <PackageReference Include="StackExchange.Redis" Version="2.6.80" />
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
   <ItemGroup>

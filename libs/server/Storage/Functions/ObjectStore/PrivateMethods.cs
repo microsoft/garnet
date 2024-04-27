@@ -70,6 +70,8 @@ namespace Garnet.server
             }
         }
 
+        internal static bool CheckExpiry(IGarnetObject src) => src.Expiration < DateTimeOffset.UtcNow.Ticks;
+
         static void CopyRespNumber(long number, ref SpanByteAndMemory dst)
         {
             byte* curr = dst.SpanByte.ToPointer();
