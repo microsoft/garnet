@@ -351,7 +351,7 @@ namespace Garnet.test
             Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
         }
 
-        [Test]   
+        [Test]
         public void CanDoSetInterStore()
         {
             string key = "key";
@@ -948,7 +948,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("SADD key2 c");
             lightClientRequest.SendCommand("SADD key3 a c e");
             var response = lightClientRequest.SendCommand("SINTER key1 key2 key3");
-            var expectedResponse = "*1\r\n$1\r\nc\r\n";  
+            var expectedResponse = "*1\r\n$1\r\nc\r\n";
             Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 

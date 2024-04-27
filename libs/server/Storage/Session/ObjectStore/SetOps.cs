@@ -538,7 +538,7 @@ namespace Garnet.server
                 return result;
             }
 
-           
+
             for (var i = 1; i < keys.Length; i++)
             {
                 // intersection of anything with empty set is empty set
@@ -555,7 +555,7 @@ namespace Garnet.server
                         result.IntersectWith(nextObject.Set);
                     }
                 }
-            }          
+            }
 
             return result;
         }
