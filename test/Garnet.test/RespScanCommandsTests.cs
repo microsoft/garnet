@@ -81,6 +81,29 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SeKeysCursorTest()
+        {
+            // Test a large number of keys
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // set 10_000 strings
+            const int KeyCount = 10_000;
+            for (int i = 0; i < KeyCount; ++i)
+                db.StringSet($"try:{i}", i);
+
+            // get and count keys using SE Redis, using the default pageSize of 250
+            var server = redis.GetServers()[db.Database];
+            var keyCount1 = server.Keys().ToArray().Length;
+            Assert.AreEqual(KeyCount, keyCount1, "IServer.Keys()");
+
+            // get and count keys using KEYS
+            var res = db.Execute("KEYS", "*");
+            var keyCount2 = ((RedisValue[])res!).Length;
+            Assert.AreEqual(KeyCount, keyCount2, "KEYS *");
+        }
+
+        [Test]
         public void CanDoMemoryUsage()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
