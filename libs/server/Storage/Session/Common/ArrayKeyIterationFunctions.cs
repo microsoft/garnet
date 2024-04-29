@@ -101,7 +101,8 @@ namespace Garnet.server
                 var validateCursor = storeCursor != 0 && storeCursor != lastScanCursor;
                 storeCursor &= ~IsObjectStoreCursor;
                 objectStoreSession.ScanCursor(ref storeCursor, remainingCount, objStoreDbScanFuncs, validateCursor: validateCursor);
-                if (storeCursor != 0) storeCursor = storeCursor | IsObjectStoreCursor;
+                if (storeCursor != 0)
+                    storeCursor |= IsObjectStoreCursor;
                 Keys.AddRange(objStoreKeys);
             }
 

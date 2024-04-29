@@ -481,21 +481,21 @@ namespace Garnet.test
 
             for (int i = 0; i < nKeys; i++)
             {
-                db.SortedSetAdd(new RedisKey($"sskey:{i}"), [new SortedSetEntry("a", 1)]);
+                _ = db.SortedSetAdd(new RedisKey($"sskey:{i}"), [new SortedSetEntry("a", 1)]);
             }
 
-            int cursor = 0;
+            long cursor = 0;
             int recordsReturned = 0;
 
             do
             {
                 var result = db.Execute("SCAN", cursor.ToString());
-                _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+                _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
                 RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
                 recordsReturned += keysMatch.Length;
             } while (cursor != 0);
 
-            Assert.IsTrue(recordsReturned == nKeys * 3);
+            Assert.AreEqual(nKeys * 3, recordsReturned, "records returned");
         }
 
 
