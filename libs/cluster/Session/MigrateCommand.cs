@@ -238,7 +238,7 @@ namespace Garnet.cluster
                             // Skip if previous error encountered
                             if (pstate != MigrateCmdParseState.SUCCESS) continue;
 
-                            for (int slot = slotStart; slot <= slotEnd; slot++)
+                            for (var slot = slotStart; slot <= slotEnd; slot++)
                             {
                                 // Check if slot is in valid range
                                 if (ClusterConfig.OutOfRange(slot))

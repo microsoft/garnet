@@ -158,21 +158,21 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 var migratingWorkerId = current.GetWorkerIdFromNodeId(nodeid);
 
-                //Check migrating worker is a known valid worker
+                // Check migrating worker is a known valid worker
                 if (migratingWorkerId == 0)
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}");
                     return false;
                 }
 
-                //Check if nodeid is different from local node
+                // Check if node-id is different from local node
                 if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_MIGRATE_TO_MYSELF;
                     return false;
                 }
 
-                //Check if local node is primary
+                // Check if local node is primary
                 if (current.GetNodeRoleFromNodeId(nodeid) != NodeRole.PRIMARY)
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR Target node {nodeid} is not a master node.");
@@ -181,14 +181,14 @@ namespace Garnet.cluster
 
                 foreach (var slot in slots)
                 {
-                    //Check if slot is owned by local node
+                    // Check if slot is owned by local node
                     if (!current.IsLocal((ushort)slot))
                     {
                         errorMessage = Encoding.ASCII.GetBytes($"ERR I'm not the owner of hash slot {slot}");
                         return false;
                     }
 
-                    //Check node state is stable
+                    // Check node state is stable
                     if (current.GetState((ushort)slot) != SlotState.STABLE)
                     {
                         var _migratingNodeId = current.GetNodeIdFromSlot((ushort)slot);
@@ -243,7 +243,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                string sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
+                var sourceNodeId = current.GetNodeIdFromSlot((ushort)slot);
                 if (sourceNodeId == null || !sourceNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR Slot {slot} is not owned by {nodeid}");
@@ -460,7 +460,7 @@ namespace Garnet.cluster
         public static unsafe void DeleteKeysInSlotsFromMainStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
         {
             using var iter = BasicGarnetApi.IterateMainStore();
-            while (iter.GetNext(out var recordInfo))
+            while (iter.GetNext(out _))
             {
                 ref SpanByte key = ref iter.GetKey();
                 var s = NumUtils.HashSlot(key.ToPointer(), key.Length);
@@ -477,7 +477,7 @@ namespace Garnet.cluster
         public static unsafe void DeleteKeysInSlotsFromObjectStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
         {
             using var iterObject = BasicGarnetApi.IterateObjectStore();
-            while (iterObject.GetNext(out var recordInfo))
+            while (iterObject.GetNext(out _))
             {
                 ref var key = ref iterObject.GetKey();
                 ref var value = ref iterObject.GetValue();
