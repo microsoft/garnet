@@ -3,22 +3,6 @@ id: sharding
 sidebar_label: Sharding
 title: Sharding Overview
 ---
-<!---
-    Sharding components
-    - Cluster configuration
-        1. Maintained information
-        2. Configuration update
-        3. Configuration propagation
-    - Slot redirection
-
-
-    Cluster configuration is a data structure containing information about slot assignmnet and known nodes in the cluster.
-
-    HashSlot
-
-    A single instances maintains a local copy of co
-    Key space is sharded across instances at any given
--->
 
 # Sharding Overview
 
