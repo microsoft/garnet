@@ -142,22 +142,45 @@ Therefore, any active client session will process subsequent commands considerin
         ```
 </details>
 
+During migration, the change in slot state (i.e. ```MIGRATING```) is transient from the perspective of the source node.
+This means that until migration completes the slot is still owned by the source node.
+However, because it is necessary to produce -ASK redirect messages, the workerId is set to the workerId of the target node, without bumping the current local epoch (to avoid propagation of this transient update to the whole cluster).
+Therefore, depending on the context of the operation being executed, the actual owner of the node can be determined by accessing ```workerId``` property, while the target node for migration is determined through ```_workerId``` variable.
+For example, the ```CLUSTER NODES``` will use ``workerId``` property (through GetSlotRange(workerId)) since it has to return actual owner of the node even during migration.
+At the same, time it needs to return all nodes that are in ```MIGRATING``` or ```IMPORTING`` state and the node-id associated with that state which can be done by inspecting the _workerId variable (through GetSpecialStates(workerId)).
 
-
-<!-- During migration, the slot state is transient, and the owner node can serve only read requests.
-The target of migration can potentially serve write requests to that specific slot using the appropriate RESP command.
-In this case, the original owner maintains ownership but needs to redirect clients to target node for write requests.
-To achieve this, we use _workerId when implementing the redirection logic and workerId property for everything else. -->
-
+<details>
+        <summary>HashSlot Definition</summary>
+        ```bash
+        /// <summary>
+        /// Get formatted (using CLUSTER NODES format) worker info.
+        /// </summary>
+        /// <param name="workerId">Offset of worker in the worker list.</param>
+        /// <returns>Formatted string.</returns>
+        public string GetNodeInfo(ushort workerId)
+        {
+            return $"{workers[workerId].Nodeid} " +
+                $"{workers[workerId].Address}:{workers[workerId].Port}@{workers[workerId].Port + 10000},{workers[workerId].hostname} " +
+                $"{(workerId == 1 ? "myself," : "")}{(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave")} " +
+                $"{(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-")} " +
+                $"0 " +
+                $"0 " +
+                $"{workers[workerId].ConfigEpoch} " +
+                $"connected" +
+                $"{GetSlotRange(workerId)}" +
+                $"{GetSpecialStates(workerId)}\n";
+        }
+        ```
+</details>
 
 ## Migrate KEYS Implementation Details
 
-Using the KEYS option, Garnet will iterate through the provided list of keys and migrate them in batches to the target node.
+Using the ```KEYS`` option, Garnet will iterate through the provided list of keys and migrate them in batches to the target node.
 When using this option, the issuer of the migration command will have to make sure that the slot state is set appropriately in the source, and target node.
 In addition, the issuer has to provide all keys that map to a specific slot either in one call to MIGRATE or across multiple call before the migration completes.
 When all key-value pairs have migrated to the target node, the issues has to reset the slot state and assign ownership of the slot to the new node.
 
-```MigrateKeys``` is the main driver for the migration operation using KEYS option.
+```MigrateKeys``` is the main driver for the migration operation using ```KEYS`` option.
 This method iterates over the list of provided keys and sends them over to the target node.
 This happens in two steps, (1) look in the main store and if a key exists send it over while removing it from the list of keys to be send, (2) search object store for any remaining keys, not found in the main store and send them over if they are found.
 It is possible that a key cannot be retrieved from either store, because it might have expired.
@@ -194,5 +217,94 @@ When data transmission completes, and depending if COPY option is enabled, ```Mi
 
 ## Migrate SLOTS Details
 
-The difference between KEYS and SLOTS options is that the latter allows for migrating all keys associated with a single or a collection of slots.
-It does not require
+The SLOTS or SLOTSRANGE options enables Garnet to migrate a collection of slots and all the associated keys mapping to these slots.
+These options differ from the ```KEYS`` options in the following ways:
+
+1. No specific knowledge of key to slot mapping is needed from the client. It needs to simply provide the corresponding slot number.
+2. Keys do need to be retrieved (i.e. using ```CLUSTER GETKEYSINSLOT```) and send over back to the source node which is potentially an expensive operation.
+3. Client does not need to handle slot state transitions. They are automatically handled when ```MIGRATE SLOTS``` executes.
+4. ```MIGRATE SLOTS``` has to scan through main and object stores and find all keys mapping to the associated slot. 
+
+The last bullet indicates that this operatin is potentially expensive if a slot that is being migrated contains only a few keys from a large DB of keys.
+However, it is no more expensive than ```CLUSTER GETKYESINSLOT``` (which is used for ```KEYS`` option) and in practice the cost of the scan can be amortized if multiple slots are migrated concurrently.
+
+As shown from the below code excerpt, the ```MIGRATE SLOTS``` task, will safely transition the state of the slot of the remote node config to ```IMPORTING``` and the slot state of local node config to ```MIGRATING```, by relying on the epoch protection mechanism as described previously.
+Following, it will start migrating the data to the target node in batches.
+On completion of data migration, the task will conclude with performing next slot state transition where ownership of the slots being migrates will be handed to the target node.
+The slot ownership exchange becomes visible to the whole cluster by bumping the local node's configuration epoch (i.e. using RelinquishOwnership command).
+Finally, the source node will issue ```CLUSTER SETSLOT NODE``` to the target node to make it explicitly an owner of the corresponding slot collection.
+This last step is not necessary, and it used only to speed up the config propagation.
+
+<details>
+        <summary>Migrate SLOTS Task</summary>
+        ```bash
+        /// <summary>
+        /// Migrate slots session background task
+        /// </summary>
+        private void BeginAsyncMigrationTask()
+        {
+                //1. Set target node to import state
+                if (!TrySetSlotRanges(GetSourceNodeId, MigrateState.IMPORT))
+                {
+                    logger?.LogError("Failed to set remote slots {slots} to import state", string.Join(',', GetSlots));
+                    TryRecoverFromFailure();
+                    Status = MigrateState.FAIL;
+                    return;
+                }
+
+                #region transitionLocalSlotToMigratingState
+                //2. Set source node to migrating state and wait for local threads to see changed state.
+                if (!TryPrepareLocalForMigration())
+                {
+                    logger?.LogError("Failed to set local slots {slots} to migrate state", string.Join(',', GetSlots));
+                    TryRecoverFromFailure();
+                    Status = MigrateState.FAIL;
+                    return;
+                }
+
+                if (!clusterProvider.WaitForConfigTransition()) return;
+                #endregion
+
+                #region migrateData
+                //3. Migrate actual data
+                if (!MigrateSlotsDataDriver())
+                {
+                    logger?.LogError($"MigrateSlotsDriver failed");
+                    TryRecoverFromFailure();
+                    Status = MigrateState.FAIL;
+                    return;
+                }
+                #endregion
+                #region migrateData
+                //3. Migrate actual data
+                if (!MigrateSlotsDataDriver())
+                {
+                    logger?.LogError($"MigrateSlotsDriver failed");
+                    TryRecoverFromFailure();
+                    Status = MigrateState.FAIL;
+                    return;
+                }
+                #endregion
+
+                #region transferSlotOwnnershipToTargetNode
+                //5. Clear local migration set.
+                if (!RelinquishOwnership())
+                {
+                    logger?.LogError($"Failed to relinquish ownerhsip to target node");
+                    TryRecoverFromFailure();
+                    Status = MigrateState.FAIL;
+                    return;
+                }
+
+                //6. Change ownership of slots to target node.
+                if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
+                {
+                    logger?.LogError($"Failed to assign ownerhsip to target node");
+                    TryRecoverFromFailure();
+                    Status = MigrateState.FAIL;
+                    return;
+                }        
+                #endregion
+        }
+        ```
+</details>
