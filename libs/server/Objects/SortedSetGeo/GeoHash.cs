@@ -95,27 +95,26 @@ namespace Garnet.server
         /// <returns>The GeoHash representation of the 52bit</returns>
         public static string GetGeoHashCode(long longEncodedValue)
         {
-            // Length for the GeoHash
-            const int CodeLength = 11;
-
-            string result = string.Empty;
-            long hashValue = 0;
-
-            double latitudeMin = GeoLatitudeMin, latitudeMax = GeoLatitudeMax;
-            double longitudeMin = GeoLongitudeMin, longitudeMax = GeoLongitudeMax;
-
             var (latitude, longitude) = GetCoordinatesFromLong(longEncodedValue);
 
             // check for invalid values
             if (!(GeoLatitudeMin <= latitude && latitude <= GeoLatitudeMax) || !(GeoLongitudeMin <= longitude && longitude <= GeoLongitudeMax))
                 return null;
 
-            int bits = 0;
+            double latitudeMin = GeoLatitudeMin, latitudeMax = GeoLatitudeMax;
+            double longitudeMin = GeoLongitudeMin, longitudeMax = GeoLongitudeMax;
 
+            // Length for the GeoHash
+            const int CodeLength = 11;
+
+            int bits = 0;
+            long hashValue = 0;
+            bool isLongitudeBit = true;
+            string result = string.Empty;
             while (result.Length < CodeLength)
             {
                 hashValue <<= 1;
-                if (bits % 2 == 0)
+                if (isLongitudeBit)
                 {
                     Encode(longitude, ref longitudeMin, ref longitudeMax, ref hashValue);
                 }
@@ -123,6 +122,7 @@ namespace Garnet.server
                 {
                     Encode(latitude, ref latitudeMin, ref latitudeMax, ref hashValue);
                 }
+                isLongitudeBit = !isLongitudeBit;
 
                 bits++;
                 if (bits != 5)
