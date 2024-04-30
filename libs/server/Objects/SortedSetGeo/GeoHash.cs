@@ -11,15 +11,13 @@ namespace Garnet.server
     public static class GeoHash
     {
         // Constraints from EPSG:900913 / EPSG:3785 / OSGEO:41001
-        static readonly long geoLongMax = 180;
+        private const double GeoLongitudeMin = -180.0;
+        private const double GeoLongitudeMax = 180.0;
 
-        static readonly long geoLongMin = -180;
+        private const double GeoLatitudeMin = -90.0;
+        private const double GeoLatitudeMax = 90.0;
 
-        static readonly long geoLatMax = 90;
-
-        static readonly long geoLatMin = -90;
-
-        static readonly int precision = 52;
+        private const int Precision = 52;
 
         //The "Geohash alphabet" (32ghs) uses all digits 0-9 and almost all lower case letters except "a", "i", "l" and "o".
         //This table is used for getting the "standard textual representation" of a pair of lat and long.
@@ -27,29 +25,31 @@ namespace Garnet.server
 
 
         /// <summary>
-        /// Encodes the latitude,longitude coords to a unique 52-bit integer
+        /// Encodes the tuple of (<paramref name="latitude"/>, <paramref name="longitude"/>) coords to a unique 52-bit integer
         /// </summary>
-        /// <param name="latitude"></param>
-        /// <param name="longitude"></param>
-        /// <returns></returns>
         public static long GeoToLongValue(double latitude, double longitude)
         {
-            int i = 0;
-            long result = 0;
-            bool isLongitudBit = true;
-
-            var latitudeRange = new double[] { geoLatMin, geoLatMax };
-            var longitudeRange = new double[] { geoLongMin, geoLongMax };
-
-            //check for invalid values
-            if (!(geoLatMin <= latitude && latitude <= geoLatMax) || !(geoLongMin <= longitude && longitude <= geoLongMax))
-                return -1;
-
-            while (i < precision)
+            if (!(GeoLatitudeMin <= latitude && latitude <= GeoLatitudeMax) ||
+                !(GeoLongitudeMin <= longitude && longitude <= GeoLongitudeMax))
             {
-                Encode(isLongitudBit ? longitude : latitude, isLongitudBit ? longitudeRange : latitudeRange, ref result);
-                isLongitudBit = !isLongitudBit;
-                i++;
+                return -1;
+            }
+
+            double latitudeMin = GeoLatitudeMin, latitudeMax = GeoLatitudeMax;
+            double longitudeMin = GeoLongitudeMin, longitudeMax = GeoLongitudeMax;
+
+            long result = 0;
+            for (int i = 0; i < Precision; i++)
+            {
+                result <<= 1;
+                if (i % 2 == 0)
+                {
+                    Encode(longitude, ref longitudeMin, ref longitudeMax, ref result);
+                }
+                else
+                {
+                    Encode(latitude, ref latitudeMin, ref latitudeMax, ref result);
+                }
             }
 
             return result;
@@ -62,30 +62,27 @@ namespace Garnet.server
         /// Latitude refers to the Y-values and are between -90 and +90 degrees.
         /// Longitude refers to the X-coordinates and are between -180 and +180 degrees.
         /// </summary>
-        /// <param name="longValue"></param>
-        /// <returns>(latitude, longitude)</returns>
-        public static (double, double) GetCoordinatesFromLong(long longValue)
+        public static (double Latitude, double Longitude) GetCoordinatesFromLong(long longValue)
         {
-            string binaryString = Convert.ToString(longValue, 2);
+            double latitudeMin = GeoLatitudeMin, latitudeMax = GeoLatitudeMax;
+            double longitudeMin = GeoLongitudeMin, longitudeMax = GeoLongitudeMax;
 
-            while (binaryString.Length < precision)
+            for (int i = Precision - 1; i >= 0; i--)
+        {
+                bool bit = ((longValue >> i) & 1) == 1;
+
+                if (i % 2 == 0)
             {
-                binaryString = "0" + binaryString;
+                    Decode(ref latitudeMin, ref latitudeMax, bit);
+            }
+                else
+            {
+                    Decode(ref longitudeMin, ref longitudeMax, bit);
+                }
             }
 
-            bool isLongitudBit = true;
-
-            var latitudeRange = new double[] { geoLatMin, geoLatMax };
-            var longitudeRange = new double[] { geoLongMin, geoLongMax };
-
-            for (int i = 0; i < precision; i++)
-            {
-                Decode(isLongitudBit ? longitudeRange : latitudeRange, binaryString[i] != '0');
-                isLongitudBit = !isLongitudBit;
-            }
-
-            var latitude = (latitudeRange[0] + latitudeRange[1]) / 2;
-            var longitude = (longitudeRange[0] + longitudeRange[1]) / 2;
+            var latitude = (latitudeMin + latitudeMax) / 2;
+            var longitude = (longitudeMin + longitudeMax) / 2;
             return (latitude, longitude);
         }
 
@@ -97,30 +94,34 @@ namespace Garnet.server
         public static string GetGeoHashCode(long longEncodedValue)
         {
             // Length for the GeoHash
-            int codeLength = 11;
+            const int CodeLength = 11;
 
             string result = string.Empty;
-            bool isLongitudBit = true;
             long hashValue = 0;
 
-            var latitudeRange = new double[] { geoLatMin, geoLatMax };
-            var longitudeRange = new double[] { geoLongMin, geoLongMax };
+            double latitudeMin = GeoLatitudeMin, latitudeMax = GeoLatitudeMax;
+            double longitudeMin = GeoLongitudeMin, longitudeMax = GeoLongitudeMax;
 
-            double latitude;
-            double longitude;
-
-            (latitude, longitude) = GetCoordinatesFromLong(longEncodedValue);
+            var (latitude, longitude) = GetCoordinatesFromLong(longEncodedValue);
 
             // check for invalid values
-            if (!(geoLatMin <= latitude && latitude <= geoLatMax) || !(geoLongMin <= longitude && longitude <= geoLongMax))
+            if (!(GeoLatitudeMin <= latitude && latitude <= GeoLatitudeMax) || !(GeoLongitudeMin <= longitude && longitude <= GeoLongitudeMax))
                 return null;
 
             int bits = 0;
 
-            while (result.Length < codeLength)
+            while (result.Length < CodeLength)
             {
-                Encode(isLongitudBit ? longitude : latitude, isLongitudBit ? longitudeRange : latitudeRange, ref hashValue);
-                isLongitudBit = !isLongitudBit;
+                hashValue <<= 1;
+                if (bits % 2 == 0)
+                {
+                    Encode(longitude, ref longitudeMin, ref longitudeMax, ref hashValue);
+                }
+                else
+            {
+                    Encode(latitude, ref latitudeMin, ref latitudeMax, ref hashValue);
+                }
+
                 bits++;
                 if (bits != 5)
                 {
@@ -133,6 +134,33 @@ namespace Garnet.server
             }
 
             return result;
+        }
+
+        private static void Encode(double value, ref double min, ref double max, ref long result)
+        {
+            var mid = (min + max) / 2;
+            if (value > mid)
+            {
+                min = mid;
+                result |= 1;
+            }
+            else
+            {
+                max = mid;
+            }
+        }
+
+        private static void Decode(ref double min, ref double max, bool isOnBit)
+        {
+            var mid = (min + max) / 2;
+            if (isOnBit)
+            {
+                min = mid;
+            }
+            else
+            {
+                max = mid;
+            }
         }
 
         /// <summary>
@@ -177,28 +205,7 @@ namespace Garnet.server
             return true;
         }
 
-        private static void Encode(double value, double[] range, ref long result)
-        {
-            double mid = (range[0] + range[1]) / 2;
-            var idx = value > mid ? 0 : 1;
-            range[idx] = mid;
-            result = (result << 1) + (value > mid ? 1 : 0);
-        }
-
-        private static void Decode(double[] range, bool isOnBit)
-        {
-            double mid = (range[0] + range[1]) / 2;
-            int idx = isOnBit ? 0 : 1;
-            range[idx] = mid;
-        }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="value"></param>
-        /// <param name="units"></param>
-        /// <returns></returns>
-        public static double ConvertValueToMeters(double value, byte[] units)
+        public static double ConvertValueToMeters(double value, ReadOnlySpan<byte> units)
         {
             if (units.Length == 2)
             {
@@ -226,10 +233,7 @@ namespace Garnet.server
         /// <summary>
         /// Helper to convert meters to kilometers, feet, or miles
         /// </summary>
-        /// <param name="value"></param>
-        /// <param name="units"></param>
-        /// <returns></returns>
-        public static double ConvertMetersToUnits(double value, byte[] units)
+        public static double ConvertMetersToUnits(double value, ReadOnlySpan<byte> units)
         {
             if (units.Length == 2)
             {
