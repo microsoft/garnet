@@ -70,15 +70,15 @@ namespace Garnet.server
             double longitudeMin = GeoLongitudeMin, longitudeMax = GeoLongitudeMax;
 
             for (int i = Precision - 1; i >= 0; i--)
-        {
+            {
                 bool bit = ((longValue >> i) & 1) == 1;
 
                 if (i % 2 == 0)
-            {
+                {
                     Decode(ref latitudeMin, ref latitudeMax, bit);
-            }
+                }
                 else
-            {
+                {
                     Decode(ref longitudeMin, ref longitudeMax, bit);
                 }
             }
@@ -120,7 +120,7 @@ namespace Garnet.server
                     Encode(longitude, ref longitudeMin, ref longitudeMax, ref hashValue);
                 }
                 else
-            {
+                {
                     Encode(latitude, ref latitudeMin, ref latitudeMax, ref hashValue);
                 }
 
