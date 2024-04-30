@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using Garnet.common;
@@ -452,14 +451,6 @@ namespace Garnet.cluster
                 ResetSlotState(slot);
             }
         }
-
-        /// <summary>
-        /// Check if slot is in importing state.
-        /// </summary>
-        /// <param name="slot">Slot to check state</param>
-        /// <returns>True if slot is in Importing state, false otherwise</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsImporting(ushort slot) => currentConfig.GetState(slot) == SlotState.IMPORTING;
 
         /// <summary>
         /// Methods used to cleanup keys for given slot collection in main store

@@ -1298,6 +1298,8 @@ namespace Garnet.cluster
                     if (ptr + headerLength > recvBufferPtr + bytesRead)
                         return false;
 
+                    var currentConfig = clusterProvider.clusterManager.CurrentConfig;
+
                     if (storeType.Equals("SSTORE"))
                     {
                         var keyCount = *(int*)ptr;
@@ -1319,12 +1321,16 @@ namespace Garnet.cluster
 
                             // An error has occurred
                             if (migrateState > 0)
+                            {
+                                i++;
                                 continue;
+                            }
 
                             var slot = NumUtils.HashSlot(key.ToPointer(), key.LengthWithoutMetadata);
-                            if (!clusterProvider.clusterManager.IsImporting(slot))//Slot is not in importing state
+                            if (!currentConfig.IsImportingSlot(slot))//Slot is not in importing state
                             {
                                 migrateState = 1;
+                                i++;
                                 continue;
                             }
 
@@ -1354,7 +1360,7 @@ namespace Garnet.cluster
                                 continue;
 
                             var slot = NumUtils.HashSlot(key);
-                            if (!clusterProvider.clusterManager.IsImporting(slot))//Slot is not in importing state
+                            if (!currentConfig.IsImportingSlot(slot))//Slot is not in importing state
                             {
                                 migrateState = 1;
                                 continue;
@@ -1382,6 +1388,7 @@ namespace Garnet.cluster
 
                     if (migrateState == 1)
                     {
+                        logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE));
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE, ref dcurr, dend))
                             SendAndReset();
                     }

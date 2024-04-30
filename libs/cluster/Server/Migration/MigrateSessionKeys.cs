@@ -23,16 +23,16 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         private bool MigrateKeysFromMainStore(ref List<(long, long)> keysWithSize, out List<(long, long)> objectStoreKeys)
         {
-            int bufferSize = 1 << 10;
+            var bufferSize = 1 << 10;
             SectorAlignedMemory buffer = new(bufferSize, 1);
-            objectStoreKeys = new();
+            objectStoreKeys = [];
 
             try
             {
                 // 4 byte length of input
                 // 1 byte RespCommand
                 // 1 byte RespInputFlags
-                int inputSize = sizeof(int) + RespInputHeader.Size;
+                var inputSize = sizeof(int) + RespInputHeader.Size;
                 byte* pbCmdInput = stackalloc byte[inputSize];
 
                 ////////////////
