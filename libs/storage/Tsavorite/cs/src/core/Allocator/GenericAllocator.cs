@@ -281,7 +281,7 @@ namespace Tsavorite.core
 
         internal Record<Key, Value>[] AllocatePage()
         {
-            Interlocked.Increment(ref AllocatedPageCount);
+            IncrementAllocatedPageCount();
 
             if (overflowPagePool.TryGet(out var item))
                 return item;

@@ -221,6 +221,12 @@ dotnet_diagnostic.CA1829.severity = suggestion
 # CA1836: Prefer IsEmpty over Count when available
 dotnet_diagnostic.CA1836.severity = suggestion
 
+# CA1837: Use Environment.ProcessId instead of Process.GetCurrentProcess().Id
+dotnet_diagnostic.CA1837.severity = suggestion
+
+# CA1840: Use Environment.CurrentManagedThreadId instead of Thread.CurrentThread.ManagedThreadId
+dotnet_diagnostic.CA1840.severity = suggestion
+
 # CA1852: Seal internal types
 dotnet_diagnostic.CA1852.severity = suggestion
 

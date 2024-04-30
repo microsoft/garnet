@@ -36,7 +36,10 @@ namespace Garnet.test
         /// </summary>
         public static int Port = 33278;
 
-        private static int procId = Process.GetCurrentProcess().Id;
+        /// <summary>
+        /// Whether to use a test progress logger
+        /// </summary>
+        static readonly bool useTestLogger = false;
 
         internal static string AzureTestContainer
         {
@@ -199,7 +202,20 @@ namespace Garnet.test
                 opts.PageSize = opts.ObjectStorePageSize = PageSize == default ? "512" : PageSize;
             }
 
-            return new GarnetServer(opts);
+            if (useTestLogger)
+            {
+                var loggerFactory = LoggerFactory.Create(builder =>
+                {
+                    builder.AddProvider(new NUnitLoggerProvider(TestContext.Progress, "GarnetServer", null, false, false, LogLevel.Trace));
+                    builder.SetMinimumLevel(LogLevel.Trace);
+                });
+
+                return new GarnetServer(opts, loggerFactory);
+            }
+            else
+            {
+                return new GarnetServer(opts);
+            }
         }
 
         /// <summary>
@@ -559,7 +575,7 @@ namespace Garnet.test
         /// <summary>
         /// Find root test based on prefix Garnet.test
         /// </summary>
-        private static string RootTestsProjectPath =>
+        internal static string RootTestsProjectPath =>
             TestContext.CurrentContext.TestDirectory.Split("Garnet.test")[0];
 
         /// <summary>
@@ -571,7 +587,7 @@ namespace Garnet.test
         internal static string UnitTestWorkingDir(string category = null, bool includeGuid = false)
         {
             // Include process id to avoid conflicts between parallel test runs
-            var testPath = $"{procId}_{TestContext.CurrentContext.Test.ClassName}_{TestContext.CurrentContext.Test.MethodName}";
+            var testPath = $"{Environment.ProcessId}_{TestContext.CurrentContext.Test.ClassName}_{TestContext.CurrentContext.Test.MethodName}";
             var rootPath = Path.Combine(RootTestsProjectPath, ".tmp", testPath);
 
             if (category != null)

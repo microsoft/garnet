@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// Shared work queue that ensures one worker at any given time. Uses LIFO ordering of work.
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    class WorkQueueLIFO<T> : IDisposable
+    internal sealed class WorkQueueLIFO<T> : IDisposable
     {
         const int kMaxQueueSize = 1 << 30;
         readonly ConcurrentStack<T> _queue;

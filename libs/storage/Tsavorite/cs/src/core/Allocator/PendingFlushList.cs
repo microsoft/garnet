@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace Tsavorite.core
 {
-    sealed class PendingFlushList
+    internal sealed class PendingFlushList
     {
         public readonly LinkedList<PageAsyncFlushResult<Empty>> list;
 
