@@ -3,6 +3,8 @@
 
 using System;
 
+using Garnet.common;
+
 namespace Garnet.server
 {
     /// <summary>
@@ -209,18 +211,18 @@ namespace Garnet.server
         {
             if (units.Length == 2)
             {
-                //KM OR km
-                if ((units[0] == (int)'K' || units[0] == (int)'k') && (units[1] == (int)'M' || units[1] == (int)'m'))
+                // Case-insensitive "km"
+                if (AsciiUtils.ToLower(units[0]) == (byte)'k' && AsciiUtils.ToLower(units[1]) == (byte)'m')
                 {
                     return value / 0.001;
                 }
-                // FT OR ft
-                else if ((units[0] == (int)'F' || units[0] == (int)'f') && (units[1] == (int)'T' || units[1] == (int)'t'))
+                // Case-insensitive "ft"
+                if (AsciiUtils.ToLower(units[0]) == (byte)'f' && AsciiUtils.ToLower(units[1]) == (byte)'t')
                 {
                     return value / 3.28084;
                 }
-                // MI OR mi
-                else if ((units[0] == (int)'M' || units[0] == (int)'m') && (units[1] == (int)'I' || units[1] == (int)'i'))
+                // Case-insensitive "mi"
+                if (AsciiUtils.ToLower(units[0]) == (byte)'m' && AsciiUtils.ToLower(units[1]) == (byte)'i')
                 {
                     return value / 0.000621371;
                 }
@@ -237,18 +239,18 @@ namespace Garnet.server
         {
             if (units.Length == 2)
             {
-                //KM OR km
-                if ((units[0] == (int)'K' || units[0] == (int)'k') && (units[1] == (int)'M' || units[1] == (int)'m'))
+                // Case-insensitive "km"
+                if (AsciiUtils.ToLower(units[0]) == (byte)'k' && AsciiUtils.ToLower(units[1]) == (byte)'m')
                 {
                     return value * 0.001;
                 }
-                //FT OR ft
-                else if ((units[0] == (int)'F' || units[0] == (int)'f') && (units[1] == (int)'T' || units[1] == (int)'t'))
+                // Case-insensitive "ft"
+                if (AsciiUtils.ToLower(units[0]) == (byte)'f' && AsciiUtils.ToLower(units[1]) == (byte)'t')
                 {
                     return value * 3.28084;
                 }
-                // MI OR mi
-                else if ((units[0] == (int)'M' || units[0] == (int)'m') && (units[1] == (int)'I' || units[1] == (int)'i'))
+                // Case-insensitive "mi"
+                if (AsciiUtils.ToLower(units[0]) == (byte)'m' && AsciiUtils.ToLower(units[1]) == (byte)'i')
                 {
                     return value * 0.000621371;
                 }
