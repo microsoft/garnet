@@ -21,11 +21,6 @@ namespace Garnet.server
 
         static readonly int precision = 52;
 
-        //Measure based on WGS-84 system
-        static readonly double earthRadiusInMeters = 6372797.560856;
-        //The PI/180 constant
-        static readonly double degreesToRadians = 0.017453292519943295769236907684886;
-
         //The "Geohash alphabet" (32ghs) uses all digits 0-9 and almost all lower case letters except "a", "i", "l" and "o".
         //This table is used for getting the "standard textual representation" of a pair of lat and long.
         static readonly char[] base32chars = new char[] { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j', 'k', 'm', 'n', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z' };
@@ -144,23 +139,22 @@ namespace Garnet.server
         /// Gets the distance in meters using Haversine Formula
         /// https://en.wikipedia.org/wiki/Haversine_formula
         /// </summary>
-        /// <param name="sourceLat"></param>
-        /// <param name="sourceLon"></param>
-        /// <param name="targetLat"></param>
-        /// <param name="targetLon"></param>
-        /// <returns></returns>
         public static double Distance(double sourceLat, double sourceLon, double targetLat, double targetLon)
         {
-            // Convert to Radians
-            //Multiply by Math.PI / 180 to convert degrees to radians.
-            var lonRad = (sourceLon - targetLon) * degreesToRadians;
-            var latRad = (sourceLat - targetLat) * degreesToRadians;
-            double latHaversine = Math.Pow(Math.Sin(latRad * 0.5), 2);
-            double lonHaversine = Math.Pow(Math.Sin(lonRad * 0.5), 2);
+            static double DegreesToRadians(double degrees) => degrees * Math.PI / 180;
 
-            double tmp = Math.Cos(sourceLat * degreesToRadians) * Math.Cos(targetLat * degreesToRadians);
+            //Measure based on WGS-84 system
+            const double EarthRadiusInMeters = 6372797.560856;
 
-            return 2 * Math.Asin(Math.Sqrt(latHaversine + tmp * lonHaversine)) * earthRadiusInMeters;
+            var lonRadians = DegreesToRadians(sourceLon - targetLon);
+            var lonHaversine = Math.Pow(Math.Sin(lonRadians / 2), 2);
+
+            var latRadians = DegreesToRadians(sourceLat - targetLat);
+            var latHaversine = Math.Pow(Math.Sin(latRadians / 2), 2);
+
+            var tmp = Math.Cos(DegreesToRadians(sourceLat)) * Math.Cos(DegreesToRadians(targetLat));
+
+            return 2 * Math.Asin(Math.Sqrt(latHaversine + tmp * lonHaversine)) * EarthRadiusInMeters;
         }
 
 
@@ -170,19 +164,11 @@ namespace Garnet.server
         /// height/2 or width/2,
         /// the point is in the rectangle.
         /// </summary>
-        /// <param name="widthMts"></param>
-        /// <param name="heightMts"></param>
-        /// <param name="latCenterPoint"></param>
-        /// <param name="lonCenterPoint"></param>
-        /// <param name="lat2"></param>
-        /// <param name="lon2"></param>
-        /// <param name="distance"></param>
-        /// <returns></returns>
         public static bool GetDistanceWhenInRectangle(double widthMts, double heightMts, double latCenterPoint, double lonCenterPoint, double lat2, double lon2, ref double distance)
         {
-            double lon_distance = Distance(lat2, lon2, latCenterPoint, lon2);
-            double lat_distance = Distance(lat2, lon2, lat2, lonCenterPoint);
-            if (lon_distance > widthMts / 2 || lat_distance > heightMts / 2)
+            var lonDistance = Distance(lat2, lon2, latCenterPoint, lon2);
+            var latDistance = Distance(lat2, lon2, lat2, lonCenterPoint);
+            if (lonDistance > widthMts / 2 || latDistance > heightMts / 2)
             {
                 return false;
             }
