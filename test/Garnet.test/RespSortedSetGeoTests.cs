@@ -447,39 +447,39 @@ namespace Garnet.test
         [Test]
         public void CanEncodeAndDecodeCoordinates()
         {
-            double latitude = 30.5388942218;
-            double longitude = 104.0555758833;
+            const double Latitude = 30.5388942218;
+            const double Longitude = 104.0555758833;
 
-            var r = GeoHash.GeoToLongValue(latitude, longitude);
+            var r = GeoHash.GeoToLongValue(Latitude, Longitude);
             Assert.AreEqual(4024744861876082, r);
             var coord = GeoHash.GetCoordinatesFromLong(r);
 
             //Assert difference is not higher than "0.000001" using fixed point format
-            var diff = (Math.Round(latitude, 9) - Math.Round(coord.Item1, 9)).ToString("F6", CultureInfo.InvariantCulture);
+            var diff = (Math.Round(Latitude, 9) - Math.Round(coord.Latitude, 9)).ToString("F6", CultureInfo.InvariantCulture);
             Assert.IsTrue(double.Parse(diff, CultureInfo.InvariantCulture) <= 0.000001);
         }
 
         [Test]
         public void CanEncodeAndDecodeCoordinatesWithGeoHashCode()
         {
-            double latitude = 37.502669;
-            double longitude = 15.087269;
+            const double PalermoLatitude = 37.502669;
+            const double PalermoLongitude = 15.087269;
 
-            var r = GeoHash.GeoToLongValue(latitude, longitude);
+            var r = GeoHash.GeoToLongValue(PalermoLatitude, PalermoLongitude);
             Assert.AreEqual(3476216502357864, r);
 
             // Only check the first 10 chars
-            var geoHash = GeoHash.GetGeoHashCode(r).Substring(0, 9);
-            Assert.IsTrue("sqdtr74hyu0".IndexOf(geoHash) == 0);
+            var geoHash = GeoHash.GetGeoHashCode(r);
+            Assert.AreEqual("sqdtr74hyu", geoHash[..10]);
 
-            longitude = 13.361389;
-            latitude = 38.115556;
+            const double CataniaLongitude = 13.361389;
+            const double CataniaLatitude = 38.115556;
 
-            r = GeoHash.GeoToLongValue(latitude, longitude);
+            r = GeoHash.GeoToLongValue(CataniaLatitude, CataniaLongitude);
             Assert.AreEqual(3476004292229755, r);
 
-            geoHash = GeoHash.GetGeoHashCode(r).Substring(0, 9);
-            Assert.IsTrue("sqc8b49rnyt".IndexOf(geoHash) == 0);
+            geoHash = GeoHash.GetGeoHashCode(r);
+            Assert.AreEqual("sqc8b49rnyt", geoHash);
         }
 
         #endregion
