@@ -28,7 +28,8 @@ namespace Garnet.cluster
             CROSSSLOT,
             TARGETNODENOTMASTER,
             INCOMPLETESLOTSRANGE,
-            SLOTOUTOFRANGE
+            SLOTOUTOFRANGE,
+            NOTMIGRATING,
         }
 
         private bool HandleCommandParsingErrors(MigrateCmdParseState mpState, string targetAddress, int targetPort, int slotMultiRef)
@@ -46,7 +47,7 @@ namespace Garnet.cluster
                 MigrateCmdParseState.TARGETNODENOTMASTER => Encoding.ASCII.GetBytes($"ERR Cannot initiate migration, target node ({targetAddress}:{targetPort}) is not a primary."),
                 MigrateCmdParseState.INCOMPLETESLOTSRANGE => CmdStrings.RESP_ERR_GENERIC_INCOMPLETESLOTSRANGE,
                 MigrateCmdParseState.SLOTOUTOFRANGE => Encoding.ASCII.GetBytes($"ERR Slot {slotMultiRef} out of range."),
-
+                MigrateCmdParseState.NOTMIGRATING => CmdStrings.RESP_ERR_GENERIC_SLOTNOTMIGRATING,
                 _ => CmdStrings.RESP_ERR_GENERIC_PARSING,
             };
             while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
@@ -103,7 +104,7 @@ namespace Garnet.cluster
                 if (targetNodeId == null) pstate = MigrateCmdParseState.UNKNOWNTARGET;
             }
 
-            //Add single key if specified
+            // Add single key if specified
             if (sksize > 0)
             {
                 keysWithSize = [];
@@ -151,7 +152,7 @@ namespace Garnet.cluster
 
                         // Check if all keys are local R/W because we migrate keys and need to be able to delete them
                         var slot = NumUtils.HashSlot(keyPtr, ksize);
-                        if (!current.IsLocal((ushort)slot, readCommand: false))
+                        if (!current.IsLocal(slot, readCommand: false))
                         {
                             pstate = MigrateCmdParseState.SLOTNOTLOCAL;
                             continue;
@@ -161,6 +162,13 @@ namespace Garnet.cluster
                         if (!slots.Contains(slot) && slots.Count > 0)
                         {
                             pstate = MigrateCmdParseState.CROSSSLOT;
+                            continue;
+                        }
+
+                        // Check if slot is not set as MIGRATING
+                        if (!current.IsMigratingSlot(slot))
+                        {
+                            pstate = MigrateCmdParseState.NOTMIGRATING;
                             continue;
                         }
 
@@ -230,7 +238,7 @@ namespace Garnet.cluster
                             // Skip if previous error encountered
                             if (pstate != MigrateCmdParseState.SUCCESS) continue;
 
-                            for (int slot = slotStart; slot <= slotEnd; slot++)
+                            for (var slot = slotStart; slot <= slotEnd; slot++)
                             {
                                 // Check if slot is in valid range
                                 if (ClusterConfig.OutOfRange(slot))
