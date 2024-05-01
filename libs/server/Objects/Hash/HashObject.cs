@@ -49,7 +49,7 @@ namespace Garnet.server
         public HashObject(long expiration = 0)
             : base(expiration, MemoryUtils.DictionaryOverhead)
         {
-            hash = new Dictionary<byte[], byte[]>(new ByteArrayComparer());
+            hash = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
         }
 
         /// <summary>
@@ -58,7 +58,7 @@ namespace Garnet.server
         public HashObject(BinaryReader reader)
             : base(reader, MemoryUtils.DictionaryOverhead)
         {
-            hash = new Dictionary<byte[], byte[]>(new ByteArrayComparer());
+            hash = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
 
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)

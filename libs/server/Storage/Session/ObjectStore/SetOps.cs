@@ -422,7 +422,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)
         {
-            output = new HashSet<byte[]>(new ByteArrayComparer());
+            output = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
             if (keys.Length == 0)
                 return GarnetStatus.OK;
@@ -511,7 +511,7 @@ namespace Garnet.server
         private HashSet<byte[]> SetUnion<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
-            var result = new HashSet<byte[]>(new ByteArrayComparer());
+            var result = new HashSet<byte[]>(ByteArrayComparer.Instance);
             if (keys.Length == 0)
             {
                 return result;
@@ -737,7 +737,7 @@ namespace Garnet.server
             {
                 if (first.garnetObject is SetObject firstObject)
                 {
-                    result = new HashSet<byte[]>(firstObject.Set, new ByteArrayComparer());
+                    result = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
                 }
             }
             else
