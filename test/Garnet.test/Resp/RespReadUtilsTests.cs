@@ -241,7 +241,7 @@ namespace Garnet.test.Resp
                 }
             });
         }
-        
+
         /// <summary>
         /// Tests that ReadPtrWithLengthHeader successfully parses simple strings.
         /// </summary>

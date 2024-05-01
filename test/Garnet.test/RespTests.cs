@@ -657,7 +657,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01", "7ab"];
 
-            for(var i = 0; i < values.Length; i++)
+            for (var i = 0; i < values.Length; i++)
             {
                 var key = $"key{i}";
                 var exception = false;
