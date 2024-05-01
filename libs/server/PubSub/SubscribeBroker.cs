@@ -132,7 +132,7 @@ namespace Garnet.server
         {
             try
             {
-                var uniqueKeys = new Dictionary<byte[], (byte[], byte[])>(new ByteArrayComparer());
+                var uniqueKeys = new Dictionary<byte[], (byte[], byte[])>(ByteArrayComparer.Instance);
                 long truncateUntilAddress = log.BeginAddress;
 
                 while (true)
@@ -215,8 +215,8 @@ namespace Garnet.server
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
                 done.Reset();
-                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
-                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(new ByteArrayComparer());
+                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
+                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(ByteArrayComparer.Instance);
                 Task.Run(() => Start(cts.Token));
             }
             else
@@ -245,8 +245,8 @@ namespace Garnet.server
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
                 done.Reset();
-                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
-                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(new ByteArrayComparer());
+                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
+                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(ByteArrayComparer.Instance);
                 Task.Run(() => Start(cts.Token));
             }
             else

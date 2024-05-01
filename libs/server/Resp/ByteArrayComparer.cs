@@ -10,22 +10,19 @@ namespace Garnet.server
     /// <summary>
     /// Byte array equality comparer
     /// </summary>
-    public class ByteArrayComparer : IEqualityComparer<byte[]>
+    public sealed class ByteArrayComparer : IEqualityComparer<byte[]>
     {
         /// <summary>
-        /// Equals
+        /// The default instance.
         /// </summary>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <returns></returns>
+        /// <remarks>Used to avoid allocating new comparers.</remarks>
+        public static readonly ByteArrayComparer Instance = new();
+
+        /// <inheritdoc />
         public bool Equals(byte[] left, byte[] right)
             => new ReadOnlySpan<byte>(left).SequenceEqual(new ReadOnlySpan<byte>(right));
 
-        /// <summary>
-        /// Get hash code
-        /// </summary>
-        /// <param name="key"></param>
-        /// <returns></returns>
+        /// <inheritdoc />
         public unsafe int GetHashCode(byte[] key)
         {
             fixed (byte* k = key)
