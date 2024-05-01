@@ -349,14 +349,17 @@ namespace Garnet.server
         /// </summary>
         public static Dictionary<byte[], double> CopyDiff(Dictionary<byte[], double> dict1, Dictionary<byte[], double> dict2)
         {
-            Dictionary<byte[], double> result = new();
-            if (dict1 != null)
+            if (dict1 == null)
+                return [];
+
+            if (dict2 == null)
+                return new Dictionary<byte[], double>(dict1);
+
+            Dictionary<byte[], double> result = [];
+            foreach (var item in dict1)
             {
-                foreach (var item in dict1)
-                {
-                    if (dict2 == null || !dict2.ContainsKey(item.Key))
-                        result.Add(item.Key, item.Value);
-                }
+                if (!dict2.ContainsKey(item.Key))
+                    result.Add(item.Key, item.Value);
             }
             return result;
         }

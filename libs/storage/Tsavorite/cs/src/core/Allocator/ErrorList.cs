@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 namespace Tsavorite.core
 {
-    class ErrorList
+    internal sealed class ErrorList
     {
         private List<CommitInfo> errorList;
 

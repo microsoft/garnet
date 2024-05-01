@@ -40,7 +40,7 @@ namespace Garnet.server
         /// <returns></returns>
         internal unsafe bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> keys, long count = 10, Span<byte> typeObject = default)
         {
-            const long IsObjectStoreCursor = 1 << 49;
+            const long IsObjectStoreCursor = 1L << 49;
             Keys ??= new();
             Keys.Clear();
 
@@ -101,7 +101,8 @@ namespace Garnet.server
                 var validateCursor = storeCursor != 0 && storeCursor != lastScanCursor;
                 storeCursor &= ~IsObjectStoreCursor;
                 objectStoreSession.ScanCursor(ref storeCursor, remainingCount, objStoreDbScanFuncs, validateCursor: validateCursor);
-                if (storeCursor != 0) storeCursor = storeCursor | IsObjectStoreCursor;
+                if (storeCursor != 0)
+                    storeCursor |= IsObjectStoreCursor;
                 Keys.AddRange(objStoreKeys);
             }
 
