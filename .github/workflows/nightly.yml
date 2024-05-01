@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-latest ]
+        os: [ CBL-Mariner ]
         framework: [ 'net6.0', 'net8.0' ]
         configuration: [ 'Debug', 'Release' ]
         test: [ 'Garnet.test', 'Garnet.test.cluster' ]
