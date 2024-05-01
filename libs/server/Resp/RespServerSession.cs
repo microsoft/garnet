@@ -11,7 +11,6 @@ using Garnet.common;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
-using Garnet.server.Objects.List;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -64,7 +63,7 @@ namespace Garnet.server
         public readonly StorageSession storageSession;
         internal BasicGarnetApi basicGarnetApi;
         internal LockableGarnetApi lockableGarnetApi;
-        internal ListItemBroker itemBroker;
+        internal CollectionItemBroker itemBroker;
 
         readonly IGarnetAuthenticator _authenticator;
 
@@ -109,7 +108,7 @@ namespace Garnet.server
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
-            ListItemBroker itemBroker)
+            CollectionItemBroker itemBroker)
             : base(networkSender)
         {
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
@@ -165,6 +164,7 @@ namespace Garnet.server
                 storeWrapper.monitor.AddMetricsHistory(sessionMetrics, latencyMetrics);
 
             subscribeBroker?.RemoveSubscription(this);
+            itemBroker?.RemoveSubscription(this);
 
             storageSession.Dispose();
         }

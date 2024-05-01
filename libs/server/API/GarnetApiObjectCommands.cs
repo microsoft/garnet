@@ -198,10 +198,6 @@ namespace Garnet.server
         public GarnetStatus ListRightPop(ArgSlice key, int count, out ArgSlice[] poppedElements)
             => storageSession.ListPop(key, count, ListOperation.RPOP, ref objectContext, out poppedElements);
 
-        /// <inheritdoc />
-        public GarnetStatus ListBlockingRightPop(ArgSlice[] keys, double timeout, out byte[] element)
-            => storageSession.ListBlockingRightPop(keys, timeout, ListOperation.BRPOP, out element);
-
         #endregion
 
         /// <inheritdoc />

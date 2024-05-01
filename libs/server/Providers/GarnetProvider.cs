@@ -3,7 +3,6 @@
 
 using Garnet.common;
 using Garnet.networking;
-using Garnet.server.Objects.List;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -21,7 +20,7 @@ namespace Garnet.server
         /// </summary>
         internal StoreWrapper StoreWrapper => storeWrapper;
 
-        internal ListItemBroker itemBroker;
+        internal CollectionItemBroker itemBroker;
 
         /// <summary>
         /// Create SpanByte TsavoriteKV backend for Garnet
@@ -33,7 +32,7 @@ namespace Garnet.server
         public GarnetProvider(StoreWrapper storeWrapper,
             SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null,
-            ListItemBroker itemBroker = null,
+            CollectionItemBroker itemBroker = null,
             MaxSizeSettings maxSizeSettings = default)
             : base(storeWrapper.store, new(), kvBroker, broker, false, maxSizeSettings)
         {

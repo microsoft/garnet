@@ -2,11 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics.Metrics;
 using System.Linq;
-using System.Xml.Linq;
 using Garnet.common;
-using Garnet.server.Objects.List;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -220,50 +217,7 @@ namespace Garnet.server
             RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
                 recvBufferPtr + bytesRead);
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-            // Save old values on buffer for possible revert
-            var save = *inputPtr;
-
-            // Prepare GarnetObjectStore output
-            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.List;
-            inputPtr->header.ListOp = lop;
-            inputPtr->done = 0;
-            inputPtr->count = 0;
-
-            var statusOp = GarnetStatus.OK;
-            statusOp = storageApi.ListBlockingRightPop(keys, timeout, out var element);
-
-            // Reset input buffer
-            *inputPtr = save;
-
-            switch (statusOp)
-            {
-                case GarnetStatus.OK:
-                    //process output
-                    if (element != null)
-                    {
-                        while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.WriteNull(ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-            }
+            itemBroker.Subscribe(keys.Select(k => k.Span.ToArray()).ToArray(), (byte)lop, this, timeout);
 
             // Move input head
             readHead = (int)(ptr - recvBufferPtr);

@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Tsavorite.core;
@@ -37,7 +36,7 @@ namespace Garnet.server.Objects.List
         public async Task<byte[]> GetNextItemAsync()
         {
             cancellationTokenSource = new CancellationTokenSource();
-            
+
             using (unsubscriber = broker.Subscribe(this))
             {
                 if (!cancellationTokenSource.IsCancellationRequested)
@@ -48,7 +47,7 @@ namespace Garnet.server.Objects.List
                     }
                     catch (OperationCanceledException) { }
                 }
-                    
+
             }
             return nextItem;
         }
@@ -84,7 +83,7 @@ namespace Garnet.server.Objects.List
 
         public IDisposable Subscribe(IObserver<byte[]> observer)
         {
-            if (observer is not ListObserver listObserver) 
+            if (observer is not ListObserver listObserver)
                 throw new ArgumentException(nameof(observer));
 
             activeObservers.TryAdd(listObserver, 0);
@@ -110,7 +109,7 @@ namespace Garnet.server.Objects.List
             {
                 if (!TryDequeueObserver(key, out var observer)) break;
                 if (!activeObservers.TryGetValue(observer, out _)) continue;
-                
+
                 observer.OnNext(nextItem);
                 activeObservers.TryRemove(observer, out _);
                 return true;

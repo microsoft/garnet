@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using Garnet.server.Objects.List;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -42,7 +41,7 @@ namespace Garnet.server
 
         public TransactionManager txnManager;
         readonly ILogger logger;
-        private readonly ListItemBroker itemBroker;
+        private readonly CollectionItemBroker itemBroker;
 
         public int SessionID => session.ID;
         public int ObjectStoreSessionID => objectStoreSession.ID;
@@ -52,8 +51,8 @@ namespace Garnet.server
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
-            GarnetLatencyMetricsSession LatencyMetrics, 
-            ListItemBroker itemBroker, 
+            GarnetLatencyMetricsSession LatencyMetrics,
+            CollectionItemBroker itemBroker,
             ILogger logger = null)
         {
             this.sessionMetrics = sessionMetrics;

@@ -9,7 +9,6 @@ using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
-using Garnet.server.Objects.List;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -30,7 +29,7 @@ namespace Garnet
         private TsavoriteLog appendOnlyFile;
         private SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
         private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
-        private ListItemBroker itemBroker;
+        private CollectionItemBroker itemBroker;
         private LogSettings logSettings, objLogSettings;
         private INamedDeviceFactory logFactory;
         private MemoryLogger initLogger;
@@ -238,7 +237,7 @@ namespace Garnet
                 if (objTotalMemorySize > 0)
                     objectStoreSizeTracker = new CacheSizeTracker(objectStore, objLogSettings, objTotalMemorySize, this.loggerFactory);
 
-                itemBroker = new ListItemBroker();
+                itemBroker = new CollectionItemBroker();
             }
 
             if (!opts.DisablePubSub)

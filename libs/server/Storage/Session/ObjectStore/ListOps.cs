@@ -3,7 +3,6 @@
 
 using System;
 using System.Linq;
-using Garnet.server.Objects.List;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -50,7 +49,7 @@ namespace Garnet.server
             RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.countDone;
-            itemBroker.TryAssignNextItem(key.Span.ToArray(), this);
+            itemBroker.Publish(key.Span.ToArray());
             return GarnetStatus.OK;
         }
 
@@ -84,7 +83,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ToArray(), element, out var output, ref objectStoreContext);
             itemsDoneCount = output.countDone;
 
-            itemBroker.TryAssignNextItem(key.Span.ToArray(), this);
+            itemBroker.Publish(key.Span.ToArray());
             return status;
         }
 
@@ -142,13 +141,6 @@ namespace Garnet.server
             if (status == GarnetStatus.OK)
                 elements = ProcessRespArrayOutput(outputFooter, out var error);
 
-            return GarnetStatus.OK;
-        }
-
-        public GarnetStatus ListBlockingRightPop(ArgSlice[] keys, double timeout, ListOperation lop, out byte[] element)
-        {
-            using var observer = new ListObserver(keys.Select(k => k.Span.ToArray()).ToArray(), lop, timeout, itemBroker, this);
-            element = observer.GetNextItemAsync().Result;
             return GarnetStatus.OK;
         }
 
@@ -287,7 +279,7 @@ namespace Garnet.server
                     txnManager.Commit(true);
             }
 
-            itemBroker.TryAssignNextItem(destinationKey.Span.ToArray(), this);
+            itemBroker.Publish(destinationKey.Span.ToArray());
             return true;
 
         }
@@ -330,9 +322,9 @@ namespace Garnet.server
         public GarnetStatus ListPush<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
-            
+
             var status = RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
-            itemBroker.TryAssignNextItem(key, this);
+            itemBroker.Publish(key);
             return status;
         }
 
@@ -374,7 +366,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             var status = RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
-            itemBroker.TryAssignNextItem(key, this);
+            itemBroker.Publish(key);
             return status;
         }
 
