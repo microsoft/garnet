@@ -70,7 +70,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    bool status = task.ContinueWith(resp =>
+                    _ = task.ContinueWith(resp =>
                     {
                         // Check if setslotsrange executed correctly
                         if (!resp.Result.Equals("OK", StringComparison.Ordinal))
@@ -85,6 +85,7 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "An error has occurred");
+                    Status = MigrateState.FAIL;
                     return false;
                 }
             }
