@@ -31,6 +31,7 @@ namespace Garnet.common
 
         /// <summary>
         /// Tries to read an unsigned 64-bit integer from a given ASCII-encoded input stream.
+        /// The input may include leading zeros.
         /// </summary>
         /// <param name="ptr">Pointer to the beginning of the ASCII encoded input string.</param>
         /// <param name="end">The end of the string to parse.</param>
@@ -256,7 +257,7 @@ namespace Garnet.common
 
             if (digitsRead == 0)
             {
-                RespParsingException.ThrowUnexpectedToken(*ptr);
+                RespParsingException.ThrowUnexpectedToken(*readHead);
             }
 
             // Validate length
@@ -269,7 +270,7 @@ namespace Garnet.common
 
             if (value > int.MaxValue)
             {
-                RespParsingException.ThrowIntegerOverflow(ptr - digitsRead, (int)digitsRead);
+                RespParsingException.ThrowIntegerOverflow(readHead - digitsRead, (int)digitsRead);
             }
 
             // Ensure terminator has been received
@@ -852,11 +853,10 @@ namespace Garnet.common
         /// <param name="len">Length of byte array.</param>
         /// <param name="ptr">Current read head of the input RESP stream.</param>
         /// <param name="end">Current end of the input RESP stream.</param>
-        /// <param name="minLength">Minimum acceptable length value (Needed to allow/disallow empty string input).</param>
         /// <returns>True if input was complete, otherwise false.</returns>
         /// <exception cref="RespParsingException">Thrown if array length was invalid.</exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadPtrWithLengthHeader(ref byte* result, ref int len, ref byte* ptr, byte* end, uint minLength = 1)
+        public static bool ReadPtrWithLengthHeader(ref byte* result, ref int len, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
             if (!ReadLengthHeader(out len, ref ptr, end))
@@ -864,14 +864,8 @@ namespace Garnet.common
                 return false;
             }
 
-            if (len < minLength)
+            if (len < 0)
             {
-                if (len == -1)
-                {
-                    // NULL value ('$-1\r\n')
-                    return true;
-                }
-
                 RespParsingException.ThrowInvalidLength(len);
             }
 

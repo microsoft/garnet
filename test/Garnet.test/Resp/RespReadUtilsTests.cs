@@ -241,15 +241,14 @@ namespace Garnet.test.Resp
                 }
             });
         }
-
+        
         /// <summary>
-        /// Tests that ReadPtrWithLengthHeader successfully matches the minimum length.
+        /// Tests that ReadPtrWithLengthHeader successfully parses simple strings.
         /// </summary>
         /// <param name="text">Input ASCII string.</param>
-        /// <param name="minLength">Minimum length to accept.</param>
-        [TestCase("test", 1U)]
-        [TestCase("", 0U)]
-        public static unsafe void ReadPtrWithLengthHeaderTest(string text, uint minLength)
+        [TestCase("test")]
+        [TestCase("")]
+        public static unsafe void ReadPtrWithLengthHeaderTest(string text)
         {
             var bytes = Encoding.ASCII.GetBytes($"${text.Length}\r\n{text}\r\n");
             fixed (byte* ptr = bytes)
@@ -258,35 +257,13 @@ namespace Garnet.test.Resp
                 var length = -1;
                 var start = ptr;
                 var end = ptr + bytes.Length;
-                var success = RespReadUtils.ReadPtrWithLengthHeader(ref result, ref length, ref start, end, minLength);
+                var success = RespReadUtils.ReadPtrWithLengthHeader(ref result, ref length, ref start, end);
 
                 Assert.IsTrue(success);
-                Assert.GreaterOrEqual(length, minLength);
                 Assert.IsTrue(result != null);
                 Assert.IsTrue(start == end);
+                Assert.IsTrue(length == text.Length);
             }
-        }
-
-        /// <summary>
-        /// Tests that ReadPtrWithLengthHeader throws exceptions for invalid inputs.
-        /// </summary>
-        /// <param name="text">Input ASCII string.</param>
-        /// <param name="minLength">Minimum length to accept.</param>
-        [TestCase("", 1U)]
-        public static unsafe void ReadPtrWithLengthHeaderExceptionsTest(string text, uint minLength)
-        {
-            var bytes = Encoding.ASCII.GetBytes($"${text.Length}\r\n{text}\r\n");
-
-            _ = Assert.Throws<RespParsingException>(() =>
-            {
-                fixed (byte* ptr = bytes)
-                {
-                    byte* result = null;
-                    var length = -1;
-                    var start = ptr;
-                    _ = RespReadUtils.ReadPtrWithLengthHeader(ref result, ref length, ref start, ptr + bytes.Length, minLength);
-                }
-            });
         }
 
         /// <summary>
