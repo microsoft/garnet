@@ -27,34 +27,37 @@ namespace Garnet.server
 
 
         /// <summary>
-        /// Encodes the tuple of (<paramref name="latitude"/>, <paramref name="longitude"/>) coords to a unique 52-bit integer
+        /// Encodes the tuple of (<paramref name="latitude"/>, <paramref name="longitude"/>) coordinates to a unique 52-bit integer
         /// </summary>
         public static long GeoToLongValue(double latitude, double longitude)
         {
             if (!(GeoLatitudeMin <= latitude && latitude <= GeoLatitudeMax) ||
                 !(GeoLongitudeMin <= longitude && longitude <= GeoLongitudeMax))
             {
-                return -1;
+                return -1L;
             }
 
-            double latitudeMin = GeoLatitudeMin, latitudeMax = GeoLatitudeMax;
-            double longitudeMin = GeoLongitudeMin, longitudeMax = GeoLongitudeMax;
+            // Credits to https://mmcloughlin.com/posts/geohash-assembly for the quantization approach!
 
-            long result = 0;
-            for (int i = 0; i < Precision; i++)
-            {
-                result <<= 1;
-                if (i % 2 == 0)
-                {
-                    Encode(longitude, ref longitudeMin, ref longitudeMax, ref result);
-                }
-                else
-                {
-                    Encode(latitude, ref latitudeMin, ref latitudeMax, ref result);
-                }
-            }
+            const double MulDivLatitude = 0.005555555555555556; // Represents division by 90.0
+            const double MulDivLongitude = 0.002777777777777778; // Represents division by 180.0
 
-            return result;
+            // Quantize
+            var latQuantized = (uint)(BitConverter.DoubleToUInt64Bits((latitude * MulDivLatitude) + 1.5) >> 20);
+            var lonQuantized = (uint)(BitConverter.DoubleToUInt64Bits((longitude * MulDivLongitude) + 1.5) >> 20);
+
+            // Morton encode the quantized values, i.e. before:
+            // latQuantBits = xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx
+            // lonQuantBits = yyyyyyyy yyyyyyyy yyyyyyyy yyyyyyyy
+
+            ulong result = MortonEncode(x: latQuantized, y: lonQuantized);
+
+            // After:
+            // resultBits   = xyxyxyxy xyxyxyxy xyxyxyxy xyxyxyxy
+            //                xyxyxyxy xyxyxyxy xyxyxyxy xyxyxyxy
+
+            // Shift to 52-bit precision.
+            return (long)(result >> 12);
         }
 
         /// <summary>
@@ -136,6 +139,32 @@ namespace Garnet.server
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Encodes the given x- and y-coordinates into a single 64-bit value using Morton encoding (also known as Z-order curve).
+        /// <para />
+        /// This is essentially a bit interleaving where <paramref name="x"/> and <paramref name="y"/> are "spread" on even and odd bits respectively.
+        /// </summary>
+        /// <param name="x">The x-coordinate to encode.</param>
+        /// <param name="y">The y-coordinate to encode.</param>
+        /// <returns>A ulong value representing the Morton encoding of the given coordinates.</returns>
+        private static ulong MortonEncode(uint x, uint y)
+        {
+            // Note: This method could be implemented using 2x Bmi2.ParallelBitDeposit,
+            // but the PDEP is emulated on AMD platforms Pre-Zen 3 so the perf. would fall from a cliff for those CPUs.
+            static ulong Spread(uint x)
+            {
+                ulong y = x;
+                y = (y | (y << 16)) & 0x0000FFFF0000FFFF;
+                y = (y | (y << 8)) & 0x00FF00FF00FF00FF;
+                y = (y | (y << 4)) & 0x0F0F0F0F0F0F0F0F;
+                y = (y | (y << 2)) & 0x3333333333333333;
+                y = (y | (y << 1)) & 0x5555555555555555;
+                return y;
+            }
+
+            return Spread(x) | (Spread(y) << 1);
         }
 
         private static void Encode(double value, ref double min, ref double max, ref long result)
