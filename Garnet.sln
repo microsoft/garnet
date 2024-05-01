@@ -34,14 +34,15 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.editorconfig = .editorconfig
 		.github\workflows\ci.yml = .github\workflows\ci.yml
 		Directory.Build.props = Directory.Build.props
+		Directory.Packages.props = Directory.Packages.props
 		docker-compose.yml = docker-compose.yml
 		.github\workflows\docker.yml = .github\workflows\docker.yml
 		Dockerfile = Dockerfile
 		Dockerfile.cbl-mariner = Dockerfile.cbl-mariner
-		Garnet.nuspec = Garnet.nuspec
 		Dockerfile.chiseled = Dockerfile.chiseled
 		Dockerfile.nanoserver = Dockerfile.nanoserver
 		Dockerfile.ubuntu = Dockerfile.ubuntu
+		Garnet.nuspec = Garnet.nuspec
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Bitmap", "playground\Bitmap\Bitmap.csproj", "{B9FA7D45-6DAE-4D56-AD7E-BB6C987A58C5}"

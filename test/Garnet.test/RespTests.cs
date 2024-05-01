@@ -183,19 +183,31 @@ namespace Garnet.test
             db.StringSet("mykey", origValue, TimeSpan.FromSeconds(1));
 
             string retValue = db.StringGet("mykey");
-            Assert.AreEqual(origValue, retValue, "Expected to Get() the value");
+            Assert.AreEqual(origValue, retValue, "Get() before expiration");
 
             var actualDbSize = db.Execute("DBSIZE");
-            Assert.AreEqual(1, (ulong)actualDbSize, "Expected DBSIZE");
+            Assert.AreEqual(1, (ulong)actualDbSize, "DBSIZE before expiration");
 
-            // Sleep to allow expiration
+            var actualKeys = db.Execute("KEYS", ["*"]);
+            Assert.AreEqual(1, ((RedisResult[])actualKeys).Length, "KEYS before expiration");
+
+            var actualScan = db.Execute("SCAN", "0");
+            Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN before expiration");
+
+            // Sleep to wait for expiration
             Thread.Sleep(2000);
 
             retValue = db.StringGet("mykey");
-            Assert.AreEqual(null, retValue, "Expected null value due to expiration");
+            Assert.AreEqual(null, retValue, "Get() after expiration");
 
             actualDbSize = db.Execute("DBSIZE");
-            Assert.AreEqual(0, (ulong)actualDbSize, "Expected DBSIZE of zero due to expiration");
+            Assert.AreEqual(0, (ulong)actualDbSize, "DBSIZE after expiration");
+
+            actualKeys = db.Execute("KEYS", ["*"]);
+            Assert.AreEqual(0, ((RedisResult[])actualKeys).Length, "KEYS after expiration");
+
+            actualScan = db.Execute("SCAN", "0");
+            Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after expiration");
         }
 
         [Test]
@@ -1310,15 +1322,34 @@ namespace Garnet.test
             db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
 
             var value = db.SortedSetScore(key, "element");
-            Assert.AreEqual(1.0, value);
+            Assert.AreEqual(1.0, value, "Get Score before expiration");
+
+            var actualDbSize = db.Execute("DBSIZE");
+            Assert.AreEqual(1, (ulong)actualDbSize, "DBSIZE before expiration");
+
+            var actualKeys = db.Execute("KEYS", ["*"]);
+            Assert.AreEqual(1, ((RedisResult[])actualKeys).Length, "KEYS before expiration");
+
+            var actualScan = db.Execute("SCAN", "0");
+            Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN before expiration");
 
             var exp = db.KeyExpire(key, command.Equals("EXPIRE") ? TimeSpan.FromSeconds(1) : TimeSpan.FromMilliseconds(1000));
             Assert.IsTrue(exp);
 
+            // Sleep to wait for expiration
             Thread.Sleep(1500);
 
             value = db.SortedSetScore(key, "element");
-            Assert.AreEqual(null, value);
+            Assert.AreEqual(null, value, "Get Score after expiration");
+
+            actualDbSize = db.Execute("DBSIZE");
+            Assert.AreEqual(0, (ulong)actualDbSize, "DBSIZE after expiration");
+
+            actualKeys = db.Execute("KEYS", ["*"]);
+            Assert.AreEqual(0, ((RedisResult[])actualKeys).Length, "KEYS after expiration");
+
+            actualScan = db.Execute("SCAN", "0");
+            Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after expiration");
         }
 
         [Test]

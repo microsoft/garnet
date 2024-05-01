@@ -13,7 +13,7 @@ namespace Tsavorite.core
     /// Supports sync get (TryGet) for fast path
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public class AsyncPool<T> : IDisposable where T : IDisposable
+    internal sealed class AsyncPool<T> : IDisposable where T : IDisposable
     {
         readonly int size;
         readonly Func<T> creator;

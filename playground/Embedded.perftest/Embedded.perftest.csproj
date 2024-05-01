@@ -2,22 +2,19 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-		<DocumentationFile>bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
-		<ServerGarbageCollection>true</ServerGarbageCollection>
+    <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
   </PropertyGroup>
 
- 
   <ItemGroup>
-    <PackageReference Include="CommandLineParser" Version="2.9.1" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Configuration" Version="7.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="7.0.0" />
+    <PackageReference Include="CommandLineParser" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <ProjectReference Include="..\..\libs\host\Garnet.host.csproj" />
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />

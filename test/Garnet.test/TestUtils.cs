@@ -575,7 +575,7 @@ namespace Garnet.test
         /// <summary>
         /// Find root test based on prefix Garnet.test
         /// </summary>
-        private static string RootTestsProjectPath =>
+        internal static string RootTestsProjectPath =>
             TestContext.CurrentContext.TestDirectory.Split("Garnet.test")[0];
 
         /// <summary>
