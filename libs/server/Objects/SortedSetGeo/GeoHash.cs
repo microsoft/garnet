@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 using Garnet.common;
 
@@ -19,12 +21,15 @@ namespace Garnet.server
         private const double GeoLatitudeMin = -90.0;
         private const double GeoLatitudeMax = 90.0;
 
-        private const int Precision = 52;
+        /// <summary>
+        /// The number of bits used for the precision of the geohash.
+        /// </summary>
+        public const int BitsOfPrecision = 51;
 
-        //The "Geohash alphabet" (32ghs) uses all digits 0-9 and almost all lower case letters except "a", "i", "l" and "o".
-        //This table is used for getting the "standard textual representation" of a pair of lat and long.
-        static readonly char[] base32chars = new char[] { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j', 'k', 'm', 'n', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z' };
-
+        /// <summary>
+        /// The length of the geohash "standard textual representation" given the <see cref="BitsOfPrecision">bit precision</see> is 52.
+        /// </summary>
+        public const int CodeLength = 11;
 
         /// <summary>
         /// Encodes the tuple of (<paramref name="latitude"/>, <paramref name="longitude"/>) coordinates to a unique 52-bit integer
@@ -37,12 +42,28 @@ namespace Garnet.server
                 return -1L;
             }
 
-            // Credits to https://mmcloughlin.com/posts/geohash-assembly for the quantization approach!
-
             const double MulDivLatitude = 0.005555555555555556; // Represents division by 90.0
             const double MulDivLongitude = 0.002777777777777778; // Represents division by 180.0
 
-            // Quantize
+            // Credits to https://mmcloughlin.com/posts/geohash-assembly for the quantization approach!
+
+            // The coordinates are quantized by first mapping them to the unit interval [0, 1] and
+            // then multiplying the 2^32. For example, to get 32-bit quantized integer representation of the latitude
+            // which is in range [-90, 90] we would do:
+            //
+            // latQuantized = floor(2.0^32 * (latitude + 90.0) / 180.0)
+            //
+            // However, some with clever math and by abusing the IEE-754 representation of double-precision floating-point numbers
+            // it is shown that the above calculation is equivalent to:
+            //
+            // floor(2^52 * x) where x = (latitude + 90.0) / 180.0.
+            //
+            // Quoting original article:
+            // "In other words, given x in the unit interval the bits of floor(2^52 * x) can be read directly from the binary representation of 1+x.
+            // This saves any explicit integer conversion."
+            //
+            // See McLoughlin great article above for details.
+
             var latQuantized = (uint)(BitConverter.DoubleToUInt64Bits((latitude * MulDivLatitude) + 1.5) >> 20);
             var lonQuantized = (uint)(BitConverter.DoubleToUInt64Bits((longitude * MulDivLongitude) + 1.5) >> 20);
 
@@ -50,14 +71,14 @@ namespace Garnet.server
             // latQuantBits = xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx
             // lonQuantBits = yyyyyyyy yyyyyyyy yyyyyyyy yyyyyyyy
 
-            ulong result = MortonEncode(x: latQuantized, y: lonQuantized);
+            var result = MortonEncode(x: latQuantized, y: lonQuantized);
 
             // After:
             // resultBits   = xyxyxyxy xyxyxyxy xyxyxyxy xyxyxyxy
             //                xyxyxyxy xyxyxyxy xyxyxyxy xyxyxyxy
 
             // Shift to 52-bit precision.
-            return (long)(result >> 12);
+            return (long)(result >> ((sizeof(ulong) * 8) - BitsOfPrecision));
         }
 
         /// <summary>
@@ -67,79 +88,25 @@ namespace Garnet.server
         /// Latitude refers to the Y-values and are between -90 and +90 degrees.
         /// Longitude refers to the X-coordinates and are between -180 and +180 degrees.
         /// </summary>
-        public static (double Latitude, double Longitude) GetCoordinatesFromLong(long longValue)
+        public static (double Latitude, double Longitude) GetCoordinatesFromLong(long hash)
         {
-            double latitudeMin = GeoLatitudeMin, latitudeMax = GeoLatitudeMax;
-            double longitudeMin = GeoLongitudeMin, longitudeMax = GeoLongitudeMax;
-
-            for (int i = Precision - 1; i >= 0; i--)
+            // Credits to https://github.com/georust/geohash for the hash de-quantization method!
+            static double Dequantize(uint quantizedValue, double rangeMax)
             {
-                bool bit = ((longValue >> i) & 1) == 1;
-
-                if (i % 2 == 0)
-                {
-                    Decode(ref latitudeMin, ref latitudeMax, bit);
-                }
-                else
-                {
-                    Decode(ref longitudeMin, ref longitudeMax, bit);
-                }
+                // x to range [1, 2] where 1, 2 represent -r, r respectively
+                var value = BitConverter.UInt64BitsToDouble(((ulong)quantizedValue << 20) | (1023UL << 52));
+                // converts the value between 1 and 2 to a value between -r and r
+                return ((rangeMax + rangeMax) * (value - 1.0)) - rangeMax;
             }
 
-            var latitude = (latitudeMin + latitudeMax) / 2;
-            var longitude = (longitudeMin + longitudeMax) / 2;
-            return (latitude, longitude);
+            var fullHash = (ulong)hash << ((sizeof(ulong) * 8) - BitsOfPrecision);
+            var (latQuantized, lonQuantized) = MortonDecode(fullHash);
+
+            return (
+                Latitude: Dequantize(latQuantized, GeoLatitudeMax),
+                Longitude: Dequantize(lonQuantized, GeoLongitudeMax));
         }
 
-        /// <summary>
-        /// Gets the base32 value
-        /// </summary>
-        /// <param name="longEncodedValue"></param>
-        /// <returns>The GeoHash representation of the 52bit</returns>
-        public static string GetGeoHashCode(long longEncodedValue)
-        {
-            var (latitude, longitude) = GetCoordinatesFromLong(longEncodedValue);
-
-            // check for invalid values
-            if (!(GeoLatitudeMin <= latitude && latitude <= GeoLatitudeMax) || !(GeoLongitudeMin <= longitude && longitude <= GeoLongitudeMax))
-                return null;
-
-            double latitudeMin = GeoLatitudeMin, latitudeMax = GeoLatitudeMax;
-            double longitudeMin = GeoLongitudeMin, longitudeMax = GeoLongitudeMax;
-
-            // Length for the GeoHash
-            const int CodeLength = 11;
-
-            int bits = 0;
-            long hashValue = 0;
-            bool isLongitudeBit = true;
-            string result = string.Empty;
-            while (result.Length < CodeLength)
-            {
-                hashValue <<= 1;
-                if (isLongitudeBit)
-                {
-                    Encode(longitude, ref longitudeMin, ref longitudeMax, ref hashValue);
-                }
-                else
-                {
-                    Encode(latitude, ref latitudeMin, ref latitudeMax, ref hashValue);
-                }
-                isLongitudeBit = !isLongitudeBit;
-
-                bits++;
-                if (bits != 5)
-                {
-                    continue;
-                }
-                var code = base32chars[hashValue];
-                result += code;
-                bits = 0;
-                hashValue = 0;
-            }
-
-            return result;
-        }
 
         /// <summary>
         /// Encodes the given x- and y-coordinates into a single 64-bit value using Morton encoding (also known as Z-order curve).
@@ -167,31 +134,53 @@ namespace Garnet.server
             return Spread(x) | (Spread(y) << 1);
         }
 
-        private static void Encode(double value, ref double min, ref double max, ref long result)
+        /// <summary>
+        /// Decodes the given 64-bit value into a pair of x- and y-coordinates using Morton decoding (also known as Z-order curve).
+        /// <para />
+        /// This is essentially a bit de-interleaving operation where the even and odd bits of <paramref name="x"/> are "squashed" into separate 32-bit values representing the x- and y-coordinates respectively.
+        /// </summary>
+        /// <param name="x">The 64-bit value to decode.</param>
+        /// <returns>A tuple of values representing the x- and y-coordinates decoded from the given Morton code.</returns>
+        private static (uint X, uint Y) MortonDecode(ulong x)
         {
-            var mid = (min + max) / 2;
-            if (value > mid)
+            static uint Squash(ulong x)
             {
-                min = mid;
-                result |= 1;
+                var y = x & 0x5555555555555555;
+                y = (y | (y >> 1)) & 0x3333333333333333;
+                y = (y | (y >> 2)) & 0x0F0F0F0F0F0F0F0F;
+                y = (y | (y >> 4)) & 0x00FF00FF00FF00FF;
+                y = (y | (y >> 8)) & 0x0000FFFF0000FFFF;
+                y = (y | (y >> 16)) & 0x00000000FFFFFFFF;
+                return (uint)y;
             }
-            else
-            {
-                max = mid;
-            }
+
+            return (Squash(x), Squash(x >> 1));
         }
 
-        private static void Decode(ref double min, ref double max, bool isOnBit)
+        /// <summary>
+        /// Encodes the given integer hash value using base-32 to the "standard textual representation".
+        /// </summary>
+        /// <param name="hash">The 52-bit geohash integer to encode.</param>
+        /// <returns>The standard textual representation of the given 52-bit GeoHash integer</returns>
+        public static string GetGeoHashCode(long hash)
         {
-            var mid = (min + max) / 2;
-            if (isOnBit)
+            return string.Create(CodeLength, state: hash, static (chars, hashState) =>
             {
-                min = mid;
-            }
-            else
-            {
-                max = mid;
-            }
+                // Reference to the start of the base-32 char table, which is stored as constant data.
+                ref var base32CharsBase = ref MemoryMarshal.GetReference("0123456789bcdefghjkmnpqrstuvwxyz"u8);
+
+                for (var i = 0; i < chars.Length; i++)
+                {
+                    // Shift and mask the five most significant bits.
+                    var tableIndex = (nuint)(hashState >> (BitsOfPrecision - 5)) & 0x1F;
+
+                    // By masking the five bits, the tableIndex is now guaranteed to be <= 31 so this is safe.
+                    chars[i] = (char)Unsafe.Add(ref base32CharsBase, tableIndex);
+
+                    // Shift the encoded bits out.
+                    hashState <<= 5;
+                }
+            });
         }
 
         /// <summary>
@@ -216,7 +205,6 @@ namespace Garnet.server
             return 2 * Math.Asin(Math.Sqrt(latHaversine + tmp * lonHaversine)) * EarthRadiusInMeters;
         }
 
-
         /// <summary>
         /// Find if a point is in the axis-aligned rectangle.
         /// when the distance between the searched point and the center point is less than or equal to 
@@ -234,6 +222,20 @@ namespace Garnet.server
 
             distance = Distance(latCenterPoint, lonCenterPoint, lat2, lon2);
             return true;
+        }
+
+        /// <summary>
+        /// Calculates the error in latitude and longitude based on <see cref="BitsOfPrecision">the number of bits used for precision</see> (52).
+        /// </summary>
+        public static (double LatError, double LonError) GetGeoErrorByPrecision()
+        {
+            const int LatBits = BitsOfPrecision / 2;
+            const int LongBits = BitsOfPrecision - LatBits;
+
+            var latError = 180.0 * Math.Pow(2, -LatBits);
+            var longError = 360.0 * Math.Pow(2, -LongBits);
+
+            return (latError, longError);
         }
 
         public static double ConvertValueToMeters(double value, ReadOnlySpan<byte> units)
