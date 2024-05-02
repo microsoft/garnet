@@ -217,7 +217,7 @@ namespace Garnet.test
 
             var responseHash = db.GeoHash(new RedisKey("SecondKey"), ["Palermo"]);
             Assert.AreEqual(1, responseHash.Length);
-            Assert.AreEqual("sqc8b49rnyt", responseHash[0]);
+            Assert.AreEqual("sqc8b49rnys", responseHash[0]);
 
             memresponse = db.Execute("MEMORY", "USAGE", "SecondKey");
             actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
@@ -328,16 +328,16 @@ namespace Garnet.test
             var response = lightClientRequest.Execute("GEOADD Sicily 13.361389 38.115556 Palermo 15.087269 37.502669 Catania", "PING", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
 
-            expectedResponse = "*3\r\n$11\r\nsqc8b49rnyt\r\n$11\r\nsqdtr74hyu1\r\n$-1\r\n+PONG\r\n";
+            expectedResponse = "*3\r\n$11\r\nsqc8b49rnys\r\n$11\r\nsqdtr74hyu1\r\n$-1\r\n+PONG\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo Catania Unknown", "PING", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
 
-            expectedResponse = "*3\r\n$11\r\nsqc8b49rnyt\r\n$11\r\nsqdtr74hyu1\r\n$-1\r\n";
+            expectedResponse = "*3\r\n$11\r\nsqc8b49rnys\r\n$11\r\nsqdtr74hyu1\r\n$-1\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo Catania Unknown", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
 
             // Execute command in chunks
-            expectedResponse = "*1\r\n$11\r\nsqc8b49rnyt\r\n";
+            expectedResponse = "*1\r\n$11\r\nsqc8b49rnys\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
         }
@@ -475,7 +475,7 @@ namespace Garnet.test
         [Test]
         [TestCase(27.988056, 86.925278, 3636631039000829, "tuvz4p141z8")]
         [TestCase(37.502669, 15.087269, 3476216502357864, "sqdtr74hyu0")]
-        [TestCase(38.115556, 13.361389, 3476004292229755, "sqc8b49rnyt")]
+        [TestCase(38.115556, 13.361389, 3476004292229755, "sqc8b49rnys")]
         [TestCase(38.918250, -77.427944, 1787100258949719, "dqbvqhfenps")]
         [TestCase(-89.0, -179.0, 111258114535, "000twy01mts")]
         // TODO: Investigate corner-cases
