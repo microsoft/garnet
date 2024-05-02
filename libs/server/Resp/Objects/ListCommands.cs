@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
 

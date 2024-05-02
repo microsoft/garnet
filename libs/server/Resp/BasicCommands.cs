@@ -724,6 +724,7 @@ namespace Garnet.server
         {
             Debug.Assert(cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || cmd == RespCommand.INCR || cmd == RespCommand.DECR);
 
+            // Parse key argument
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -733,6 +734,8 @@ namespace Garnet.server
             ArgSlice input = default;
             if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
             {
+                // Parse value argument
+                // NOTE: Parse empty strings for better error messages through storageApi.Increment
                 byte* valPtr = null;
                 int vsize = 0;
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))

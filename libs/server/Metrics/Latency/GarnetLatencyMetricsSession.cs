@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 

@@ -657,22 +657,23 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01", "7ab"];
 
-            foreach (var value in values)
+            for (var i = 0; i < values.Length; i++)
             {
+                var key = $"key{i}";
                 var exception = false;
                 if (initialize)
                 {
-                    var resp = db.StringSet(value, value);
+                    var resp = db.StringSet(key, values[i]);
                     Assert.AreEqual(true, resp);
                 }
                 try
                 {
                     _ = cmd switch
                     {
-                        RespCommand.INCR => db.StringIncrement(value),
-                        RespCommand.DECR => db.StringDecrement(value),
-                        RespCommand.INCRBY => (initialize ? db.StringIncrement(value, 10L) : (long)db.Execute("INCRBY", [value, value])),
-                        RespCommand.DECRBY => (initialize ? db.StringDecrement(value, 10L) : (long)db.Execute("DECRBY", [value, value])),
+                        RespCommand.INCR => db.StringIncrement(key),
+                        RespCommand.DECR => db.StringDecrement(key),
+                        RespCommand.INCRBY => initialize ? db.StringIncrement(key, 10L) : (long)db.Execute("INCRBY", [key, values[i]]),
+                        RespCommand.DECRBY => initialize ? db.StringDecrement(key, 10L) : (long)db.Execute("DECRBY", [key, values[i]]),
                         _ => throw new Exception($"Command {cmd} not supported!"),
                     };
                 }

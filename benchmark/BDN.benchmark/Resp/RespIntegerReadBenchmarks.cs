@@ -10,13 +10,13 @@ namespace BDN.benchmark.Resp
     public unsafe class RespIntegerReadBenchmarks
     {
         [Benchmark]
-        [ArgumentsSource(nameof(SignedInt32EncodedValues))]
-        public int ReadInt32(AsciiTestCase testCase)
+        [ArgumentsSource(nameof(LengthHeaderValues))]
+        public int ReadLengthHeader(AsciiTestCase testCase)
         {
             fixed (byte* inputPtr = testCase.Bytes)
             {
                 var start = inputPtr;
-                RespReadUtils.ReadInt(out var value, ref start, start + testCase.Bytes.Length);
+                RespReadUtils.ReadLengthHeader(out var value, ref start, start + testCase.Bytes.Length, allowNull: true);
                 return value;
             }
         }
@@ -72,6 +72,9 @@ namespace BDN.benchmark.Resp
         public static IEnumerable<object> SignedInt32EncodedValues
             => ToRespIntegerTestCases(RespIntegerWriteBenchmarks.SignedInt32Values);
 
+        public static IEnumerable<object> LengthHeaderValues
+           => ToRespLengthHeaderTestCases(RespIntegerWriteBenchmarks.SignedInt32Values);
+
         public static IEnumerable<object> SignedInt64EncodedValues
             => ToRespIntegerTestCases(RespIntegerWriteBenchmarks.SignedInt64Values);
 
@@ -89,6 +92,9 @@ namespace BDN.benchmark.Resp
 
         public static IEnumerable<AsciiTestCase> ToRespIntegerTestCases<T>(T[] integerValues) where T : struct
             => integerValues.Select(testCase => new AsciiTestCase($":{testCase}\r\n"));
+
+        public static IEnumerable<AsciiTestCase> ToRespLengthHeaderTestCases<T>(T[] integerValues) where T : struct
+            => integerValues.Select(testCase => new AsciiTestCase($"${testCase}\r\n"));
 
         public static IEnumerable<AsciiTestCase> ToRespIntegerWithLengthHeader<T>(T[] integerValues) where T : struct
             => integerValues.Select(testCase => new AsciiTestCase($"${testCase.ToString()?.Length ?? 0}\r\n{testCase}\r\n"));

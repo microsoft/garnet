@@ -4,7 +4,9 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server;
 using Garnet.server.ACL;
@@ -225,38 +227,35 @@ namespace Garnet.cluster
 
         ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
         {
-            if (bytesRead - readHead < 6)
+            success = false;
+
+            var ptr = recvBufferPtr + readHead;
+            var end = recvBufferPtr + bytesRead;
+
+            // Try to read the command length
+            if (!RespReadUtils.ReadLengthHeader(out int length, ref ptr, end))
             {
-                success = false;
                 return default;
             }
 
-            Debug.Assert(*(recvBufferPtr + readHead) == '$');
-            int psize = *(recvBufferPtr + readHead + 1) - '0';
-            readHead += 2;
-            while (*(recvBufferPtr + readHead) != '\r')
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // Try to read the command value
+            ptr += length;
+            if (ptr + 2 > end)
             {
-                psize = psize * 10 + *(recvBufferPtr + readHead) - '0';
-                if (bytesRead - readHead < 1)
-                {
-                    success = false;
-                    return default;
-                }
-                readHead++;
-            }
-            if (bytesRead - readHead < 2 + psize + 2)
-            {
-                success = false;
                 return default;
             }
-            Debug.Assert(*(recvBufferPtr + readHead + 1) == '\n');
 
-            var result = bufSpan.Slice(readHead + 2, psize);
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize) == '\r');
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize + 1) == '\n');
+            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
+            {
+                RespParsingException.ThrowUnexpectedToken(*ptr);
+            }
 
-            readHead += 2 + psize + 2;
             success = true;
+            var result = bufSpan.Slice(readHead, length);
+            readHead += length + 2;
+
             return result;
         }
     }
