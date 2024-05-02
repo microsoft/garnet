@@ -32,7 +32,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public void BasicListBlockingPopTest()
+        [TestCase("BRPOP")]
+        [TestCase("BLPOP")]
+        public void BasicListBlockingPopTest(string blockingCmd)
         {
             var key = "mykey";
             var value = "myval";
@@ -46,7 +48,7 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
-            response = lightClientRequest.SendCommand($"BRPOP {key} 10");
+            response = lightClientRequest.SendCommand($"{blockingCmd} {key} 10");
             expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -54,7 +56,7 @@ namespace Garnet.test
             var blockingTask = taskFactory.StartNew(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
-                var response = lcr.SendCommand($"BRPOP {key2} 30");
+                var response = lcr.SendCommand($"{blockingCmd} {key2} 30");
                 var expectedResponse = $"*2\r\n${key2.Length}\r\n{key2}\r\n${value2.Length}\r\n{value2}\r\n";
                 var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
                 Assert.AreEqual(expectedResponse, actualValue);
@@ -81,7 +83,7 @@ namespace Garnet.test
                 tasks[i] = taskFactory.StartNew(() =>
                 {
                     using var lcr = TestUtils.CreateRequest();
-                    var response = lcr.SendCommand($"BRPOP {key3} 10");
+                    var response = lcr.SendCommand($"{blockingCmd} {key3} 10");
                     var match = valRgx.Match(Encoding.ASCII.GetString(response));
                     Assert.IsTrue(match.Success && match.Groups.Count > 1);
                     Assert.IsTrue(int.TryParse(match.Groups[1].Value, out var val));

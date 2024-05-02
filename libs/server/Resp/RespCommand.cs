@@ -502,6 +502,10 @@ namespace Garnet.server
                                         {
                                             return (RespCommand.List, (byte)ListOperation.BRPOP);
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBLPOP\r\n"u8))
+                                        {
+                                            return (RespCommand.List, (byte)ListOperation.BLPOP);
+                                        }
                                         break;
 
                                     case 'H':

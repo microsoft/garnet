@@ -189,6 +189,7 @@ namespace Garnet.server
             {(byte)ListOperation.LINSERT,   new RespCommandsInfo("LINSERT", RespCommand.List,    4, null, (byte)ListOperation.LINSERT)},
             {(byte)ListOperation.LREM,      new RespCommandsInfo("LREM",    RespCommand.List,    3, null, (byte)ListOperation.LREM) },
             {(byte)ListOperation.BRPOP,      new RespCommandsInfo("BRPOP",    RespCommand.List,    -2, null, (byte)ListOperation.BRPOP) },
+            {(byte)ListOperation.BLPOP,      new RespCommandsInfo("BLPOP",    RespCommand.List,    -2, null, (byte)ListOperation.BLPOP) },
         };
 
         private static readonly Dictionary<byte, RespCommandsInfo> hashCommandsInfoMap = new Dictionary<byte, RespCommandsInfo>
