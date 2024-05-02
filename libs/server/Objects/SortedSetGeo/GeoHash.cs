@@ -24,7 +24,7 @@ namespace Garnet.server
         /// <summary>
         /// The number of bits used for the precision of the geohash.
         /// </summary>
-        public const int BitsOfPrecision = 51;
+        public const int BitsOfPrecision = 52;
 
         /// <summary>
         /// The length of the geohash "standard textual representation" given the <see cref="BitsOfPrecision">bit precision</see> is 52.
