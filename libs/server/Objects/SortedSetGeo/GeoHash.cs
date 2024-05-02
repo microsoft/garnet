@@ -15,11 +15,11 @@ namespace Garnet.server
     public static class GeoHash
     {
         // Constraints from EPSG:900913 / EPSG:3785 / OSGEO:41001
-        private const double GeoLongitudeMin = -180.0;
-        private const double GeoLongitudeMax = 180.0;
+        private const double LongitudeMin = -180.0;
+        private const double LongitudeMax = 180.0;
 
-        private const double GeoLatitudeMin = -90.0;
-        private const double GeoLatitudeMax = 90.0;
+        private const double LatitudeMin = -90.0;
+        private const double LatitudeMax = 90.0;
 
         /// <summary>
         /// The number of bits used for the precision of the geohash.
@@ -36,14 +36,14 @@ namespace Garnet.server
         /// </summary>
         public static long GeoToLongValue(double latitude, double longitude)
         {
-            if (!(GeoLatitudeMin <= latitude && latitude <= GeoLatitudeMax) ||
-                !(GeoLongitudeMin <= longitude && longitude <= GeoLongitudeMax))
+            if (!(LatitudeMin <= latitude && latitude <= LatitudeMax) ||
+                !(LongitudeMin <= longitude && longitude <= LongitudeMax))
             {
                 return -1L;
             }
 
-            const double MulDivLatitude = 0.005555555555555556; // Represents division by 90.0
-            const double MulDivLongitude = 0.002777777777777778; // Represents division by 180.0
+            const double LatToUnitRangeReciprocal = 1 / 180.0;
+            const double LonToUnitRangeReciprocal = 1 / 360.0;
 
             // Credits to https://mmcloughlin.com/posts/geohash-assembly for the quantization approach!
 
@@ -53,27 +53,36 @@ namespace Garnet.server
             //
             // latQuantized = floor(2.0^32 * (latitude + 90.0) / 180.0)
             //
-            // However, some with clever math and by abusing the IEE-754 representation of double-precision floating-point numbers
+            // However, some with clever math (See McLoughlin's great article above for the details!)
+            // and by abusing the IEEE-754 representation of double-precision floating-point numbers
             // it is shown that the above calculation is equivalent to:
             //
             // floor(2^52 * x) where x = (latitude + 90.0) / 180.0.
             //
-            // Quoting original article:
-            // "In other words, given x in the unit interval the bits of floor(2^52 * x) can be read directly from the binary representation of 1+x.
-            // This saves any explicit integer conversion."
+            // and further that the value of this can be read from binary representation of x+1.
+
+            // In otherwords to quantize, we need to first map value to unit range [0, 1].
+            // We achieve this by multiplying: [-value, value] * rangeReciprocal = [-0.5, 0.5]
+            // Then by adding 1.5, we shift the value range to [1, 2],
+            // for which the IEEE-754 double-precision representation is as follows:
             //
-            // See McLoughlin great article above for details.
+            // (-1)^sign * 2^(exp-1023) * (1.0 + significand/2^52)
+            // where s=0, exp=0, significand=floor(2^52 * x)
+            // 
+            // Now we can read value of floor(2^52 * x) directly from binary representation of 1.0 + x,
+            // where the now "quantized" value is stored as the 32 most significant bits of the signicand!
+            static uint Quantize(double value, double rangeReciprocal) => (uint)(BitConverter.DoubleToUInt64Bits((value * rangeReciprocal) + 1.5) >> 20);
 
-            var latQuantized = (uint)(BitConverter.DoubleToUInt64Bits((latitude * MulDivLatitude) + 1.5) >> 20);
-            var lonQuantized = (uint)(BitConverter.DoubleToUInt64Bits((longitude * MulDivLongitude) + 1.5) >> 20);
+            var latQuantized = Quantize(latitude, LatToUnitRangeReciprocal);
+            var lonQuantized = Quantize(longitude, LonToUnitRangeReciprocal);
 
-            // Morton encode the quantized values, i.e. before:
+            // Morton encode the quantized values, i.e.
             // latQuantBits = xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx
             // lonQuantBits = yyyyyyyy yyyyyyyy yyyyyyyy yyyyyyyy
 
             var result = MortonEncode(x: latQuantized, y: lonQuantized);
 
-            // After:
+            // Now:
             // resultBits   = xyxyxyxy xyxyxyxy xyxyxyxy xyxyxyxy
             //                xyxyxyxy xyxyxyxy xyxyxyxy xyxyxyxy
 
@@ -103,8 +112,8 @@ namespace Garnet.server
             var (latQuantized, lonQuantized) = MortonDecode(fullHash);
 
             return (
-                Latitude: Dequantize(latQuantized, GeoLatitudeMax),
-                Longitude: Dequantize(lonQuantized, GeoLongitudeMax));
+                Latitude: Dequantize(latQuantized, LatitudeMax),
+                Longitude: Dequantize(lonQuantized, LongitudeMax));
         }
 
 
