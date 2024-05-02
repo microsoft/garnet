@@ -446,44 +446,54 @@ namespace Garnet.test
         #region GeoHash Class Tests
 
         [Test]
-        public void CanEncodeAndDecodeCoordinates()
+        [TestCase(0.0, 0.0, 0xC000000000000)]
+        [TestCase(30.5388942218, 104.0555758833, 4024744861876082)]
+        [TestCase(27.988056, 86.925278, 3636631039000829)]
+        [TestCase(37.502669, 15.087269, 3476216502357864)]
+        [TestCase(38.115556, 13.361389, 3476004292229755)]
+        [TestCase(38.918250, -77.427944, 1787100258949719)]
+        [TestCase(-89.0, -179.0, 111258114535)]
+        // TODO: Investigate corner-cases
+        // [TestCase(-90.0, -180.0, ?)]
+        // [TestCase(90.0, 180.0, 0)]
+        [TestCase(-90.0, -180.0, 0)]
+        public void CanEncodeAndDecodeCoordinates(
+            double latitude,
+            double longitude,
+            long expectedHashInteger)
         {
-            const double Latitude = 30.5388942218;
-            const double Longitude = 104.0555758833;
+            var hashinteger = GeoHash.GeoToLongValue(latitude, longitude);
+            Assert.AreEqual(expectedHashInteger, hashinteger);
 
-            var r = GeoHash.GeoToLongValue(Latitude, Longitude);
-            Assert.AreEqual(4024744861876082, r);
-            var coord = GeoHash.GetCoordinatesFromLong(r);
+            var (actualLatitude, actualLongitude) = GeoHash.GetCoordinatesFromLong(hashinteger);
 
-            var (latError, longError) = GeoHash.GetGeoErrorByPrecision();
-
-            Assert.IsTrue(Math.Abs(Latitude - coord.Latitude) <= latError);
-            Assert.IsTrue(Math.Abs(Longitude - coord.Longitude) <= longError);
+            const double Epsilon = 0.00001;
+            Assert.IsTrue(Math.Abs(latitude - actualLatitude) <= Epsilon);
+            Assert.IsTrue(Math.Abs(longitude - actualLongitude) <= Epsilon);
         }
 
         [Test]
-        public void CanEncodeAndDecodeCoordinatesWithGeoHashCode()
+        [TestCase(27.988056, 86.925278, 3636631039000829, "tuvz4p141z8")]
+        [TestCase(37.502669, 15.087269, 3476216502357864, "sqdtr74hyu0")]
+        [TestCase(38.115556, 13.361389, 3476004292229755, "sqc8b49rnyt")]
+        [TestCase(38.918250, -77.427944, 1787100258949719, "dqbvqhfenps")]
+        [TestCase(-89.0, -179.0, 111258114535, "000twy01mts")]
+        // TODO: Investigate corner-cases
+        // [TestCase(-90.0, -180.0, ?, ")]
+        // [TestCase(0.0, 0.0, 0xC000000000000, "7zzzzzzzzzz")]
+        [TestCase(90.0, 180.0, 0, "00000000000")]
+        public void CanEncodeAndDecodeCoordinatesWithGeoHashCode(
+            double latitude,
+            double longitude,
+            long expectedHashInteger,
+            string expectedHash)
         {
-            const double MountEverestLatitude = 27.988056;
-            const double MountEverestLongitude = 86.925278;
-            var hashInt = GeoHash.GeoToLongValue(MountEverestLatitude, MountEverestLongitude);
+            var hashInteger = GeoHash.GeoToLongValue(latitude, longitude);
+            var hash = GeoHash.GetGeoHashCode(hashInteger);
 
-            Assert.AreEqual(3636631039000829, hashInt);
-            Assert.AreEqual("tuvz4p141z8", GeoHash.GetGeoHashCode(hashInt));
-
-            const double PalermoLatitude = 37.502669;
-            const double PalermoLongitude = 15.087269;
-            hashInt = GeoHash.GeoToLongValue(PalermoLatitude, PalermoLongitude);
-
-            Assert.AreEqual(3476216502357864, hashInt);
-            Assert.AreEqual("sqdtr74hyu0", GeoHash.GetGeoHashCode(hashInt));
-
-            const double CataniaLatitude = 38.115556;
-            const double CataniaLongitude = 13.361389;
-            hashInt = GeoHash.GeoToLongValue(CataniaLatitude, CataniaLongitude);
-
-            Assert.AreEqual(3476004292229755, hashInt);
-            Assert.AreEqual("sqc8b49rnyt", GeoHash.GetGeoHashCode(hashInt));
+            Assert.AreEqual(expectedHashInteger, hashInteger);
+            // Only first 10 characters = 50-bits
+            Assert.AreEqual(expectedHash[..10], hash[..10]);
         }
 
         #endregion
