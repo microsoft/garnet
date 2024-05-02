@@ -29,8 +29,8 @@ namespace Garnet.cluster
                         return false;
                     }
 
-                    // Delete keys locally if option enabled
-                    if (_copyOption)
+                    // Delete keys locally if  _copyOption is set to false.
+                    if (!_copyOption)
                         DeleteKeys(_keysWithSize);
                     Status = MigrateState.SUCCESS;
                 }
