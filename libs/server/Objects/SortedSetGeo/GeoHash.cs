@@ -67,7 +67,7 @@ namespace Garnet.server
             // for which the IEEE-754 double-precision representation is as follows:
             //
             // (-1)^sign * 2^(exp-1023) * (1.0 + significand/2^52)
-            // where s=0, exp=0, significand=floor(2^52 * x)
+            // where s=0, exp=1023, significand=floor(2^52 * x)
             // 
             // Now we can read value of floor(2^52 * x) directly from binary representation of 1.0 + x,
             // where the now "quantized" value is stored as the 32 most significant bits of the signicand!
