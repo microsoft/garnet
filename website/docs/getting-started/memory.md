@@ -23,7 +23,7 @@ Memory used by the main store consists of the sum of three components:
 
 The index size is configured using the `IndexSize` (`-i` or `--index`) parameter. It specifies the total size in bytes
 that the index occupies in main memory. The index is organized as hash buckets, where each bucket is 64 bytes long, i.e.,
-the size of a cache line. The bucket holds 7 entries and a pointer to an overflow bucket, described [below](overflow-buckets).
+the size of a cache line. The bucket holds 7 entries and a pointer to an overflow bucket, described [below](#overflow-buckets).
 
 The rule of thumb for sizing the index is: if you expect the cache-store to hold K keys, set the size to `K * 16` bytes. The
 reasoning for this is:
@@ -95,8 +95,8 @@ store log memory used, including the hybrid log and the heap memory in bytes. Yo
 to control the total memory used by the object store.
 
 To summarize, the total space occupied by the object store is the sum of:
-* Index size and overflow buckets, as before
+* Object store index size (and overflow buckets), as before
 * `ObjectStoreTotalMemorySize`
 
-with `ObjectStoreLogMemorySize` used to control the maximum number of records in memory.
+with `ObjectStoreLogMemorySize` used to control the maximum _number_ of records in memory.
 
