@@ -102,18 +102,29 @@ namespace Garnet.server
             // Credits to https://github.com/georust/geohash for the hash de-quantization method!
             static double Dequantize(uint quantizedValue, double rangeMax)
             {
-                // x to range [1, 2] where 1, 2 represent -r, r respectively
+                // Construct the IEEE-754 double-precision representation of the value, which is in range [1, 2]
                 var value = BitConverter.UInt64BitsToDouble(((ulong)quantizedValue << 20) | (1023UL << 52));
-                // converts the value between 1 and 2 to a value between -r and r
+
+                // Now:
+                // (2*rangeMax) * ([1, 2]-1) = [0, 2*rangeMax]
+                // [0, 2*rangeMax] - rangeMax = [-rangeMax, rangeMax]
                 return ((rangeMax + rangeMax) * (value - 1.0)) - rangeMax;
             }
 
             var fullHash = (ulong)hash << ((sizeof(ulong) * 8) - BitsOfPrecision);
             var (latQuantized, lonQuantized) = MortonDecode(fullHash);
 
+            // The de-quantization gives us the lower-bounds of the bounding box.
+            var minLatitude = Dequantize(latQuantized, LatitudeMax);
+            var minLongitude = Dequantize(lonQuantized, LongitudeMax);
+
+            // We get the bounding box upper-bounds by calculating the maximum error per given precision.
+            var (latitudeError, longitudeError) = GetGeoErrorByPrecision();
+
+            // We consider the center of the bounding-box to be our "coordinate" for given hash
             return (
-                Latitude: Dequantize(latQuantized, LatitudeMax),
-                Longitude: Dequantize(lonQuantized, LongitudeMax));
+                Latitude: minLatitude + (latitudeError / 2.0),
+                Longitude: minLongitude + (longitudeError / 2.0));
         }
 
 
@@ -211,7 +222,7 @@ namespace Garnet.server
 
             var tmp = Math.Cos(DegreesToRadians(sourceLat)) * Math.Cos(DegreesToRadians(targetLat));
 
-            return 2 * Math.Asin(Math.Sqrt(latHaversine + tmp * lonHaversine)) * EarthRadiusInMeters;
+            return 2 * Math.Asin(Math.Sqrt(latHaversine + (tmp * lonHaversine))) * EarthRadiusInMeters;
         }
 
         /// <summary>
@@ -241,8 +252,11 @@ namespace Garnet.server
             const int LatBits = BitsOfPrecision / 2;
             const int LongBits = BitsOfPrecision - LatBits;
 
-            var latError = 180.0 * Math.Pow(2, -LatBits);
-            var longError = 360.0 * Math.Pow(2, -LongBits);
+            // Equivalent to Math.Pow(2, e) but avoids calling into C runtime implementation.
+            static double Pow2(long exponent) => BitConverter.Int64BitsToDouble((exponent + 1023L) << 52);
+
+            var latError = 180.0 * Pow2(-LatBits);
+            var longError = 360.0 * Pow2(-LongBits);
 
             return (latError, longError);
         }
