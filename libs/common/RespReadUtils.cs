@@ -216,10 +216,11 @@ namespace Garnet.common
         /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
         /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
         /// <param name="end">The current end of the RESP string.</param>
+        /// <param name="allowNull">Whether to allow special null length header ($-1\r\n).</param>
         /// <param name="isArray">Whether to parse an array length header ('*...\r\n') or a string length header ('$...\r\n').</param>
         /// <returns>True if a length header was successfully read.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadLengthHeader(out int length, ref byte* ptr, byte* end, bool isArray = false)
+        public static bool ReadLengthHeader(out int length, ref byte* ptr, byte* end, bool allowNull = false, bool isArray = false)
         {
             length = -1;
             if (ptr + 3 > end)
@@ -241,7 +242,8 @@ namespace Garnet.common
                 {
                     return false;
                 }
-                if (*(uint*)readHead == MemoryMarshal.Read<uint>("-1\r\n"u8))
+
+                if (allowNull && (*(uint*)readHead == MemoryMarshal.Read<uint>("-1\r\n"u8)))
                 {
                     ptr = readHead + 4;
                     return true;
@@ -334,7 +336,7 @@ namespace Garnet.common
         /// <returns>True if a length header was successfully read.</returns>
 
         public static bool ReadArrayLength(out int length, ref byte* ptr, byte* end)
-            => ReadLengthHeader(out length, ref ptr, end, true);
+            => ReadLengthHeader(out length, ref ptr, end, isArray: true);
 
 
         /// <summary>
@@ -521,9 +523,15 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Read string with length header
+        /// Tries to read a RESP-formatted string including its length header from the given ASCII-encoded
+        /// RESP message and, if successful, moves the given ptr to the end of the string value.
         /// </summary>
-        public static bool ReadStringWithLengthHeader(out string result, ref byte* ptr, byte* end)
+        /// <param name="result">If parsing was successful, contains the extracted string value.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <param name="allowNull">Whether to allow the RESP null value ($-1\r\n)</param>
+        /// <returns>True if a RESP string was successfully read.</returns>
+        public static bool ReadStringWithLengthHeader(out string result, ref byte* ptr, byte* end, bool allowNull = false)
         {
             result = null;
 
@@ -531,10 +539,10 @@ namespace Garnet.common
                 return false;
 
             // Parse RESP string header
-            if (!ReadLengthHeader(out var length, ref ptr, end))
+            if (!ReadLengthHeader(out var length, ref ptr, end, allowNull: allowNull))
                 return false;
 
-            if (length < 0)
+            if (allowNull && length < 0)
             {
                 // NULL value ('$-1\r\n')
                 return true;
@@ -726,7 +734,7 @@ namespace Garnet.common
             result = null;
 
             // Parse RESP array header
-            if (!ReadLengthHeader(out var length, ref ptr, end, true))
+            if (!ReadArrayLength(out var length, ref ptr, end))
             {
                 return false;
             }
@@ -763,7 +771,7 @@ namespace Garnet.common
         {
             result = null;
             // Parse RESP array header
-            if (!ReadLengthHeader(out var length, ref ptr, end, true))
+            if (!ReadArrayLength(out var length, ref ptr, end))
             {
                 return false;
             }
@@ -862,11 +870,6 @@ namespace Garnet.common
             if (!ReadLengthHeader(out len, ref ptr, end))
             {
                 return false;
-            }
-
-            if (len < 0)
-            {
-                RespParsingException.ThrowInvalidLength(len);
             }
 
             result = ptr;

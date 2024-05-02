@@ -28,7 +28,7 @@ namespace Garnet.test.Resp
             {
                 var start = ptr;
                 var end = ptr + bytes.Length;
-                var success = RespReadUtils.ReadLengthHeader(out var length, ref start, end);
+                var success = RespReadUtils.ReadLengthHeader(out var length, ref start, end, allowNull: true);
 
                 Assert.IsTrue(success);
                 Assert.AreEqual(expected, length);
@@ -41,6 +41,7 @@ namespace Garnet.test.Resp
         /// </summary>
         /// <param name="text">Invalid ASCII-encoded string length header (including '$').</param>
         [TestCase("$\r\n\r\n")]        // Empty input length
+        [TestCase("$-1\r\n")]          // NULL should be disallowed
         [TestCase("123\r\n")]          // Missing $
         [TestCase("$-2147483648\r\n")] // Valid Int32 value but negative (not allowed)
         [TestCase("$-2\r\n")]          // -1 should be legal, but -2 should not be
@@ -55,7 +56,7 @@ namespace Garnet.test.Resp
                 fixed (byte* ptr = bytes)
                 {
                     var start = ptr;
-                    _ = RespReadUtils.ReadLengthHeader(out var length, ref start, ptr + bytes.Length);
+                    _ = RespReadUtils.ReadLengthHeader(out var length, ref start, ptr + bytes.Length, allowNull: false);
                 }
             });
         }
@@ -66,7 +67,6 @@ namespace Garnet.test.Resp
         /// <param name="text">Header length encoded as an ASCII string.</param>
         /// <param name="expected">Expected parsed header length as int.</param>
         [TestCase("0", 0)]
-        [TestCase("-1", -1)]
         [TestCase("2147483647", 2147483647)]
         public static unsafe void ReadArrayLengthTest(string text, int expected)
         {
