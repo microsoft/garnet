@@ -18,12 +18,13 @@ namespace Garnet.server
         private readonly CancellationTokenSource cts = new();
         private readonly ManualResetEvent done = new(true);
         private readonly PriorityQueue<CollectionItemObserver, long> expiringObservers = new();
-        private readonly ConcurrentDictionary<byte[], ConcurrentQueue<CollectionItemObserver>> keysToObservers = new();
-        private readonly ConcurrentDictionary<RespServerSession, bool> activeObserverSessions;
+        private readonly ConcurrentDictionary<byte[], ConcurrentQueue<CollectionItemObserver>> keysToObservers = new(new ByteArrayComparer());
+        private readonly ConcurrentDictionary<RespServerSession, bool> activeObserverSessions = new();
 
         private bool disposed = false;
         private bool isStarted = false;
         private readonly object isStartedLock = new();
+        private readonly ReaderWriterLockSlim expiringObserversLock = new();
 
         internal void Subscribe(byte[][] keys, byte operation, RespServerSession session, double timeoutInSeconds)
         {
@@ -32,12 +33,22 @@ namespace Garnet.server
             activeObserverSessions.TryAdd(session, true);
 
             if (timeoutInSeconds > 0)
-                expiringObservers.Enqueue(observer, DateTime.Now.AddSeconds(timeoutInSeconds).Ticks);
+            {
+                expiringObserversLock.EnterWriteLock();
+                try
+                {
+                    expiringObservers.Enqueue(observer, DateTime.Now.AddSeconds(timeoutInSeconds).Ticks);
+                }
+                finally
+                {
+                    expiringObserversLock.ExitWriteLock();
+                }
+            }
 
             foreach (var key in keys)
             {
-                keysToObservers.GetOrAdd(key, new ConcurrentQueue<CollectionItemObserver>());
-                keysToObservers[key].Enqueue(observer);
+                var queue = keysToObservers.GetOrAdd(key, new ConcurrentQueue<CollectionItemObserver>());
+                queue.Enqueue(observer);
 
                 updatedKeysQueue.Enqueue(key);
             }
@@ -78,7 +89,8 @@ namespace Garnet.server
 
         private void HandleExpiredObserver(CollectionItemObserver observer)
         {
-            observer.Session.WriteBlockedOperationResult(null);
+            if (activeObserverSessions.ContainsKey(observer.Session))
+                observer.Session.WriteBlockedOperationResult(null, null);
         }
 
         private bool TryAssignItemFromKey(byte[] key)
@@ -89,10 +101,7 @@ namespace Garnet.server
             while (keysToObservers[key].TryPeek(out observer))
             {
                 if (!activeObserverSessions.ContainsKey(observer.Session))
-                {
-                    keysToObservers[key].TryDequeue(out observer);
                     continue;
-                }
 
                 break;
             }
@@ -100,7 +109,8 @@ namespace Garnet.server
             if (observer == default || !TryGetNextItem(key, observer.Session.storageSession, observer.Operation, out var nextItem))
                 return false;
 
-            observer.Session.WriteBlockedOperationResult(nextItem);
+            keysToObservers[key].TryDequeue(out observer);
+            observer.Session.WriteBlockedOperationResult(key, nextItem);
 
             return true;
         }
@@ -192,26 +202,46 @@ namespace Garnet.server
                 {
                     var currTicks = DateTime.Now.Ticks;
 
-                    if (expiringObservers.TryPeek(out var observer, out var nextExpiryInTicks))
+                    long nextExpiryInTicks;
+                    expiringObserversLock.EnterUpgradeableReadLock();
+                    try
                     {
-                        while (nextExpiryInTicks <= currTicks)
+                        if (expiringObservers.TryPeek(out var observer, out nextExpiryInTicks) && nextExpiryInTicks <= currTicks)
                         {
-                            expiringObservers.Dequeue();
-                            HandleExpiredObserver(observer);
-                            expiringObservers.TryPeek(out observer, out nextExpiryInTicks);
+                            expiringObserversLock.EnterWriteLock();
+                            try
+                            {
+                                while (nextExpiryInTicks <= currTicks)
+                                {
+                                    expiringObservers.Dequeue();
+                                    HandleExpiredObserver(observer);
+                                    if (!expiringObservers.TryPeek(out observer, out nextExpiryInTicks))
+                                        break;
+                                }
+                            }
+                            finally
+                            {
+                                expiringObserversLock.ExitWriteLock();
+                            }
                         }
                     }
-
-                    dequeueTask ??= updatedKeysQueue.DequeueAsync(cts.Token).ContinueWith(t =>
+                    finally
                     {
-                        dequeueTask = null;
-                        if (t.Status == TaskStatus.RanToCompletion)
-                            TryAssignItemFromKey(t.Result);
-                    }, cts.Token);
+                        expiringObserversLock.ExitUpgradeableReadLock();
+                    }
+
+                    if (dequeueTask == null || dequeueTask.IsCompleted)
+                    {
+                        dequeueTask = updatedKeysQueue.DequeueAsync(cts.Token).ContinueWith(t =>
+                        {
+                            if (t.Status == TaskStatus.RanToCompletion)
+                                TryAssignItemFromKey(t.Result);
+                        }, cts.Token);
+                    }
 
                     await (nextExpiryInTicks == default
                         ? dequeueTask
-                        : Task.WhenAny(dequeueTask, Task.Delay(TimeSpan.FromTicks(currTicks - nextExpiryInTicks))));
+                        : Task.WhenAny(dequeueTask, Task.Delay(TimeSpan.FromTicks(nextExpiryInTicks - currTicks))));
                 }
             }
             finally

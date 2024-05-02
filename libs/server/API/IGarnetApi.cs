@@ -675,16 +675,6 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus ListRightPop(ArgSlice key, int count, out ArgSlice[] elements);
 
-        /// <summary>
-        /// A blocking list pop primitive. It blocks the connection when there are no elements to pop from any of the given lists.
-        /// An element is popped from the tail of the first list that is non-empty,
-        /// with the given keys being checked in the order that they are given.
-        /// </summary>
-        /// <param name="keys">Keys of the lists from which to attempt to right pop</param>
-        /// <param name="timeout">The maximum number of seconds to block. A timeout of zero can be used to block indefinitely.</param>
-        /// <param name="element">The popped element</param>
-        /// <returns>The Garnet return status</returns>
-        GarnetStatus ListBlockingRightPop(ArgSlice[] keys, double timeout, out byte[] element);
         #endregion
 
         /// <summary>

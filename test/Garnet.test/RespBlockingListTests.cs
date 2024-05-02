@@ -2,17 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading;
 using System.Threading.Tasks;
-using Azure;
 using NUnit.Framework;
-using StackExchange.Redis;
 
 namespace Garnet.test
 {
@@ -52,7 +47,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommand($"BRPOP {key} 10");
-            expectedResponse = $"${value.Length}\r\n{value}\r\n";
+            expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -60,7 +55,7 @@ namespace Garnet.test
             {
                 using var lcr = TestUtils.CreateRequest();
                 var response = lcr.SendCommand($"BRPOP {key2} 30");
-                var expectedResponse = $"${value2.Length}\r\n{value2}\r\n";
+                var expectedResponse = $"*2\r\n${key2.Length}\r\n{key2}\r\n${value2.Length}\r\n{value2}\r\n";
                 var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
                 Assert.AreEqual(expectedResponse, actualValue);
             });
@@ -74,7 +69,7 @@ namespace Garnet.test
 
             Task.WaitAll(new[] { blockingTask, releasingTask });
 
-            var valRgx = new Regex(@"^\$\d+\r\n(\d+)\r\n");
+            var valRgx = new Regex(@$"^\*2\r\n\${key3.Length}\r\n{key3}\r\n\$\d+\r\n(\d+)\r\n");
             var batchSize = Environment.ProcessorCount / 2;
             var batchCount = 0;
             var blockingTaskCount = 100;

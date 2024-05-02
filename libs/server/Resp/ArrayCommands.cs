@@ -906,7 +906,7 @@ namespace Garnet.server
             }
         }
 
-        public void WriteBlockedOperationResult(byte[] result)
+        public void WriteBlockedOperationResult(byte[] key, byte[] result)
         {
             networkSender.GetResponseObject();
 
@@ -916,11 +916,17 @@ namespace Garnet.server
 
             if (result == null)
             {
-                while (RespWriteUtils.WriteNull(ref dcurr, dend))
+                while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
+                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(key), ref dcurr, dend))
+                    SendAndReset();
+
                 while (!RespWriteUtils.WriteBulkString(new Span<byte>(result), ref dcurr, dend))
                     SendAndReset();
             }
