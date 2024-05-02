@@ -337,7 +337,7 @@ namespace Garnet.server
             return (0, 0);
         }
 
-        static bool CheckExpiry(ref SpanByte src) => src.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;
+        internal static bool CheckExpiry(ref SpanByte src) => src.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;
 
         static bool InPlaceUpdateNumber(long val, ref SpanByte value, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -490,7 +490,7 @@ namespace Garnet.server
         /// <summary>
         /// Copy length of value to output (as ASCII bytes)
         /// </summary>
-        void CopyValueLengthToOutput(ref SpanByte value, ref SpanByteAndMemory output)
+        static void CopyValueLengthToOutput(ref SpanByte value, ref SpanByteAndMemory output)
         {
             int numDigits = NumUtils.NumDigits(value.LengthWithoutMetadata);
             var outputPtr = output.SpanByte.ToPointer();

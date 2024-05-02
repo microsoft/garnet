@@ -159,7 +159,7 @@ namespace Garnet.cluster
                         status = _gcs.Authenticate(_username, _passwd).ContinueWith(resp =>
                         {
                             // Check if authenticate succeeded
-                            if (!resp.Result.Equals("OK"))
+                            if (!resp.Result.Equals("OK", StringComparison.Ordinal))
                             {
                                 logger?.LogError("Migrate CheckConnection Authentication Error: {resp}", resp);
                                 Status = MigrateState.FAIL;
@@ -228,7 +228,7 @@ namespace Garnet.cluster
                 status = _gcs.SetSlotRange(stateBytes, nodeid, _slotRanges).ContinueWith(resp =>
                 {
                     // Check if setslotsrange executed correctly
-                    if (!resp.Result.Equals("OK"))
+                    if (!resp.Result.Equals("OK", StringComparison.Ordinal))
                     {
                         logger?.LogError("TrySetSlot error: {error}", resp);
                         Status = MigrateState.FAIL;
@@ -260,7 +260,7 @@ namespace Garnet.cluster
             if (!clusterProvider.clusterManager.TryPrepareSlotsForMigration(_sslots, _targetNodeId, out var resp))
             {
                 Status = MigrateState.FAIL;
-                logger?.LogError(Encoding.ASCII.GetString(resp));
+                logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(resp));
                 return false;
             }
             return true;
@@ -286,7 +286,10 @@ namespace Garnet.cluster
             // Set slot at target to stable state when migrate slots fails
             // This issues a SETSLOTRANGE STABLE for the slots of the failed migration task
             if (!TrySetSlotRanges(null, MigrateState.STABLE))
+            {
+                logger?.LogError("MigrateSession.RecoverFromFailure failed to make slots STABLE");
                 return false;
+            }
 
             // Set slots at source node to their original state when migrate fails
             // This will execute the equivalent of SETSLOTRANGE STABLE for the slots of the failed migration task

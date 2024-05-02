@@ -281,7 +281,7 @@ namespace Tsavorite.core
 
         internal Record<Key, Value>[] AllocatePage()
         {
-            Interlocked.Increment(ref AllocatedPageCount);
+            IncrementAllocatedPageCount();
 
             if (overflowPagePool.TryGet(out var item))
                 return item;
@@ -290,7 +290,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long SnapToLogicalAddressBoundary(ref long logicalAddress)
+        internal static long SnapToLogicalAddressBoundary(ref long logicalAddress)
         {
             return logicalAddress = ((logicalAddress - Constants.kFirstValidAddress) / RecordSize) * RecordSize + Constants.kFirstValidAddress;
         }

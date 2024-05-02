@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Garnet.networking;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
@@ -214,13 +215,32 @@ namespace Garnet.server
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.GetResponseObject();
-                ProcessMessages();
+
+                try
+                {
+                    ProcessMessages();
+                }
+                catch (RespParsingException ex)
+                {
+                    logger?.LogCritical($"Aborting open session due to RESP parsing error: {ex.Message}");
+                    logger?.LogDebug(ex, "RespParsingException in ProcessMessages:");
+
+                    // Forward parsing error as RESP error
+                    while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
+                        SendAndReset();
+
+                    // Send message and dispose the network sender to end the session
+                    Send(networkSender.GetResponseObjectHead());
+                    networkSender.Dispose();
+                }
                 recvBufferPtr = null;
             }
+
+
             catch (Exception ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
-                logger?.LogCritical(ex, "ProcessMessages threw exception");
+                logger?.LogCritical(ex, "ProcessMessages threw exception:");
                 // The session is no longer usable, dispose it
                 networkSender.Dispose();
             }
@@ -486,6 +506,7 @@ namespace Garnet.server
                 (RespCommand.List, (byte)ListOperation.LREM) => ListRemove(count, ptr, ref storageApi),
                 (RespCommand.List, (byte)ListOperation.RPOPLPUSH) => ListRightPopLeftPush(count, ptr, ref storageApi),
                 (RespCommand.List, (byte)ListOperation.LMOVE) => ListMove(count, ptr, ref storageApi),
+                (RespCommand.List, (byte)ListOperation.LSET) => ListSet(count, ptr, ref storageApi),
                 (RespCommand.List, (byte)ListOperation.BRPOP) => ListBlockingPop(count, ptr, ListOperation.BRPOP, ref storageApi),
                 (RespCommand.List, (byte)ListOperation.BLPOP) => ListBlockingPop(count, ptr, ListOperation.BLPOP, ref storageApi),
                 // Hash Commands
@@ -516,6 +537,7 @@ namespace Garnet.server
                 (RespCommand.Set, (byte)SetOperation.SSCAN) => ObjectScan(count, ptr, GarnetObjectType.Set, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SMOVE) => SetMove(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SUNION) => SetUnion(count, ptr, ref storageApi),
+                (RespCommand.Set, (byte)SetOperation.SUNIONSTORE) => SetUnionStore(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SDIFF) => SetDiff(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SDIFFSTORE) => SetDiffStore(count, ptr, ref storageApi),
                 _ => ProcessOtherCommands(cmd, subcmd, count, ref storageApi),
@@ -643,38 +665,35 @@ namespace Garnet.server
 
         ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
         {
-            if (bytesRead - readHead < 6)
+            var ptr = recvBufferPtr + readHead;
+            var end = recvBufferPtr + bytesRead;
+
+            // Try the command length
+            if (!RespReadUtils.ReadLengthHeader(out int length, ref ptr, end))
             {
                 success = false;
                 return default;
             }
 
-            Debug.Assert(*(recvBufferPtr + readHead) == '$');
-            int psize = *(recvBufferPtr + readHead + 1) - '0';
-            readHead += 2;
-            while (*(recvBufferPtr + readHead) != '\r')
-            {
-                psize = psize * 10 + *(recvBufferPtr + readHead) - '0';
-                if (bytesRead - readHead < 1)
-                {
-                    success = false;
-                    return default;
-                }
-                readHead++;
-            }
-            if (bytesRead - readHead < 2 + psize + 2)
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // Try to read the command value
+            ptr += length;
+            if (ptr + 2 > end)
             {
                 success = false;
                 return default;
             }
-            Debug.Assert(*(recvBufferPtr + readHead + 1) == '\n');
 
-            var result = bufSpan.Slice(readHead + 2, psize);
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize) == '\r');
-            Debug.Assert(*(recvBufferPtr + readHead + 2 + psize + 1) == '\n');
+            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
+            {
+                RespParsingException.ThrowUnexpectedToken(*ptr);
+            }
 
-            readHead += 2 + psize + 2;
+            var result = bufSpan.Slice(readHead, length);
+            readHead += length + 2;
             success = true;
+
             return result;
         }
 

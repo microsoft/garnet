@@ -712,8 +712,12 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref param2.ptr, ref param2.length, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                var sourceDirection = param1.ReadOnlySpan.SequenceEqual("RIGHT"u8) ? OperationDirection.Right : OperationDirection.Left;
-                var destinationDirection = param2.ReadOnlySpan.SequenceEqual("RIGHT"u8) ? OperationDirection.Right : OperationDirection.Left;
+                OperationDirection sourceDirection = GetOperationDirection(param1);
+                OperationDirection destinationDirection = GetOperationDirection(param2);
+                if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
+                {
+                    return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                }
 
                 result = ListMove(count, sourceKey, destinationKey, sourceDirection, destinationDirection, out var node, ref storageApi);
                 if (node != null)
@@ -807,6 +811,73 @@ namespace Garnet.server
             }
 
             return storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);
+        }
+
+        /// <summary>
+        /// Sets the list element at index to element
+        /// LSET key index element
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        public unsafe bool ListSet<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count != 3)
+            {
+                return AbortWithWrongNumberOfArguments("LSET", count);
+            }
+            else
+            {
+                // Get the key for List
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                if (NetworkSingleKeySlotVerify(key, true))
+                {
+                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                    if (!DrainCommands(bufSpan, count))
+                        return false;
+                    return true;
+                }
+
+                // Prepare input
+                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+                // Save old values for possible revert
+                var save = *inputPtr;
+
+                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                // Prepare header in input buffer
+                inputPtr->header.type = GarnetObjectType.List;
+                inputPtr->header.ListOp = ListOperation.LSET;
+                inputPtr->count = 0;
+                inputPtr->done = 0;
+
+                // Prepare GarnetObjectStore output
+                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+                var statusOp = storageApi.ListSet(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+                //restore input
+                *inputPtr = save;
+
+                switch (statusOp)
+                {
+                    case GarnetStatus.OK:
+                        //process output
+                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                        ptr += objOutputHeader.bytesDone;
+                        break;
+                }
+            }
+
+            // Move input head, write result to output
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
         }
     }
 }

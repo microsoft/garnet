@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,7 +33,7 @@ namespace Tsavorite.test
                 writeTransientErrorRate = 0,
                 writePermanentErrorRate = 0.1,
             };
-            device = new SimulatedFlakyDevice(Devices.CreateLogDevice(path + "tsavoritelog.log", deleteOnClose: true),
+            device = new SimulatedFlakyDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true),
                 errorOptions);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager };
@@ -81,7 +82,7 @@ namespace Tsavorite.test
                 writeTransientErrorRate = 0,
                 writePermanentErrorRate = 0.05,
             };
-            device = new SimulatedFlakyDevice(Devices.CreateLogDevice(path + "tsavoritelog.log", deleteOnClose: true),
+            device = new SimulatedFlakyDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true),
                 errorOptions);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager };
@@ -147,7 +148,7 @@ namespace Tsavorite.test
                 writeTransientErrorRate = 0,
                 writePermanentErrorRate = 0.1,
             };
-            device = new SimulatedFlakyDevice(Devices.CreateLogDevice(path + "tsavoritelog.log", deleteOnClose: true),
+            device = new SimulatedFlakyDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true),
                 errorOptions);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = LogChecksumType.PerEntry, LogCommitManager = manager, TolerateDeviceFailure = true };

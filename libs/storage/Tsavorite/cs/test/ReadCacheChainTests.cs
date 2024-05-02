@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -55,7 +56,7 @@ namespace Tsavorite.test.ReadCacheTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
-            log = Devices.CreateLogDevice(MethodTestDir + "/NativeReadCacheTests.log", deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "NativeReadCacheTests.log"), deleteOnClose: true);
 
             var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -651,7 +652,7 @@ namespace Tsavorite.test.ReadCacheTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
 
-            string filename = MethodTestDir + $"/{GetType().Name}.log";
+            string filename = Path.Join(MethodTestDir, $"{GetType().Name}.log");
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is DeviceType deviceType)
@@ -750,13 +751,7 @@ namespace Tsavorite.test.ReadCacheTests
         //[Repeat(300)]
 #pragma warning disable IDE0060 // Remove unused parameter (modRange is used by Setup())
         public void LongRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
-                                          [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-#if WINDOWS
-                                              [Values(DeviceType.LSD
-#else
-                                              [Values(DeviceType.MLSD
-#endif
-                                              )] DeviceType deviceType)
+                                          [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
 #pragma warning restore IDE0060 // Remove unused parameter
         {
             if (numReadThreads == 0 && numWriteThreads == 0)
@@ -865,7 +860,7 @@ namespace Tsavorite.test.ReadCacheTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
 
-            string filename = MethodTestDir + $"/{GetType().Name}.log";
+            string filename = Path.Join(MethodTestDir, $"{GetType().Name}.log");
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is DeviceType deviceType)
@@ -977,13 +972,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(StressTestCategory)]
         //[Repeat(300)]
         public void SpanByteRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
-                                              [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-#if WINDOWS
-                                              [Values(DeviceType.LSD
-#else
-                                              [Values(DeviceType.MLSD
-#endif
-                                              )] DeviceType deviceType)
+                                              [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             if (numReadThreads == 0 && numWriteThreads == 0)
                 Assert.Ignore("Skipped due to 0 threads for both read and update");

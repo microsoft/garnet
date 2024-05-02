@@ -27,7 +27,6 @@ namespace Garnet
         private TsavoriteKV<byte[], IGarnetObject> objectStore;
         private IDevice aofDevice;
         private TsavoriteLog appendOnlyFile;
-        private SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker;
         private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
         private CollectionItemBroker itemBroker;
         private LogSettings logSettings, objLogSettings;
@@ -44,7 +43,7 @@ namespace Garnet
         protected StoreWrapper storeWrapper;
 
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.5";
+        readonly string version = "1.0.7";
 
         /// <summary>
         /// Resp protocol version
@@ -242,7 +241,6 @@ namespace Garnet
 
             if (!opts.DisablePubSub)
             {
-                kvBroker = new SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), true);
                 broker = new SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>>(new SpanByteKeySerializer(), null, opts.PubSubPageSizeBytes(), true);
             }
 
@@ -284,7 +282,7 @@ namespace Garnet
             storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker, customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
-            Provider = new GarnetProvider(storeWrapper, kvBroker, broker, itemBroker);
+            Provider = new GarnetProvider(storeWrapper, broker, itemBroker);
 
             // Create user facing API endpoints
             Metrics = new MetricsApi(Provider);
@@ -338,7 +336,6 @@ namespace Garnet
             Provider?.Dispose();
             server.Dispose();
             broker?.Dispose();
-            kvBroker?.Dispose();
             store.Dispose();
             appendOnlyFile?.Dispose();
             aofDevice?.Dispose();

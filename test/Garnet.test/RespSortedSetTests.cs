@@ -18,36 +18,36 @@ namespace Garnet.test
     {
         protected GarnetServer server;
 
-        static readonly SortedSetEntry[] entries = new SortedSetEntry[]
-              {
+        static readonly SortedSetEntry[] entries =
+              [
                 new SortedSetEntry("a", 1),
-                new SortedSetEntry("b", 2),
-                new SortedSetEntry("c", 3),
-                new SortedSetEntry("d", 4),
-                new SortedSetEntry("e", 5),
-                new SortedSetEntry("f", 6),
-                new SortedSetEntry("g", 7),
-                new SortedSetEntry("h", 8),
-                new SortedSetEntry("i", 9),
-                new SortedSetEntry("j", 10)
-              };
+                  new SortedSetEntry("b", 2),
+                  new SortedSetEntry("c", 3),
+                  new SortedSetEntry("d", 4),
+                  new SortedSetEntry("e", 5),
+                  new SortedSetEntry("f", 6),
+                  new SortedSetEntry("g", 7),
+                  new SortedSetEntry("h", 8),
+                  new SortedSetEntry("i", 9),
+                  new SortedSetEntry("j", 10)
+              ];
 
-        static readonly SortedSetEntry[] leaderBoard = new SortedSetEntry[]
-             {
+        static readonly SortedSetEntry[] leaderBoard =
+             [
                 new SortedSetEntry("Dave", 340),
-                new SortedSetEntry("Kendra", 400),
-                new SortedSetEntry("Tom", 560),
-                new SortedSetEntry("Barbara", 650),
-                new SortedSetEntry("Jennifer", 690),
-                new SortedSetEntry("Peter", 690),
-                new SortedSetEntry("Frank", 740),
-                new SortedSetEntry("Lester", 790),
-                new SortedSetEntry("Alice", 850),
-                new SortedSetEntry("Mary", 980)
-             };
+                 new SortedSetEntry("Kendra", 400),
+                 new SortedSetEntry("Tom", 560),
+                 new SortedSetEntry("Barbara", 650),
+                 new SortedSetEntry("Jennifer", 690),
+                 new SortedSetEntry("Peter", 690),
+                 new SortedSetEntry("Frank", 740),
+                 new SortedSetEntry("Lester", 790),
+                 new SortedSetEntry("Alice", 850),
+                 new SortedSetEntry("Mary", 980)
+             ];
 
-        static readonly SortedSetEntry[] powOfTwo = new SortedSetEntry[]
-            {
+        static readonly SortedSetEntry[] powOfTwo =
+            [
                 new SortedSetEntry("a", 1),
                 new SortedSetEntry("b", 2),
                 new SortedSetEntry("c", 4),
@@ -58,7 +58,7 @@ namespace Garnet.test
                 new SortedSetEntry("h", 128),
                 new SortedSetEntry("i", 256),
                 new SortedSetEntry("j", 512)
-            };
+            ];
 
 
         [SetUp]
@@ -124,7 +124,7 @@ namespace Garnet.test
             card = db.SortedSetLength(key);
             Assert.AreEqual(entries2.Length, card);
 
-            added = db.SortedSetAdd(key, new[] { new SortedSetEntry("a", 12) });
+            added = db.SortedSetAdd(key, [new SortedSetEntry("a", 12)]);
             Assert.AreEqual(0, added);
 
             response = db.Execute("MEMORY", "USAGE", key);
@@ -477,7 +477,7 @@ namespace Garnet.test
 
             // Use sortedsetscan on non existing key
             var items = db.SortedSetScan(new RedisKey("foo"), new RedisValue("*"), pageSize: 10);
-            Assert.IsTrue(items.Count() == 0, "Failed to use SortedSetScan on non existing key");
+            Assert.IsEmpty(items, "Failed to use SortedSetScan on non existing key");
 
             // Add some items
             var added = db.SortedSetAdd("myss", entries);
@@ -590,7 +590,7 @@ namespace Garnet.test
             // Test for no matching members
             members = db.SortedSetScan(key, new RedisValue("key*"), (Int32)ssLen);
             Assert.IsTrue(((IScanningCursor)members).Cursor == 0);
-            Assert.IsTrue(members.Count() == 0);
+            Assert.IsEmpty(members);
         }
 
         [Test]
@@ -685,14 +685,16 @@ namespace Garnet.test
         [Test]
         public void CanHaveEqualScores()
         {
-            SortedSet<(double, byte[])> sortedSet = new(new SortedSetComparer());
-            sortedSet.Add((340, Encoding.ASCII.GetBytes("Dave")));
-            sortedSet.Add((400, Encoding.ASCII.GetBytes("Kendra")));
-            sortedSet.Add((560, Encoding.ASCII.GetBytes("Tom")));
-            sortedSet.Add((650, Encoding.ASCII.GetBytes("Barbara")));
-            sortedSet.Add((690, Encoding.ASCII.GetBytes("Jennifer")));
-            sortedSet.Add((690, Encoding.ASCII.GetBytes("Peter")));
-            sortedSet.Add((740, Encoding.ASCII.GetBytes("Frank")));
+            SortedSet<(double, byte[])> sortedSet = new(new SortedSetComparer())
+            {
+                (340, Encoding.ASCII.GetBytes("Dave")),
+                (400, Encoding.ASCII.GetBytes("Kendra")),
+                (560, Encoding.ASCII.GetBytes("Tom")),
+                (650, Encoding.ASCII.GetBytes("Barbara")),
+                (690, Encoding.ASCII.GetBytes("Jennifer")),
+                (690, Encoding.ASCII.GetBytes("Peter")),
+                (740, Encoding.ASCII.GetBytes("Frank"))
+            };
             var c = sortedSet.Count;
             Assert.AreEqual(7, c);
 
@@ -1860,7 +1862,7 @@ namespace Garnet.test
 
         #endregion
 
-        private void SendCommandWithoutKey(string command, LightClientRequest lightClientRequest)
+        private static void SendCommandWithoutKey(string command, LightClientRequest lightClientRequest)
         {
             var result = lightClientRequest.SendCommand(command);
             var expectedResponse = FormatWrongNumOfArgsError(command);
@@ -1868,7 +1870,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
         }
 
-        private void UpdateSortedSetKey(string keyName)
+        private static void UpdateSortedSetKey(string keyName)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             byte[] res = lightClientRequest.SendCommand($"ZADD {keyName} 4 d");

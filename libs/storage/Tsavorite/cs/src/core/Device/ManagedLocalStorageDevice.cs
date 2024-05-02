@@ -480,7 +480,7 @@ namespace Tsavorite.core
         /// <param name="logHandle"></param>
         /// <param name="size"></param>
         /// <returns></returns>
-        private bool SetFileSize(Stream logHandle, long size)
+        private static bool SetFileSize(Stream logHandle, long size)
         {
             logHandle.SetLength(size);
             return true;

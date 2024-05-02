@@ -47,7 +47,7 @@ namespace Garnet.server
             }
             else
             {
-                while (rem_count < Math.Abs(count) && list.Count() > 0)
+                while (rem_count < Math.Abs(count) && list.Count > 0)
                 {
                     var node = count > 0 ? list.FirstOrDefault(i => i.SequenceEqual(item)) : list.LastOrDefault(i => i.SequenceEqual(item));
                     if (node != null)
@@ -359,7 +359,7 @@ namespace Garnet.server
                         list.RemoveLast();
                     }
 
-                    this.UpdateSize(node.Value, false);
+                    UpdateSize(node.Value, false);
                     while (!RespWriteUtils.WriteBulkString(node.Value, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
@@ -379,6 +379,82 @@ namespace Garnet.server
 
                 if (isMemory) ptrHandle.Dispose();
                 output.Length = (int)(curr - ptr);
+            }
+        }
+
+        private void ListSet(byte* input, int length, ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var output_startptr = output.SpanByte.ToPointer();
+            var output_currptr = output_startptr;
+            var output_end = output_currptr + output.Length;
+
+            ObjectOutputHeader _output = default;
+
+            try
+            {
+                if (list.Count == 0)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                    return;
+                }
+
+                byte* input_startptr = input + sizeof(ObjectInputHeader);
+                byte* input_currptr = input_startptr;
+                byte* input_end = input + length;
+
+                byte* indexParam = default;
+                var indexParamSize = 0;
+
+                // index
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref indexParam, ref indexParamSize, ref input_currptr, input_end))
+                    return;
+
+                if (NumUtils.TryBytesToInt(indexParam, indexParamSize, out var index) == false)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                    return;
+                }
+
+                index = index < 0 ? list.Count + index : index;
+
+                if (index > list.Count - 1 || index < 0)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_INDEX_OUT_RANGE, ref output_currptr, output_end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+                    return;
+                }
+
+                // element
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var element, ref input_currptr, input_end))
+                    return;
+
+                var targetNode = index == 0 ? list.First
+                    : (index == list.Count - 1 ? list.Last
+                        : list.Nodes().ElementAtOrDefault(index));
+
+                UpdateSize(targetNode.Value, false);
+                targetNode.Value = element;
+                UpdateSize(targetNode.Value);
+
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref output_currptr, output_end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+
+                // Write bytes parsed from input and count done, into output footer
+                _output.bytesDone = (int)(input_currptr - input_startptr);
+                _output.countDone = 1;
+                _output.opsDone = 1;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref output_currptr, output_end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(output_currptr - output_startptr);
             }
         }
     }

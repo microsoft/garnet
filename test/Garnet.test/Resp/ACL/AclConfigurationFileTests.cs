@@ -95,7 +95,7 @@ namespace Garnet.test.Resp.ACL
                 if (user.StartsWith("user default"))
                 {
                     // No password should have been defined
-                    Assert.IsTrue(user.Count(x => x == '#') == 0);
+                    Assert.IsTrue(!user.Contains('#'));
                 }
             }
         }

@@ -41,7 +41,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Tsavorite") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite")]);
             string r = db.HashGet("user:user1", "Title");
             Assert.AreEqual("Tsavorite", r);
         }
@@ -52,7 +52,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             var str = new string(new char[150000]);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", str) });
+            db.HashSet("user:user1", [new HashEntry("Title", str)]);
             string r = db.HashGet("user:user1", "Title");
             Assert.AreEqual(str, r);
             string r2 = db.HashGet("user:user1", "Title2");
@@ -84,8 +84,8 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021") });
-            var result = db.HashGet("user:user1", new RedisValue[] { new RedisValue("Title"), new RedisValue("Year") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021")]);
+            var result = db.HashGet("user:user1", [new RedisValue("Title"), new RedisValue("Year")]);
             Assert.AreEqual(2, result.Length);
             Assert.AreEqual("Tsavorite", result[0].ToString());
             Assert.AreEqual("2021", result[1].ToString());
@@ -98,7 +98,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021")]);
             var result = db.HashDelete(new RedisKey("user:user1"), new RedisValue("Title"));
             Assert.AreEqual(true, result);
             string resultGet = db.HashGet("user:user1", "Year");
@@ -111,8 +111,8 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Example", "One") });
-            var result = db.HashDelete(new RedisKey("user:user1"), new RedisValue[] { new RedisValue("Title"), new RedisValue("Year") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Example", "One")]);
+            var result = db.HashDelete(new RedisKey("user:user1"), [new RedisValue("Title"), new RedisValue("Year")]);
             string resultGet = db.HashGet("user:user1", "Example");
             Assert.AreEqual("One", resultGet);
         }
@@ -122,8 +122,8 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021") });
-            var result = db.HashDelete(new RedisKey("user:user1"), new RedisValue[] { new RedisValue("Title"), new RedisValue("Year"), new RedisValue("Unknown") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021")]);
+            var result = db.HashDelete(new RedisKey("user:user1"), [new RedisValue("Title"), new RedisValue("Year"), new RedisValue("Unknown")]);
             Assert.AreEqual(2, result);
         }
 
@@ -132,7 +132,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
             var result = db.HashLength("user:user1");
             Assert.AreEqual(3, result);
         }
@@ -142,7 +142,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
             HashEntry[] result = db.HashGetAll("user:user1");
             Assert.AreEqual(3, result.Length);
         }
@@ -153,7 +153,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
             var result = db.HashExists(new RedisKey("user:user1"), new RedisValue("Company"));
             Assert.AreEqual(true, result);
 
@@ -166,7 +166,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user.user1", new HashEntry[] { new HashEntry("Title", "Tsavorite") });
+            db.HashSet("user.user1", [new HashEntry("Title", "Tsavorite")]);
             long r = db.HashStringLength("user.user1", "Title");
             Assert.AreEqual(9, r, 0);
             r = db.HashStringLength("user.user1", "NoExist");
@@ -180,7 +180,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
             var result = db.HashKeys("user:user1");
             Assert.AreEqual(3, result.Length);
 
@@ -195,7 +195,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme") });
+            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
             var result = db.HashValues("user:user1");
             Assert.AreEqual(3, result.Length);
 
@@ -210,7 +210,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1") });
+            db.HashSet("user:user1", [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
             Assert.Throws<RedisServerException>(() => db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 4));
             var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
             Assert.AreEqual(-3, result);
@@ -230,7 +230,7 @@ namespace Garnet.test
 
             // Create LTM (larger than memory) DB by inserting 100 keys
             for (int i = 0; i < 100; i++)
-                db.HashSet("user:user" + i, new HashEntry[] { new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1") });
+                db.HashSet("user:user" + i, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
 
             Assert.Throws<RedisServerException>(() => db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 4));
             var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
@@ -249,7 +249,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1") });
+            db.HashSet("user:user1", [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
             var result = db.HashDecrement(new RedisKey("user:user1"), new RedisValue("Field2"), 4);
             Assert.AreEqual(-3, result);
         }
@@ -294,16 +294,16 @@ namespace Garnet.test
             // HSCAN non existing key
             var members = db.HashScan("foo");
             Assert.IsTrue(((IScanningCursor)members).Cursor == 0);
-            Assert.IsTrue(members.Count() == 0, "HSCAN non existing key failed.");
+            Assert.IsEmpty(members, "HSCAN non existing key failed.");
 
-            db.HashSet("user:user1", new HashEntry[] { new HashEntry("name", "Alice"), new HashEntry("email", "email@example.com"), new HashEntry("age", "30") });
+            db.HashSet("user:user1", [new HashEntry("name", "Alice"), new HashEntry("email", "email@example.com"), new HashEntry("age", "30")]);
 
             // HSCAN without parameters
             members = db.HashScan("user:user1");
             Assert.IsTrue(((IScanningCursor)members).Cursor == 0);
             Assert.IsTrue(members.Count() == 3, "HSCAN without MATCH failed.");
 
-            db.HashSet("user:user789", new HashEntry[] { new HashEntry("email", "email@example.com"), new HashEntry("email1", "email1@example.com"), new HashEntry("email2", "email2@example.com"), new HashEntry("email3", "email3@example.com"), new HashEntry("age", "25") });
+            db.HashSet("user:user789", [new HashEntry("email", "email@example.com"), new HashEntry("email1", "email1@example.com"), new HashEntry("email2", "email2@example.com"), new HashEntry("email3", "email3@example.com"), new HashEntry("age", "25")]);
 
             // HSCAN with match
             members = db.HashScan("user:user789", "email*");
@@ -373,7 +373,7 @@ namespace Garnet.test
 
             db.KeyDelete(hashkey, CommandFlags.FireAndForget);
 
-            RedisValue[] fields = { "foo", "bar", "blop" };
+            RedisValue[] fields = ["foo", "bar", "blop"];
             var arr0 = await db.HashGetAsync(hashkey, fields);
 
             db.HashSet(hashkey, "foo", "abc", flags: CommandFlags.FireAndForget);
@@ -924,7 +924,7 @@ namespace Garnet.test
         }
 
 
-        private void UpdateHashMap(string keyName)
+        private static void UpdateHashMap(string keyName)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
             byte[] res = lightClientRequest.SendCommand($"HSET {keyName} field3 3");

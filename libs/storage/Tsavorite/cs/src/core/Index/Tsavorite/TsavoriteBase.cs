@@ -66,7 +66,7 @@ namespace Tsavorite.core
             overflowBucketsAllocator.Dispose();
         }
 
-        private void Free(int version)
+        private static void Free(int version)
         {
         }
 

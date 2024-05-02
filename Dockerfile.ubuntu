@@ -12,6 +12,8 @@ COPY libs/storage/Tsavorite/cs/src/core/*.csproj libs/storage/Tsavorite/cs/src/c
 COPY libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/*.csproj libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/
 COPY main/GarnetServer/*.csproj main/GarnetServer/
 COPY metrics/HdrHistogram/*.csproj metrics/HdrHistogram/
+COPY Directory.Build.props Directory.Build.props
+COPY Directory.Packages.props Directory.Packages.props
 
 RUN dotnet restore main/GarnetServer/GarnetServer.csproj -a $TARGETARCH
 

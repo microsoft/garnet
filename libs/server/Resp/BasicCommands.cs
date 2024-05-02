@@ -195,7 +195,7 @@ namespace Garnet.server
             return true;
         }
 
-        void SetResult(int c, ref int firstPending, ref (GarnetStatus, SpanByteAndMemory)[] outputArr, GarnetStatus status, SpanByteAndMemory output)
+        static void SetResult(int c, ref int firstPending, ref (GarnetStatus, SpanByteAndMemory)[] outputArr, GarnetStatus status, SpanByteAndMemory output)
         {
             const int initialBatchSize = 8; // number of items in initial batch
             if (firstPending == -1)
@@ -301,13 +301,12 @@ namespace Garnet.server
             var key = new ArgSlice(keyPtr, ksize);
             var value = new ArgSlice(valPtr, vsize);
 
-            const int maxOutputSize = 20; // max byte length to store length of appended string in ASCII byte values
-            byte* pbOutput = stackalloc byte[maxOutputSize];
-            var output = new ArgSlice(pbOutput, maxOutputSize);
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
+            var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             var status = storageApi.SETRANGE(key, value, offset, ref output);
 
-            while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+            while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
 
             return true;
@@ -725,6 +724,7 @@ namespace Garnet.server
         {
             Debug.Assert(cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || cmd == RespCommand.INCR || cmd == RespCommand.DECR);
 
+            // Parse key argument
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -734,6 +734,8 @@ namespace Garnet.server
             ArgSlice input = default;
             if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
             {
+                // Parse value argument
+                // NOTE: Parse empty strings for better error messages through storageApi.Increment
                 byte* valPtr = null;
                 int vsize = 0;
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))
@@ -746,8 +748,8 @@ namespace Garnet.server
             }
             else if (cmd == RespCommand.INCR)
             {
-                int vsize = RespInputHeader.Size + 1;
-                byte* valPtr = stackalloc byte[vsize];
+                var vsize = RespInputHeader.Size + 1;
+                var valPtr = stackalloc byte[vsize];
                 ((RespInputHeader*)valPtr)->cmd = cmd;
                 ((RespInputHeader*)valPtr)->flags = 0;
                 *(valPtr + RespInputHeader.Size) = (byte)'1';
@@ -755,8 +757,8 @@ namespace Garnet.server
             }
             else if (cmd == RespCommand.DECR)
             {
-                int vsize = RespInputHeader.Size + 2;
-                byte* valPtr = stackalloc byte[vsize];
+                var vsize = RespInputHeader.Size + 2;
+                var valPtr = stackalloc byte[vsize];
                 ((RespInputHeader*)valPtr)->cmd = cmd;
                 ((RespInputHeader*)valPtr)->flags = 0;
                 *(valPtr + RespInputHeader.Size) = (byte)'-';
@@ -770,8 +772,9 @@ namespace Garnet.server
                 return true;
 
             var key = new ArgSlice(keyPtr, ksize);
-            var pbOutput = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
-            var output = new ArgSlice(pbOutput, NumUtils.MaximumFormatInt64Length + 1);
+
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
+            var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
             var status = storageApi.Increment(key, input, ref output);
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1 ? (OperationError)output.Span[0] : OperationError.SUCCESS;
@@ -779,7 +782,7 @@ namespace Garnet.server
             switch (errorFlag)
             {
                 case OperationError.SUCCESS:
-                    while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                         SendAndReset();
                     break;
                 case OperationError.INVALID_TYPE:
@@ -812,19 +815,17 @@ namespace Garnet.server
             if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
                 return true;
 
-            const int maxOutputSize = 20; // max byte length to store length of appended string in ASCII byte values
-            byte* pbOutput = stackalloc byte[maxOutputSize];
-
             keyPtr -= sizeof(int);
             valPtr -= sizeof(int);
             *(int*)keyPtr = ksize;
             *(int*)valPtr = vsize;
 
-            var output = new SpanByteAndMemory(pbOutput, maxOutputSize);
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
+            var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);
 
             var status = storageApi.APPEND(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr), ref output);
 
-            while (!RespWriteUtils.WriteIntegerFromBytes(pbOutput, output.Length, ref dcurr, dend))
+            while (!RespWriteUtils.WriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                 SendAndReset();
 
             return true;

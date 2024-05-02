@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -143,6 +144,64 @@ namespace Garnet.server
 
             // update read pointers
             readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        /// <summary>
+        /// This command is equal to SUNION, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private bool SetUnionStore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count < 2)
+            {
+                return AbortWithWrongNumberOfArguments("SUNIONSTORE", count);
+            }
+
+            // Get the key
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, false))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+                return true;
+            }
+
+            var keys = new ArgSlice[count - 1];
+            for (var i = 0; i < count - 1; i++)
+            {
+                keys[i] = default;
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+
+            if (NetworkKeyArraySlotVerify(ref keys, true))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count)) return false;
+                return true;
+            }
+
+            var status = storageApi.SetUnionStore(key, keys, out var output);
+
+            if (status == GarnetStatus.OK)
+            {
+                while (!RespWriteUtils.WriteInteger(output, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+
             return true;
         }
 
@@ -485,7 +544,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Set;
             inputPtr->header.SetOp = SetOperation.SPOP;
-            inputPtr->count = Int32.MinValue;
+            inputPtr->count = int.MinValue;
 
             int countParameter = 0;
             if (count == 2)
@@ -495,8 +554,9 @@ namespace Garnet.server
                     return false;
 
                 // Prepare response
-                var canParse = Int32.TryParse(Encoding.ASCII.GetString(countParameterByteArray), out countParameter);
-                if (!canParse || countParameter < 0)
+                if (!Utf8Parser.TryParse(countParameterByteArray, out countParameter, out var bytesConsumed, default) ||
+                    bytesConsumed != countParameterByteArray.Length ||
+                    countParameter < 0)
                 {
                     while (!RespWriteUtils.WriteError("ERR value is not an integer or out of range"u8, ref dcurr, dend))
                         SendAndReset();

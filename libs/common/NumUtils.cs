@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -115,21 +116,18 @@ namespace Garnet.common
         {
             var fNeg = *source == '-';
             var beg = fNeg ? source + 1 : source;
-            var end = source + length;
-            var digit = *beg - '0';
+            var len = fNeg ? length - 1 : length;
             result = 0;
 
-            // Check first digit which needs to be non-zero
-            if (digit is <= 0 or > 9)
+            // Do not allow leading zeros
+            if (len > 1 && *beg == '0')
                 return false;
 
-            while (beg < end)
-            {
-                digit = *beg++ - '0';
-                if (digit is < 0 or > 9)
-                    return false;
-                checked { result = (result * 10) + digit; }
-            }
+            // Parse number and check consumed bytes to avoid alphanumeric strings
+            if (!Utf8Parser.TryParse(new Span<byte>(beg, len), out result, out var bytesConsumed) || bytesConsumed != len)
+                return false;
+
+            // Negate if parsed value has a leading negative sign
             result = fNeg ? -result : result;
             return true;
         }
@@ -436,7 +434,11 @@ namespace Garnet.common
         /// This table is based on the CRC-16-CCITT polynomial (0x1021)
         /// </summary>
 #pragma warning disable IDE0300 // Simplify collection initialization. Ignored to avoid dotnet-format bug, see https://github.com/dotnet/sdk/issues/39898
+#if NET7_0_OR_GREATER
         private static ReadOnlySpan<ushort> Crc16Table => new ushort[256]
+#else
+        private static readonly ushort[] Crc16Table = new ushort[256]
+#endif
         {
             0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
             0x8108, 0x9129, 0xA14A, 0xB16B, 0xC18C, 0xD1AD, 0xE1CE, 0xF1EF,
@@ -476,11 +478,17 @@ namespace Garnet.common
         public static unsafe ushort CRC16(byte* data, int len)
         {
             ushort result = 0;
+
+#if NET7_0_OR_GREATER
+            ref var crc16Base = ref MemoryMarshal.GetReference(Crc16Table);
+#else
+            ref var crc16Base = ref MemoryMarshal.GetArrayDataReference(Crc16Table);
+#endif
             byte* end = data + len;
             while (data < end)
             {
                 nuint index = (nuint)(uint)((result >> 8) ^ *data++) & 0xff;
-                result = (ushort)(Unsafe.Add(ref MemoryMarshal.GetReference(Crc16Table), index) ^ (result << 8));
+                result = (ushort)(Unsafe.Add(ref crc16Base, index) ^ (result << 8));
             }
             return result;
         }
@@ -532,8 +540,9 @@ namespace Garnet.common
         {
             bool fNeg = (*source == '-');
             var beg = fNeg ? source + 1 : source;
+            var start = fNeg ? 1 : 0;
             result = 0;
-            for (int i = 0; i < len; ++i)
+            for (int i = start; i < len; ++i)
             {
                 if (!(source[i] >= 48 && source[i] <= 57))
                 {

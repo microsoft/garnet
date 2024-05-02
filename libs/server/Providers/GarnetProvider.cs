@@ -26,15 +26,13 @@ namespace Garnet.server
         /// Create SpanByte TsavoriteKV backend for Garnet
         /// </summary>
         /// <param name="storeWrapper"></param>
-        /// <param name="kvBroker"></param>
         /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>        
         public GarnetProvider(StoreWrapper storeWrapper,
-            SubscribeKVBroker<SpanByte, SpanByte, SpanByte, IKeyInputSerializer<SpanByte, SpanByte>> kvBroker = null,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null,
             CollectionItemBroker itemBroker = null,
             MaxSizeSettings maxSizeSettings = default)
-            : base(storeWrapper.store, new(), kvBroker, broker, false, maxSizeSettings)
+            : base(storeWrapper.store, new(), broker, false, maxSizeSettings)
         {
             this.storeWrapper = storeWrapper;
             this.itemBroker = itemBroker;

@@ -30,47 +30,47 @@ namespace Garnet.cluster
         /// <summary>
         /// Unique node ID
         /// </summary>
-        public string nodeid;
+        public string Nodeid;
 
         /// <summary>
         /// IP address
         /// </summary>
-        public string address;
+        public string Address;
 
         /// <summary>
         /// Port
         /// </summary>
-        public int port;
+        public int Port;
 
         /// <summary>
         /// Configuration epoch.
         /// </summary>
-        public long configEpoch;
+        public long ConfigEpoch;
 
         /// <summary>
         /// Current config epoch used for voting.
         /// </summary>
-        public long currentConfigEpoch;
+        public long CurrentConfigEpoch;
 
         /// <summary>
         /// Last config epoch this worker has voted for.
         /// </summary>
-        public long lastVotedConfigEpoch;
+        public long LastVotedConfigEpoch;
 
         /// <summary>
         /// Role of node (i.e 0: primary 1: replica).
         /// </summary>
-        public NodeRole role;
+        public NodeRole Role;
 
         /// <summary>
         /// Node ID that this node is replicating (i.e. primary id).
         /// </summary>
-        public string replicaOfNodeId;
+        public string ReplicaOfNodeId;
 
         /// <summary>
         /// Replication offset (readonly value for information only)
         /// </summary>
-        public long replicationOffset;
+        public long ReplicationOffset;
 
         /// <summary>
         /// Hostname of this instance
@@ -81,6 +81,6 @@ namespace Garnet.cluster
         /// ToString
         /// </summary>
         /// <returns></returns>
-        public override string ToString() => $"{nodeid} {address} {port} {configEpoch} {role} {replicaOfNodeId}";
+        public override string ToString() => $"{Nodeid} {Address} {Port} {ConfigEpoch} {Role} {ReplicaOfNodeId}";
     }
 }

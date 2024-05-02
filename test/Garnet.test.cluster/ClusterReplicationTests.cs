@@ -614,10 +614,10 @@ namespace Garnet.test.cluster
                 slotMap[i] = 1;
             #endregion
 
-            // TODO: wait for attaching primary to finish
+            // Wait for attaching primary to finish
             context.clusterTestUtils.WaitForNoFailover(1, logger: context.logger);
-            // TODO: enable when old primary becomes replica
-            // context.clusterTestUtils.WaitForReplicaRecovery(0, logger: context.logger);
+            // Enable when old primary becomes replica
+            context.clusterTestUtils.WaitForReplicaRecovery(0, logger: context.logger);
 
             // Check if allowed to write to new Primary
             if (!performRMW)

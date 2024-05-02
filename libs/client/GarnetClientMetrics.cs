@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Globalization;
 using Garnet.common;
 using Garnet.networking;
 using HdrHistogram;
@@ -28,13 +29,13 @@ namespace Garnet.client
             if (histogram == null || histogram.TotalCount == 0)
                 return Array.Empty<MetricsItem>();
 
-            var _min = (histogram.GetValueAtPercentile(0) / scaling).ToString("N2");
-            var _5 = (histogram.GetValueAtPercentile(5) / scaling).ToString("N2");
-            var _50 = (histogram.GetValueAtPercentile(50) / scaling).ToString("N2");
-            var _mean = (histogram.GetMean() / scaling).ToString("N2");
-            var _95 = (histogram.GetValueAtPercentile(95) / scaling).ToString("N2");
-            var _99 = (histogram.GetValueAtPercentile(99) / scaling).ToString("N2");
-            var _999 = (histogram.GetValueAtPercentile(99.9) / scaling).ToString("N2");
+            var _min = (histogram.GetValueAtPercentile(0) / scaling).ToString("N2", CultureInfo.InvariantCulture);
+            var _5 = (histogram.GetValueAtPercentile(5) / scaling).ToString("N2", CultureInfo.InvariantCulture);
+            var _50 = (histogram.GetValueAtPercentile(50) / scaling).ToString("N2", CultureInfo.InvariantCulture);
+            var _mean = (histogram.GetMean() / scaling).ToString("N2", CultureInfo.InvariantCulture);
+            var _95 = (histogram.GetValueAtPercentile(95) / scaling).ToString("N2", CultureInfo.InvariantCulture);
+            var _99 = (histogram.GetValueAtPercentile(99) / scaling).ToString("N2", CultureInfo.InvariantCulture);
+            var _999 = (histogram.GetValueAtPercentile(99.9) / scaling).ToString("N2", CultureInfo.InvariantCulture);
 
             MetricsItem[] percentiles = new MetricsItem[]
             {

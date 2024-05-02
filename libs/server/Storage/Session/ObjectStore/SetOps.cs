@@ -31,9 +31,6 @@ namespace Garnet.server
         {
             saddCount = 0;
 
-            if (key.Length == 0)
-                return GarnetStatus.OK;
-
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
 
             // Prepare header in input buffer
@@ -43,7 +40,7 @@ namespace Garnet.server
             rmwInput->count = 1;
             rmwInput->done = 0;
 
-            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            _ = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             saddCount = output.opsDone;
             return GarnetStatus.OK;
@@ -105,9 +102,6 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
             sremCount = 0;
-
-            if (key.Length == 0)
-                return GarnetStatus.OK;
 
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
 
@@ -376,9 +370,6 @@ namespace Garnet.server
         {
             smoveResult = 0;
 
-            if (sourceKey.Length == 0 || destinationKey.Length == 0)
-                return GarnetStatus.OK;
-
             // If the keys are the same, no operation is performed.
             var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
             if (sameKey)
@@ -386,13 +377,13 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            bool createTransaction = false;
+            var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
                 txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
                 txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
-                txnManager.Run(true);
+                _ = txnManager.Run(true);
             }
 
             var objectLockableContext = txnManager.ObjectStoreLockableContext;
@@ -411,7 +402,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                SetAdd(destinationKey, member, out smoveResult, ref objectLockableContext);
+                _ = SetAdd(destinationKey, member, out smoveResult, ref objectLockableContext);
             }
             finally
             {
@@ -428,13 +419,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="output"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <typeparam name="TObjectContext"></typeparam>
         /// <returns></returns>
-        public GarnetStatus SetUnion<TObjectContext>(ArgSlice[] keys, out HashSet<byte[]> output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        public GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)
         {
-            output = new HashSet<byte[]>(new ByteArrayComparer());
+            output = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
             if (keys.Length == 0)
                 return GarnetStatus.OK;
@@ -455,14 +443,7 @@ namespace Garnet.server
 
             try
             {
-                foreach (var key in keys)
-                {
-                    if (GET(key.ToArray(), out var currObject, ref setObjectStoreLockableContext) == GarnetStatus.OK)
-                    {
-                        var currSet = ((SetObject)currObject.garnetObject).Set;
-                        output.UnionWith(currSet);
-                    }
-                }
+                output = SetUnion(keys, ref setObjectStoreLockableContext);
             }
             finally
             {
@@ -471,6 +452,81 @@ namespace Garnet.server
             }
 
             return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// This command is equal to SUNION, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public GarnetStatus SetUnionStore(byte[] key, ArgSlice[] keys, out int count)
+        {
+            count = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var destination = scratchBufferManager.CreateArgSlice(key);
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destination, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var members = SetUnion(keys, ref setObjectStoreLockableContext);
+
+                var newSetObject = new SetObject();
+                foreach (var item in members)
+                {
+                    _ = newSetObject.Set.Add(item);
+                    newSetObject.UpdateSize(item);
+                }
+                _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                count = members.Count;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        private HashSet<byte[]> SetUnion<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        {
+            var result = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            if (keys.Length == 0)
+            {
+                return result;
+            }
+
+            foreach (var item in keys)
+            {
+                if (GET(item.ToArray(), out var currObject, ref objectContext) == GarnetStatus.OK)
+                {
+                    var currSet = ((SetObject)currObject.garnetObject).Set;
+                    result.UnionWith(currSet);
+                }
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -570,7 +626,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetRandomMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
-            => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
+            => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
 
         /// <summary>
         /// Returns the members of the set resulting from the difference between the first set at key and all the successive sets at keys.
@@ -581,6 +637,7 @@ namespace Garnet.server
         public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)
         {
             members = default;
+
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
@@ -623,7 +680,7 @@ namespace Garnet.server
         {
             count = default;
 
-            if (key.Length == 0 || keys.Length == 0)
+            if (keys.Length == 0)
                 return GarnetStatus.OK;
 
             var destination = scratchBufferManager.CreateArgSlice(key);
@@ -680,7 +737,7 @@ namespace Garnet.server
             {
                 if (first.garnetObject is SetObject firstObject)
                 {
-                    result = new HashSet<byte[]>(firstObject.Set, new ByteArrayComparer());
+                    result = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
                 }
             }
             else

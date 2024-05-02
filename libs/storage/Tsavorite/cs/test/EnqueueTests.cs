@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,7 +17,6 @@ namespace Tsavorite.test
         private TsavoriteLog log;
         private IDevice device;
         static byte[] entry;
-        private string path;
 
         public enum EnqueueIteratorType
         {
@@ -48,10 +48,9 @@ namespace Tsavorite.test
         public void Setup()
         {
             entry = new byte[100];
-            path = TestUtils.MethodTestDir + "/";
 
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
         }
 
         [TearDown]
@@ -63,7 +62,7 @@ namespace Tsavorite.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [Test]
@@ -76,9 +75,9 @@ namespace Tsavorite.test
             int numEntries = 500;
             int entryFlag = 9999;
 
-            string filename = path + "Enqueue" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "Enqueue" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path }); // Needs to match what is set in TestUtils.CreateTestDevice 
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir }); // Needs to match what is set in TestUtils.CreateTestDevice 
 
             // Reduce SpanBatch to make sure entry fits on page
             if (iteratorType == EnqueueIteratorType.SpanBatch)
@@ -170,14 +169,13 @@ namespace Tsavorite.test
 
             const int expectedEntryCount = 11;
 
-            string filename = path + "EnqueueAsyncBasic" + deviceType.ToString() + ".log";
+            string filename = Path.Join(TestUtils.MethodTestDir, "EnqueueAsyncBasic" + deviceType.ToString() + ".log");
             device = TestUtils.CreateTestDevice(deviceType, filename);
-            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = path });
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
 
-#if WINDOWS
-            if (deviceType == TestUtils.DeviceType.EmulatedAzure)
+            if (OperatingSystem.IsWindows() && deviceType == TestUtils.DeviceType.EmulatedAzure)
                 return;
-#endif
+
             CancellationToken cancellationToken = default;
             ReadOnlyMemory<byte> readOnlyMemoryEntry = entry;
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(5);

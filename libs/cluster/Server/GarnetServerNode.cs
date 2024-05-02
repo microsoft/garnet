@@ -33,10 +33,12 @@ namespace Garnet.cluster
 
         public long GossipRecv => gossip_recv;
 
+        public GarnetClient Client => gc;
+
         /// <summary>
         /// Nodeid of remote node
         /// </summary>
-        public string nodeid;
+        public string NodeId;
 
         /// <summary>
         /// Address of remote node
@@ -209,10 +211,10 @@ namespace Garnet.cluster
                         var other = ClusterConfig.FromByteArray(returnedConfigArray);
                         var current = clusterProvider.clusterManager.CurrentConfig;
                         // Check if gossip is from a node that is known and trusted before merging
-                        if (current.IsKnown(other.GetLocalNodeId()))
+                        if (current.IsKnown(other.LocalNodeId))
                             clusterProvider.clusterManager.TryMerge(ClusterConfig.FromByteArray(returnedConfigArray));
                         else
-                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.GetLocalNodeId());
+                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                     }
                     resp.Dispose();
                 }
