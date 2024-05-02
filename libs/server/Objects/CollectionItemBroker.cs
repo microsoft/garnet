@@ -26,9 +26,19 @@ namespace Garnet.server
         private readonly object isStartedLock = new();
         private readonly ReaderWriterLockSlim expiringObserversLock = new();
 
-        internal void Subscribe(byte[][] keys, byte operation, RespServerSession session, double timeoutInSeconds)
+        internal void ListSubscribe(byte[][] keys, ListOperation operation, RespServerSession session, double timeoutInSeconds)
         {
-            var observer = new CollectionItemObserver(session, operation);
+            Subscribe(keys, GarnetObjectType.List, (byte)operation, session, timeoutInSeconds);
+        }
+
+        internal void SortedSetSubscribe(byte[][] keys, SortedSetOperation operation, RespServerSession session, double timeoutInSeconds)
+        {
+            Subscribe(keys, GarnetObjectType.SortedSet, (byte)operation, session, timeoutInSeconds);
+        }
+
+        private void Subscribe(byte[][] keys, GarnetObjectType objectType, byte operation, RespServerSession session, double timeoutInSeconds)
+        {
+            var observer = new CollectionItemObserver(session, objectType, operation);
 
             sessionIdToObserver.TryAdd(session.ObjectStoreSessionID, observer);
 
@@ -71,14 +81,14 @@ namespace Garnet.server
             if (!sessionIdToObserver.TryGetValue(session.ObjectStoreSessionID, out var observer))
                 return;
 
-            observer.IsSessionDisposedLock.EnterWriteLock();
+            observer.ObserverStatusLock.EnterWriteLock();
             try
             {
-                observer.IsSessionDisposed = true;
+                observer.Status = ObserverStatus.SessionDisposed;
             }
             finally
             {
-                observer.IsSessionDisposedLock.ExitWriteLock();
+                observer.ObserverStatusLock.ExitWriteLock();
             }
 
             sessionIdToObserver.TryRemove(session.ObjectStoreSessionID, out _);
@@ -102,17 +112,17 @@ namespace Garnet.server
 
         private void HandleExpiredObserver(CollectionItemObserver observer)
         {
-            if (observer.IsSessionDisposed) return;
+            if (observer.Status == ObserverStatus.SessionDisposed) return;
 
-            observer.IsSessionDisposedLock.EnterReadLock();
+            observer.ObserverStatusLock.EnterReadLock();
             try
             {
-                if (!observer.IsSessionDisposed)
+                if (observer.Status != ObserverStatus.SessionDisposed)
                     observer.Session.WriteBlockedOperationResult(null, null);
             }
             finally
             {
-                observer.IsSessionDisposedLock.ExitReadLock();
+                observer.ObserverStatusLock.ExitReadLock();
             }
 
         }
@@ -123,16 +133,27 @@ namespace Garnet.server
 
             while (keysToObservers[key].TryPeek(out var observer))
             {
-                if (observer.IsSessionDisposed)
+                if (observer.Status == ObserverStatus.SessionDisposed)
+                {
+                    keysToObservers[key].TryDequeue(out observer);
                     continue;
+                }
 
-                observer.IsSessionDisposedLock.EnterReadLock();
+                observer.ObserverStatusLock.EnterReadLock();
                 try
                 {
-                    if (observer.IsSessionDisposed) continue;
+                    if (observer.Status == ObserverStatus.SessionDisposed)
+                    {
+                        keysToObservers[key].TryDequeue(out observer);
+                        continue;
+                    }
 
-                    if (!TryGetNextItem(key, observer.Session.storageSession, observer.Operation, out var nextItem))
+                    if (!TryGetNextItem(key, observer.Session.storageSession, observer.ObjectType, observer.Operation,
+                            out var currCount, out var nextItem))
+                    {
+                        if (currCount > 0) continue;
                         return false;
+                    }
 
                     keysToObservers[key].TryDequeue(out observer);
                     sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
@@ -142,7 +163,7 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    observer.IsSessionDisposedLock.ExitReadLock();
+                    observer.ObserverStatusLock.ExitReadLock();
                 }
             }
 
@@ -189,8 +210,9 @@ namespace Garnet.server
             return true;
         }
 
-        private bool TryGetNextItem(byte[] key, StorageSession storageSession, byte operation, out byte[] nextItem)
+        private bool TryGetNextItem(byte[] key, StorageSession storageSession, GarnetObjectType objectType, byte operation, out int currCount, out byte[] nextItem)
         {
+            currCount = default;
             nextItem = default;
             var createTransaction = false;
 
@@ -213,8 +235,12 @@ namespace Garnet.server
                 switch (osList.garnetObject)
                 {
                     case ListObject listObj:
+                        currCount = listObj.LnkList.Count;
+                        if (objectType != GarnetObjectType.List) return false;
                         return TryGetNextListItem(listObj, operation, out nextItem);
                     case SortedSetObject setObj:
+                        currCount = setObj.Dictionary.Count;
+                        if (objectType != GarnetObjectType.SortedSet) return false;
                         return TryGetNextSetObject(setObj, operation, out nextItem);
                     default:
                         return false;
@@ -295,19 +321,26 @@ namespace Garnet.server
         {
             internal RespServerSession Session { get; }
 
+            internal GarnetObjectType ObjectType { get; }
+
             internal byte Operation { get; }
 
-            internal ReaderWriterLockSlim IsSessionDisposedLock { get; }
+            internal ReaderWriterLockSlim ObserverStatusLock { get; } = new();
 
-            internal bool IsSessionDisposed { get; set; }
+            internal ObserverStatus Status { get; set; } = ObserverStatus.Ready;
 
-            internal CollectionItemObserver(RespServerSession session, byte operation)
+            internal CollectionItemObserver(RespServerSession session, GarnetObjectType objestType, byte operation)
             {
                 Session = session;
+                ObjectType = objestType;
                 Operation = operation;
-                IsSessionDisposed = false;
-                IsSessionDisposedLock = new ReaderWriterLockSlim();
             }
+        }
+
+        private enum ObserverStatus
+        {
+            Ready,
+            SessionDisposed,
         }
     }
 }
