@@ -328,11 +328,11 @@ namespace Garnet.test
             var response = lightClientRequest.Execute("GEOADD Sicily 13.361389 38.115556 Palermo 15.087269 37.502669 Catania", "PING", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
 
-            expectedResponse = "*3\r\n$11\r\nsqc8b49rnys\r\n$11\r\nsqdtr74hyu1\r\n$-1\r\n+PONG\r\n";
+            expectedResponse = "*3\r\n$11\r\nsqc8b49rnys\r\n$11\r\nsqdtr74hyu0\r\n$-1\r\n+PONG\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo Catania Unknown", "PING", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
 
-            expectedResponse = "*3\r\n$11\r\nsqc8b49rnys\r\n$11\r\nsqdtr74hyu1\r\n$-1\r\n";
+            expectedResponse = "*3\r\n$11\r\nsqc8b49rnys\r\n$11\r\nsqdtr74hyu0\r\n$-1\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo Catania Unknown", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
 
