@@ -160,8 +160,8 @@ namespace Garnet.server
 #if USE_PDEP_PEXT
             if (Bmi2.X64.IsSupported)
             {
-                const ulong Mask = 0x5555555555555555;
-                return Bmi2.X64.ParallelBitDeposit(x, Mask) | (Bmi2.X64.ParallelBitDeposit(y, Mask) << 1);
+                return Bmi2.X64.ParallelBitDeposit(x, 0x5555555555555555) 
+                    | Bmi2.X64.ParallelBitDeposit(y, 0xAAAAAAAAAAAAAAAA);
             }
 #endif
             return Spread(x) | (Spread(y) << 1);
@@ -190,8 +190,9 @@ namespace Garnet.server
 #if USE_PDEP_PEXT
             if (Bmi2.X64.IsSupported)
             {
-                const ulong Mask = 0x5555555555555555;
-                return ((uint)Bmi2.X64.ParallelBitExtract(x, Mask), (uint)Bmi2.X64.ParallelBitExtract(x >> 1, Mask));
+                return (
+                    X: (uint)Bmi2.X64.ParallelBitExtract(x, 0x5555555555555555), 
+                    Y: (uint)Bmi2.X64.ParallelBitExtract(x, 0xAAAAAAAAAAAAAAAA));
             }
 #endif
             return (Squash(x), Squash(x >> 1));
