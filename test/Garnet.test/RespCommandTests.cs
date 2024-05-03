@@ -10,6 +10,9 @@ using SetOperation = Garnet.server.SetOperation;
 
 namespace Garnet.test
 {
+    /// <summary>
+    /// This test class tests the RESP COMMAND & COMMAND INFO commands
+    /// </summary>
     [TestFixture]
     public class RespCommandTests
     {
@@ -36,9 +39,14 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
+        /// <summary>
+        /// Verify that all existing combinations of RespCommand and subcommand byte (if relevant)
+        /// have a matching RespCommandInfo objects defined in RespCommandsInfo
+        /// </summary>
         [Test]
         public void CommandsInfoCoverageTest()
         {
+            // Get all command-subcommand combinations that have RespCommandInfo objects defined
             var existingCombinations = new Dictionary<RespCommand, HashSet<byte>>();
             foreach (var commandInfo in respCommandsInfo.Values)
             {
@@ -48,6 +56,7 @@ namespace Garnet.test
                     existingCombinations[commandInfo.Command].Add(commandInfo.ArrayCommand.Value);
             }
 
+            // RespCommands that can be ignored
             var ignoreCommands = new HashSet<RespCommand>()
             {
                 RespCommand.NONE,
@@ -98,11 +107,15 @@ namespace Garnet.test
                 }
             }
 
+            // Verify that there are no missing combinations
             Assert.IsEmpty(missingCombinations);
         }
 
+        /// <summary>
+        /// Test COMMAND command
+        /// </summary>
         [Test]
-        public void GetCommandsInfoTest()
+        public void CommandTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -113,11 +126,49 @@ namespace Garnet.test
             Assert.IsNotNull(results);
             Assert.AreEqual(respCommandsInfo.Count, results.Length);
 
+            // Register custom commands
+            var customCommandsRegistered = RegisterCustomCommands();
+
+            // Get all commands (including custom commands) using COMMAND command
+            results = (RedisResult[])db.Execute("COMMAND");
+
+            Assert.IsNotNull(results);
+            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered, results.Length);
+        }
+
+        /// <summary>
+        /// Test COMMAND INFO command
+        /// </summary>
+        [Test]
+        public void CommandInfoTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
             // Get all commands using COMMAND INFO command
-            results = (RedisResult[])db.Execute("COMMAND", "INFO");
+            var results = (RedisResult[])db.Execute("COMMAND", "INFO");
 
             Assert.IsNotNull(results);
             Assert.AreEqual(respCommandsInfo.Count, results.Length);
+
+            // Register custom commands
+            var customCommandsRegistered = RegisterCustomCommands();
+
+            // Get all commands (including custom commands) using COMMAND INFO command
+            results = (RedisResult[])db.Execute("COMMAND", "INFO");
+
+            Assert.IsNotNull(results);
+            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered, results.Length);
+        }
+
+        /// <summary>
+        /// Test COMMAND COUNT command
+        /// </summary>
+        [Test]
+        public void CommandCountTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
 
             // Get command count
             var commandCount = (int)db.Execute("COMMAND", "COUNT");
@@ -125,31 +176,61 @@ namespace Garnet.test
             Assert.AreEqual(respCommandsInfo.Count, commandCount);
 
             // Register custom commands
-            var factory = new MyDictFactory();
-            server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"]);
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, respCustomCommandsInfo["MYDICTSET"]);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, respCustomCommandsInfo["MYDICTGET"]);
-
-            // Get all commands (including custom commands) using COMMAND command
-            results = (RedisResult[])db.Execute("COMMAND");
-
-            Assert.IsNotNull(results);
-            Assert.AreEqual(respCommandsInfo.Count + 3, results.Length);
-
-            // Get all commands (including custom commands) using COMMAND INFO command
-            results = (RedisResult[])db.Execute("COMMAND", "INFO");
-
-            Assert.IsNotNull(results);
-            Assert.AreEqual(respCommandsInfo.Count + 3, results.Length);
+            var customCommandsRegistered = RegisterCustomCommands();
 
             // Get command count (including custom commands)
             commandCount = (int)db.Execute("COMMAND", "COUNT");
 
-            Assert.AreEqual(respCommandsInfo.Count + 3, commandCount);
+            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered, commandCount);
         }
 
+        /// <summary>
+        /// Test COMMAND DOCS command
+        /// This is not yet implemented, yet it should return an empty array
+        /// so to not crash clients that use this command at initialization
+        /// </summary>
         [Test]
-        public void GetCommandsInfoWithCommandNamesTest()
+        public void CommandDocsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Get all commands using COMMAND INFO command
+            var results = (RedisResult[])db.Execute("COMMAND", "DOCS");
+
+            Assert.IsNotNull(results);
+            Assert.IsEmpty(results);
+        }
+
+        /// <summary>
+        /// Test COMMAND with unknown subcommand
+        /// </summary>
+        [Test]
+        public void CommandUnknownSubcommandTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var unknownSubCommand = "UNKNOWN";
+
+            // Get all commands using COMMAND INFO command
+            try
+            {
+                db.Execute("COMMAND", unknownSubCommand);
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                var expectedErrorMessage = string.Format(CmdStrings.GenericErrUnknownSubCommand, unknownSubCommand, RespCommand.COMMAND);
+                Assert.AreEqual(expectedErrorMessage, e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Test COMMAND INFO [command-name [command-name ...]]
+        /// </summary>
+        [Test]
+        public void CommandInfoWithCommandNamesTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -165,6 +246,16 @@ namespace Garnet.test
 
             var setInfo = (RedisResult[])results[1];
             VerifyCommandInfo("SET", setInfo);
+        }
+
+        private int RegisterCustomCommands()
+        {
+            var factory = new MyDictFactory();
+            server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"]);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, respCustomCommandsInfo["MYDICTSET"]);
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, respCustomCommandsInfo["MYDICTGET"]);
+
+            return 3;
         }
 
         private void VerifyCommandInfo(string cmdName, RedisResult[] result)

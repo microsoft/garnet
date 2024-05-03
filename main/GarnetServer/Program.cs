@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Garnet
 {

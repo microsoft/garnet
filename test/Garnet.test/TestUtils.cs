@@ -71,6 +71,12 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// Get command info for custom commands defined in custom commands json file
+        /// </summary>
+        /// <param name="customCommandsInfo">Mapping between command name and command info</param>
+        /// <param name="logger">Logger</param>
+        /// <returns></returns>
         internal static bool TryGetCustomCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> customCommandsInfo, ILogger logger = null)
         {
             customCommandsInfo = default;

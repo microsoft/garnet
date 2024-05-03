@@ -16,14 +16,14 @@ using JsonSerializer = System.Text.Json.JsonSerializer;
 namespace Garnet.server
 {
     /// <summary>
-    /// Interface for importing / exporting resp commands info from different file types
+    /// Interface for importing / exporting RESP commands info from different file types
     /// </summary>
     public interface IRespCommandsInfoProvider
     {
         /// <summary>
-        /// Import resp commands info from path using a stream provider
+        /// Import RESP commands info from path using a stream provider
         /// </summary>
-        /// <param name="path">Path to the file containing the serialized resp commands info</param>
+        /// <param name="path">Path to the file containing the serialized RESP commands info</param>
         /// <param name="streamProvider">Stream provider to use when reading from the path</param>
         /// <param name="logger">Logger</param>
         /// <param name="commandsInfo">Outputs a read-only dictionary that maps a command name to its matching RespCommandsInfo</param>
@@ -31,7 +31,7 @@ namespace Garnet.server
         bool TryImportRespCommandsInfo(string path, IStreamProvider streamProvider, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo, ILogger logger = null);
 
         /// <summary>
-        /// Export resp commands info to path using a stream provider
+        /// Export RESP commands info to path using a stream provider
         /// </summary>
         /// <param name="path">Path to the file to write into</param>
         /// <param name="streamProvider">Stream provider to use when writing to the path</param>
@@ -46,7 +46,7 @@ namespace Garnet.server
         /// <summary>
         /// Get an IRespCommandsInfoProvider instance based on its file type
         /// </summary>
-        /// <param name="fileType">The resp commands info file type</param>
+        /// <param name="fileType">The RESP commands info file type</param>
         /// <returns>IRespCommandsInfoProvider instance</returns>
         /// <exception cref="NotImplementedException"></exception>
         public static IRespCommandsInfoProvider GetRespCommandsInfoProvider(RespCommandsObjectFileType fileType = RespCommandsObjectFileType.Default)
@@ -136,7 +136,7 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Current supported resp commands info file types
+    /// Current supported RESP commands info file types
     /// </summary>
     public enum RespCommandsObjectFileType
     {

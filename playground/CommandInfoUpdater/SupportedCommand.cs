@@ -252,7 +252,8 @@ namespace CommandInfoUpdater
 
         }
 
-        public SupportedCommand(string command, RespCommand respCommand = RespCommand.NONE, byte? arrayCommand = null, IEnumerable<string>? subCommands = null)
+        public SupportedCommand(string command, RespCommand respCommand = RespCommand.NONE, byte? arrayCommand = null,
+            IEnumerable<string>? subCommands = null) : this()
         {
             this.Command = command;
             this.SubCommands = subCommands == null ? null : new HashSet<string>(subCommands);

@@ -231,6 +231,13 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Tries to parse key spec header from RESP format
+        /// </summary>
+        /// <param name="ptr">Pointer to current RESP chunk to read</param>
+        /// <param name="end">Pointer to end of RESP chunk to read</param>
+        /// <param name="keySpecType">Parsed key spec type</param>
+        /// <returns>True if parsing successful</returns>
         private static unsafe bool TryReadKeySpecHeader(ref byte* ptr, byte* end, out string keySpecType)
         {
             keySpecType = default;
@@ -262,6 +269,9 @@ namespace Garnet.server
             unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod);
         }
 
+        /// <summary>
+        /// Parser for the BeginSearchIndex key specification method
+        /// </summary>
         internal sealed class BeginSearchIndexParser : IKeySpecParser
         {
             private static BeginSearchIndexParser instance;
@@ -275,6 +285,7 @@ namespace Garnet.server
                 get { return instance ??= new BeginSearchIndexParser(); }
             }
 
+            /// <inheritdoc />
             public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
                 keySpecMethod = default;
@@ -292,6 +303,9 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Parser for the BeginSearchKeyword key specification method
+        /// </summary>
 
         internal class BeginSearchKeywordParser : IKeySpecParser
         {
@@ -306,6 +320,7 @@ namespace Garnet.server
                 get { return instance ??= new BeginSearchKeywordParser(); }
             }
 
+            /// <inheritdoc />
             public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
                 keySpecMethod = default;
@@ -326,6 +341,9 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Parser for the BeginSearchUnknown key specification method
+        /// </summary>
         internal class BeginSearchUnknownParser : IKeySpecParser
         {
             private static BeginSearchUnknownParser instance;
@@ -339,6 +357,7 @@ namespace Garnet.server
                 get { return instance ??= new BeginSearchUnknownParser(); }
             }
 
+            /// <inheritdoc />
             public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
                 keySpecMethod = default;
@@ -352,6 +371,9 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Parser for the FindKeysRange key specification method
+        /// </summary>
         internal class FindKeysRangeParser : IKeySpecParser
         {
             private static FindKeysRangeParser instance;
@@ -365,6 +387,7 @@ namespace Garnet.server
                 get { return instance ??= new FindKeysRangeParser(); }
             }
 
+            /// <inheritdoc />
             public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
                 keySpecMethod = default;
@@ -390,6 +413,9 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Parser for the FindKeysKeyNum key specification method
+        /// </summary>
         internal class FindKeysKeyNumParser : IKeySpecParser
         {
             private static FindKeysKeyNumParser instance;
@@ -403,6 +429,7 @@ namespace Garnet.server
                 get { return instance ??= new FindKeysKeyNumParser(); }
             }
 
+            /// <inheritdoc />
             public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
                 keySpecMethod = default;
@@ -428,6 +455,9 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Parser for the FindKeysUnknown key specification method
+        /// </summary>
         internal class FindKeysUnknownParser : IKeySpecParser
         {
             private static FindKeysUnknownParser instance;
@@ -441,6 +471,7 @@ namespace Garnet.server
                 get { return instance ??= new FindKeysUnknownParser(); }
             }
 
+            /// <inheritdoc />
             public unsafe bool TryReadFromResp(ref byte* ptr, byte* end, out KeySpecMethodBase keySpecMethod)
             {
                 keySpecMethod = default;
