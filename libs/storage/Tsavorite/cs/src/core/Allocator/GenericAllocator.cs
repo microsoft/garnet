@@ -1202,6 +1202,24 @@ namespace Tsavorite.core
             return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
+        public override void EvictPage(long page)
+        {
+            if (OnEvictionObserver is not null)
+            {
+                var beginAddress = page << LogPageSizeBits;
+                var endAddress = (page + 1) << LogPageSizeBits;
+                var pageStartAddress = beginAddress & ~PageSizeMask;
+                var start = (int)(beginAddress & PageSizeMask) / RecordSize;
+                var count = (int)(endAddress - beginAddress) / RecordSize;
+                var end = start + count;
+                var pageIndex = (int)(page % BufferSize);
+                using var iter = new MemoryPageScanIterator<Key, Value>(values[pageIndex], start, end, pageStartAddress, RecordSize);
+                OnEvictionObserver?.OnNext(iter);
+            }
+
+            FreePage(page);
+        }
+
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<Key, Value>> observer)
         {

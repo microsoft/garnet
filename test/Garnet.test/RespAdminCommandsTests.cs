@@ -239,8 +239,13 @@ namespace Garnet.test
                 {
                     var key = $"SeSaveRecoverTestKey{i:0000}";
                     db.ListLeftPush(key, ldata);
-                    var retval = db.ListRange(key);
-                    Assert.AreEqual(ldataArr, retval, $"key {key}");
+                }
+
+                for (int i = 0; i < 3000; i++)
+                {
+                    var key = $"SeSaveRecoverTestKey{i:0000}";
+                    var returnedData = db.ListRange(key);
+                    Assert.AreEqual(ldataArr, returnedData, $"key {key}");
                 }
 
                 // Issue and wait for DB save
@@ -250,7 +255,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize));
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize), objectStoreTotalMemorySize: "64k");
             server.Start();
 
             Assert.LessOrEqual(server.Provider.StoreWrapper.objectStore.MaxAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);

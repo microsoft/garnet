@@ -1454,7 +1454,7 @@ namespace Tsavorite.core
             }
         }
 
-        public void EvictPage(long page)
+        public virtual void EvictPage(long page)
         {
             long start = page << LogPageSizeBits;
             long end = (page + 1) << LogPageSizeBits;
