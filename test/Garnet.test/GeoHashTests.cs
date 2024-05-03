@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.server;
 using NUnit.Framework;
-using System;
 
 namespace Garnet.test
 {
