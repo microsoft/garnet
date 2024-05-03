@@ -53,6 +53,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.GEOADD;
                 inputPtr->count = inputCount;
                 inputPtr->done = zaddDoneCount;
@@ -154,6 +155,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = op;
                 inputPtr->count = inputCount;
 

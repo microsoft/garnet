@@ -67,6 +67,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Set;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SetOp = SetOperation.SADD;
                 inputPtr->count = inputCount;
                 inputPtr->done = setOpsCount;
@@ -249,6 +250,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Set;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SetOp = SetOperation.SREM;
                 inputPtr->count = inputCount;
                 inputPtr->done = setItemsDoneCount;
@@ -329,6 +331,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Set;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SetOp = SetOperation.SCARD;
                 inputPtr->count = 1;
                 inputPtr->done = 0;
@@ -396,6 +399,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Set;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SetOp = SetOperation.SMEMBERS;
                 inputPtr->count = count;
                 inputPtr->done = setItemsDoneCount;
@@ -466,6 +470,7 @@ namespace Garnet.server
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Set;
+            inputPtr->header.flags = 0;
             inputPtr->header.SetOp = SetOperation.SISMEMBER;
             inputPtr->count = count - 2;
             inputPtr->done = 0;
@@ -543,6 +548,7 @@ namespace Garnet.server
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Set;
+            inputPtr->header.flags = 0;
             inputPtr->header.SetOp = SetOperation.SPOP;
             inputPtr->count = int.MinValue;
 
@@ -726,6 +732,7 @@ namespace Garnet.server
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Set;
+            inputPtr->header.flags = 0;
             inputPtr->header.SetOp = SetOperation.SRANDMEMBER;
             inputPtr->count = Int32.MinValue;
 
