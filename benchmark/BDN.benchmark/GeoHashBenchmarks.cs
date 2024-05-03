@@ -7,6 +7,7 @@ using Garnet.server;
 
 namespace BDN.benchmark
 {
+    [MemoryDiagnoser]
     public class GeoHashBenchmarks
     {
         private const double Latitude = 47.642219912251285;
@@ -19,5 +20,8 @@ namespace BDN.benchmark
 
         [Benchmark]
         public (double, double) GetCoordinatesFromLong() => GeoHash.GetCoordinatesFromLong(GeoHashInteger);
+
+        [Benchmark]
+        public string GetGeoHashCode() => GeoHash.GetGeoHashCode(GeoHashInteger);
     }
 }
