@@ -1523,9 +1523,7 @@ namespace Garnet.test
             Assert.AreEqual(key, (string)keys[0]);
             Assert.AreEqual(key, (string)keys[1]);
 
-            // do ListRightPush using the same key
-            // expected: When key holds a value that is not a list, an error is returned. https://redis.io/docs/latest/commands/rpush/
-            // result: Assert in GarnetServer, cryptic errors in SERedis client
+            // do ListRightPush using the same key, expected error
             var ex = Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"));
             Assert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value", ex.Message);
         }
