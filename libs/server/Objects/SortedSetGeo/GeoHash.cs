@@ -76,7 +76,7 @@ namespace Garnet.server
             // 
             // Now we can read value of floor(2^52 * x) directly from binary representation of 1.0 + x,
             // where the now "quantized" value is stored as the 32 most significant bits of the signicand!
-            static uint Quantize(double value, double rangeReciprocal) => (uint)(BitConverter.DoubleToUInt64Bits((value * rangeReciprocal) + 1.5) >> 20);
+            static uint Quantize(double value, double rangeReciprocal) => (uint)(BitConverter.DoubleToUInt64Bits(Math.FusedMultiplyAdd(value, rangeReciprocal, 1.5)) >> 20);
 
             var latQuantized = Quantize(latitude, LatToUnitRangeReciprocal);
             var lonQuantized = Quantize(longitude, LonToUnitRangeReciprocal);
@@ -113,7 +113,7 @@ namespace Garnet.server
                 // Now:
                 // (2*rangeMax) * ([1, 2]-1) = [0, 2*rangeMax]
                 // [0, 2*rangeMax] - rangeMax = [-rangeMax, rangeMax]
-                return ((rangeMax + rangeMax) * (value - 1.0)) - rangeMax;
+                return Math.FusedMultiplyAdd(rangeMax + rangeMax, value - 1.0, -rangeMax);
             }
 
             var fullHash = (ulong)hash << ((sizeof(ulong) * 8) - BitsOfPrecision);
