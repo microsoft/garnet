@@ -4,7 +4,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-#if USE_PDEP_PEXT
+#if NET8_0_OR_GREATER
 using System.Runtime.Intrinsics.X86;
 #endif
 
@@ -157,10 +157,20 @@ namespace Garnet.server
                 y = (y | (y << 1)) & 0x5555555555555555;
                 return y;
             }
-#if USE_PDEP_PEXT
-            if (Bmi2.X64.IsSupported)
+
+#if NET8_0_OR_GREATER
+            // You may wonder, why is this also guarded behind AVX512F in addition to BMI2?
+            // The answer is that on AMD platforms before Zen 3, the PDEP (and PEXT) are implemented in microcode
+            // and work bit-by-bit basis. It has been measured[^1] that for every bit set in the mask operand,
+            // there is 8~ uops issued, meaning that we would do 32 bits per mask * 8 uops * 2 = 512~ uops in total for the encoding instead of just 1 uop.
+            //
+            // By guarding with AVX512F support, we avoid going to this code path for Zen 3 and older platforms. Avx512F.IsSupported check is the lowest possible 
+            // check we can (as of .NET 8) to allow largest possible set of CPUs to utilize accelerated PDEP and PEXT code-path.
+            //
+            // [1]: https://twitter.com/uops_info/status/1202984196739870722
+            if (Bmi2.X64.IsSupported && Avx512F.IsSupported)
             {
-                return Bmi2.X64.ParallelBitDeposit(x, 0x5555555555555555) 
+                return Bmi2.X64.ParallelBitDeposit(x, 0x5555555555555555)
                     | Bmi2.X64.ParallelBitDeposit(y, 0xAAAAAAAAAAAAAAAA);
             }
 #endif
@@ -187,11 +197,13 @@ namespace Garnet.server
                 y = (y | (y >> 16)) & 0x00000000FFFFFFFF;
                 return (uint)y;
             }
-#if USE_PDEP_PEXT
-            if (Bmi2.X64.IsSupported)
+
+#if NET8_0_OR_GREATER
+            // See the rationale for the AVX512F guard in the MortonEncode method
+            if (Bmi2.X64.IsSupported && Avx512F.IsSupported)
             {
                 return (
-                    X: (uint)Bmi2.X64.ParallelBitExtract(x, 0x5555555555555555), 
+                    X: (uint)Bmi2.X64.ParallelBitExtract(x, 0x5555555555555555),
                     Y: (uint)Bmi2.X64.ParallelBitExtract(x, 0xAAAAAAAAAAAAAAAA));
             }
 #endif

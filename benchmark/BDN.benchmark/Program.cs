@@ -22,8 +22,7 @@ public class BaseConfig : ManualConfig
         AddExporter(DefaultExporters.Markdown);
         AddColumnProvider(DefaultColumnProviders.Instance);
 
-        var baseJob = Job.Default
-            .WithGcServer(true);
+        var baseJob = Job.Default.WithGcServer(true);
 
         Net6BaseJob = baseJob.WithRuntime(CoreRuntime.Core60);
         Net8BaseJob = baseJob.WithRuntime(CoreRuntime.Core80)
