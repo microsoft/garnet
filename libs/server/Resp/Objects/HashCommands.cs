@@ -69,6 +69,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
+                inputPtr->header.flags = 0;
                 inputPtr->header.HashOp = hop;
                 inputPtr->count = inputCount;
                 inputPtr->done = hashOpsCount;
@@ -152,6 +153,7 @@ namespace Garnet.server
                 int inputCount = op == HashOperation.HGETALL ? 0 : (op == HashOperation.HRANDFIELD ? count + 1 : count - 1);
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
+                inputPtr->header.flags = 0;
                 inputPtr->header.HashOp = op;
                 inputPtr->count = inputCount;
                 inputPtr->done = hashItemsDoneCount;
@@ -253,6 +255,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
+                inputPtr->header.flags = 0;
                 inputPtr->header.HashOp = HashOperation.HLEN;
                 inputPtr->count = 1;
                 inputPtr->done = 0;
@@ -323,6 +326,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
+                inputPtr->header.flags = 0;
                 inputPtr->header.HashOp = HashOperation.HSTRLEN;
                 inputPtr->count = 1;
                 inputPtr->done = 0;
@@ -397,6 +401,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
+                inputPtr->header.flags = 0;
                 inputPtr->header.HashOp = HashOperation.HDEL;
                 inputPtr->count = inputCount;
                 inputPtr->done = hashItemsDoneCount;
@@ -474,6 +479,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
+                inputPtr->header.flags = 0;
                 inputPtr->header.HashOp = HashOperation.HEXISTS;
                 inputPtr->count = 1;
                 inputPtr->done = 0;
@@ -546,6 +552,7 @@ namespace Garnet.server
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Hash;
+            inputPtr->header.flags = 0;
             inputPtr->header.HashOp = op;
             inputPtr->count = count - 1;
             inputPtr->done = hashOpsCount;
@@ -634,6 +641,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
+                inputPtr->header.flags = 0;
                 inputPtr->header.HashOp = op;
                 inputPtr->count = count + 1;
                 inputPtr->done = 0;
