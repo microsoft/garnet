@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#define USE_PDEP_PEXT
-
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
