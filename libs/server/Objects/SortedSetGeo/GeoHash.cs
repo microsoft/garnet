@@ -144,6 +144,7 @@ namespace Garnet.server
         /// <param name="x">The x-coordinate to encode.</param>
         /// <param name="y">The y-coordinate to encode.</param>
         /// <returns>A ulong value representing the Morton encoding of the given coordinates.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static ulong MortonEncode(uint x, uint y)
         {
             static ulong Spread(uint x)
@@ -173,6 +174,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="x">The 64-bit value to decode.</param>
         /// <returns>A tuple of values representing the x- and y-coordinates decoded from the given Morton code.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static (uint X, uint Y) MortonDecode(ulong x)
         {
             static uint Squash(ulong x)
