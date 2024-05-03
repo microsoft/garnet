@@ -1,0 +1,6 @@
+<Project>
+  <!-- A configuration knob to guard the usage of PDEP & PEXT BMI2 instructions which are emulated in microcode for Pre-Zen 3 AMD platforms. -->
+  <PropertyGroup Condition="'$(UsePdepPext)' == 'true'">
+    <DefineConstants>$(DefineConstants);USE_PDEP_PEXT</DefineConstants>
+  </PropertyGroup>
+</Project>
