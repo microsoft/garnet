@@ -1,9 +1,14 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#define USE_PDEP_PEXT
+
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+#if USE_PDEP_PEXT
+using System.Runtime.Intrinsics.X86;
+#endif
 
 using Garnet.common;
 
@@ -143,8 +148,6 @@ namespace Garnet.server
         /// <returns>A ulong value representing the Morton encoding of the given coordinates.</returns>
         private static ulong MortonEncode(uint x, uint y)
         {
-            // Note: This method could be implemented using 2x Bmi2.ParallelBitDeposit,
-            // but the PDEP is emulated on AMD platforms Pre-Zen 3 so the perf. would fall from a cliff for those CPUs.
             static ulong Spread(uint x)
             {
                 ulong y = x;
@@ -155,7 +158,13 @@ namespace Garnet.server
                 y = (y | (y << 1)) & 0x5555555555555555;
                 return y;
             }
-
+#if USE_PDEP_PEXT
+            if (Bmi2.X64.IsSupported)
+            {
+                const ulong Mask = 0x5555555555555555;
+                return Bmi2.X64.ParallelBitDeposit(x, Mask) | (Bmi2.X64.ParallelBitDeposit(y, Mask) << 1);
+            }
+#endif
             return Spread(x) | (Spread(y) << 1);
         }
 
@@ -178,7 +187,13 @@ namespace Garnet.server
                 y = (y | (y >> 16)) & 0x00000000FFFFFFFF;
                 return (uint)y;
             }
-
+#if USE_PDEP_PEXT
+            if (Bmi2.X64.IsSupported)
+            {
+                const ulong Mask = 0x5555555555555555;
+                return ((uint)Bmi2.X64.ParallelBitExtract(x, Mask), (uint)Bmi2.X64.ParallelBitExtract(x >> 1, Mask));
+            }
+#endif
             return (Squash(x), Squash(x >> 1));
         }
 
