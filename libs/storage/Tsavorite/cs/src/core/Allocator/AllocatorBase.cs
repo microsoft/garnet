@@ -260,9 +260,16 @@ namespace Tsavorite.core
         internal IObserver<ITsavoriteScanIterator<Key, Value>> OnEvictionObserver;
 
         /// <summary>
+        /// Observer for records brought into memory by deserializing pages
+        /// </summary>
+        internal IObserver<ITsavoriteScanIterator<Key, Value>> OnDeserializationObserver;
+
+        /// <summary>
         /// The "event" to be waited on for flush completion by the initiator of an operation
         /// </summary>
         internal CompletionEvent FlushEvent;
+
+        public Func<bool> IsSizeBeyondLimit;
 
         #region Abstract methods
         /// <summary>
@@ -1445,6 +1452,15 @@ namespace Tsavorite.core
                         TruncateUntilAddress(newBeginAddress);
                 });
             }
+        }
+
+        public void EvictPage(long page)
+        {
+            long start = page << LogPageSizeBits;
+            long end = (page + 1) << LogPageSizeBits;
+            if (OnEvictionObserver is not null)
+                MemoryPageScan(start, end, OnEvictionObserver);
+            FreePage(page);
         }
 
         /// <summary>

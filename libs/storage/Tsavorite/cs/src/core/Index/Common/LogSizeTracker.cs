@@ -21,6 +21,46 @@ namespace Tsavorite.core
         long CalculateRecordSize(RecordInfo recordInfo, Key key, Value value);
     }
 
+    public enum LogOperationType
+    {
+        Deserialize
+    }
+
+    public class LogOperationObserver<Key, Value> : IObserver<ITsavoriteScanIterator<Key, Value>>
+    {
+        private readonly LogSizeTracker<Key, Value, ILogSizeCalculator<Key, Value>> logSizeTracker;
+        private readonly LogOperationType logOperationType;
+
+        public LogOperationObserver(LogSizeTracker<Key, Value, ILogSizeCalculator<Key, Value>> logSizeTracker, LogOperationType logOperationType)
+        {
+            this.logSizeTracker = logSizeTracker;
+            this.logOperationType = logOperationType;
+        }
+
+        public void OnCompleted() { }
+
+        public void OnError(Exception error) { }
+
+        public void OnNext(ITsavoriteScanIterator<Key, Value> records)
+        {
+            long size = 0;
+            while (records.GetNext(out RecordInfo info, out Key key, out Value value))
+            {
+                Debug.Assert(key != null);
+                Debug.Assert(value != null);
+
+                size += logSizeTracker.LogSizeCalculator.CalculateRecordSize(info, key, value);
+            }
+
+            if (size == 0) return;
+
+            if (logOperationType == LogOperationType.Deserialize)
+            {
+                logSizeTracker.IncrementSize(size);
+            }
+        }
+    }
+
     /// <summary>Tracks and controls size of log</summary>
     /// <typeparam name="Key">Type of key</typeparam>
     /// <typeparam name="Value">Type of value</typeparam>
@@ -31,7 +71,7 @@ namespace Tsavorite.core
         private ConcurrentCounter logSize;
         private long lowTargetSize;
         private long highTargetSize;
-        private TLogSizeCalculator logSizeCalculator;
+        public TLogSizeCalculator LogSizeCalculator;
         private readonly ILogger logger;
         internal const int resizeTaskDelaySeconds = 10;
 
@@ -64,10 +104,12 @@ namespace Tsavorite.core
             logSize = new ConcurrentCounter();
             lowTargetSize = targetSize - delta;
             highTargetSize = targetSize + delta;
-            this.logSizeCalculator = logSizeCalculator;
+            this.LogSizeCalculator = logSizeCalculator;
             this.logger = logger;
             Task.Run(ResizerTask);
         }
+
+        public bool IsSizeBeyondLimit => TotalSizeBytes > highTargetSize;
 
         /// <summary>Callback on allocator completion</summary>
         public void OnCompleted() { }
@@ -84,7 +126,7 @@ namespace Tsavorite.core
                 Debug.Assert(key != null);
                 Debug.Assert(value != null);
 
-                size += logSizeCalculator.CalculateRecordSize(info, key, value);
+                size += LogSizeCalculator.CalculateRecordSize(info, key, value);
             }
 
             if (size == 0) return;

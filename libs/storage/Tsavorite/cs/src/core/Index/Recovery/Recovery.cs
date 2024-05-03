@@ -619,19 +619,29 @@ namespace Tsavorite.core
         /// We free these 14 pages, leaving 18 allocated, and then read 2, which fills up usableCapacity.
         /// The beg, end can only be zero on the first pass through the buffer, as the page number continuously increases 
         /// </summary>
-        private void FreePagesBeyondUsableCapacity(long startPage, int capacity, int usableCapacity, int pagesToRead, RecoveryStatus recoveryStatus)
+        private int FreePagesBeyondUsableCapacity(long startPage, int capacity, int usableCapacity, int pagesToRead, RecoveryStatus recoveryStatus, int pagesToFree = -1)
         {
-            var beg = startPage - capacity;
-            var end = startPage - (usableCapacity - pagesToRead);
-            if (beg < 0) beg = 0;
-            if (end < 0) end = 0;
+            var beg = Math.Max(0, startPage - capacity);
+            var end = Math.Max(0, startPage - (usableCapacity - pagesToRead));
 
-            WaitUntilAllPagesHaveBeenFlushed(beg, end, recoveryStatus);
+            int pagesFreed = 0;
             for (var page = beg; page < end; page++)
             {
-                if (hlog.IsAllocated(hlog.GetPageIndexForPage(page)))
-                    hlog.FreePage(page);
+                var pageIndex = hlog.GetPageIndexForPage(page);
+                recoveryStatus.WaitFlush(pageIndex);
+                if (hlog.IsAllocated(pageIndex))
+                {
+                    // TODO: Invoke eviction observer before freeing the page
+                    //hlog.FreePage(page);
+                    hlog.EvictPage(page);
+                    pagesFreed++;
+
+                    if (pagesToFree != -1 && pagesFreed == pagesToFree)
+                        break;
+                }
             }
+
+            return pagesFreed;
         }
 
         private void ReadPagesWithMemoryConstraint(long endAddress, int capacity, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead)
@@ -639,6 +649,19 @@ namespace Tsavorite.core
             // Before reading in additional pages, make sure that any previously allocated pages that would violate the memory size
             // constraint are freed.
             FreePagesBeyondUsableCapacity(startPage: page, capacity: capacity, usableCapacity: capacity - hlog.MinEmptyPageCount, pagesToRead: numPagesToRead, recoveryStatus);
+
+            if (hlog.IsSizeBeyondLimit != null)
+            {
+                while (hlog.IsSizeBeyondLimit())
+                {
+                    // free up additional pages, one at a time, to bring memory usage under control
+                    if (FreePagesBeyondUsableCapacity(page, capacity, 0, 0, recoveryStatus, pagesToFree: 1) == 0)
+                    {
+                        logger?.LogDebug($"Recovery couldn't free up more pages to reduce memory usage. Page to read: {page} endPage {endPage}");
+                        break;
+                    }
+                }
+            }
 
             // Issue request to read pages as much as possible
             for (var p = page; p < endPage; p++) recoveryStatus.readStatus[hlog.GetPageIndexForPage(p)] = ReadStatus.Pending;
@@ -734,7 +757,7 @@ namespace Tsavorite.core
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
         }
 
-        private RecoveryStatus GetPageRangesToRead(long scanFromAddress, long untilAddress, CheckpointType checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadFirst)
+        private RecoveryStatus GetPageRangesToRead(long scanFromAddress, long untilAddress, CheckpointType checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadPerIteration)
         {
             startPage = hlog.GetPage(scanFromAddress);
             endPage = hlog.GetPage(untilAddress);
@@ -747,7 +770,7 @@ namespace Tsavorite.core
             int totalPagesToRead = (int)(endPage - startPage);
 
             // Leave out at least MinEmptyPageCount pages to maintain memory size during recovery
-            numPagesToReadFirst = Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead);
+            numPagesToReadPerIteration = hlog.IsSizeBeyondLimit == null ? Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead) : 1;
             return new RecoveryStatus(capacity, hlog.MinEmptyPageCount, endPage, untilAddress, checkpointType);
         }
 
@@ -902,7 +925,7 @@ namespace Tsavorite.core
         }
 
         private void GetSnapshotPageRangesToRead(long fromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, Guid guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity,
-                                                 out RecoveryStatus recoveryStatus, out int numPagesToReadFirst)
+                                                 out RecoveryStatus recoveryStatus, out int numPagesToReadPerIteration)
         {
             // Compute startPage and endPage
             startPage = hlog.GetPage(fromAddress);
@@ -931,7 +954,7 @@ namespace Tsavorite.core
 
             // Initially issue read request for all pages that can be held in memory
             int totalPagesToRead = (int)(snapshotEndPage - startPage);
-            numPagesToReadFirst = Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead);
+            numPagesToReadPerIteration = hlog.IsSizeBeyondLimit == null ? Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead) : 1;
         }
 
         private void ProcessReadSnapshotPage(long fromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
