@@ -472,9 +472,9 @@ namespace Garnet.server
 
             // Prepare header in input buffer
             var inputPtr = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
-            inputPtr->header.SortedSetOp = sortedOperation;
             inputPtr->header.type = GarnetObjectType.SortedSet;
             inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = sortedOperation;
             inputPtr->count = 2 + (operation != default ? 1 : 0) + (sortedOperation != SortedSetOperation.ZREVRANGE && reverse ? 1 : 0) + (limit != default ? 3 : 0);
             inputPtr->done = 0;
 
