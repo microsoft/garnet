@@ -183,8 +183,15 @@ namespace Garnet.server
             fixed (byte* _output = output.SpanByte.AsSpan())
             {
                 var header = (RespInputHeader*)_input;
-                Debug.Assert(header->type == GarnetObjectType.SortedSet);
-                long previouseSize = this.Size;
+                if (header->type != GarnetObjectType.SortedSet)
+                {
+                    // Indicates an incorrect type of key
+                    output.Length = 0;
+                    sizeChange = 0;
+                    return true;
+                }
+
+                long prevSize = this.Size;
                 switch (header->SortedSetOp)
                 {
                     case SortedSetOperation.ZADD:
@@ -269,7 +276,7 @@ namespace Garnet.server
                     default:
                         throw new GarnetException($"Unsupported operation {(SortedSetOperation)_input[0]} in SortedSetObject.Operate");
                 }
-                sizeChange = this.Size - previouseSize;
+                sizeChange = this.Size - prevSize;
             }
             return true;
         }
