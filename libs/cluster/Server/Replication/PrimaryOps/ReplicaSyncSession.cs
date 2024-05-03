@@ -47,6 +47,7 @@ namespace Garnet.cluster
         public async Task<bool> SendCheckpoint()
         {
             errorMsg = default;
+            var retryCount = 0;
             var storeCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main);
             var objectStoreCkptManager = clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object);
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -96,6 +97,8 @@ namespace Garnet.cluster
                     {
                         localEntry.RemoveReader();
                         _ = Thread.Yield();
+                        if (retryCount++ > 10)
+                            throw new GarnetException("Attaching replica maximum retry count reached!");
                         goto retry;
                     }
                 }
@@ -110,6 +113,8 @@ namespace Garnet.cluster
                     {
                         localEntry.RemoveReader();
                         _ = Thread.Yield();
+                        if (retryCount++ > 10)
+                            throw new GarnetException("Attaching replica maximum retry count reached!");
                         goto retry;
                     }
                 }
