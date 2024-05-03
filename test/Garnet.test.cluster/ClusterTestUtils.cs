@@ -2647,15 +2647,34 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void WaitFirstCheckpoint(int nodeIndex, ILogger logger = null)
-            => WaitCheckpoint((IPEndPoint)endpoints[nodeIndex], logger: logger);
+        public DateTime LastSave(int nodeIndex, ILogger logger = null)
+            => LastSave((IPEndPoint)endpoints[nodeIndex], logger: logger);
 
-        public void WaitCheckpoint(IPEndPoint endPoint, ILogger logger = null)
+        public DateTime LastSave(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var server = redis.GetServer(endPoint);
-                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks)
+                return server.LastSave();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occurred; WaitCheckpoint");
+                Assert.Fail();
+            }
+            return default;
+        }
+
+        public void WaitCheckpoint(int nodeIndex, DateTime time, ILogger logger = null)
+            => WaitCheckpoint((IPEndPoint)endpoints[nodeIndex], time: time, logger: logger);
+
+        public void WaitCheckpoint(IPEndPoint endPoint, DateTime time, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+
+                while (server.LastSave() < time)
                     BackOff();
             }
             catch (Exception ex)
