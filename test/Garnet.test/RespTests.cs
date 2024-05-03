@@ -1502,6 +1502,35 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MainObjectKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var server = redis.GetServers()[0];
+            var db = redis.GetDatabase(0);
+
+            const string key = "test:1";
+
+            // Do StringSet
+            Assert.IsTrue(db.StringSet(key, "v1"));
+
+            // Do SetAdd using the same key
+            Assert.IsTrue(db.SetAdd(key, "v2"));
+
+            // Two keys "test:1" - this is expected as of now
+            // because Garnet has a separate main and object store
+            var keys = server.Keys(db.Database, key).ToList();
+            Assert.AreEqual(2, keys.Count);
+            Assert.AreEqual(key, (string)keys[0]);
+            Assert.AreEqual(key, (string)keys[1]);
+
+            // do ListRightPush using the same key
+            // expected: When key holds a value that is not a list, an error is returned. https://redis.io/docs/latest/commands/rpush/
+            // result: Assert in GarnetServer, cryptic errors in SERedis client
+            var ex = Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"));
+            Assert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value", ex.Message);
+        }
+
+        [Test]
         public void GetSliceTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

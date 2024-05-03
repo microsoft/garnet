@@ -134,13 +134,13 @@ namespace Garnet.server
                 var header = (RespInputHeader*)_input;
                 if (header->type != GarnetObjectType.List)
                 {
-                    //Indicates an incorrect type of key
+                    // Indicates an incorrect type of key
                     output.Length = 0;
                     sizeChange = 0;
                     return true;
                 }
 
-                var previouseSize = this.Size;
+                long prevSize = this.Size;
                 switch (header->ListOp)
                 {
                     case ListOperation.LPUSH:
@@ -183,7 +183,7 @@ namespace Garnet.server
                         throw new GarnetException($"Unsupported operation {(ListOperation)_input[0]} in ListObject.Operate");
                 }
 
-                sizeChange = this.Size - previouseSize;
+                sizeChange = this.Size - prevSize;
             }
             return true;
         }

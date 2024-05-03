@@ -108,7 +108,14 @@ namespace Garnet.server
             fixed (byte* _output = output.SpanByte.AsSpan())
             {
                 var header = (RespInputHeader*)_input;
-                Debug.Assert(header->type == GarnetObjectType.Set);
+                if (header->type != GarnetObjectType.Set)
+                {
+                    // Indicates an incorrect type of key
+                    output.Length = 0;
+                    sizeChange = 0;
+                    return true;
+                }
+
                 long prevSize = this.Size;
                 switch (header->SetOp)
                 {

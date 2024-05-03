@@ -84,7 +84,7 @@ namespace Garnet.server
             listItemsDoneCount += output.countDone;
             listOpsCount += output.opsDone;
 
-            //return if command is only partially done
+            // Return if command is only partially done
             if (output.countDone == Int32.MinValue && listOpsCount < inputCount)
                 return false;
 
@@ -95,11 +95,19 @@ namespace Garnet.server
             if (tokens < count - 1)
                 return false;
 
-            //write result to output
-            while (!RespWriteUtils.WriteInteger(listItemsDoneCount, ref dcurr, dend))
-                SendAndReset();
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                while (!RespWriteUtils.WriteError("WRONGTYPE Operation against a key holding the wrong kind of value", ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                // Write result to output
+                while (!RespWriteUtils.WriteInteger(listItemsDoneCount, ref dcurr, dend))
+                    SendAndReset();
+            }
 
-            //reset session counters
+            // Reset session counters
             listItemsDoneCount = listOpsCount = 0;
 
             // Move head
