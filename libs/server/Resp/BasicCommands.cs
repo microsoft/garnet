@@ -197,7 +197,7 @@ namespace Garnet.server
             return true;
         }
 
-        static void SetResult(int c, ref int firstPending, ref (GarnetStatus, SpanByteAndMemory)[] outputArr, 
+        static void SetResult(int c, ref int firstPending, ref (GarnetStatus, SpanByteAndMemory)[] outputArr,
             GarnetStatus status, SpanByteAndMemory output)
         {
             const int initialBatchSize = 8; // number of items in initial batch
