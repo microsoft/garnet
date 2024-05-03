@@ -29,10 +29,10 @@ namespace Garnet.cluster
                     throw new Exception("Replica is recovering cannot sync AOF");
                 }
 
-                if (currentConfig.GetLocalNodeRole() != NodeRole.REPLICA)
+                if (currentConfig.LocalNodeRole != NodeRole.REPLICA)
                 {
-                    logger?.LogWarning("This node {nodeId} is not a replica", currentConfig.GetLocalNodeId());
-                    throw new Exception($"This node {currentConfig.GetLocalNodeId()} is not a replica");
+                    logger?.LogWarning("This node {nodeId} is not a replica", currentConfig.LocalNodeId);
+                    throw new Exception($"This node {currentConfig.LocalNodeId} is not a replica");
                 }
 
                 if (clusterProvider.serverOptions.MainMemoryReplication)
@@ -69,7 +69,7 @@ namespace Garnet.cluster
                     if (payloadLength > 0)
                     {
                         aofProcessor.ProcessAofRecordInternal(null, ptr + entryLength, payloadLength, true);
-                        entryLength += storeWrapper.appendOnlyFile.UnsafeAlign(payloadLength);
+                        entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                     }
                     else if (payloadLength < 0)
                     {
@@ -80,7 +80,7 @@ namespace Garnet.cluster
                         TsavoriteLogRecoveryInfo info = new();
                         info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
                         storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info);
-                        entryLength += storeWrapper.appendOnlyFile.UnsafeAlign(-payloadLength);
+                        entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                     }
                     ptr += entryLength;
                     ReplicationOffset += entryLength;
@@ -111,11 +111,11 @@ namespace Garnet.cluster
             int payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
             if (payloadLength > 0)
             {
-                entryLength += storeWrapper.appendOnlyFile.UnsafeAlign(payloadLength);
+                entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
             }
             else if (payloadLength < 0)
             {
-                entryLength += storeWrapper.appendOnlyFile.UnsafeAlign(-payloadLength);
+                entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
             }
             return entryLength;
         }

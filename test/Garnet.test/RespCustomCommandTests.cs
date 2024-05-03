@@ -39,7 +39,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 disablePubSub: true,
-                extensionBinPaths: new[] { _extTestDir1, _extTestDir2 },
+                extensionBinPaths: [_extTestDir1, _extTestDir2],
                 extensionAllowUnsignedAssemblies: true);
             server.Start();
         }
@@ -514,7 +514,7 @@ namespace Garnet.test
             Assert.AreEqual(null, retValue);
         }
 
-        public void CreateTestLibrary(string[] namespaces, string[] referenceFiles, string[] filesToCompile, string dstFilePath)
+        public static void CreateTestLibrary(string[] namespaces, string[] referenceFiles, string[] filesToCompile, string dstFilePath)
         {
             if (File.Exists(dstFilePath))
             {
@@ -523,14 +523,14 @@ namespace Garnet.test
 
             foreach (var referenceFile in referenceFiles)
             {
-                Assert.IsTrue(File.Exists(referenceFile));
+                Assert.IsTrue(File.Exists(referenceFile), $"File '{Path.GetFullPath(referenceFile)}' does not exist.");
             }
 
             var references = referenceFiles.Select(f => MetadataReference.CreateFromFile(f));
 
             foreach (var fileToCompile in filesToCompile)
             {
-                Assert.IsTrue(File.Exists(fileToCompile));
+                Assert.IsTrue(File.Exists(fileToCompile), $"File '{Path.GetFullPath(fileToCompile)}' does not exist.");
             }
 
             var parseFunc = new Func<string, SyntaxTree>(filePath =>
@@ -589,25 +589,18 @@ namespace Garnet.test
                 Path.Combine(runtimePath, "System.Core.dll"),
                 Path.Combine(runtimePath, "System.Private.CoreLib.dll"),
                 Path.Combine(runtimePath, "System.Runtime.dll"),
-                Path.Combine(binPath, $"Tsavorite.core.dll"),
-                Path.Combine(binPath, $"Garnet.common.dll"),
-                Path.Combine(binPath, $"Garnet.server.dll"),
+                Path.Combine(binPath, "Tsavorite.core.dll"),
+                Path.Combine(binPath, "Garnet.common.dll"),
+                Path.Combine(binPath, "Garnet.server.dll"),
             };
 
             var dir1 = Path.Combine(this._extTestDir1, Path.GetFileName(TestUtils.MethodTestDir));
             var dir2 = Path.Combine(this._extTestDir2, Path.GetFileName(TestUtils.MethodTestDir));
 
-            if (!Directory.Exists(this._extTestDir1))
-                Directory.CreateDirectory(this._extTestDir1);
-
-            if (!Directory.Exists(dir1))
-                Directory.CreateDirectory(dir1);
-
-            if (!Directory.Exists(this._extTestDir2))
-                Directory.CreateDirectory(this._extTestDir2);
-
-            if (!Directory.Exists(dir2))
-                Directory.CreateDirectory(dir2);
+            Directory.CreateDirectory(this._extTestDir1);
+            Directory.CreateDirectory(dir1);
+            Directory.CreateDirectory(this._extTestDir2);
+            Directory.CreateDirectory(dir2);
 
             var testFilePath = Path.Combine(TestUtils.MethodTestDir, "test.cs");
             using (var testFile = File.CreateText(testFilePath))
@@ -617,18 +610,18 @@ namespace Garnet.test
 
             var libPathToFiles = new Dictionary<string, string[]>
             {
-                { Path.Combine(dir1, "testLib1.dll"), new [] {@"../../../../../../main/GarnetServer/Extensions/MyDictObject.cs"}},
-                { Path.Combine(dir2, "testLib2.dll"), new [] {@"../../../../../../main/GarnetServer/Extensions/SetIfPM.cs"}},
+                { Path.Combine(dir1, "testLib1.dll"), new [] { Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath) }},
+                { Path.Combine(dir2, "testLib2.dll"), new [] { Path.GetFullPath(@"../main/GarnetServer/Extensions/SetIfPM.cs", TestUtils.RootTestsProjectPath) }},
                 { Path.Combine(dir2, "testLib3.dll"), new []
                 {
-                    @"../../../../../../main/GarnetServer/Extensions/ReadWriteTxn.cs",
+                    Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath),
                     testFilePath,
                 }}
             };
 
             foreach (var ltf in libPathToFiles)
             {
-                this.CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
+                CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
             }
 
             var notAllowedPath = Path.Combine(TestUtils.MethodTestDir, "testLib1.dll");
@@ -637,7 +630,7 @@ namespace Garnet.test
                 File.Copy(Path.Combine(dir1, "testLib1.dll"), notAllowedPath);
             }
 
-            return new[] { Path.Combine(dir1, "testLib1.dll"), dir2 };
+            return [Path.Combine(dir1, "testLib1.dll"), dir2];
         }
 
         [Test]
@@ -738,7 +731,7 @@ namespace Garnet.test
             // Malformed request #2 - binary paths before sub-command
             var args = new List<object>() { "SRC" };
             args.AddRange(libraryPaths);
-            args.AddRange(new object[] { "TXN", "READWRITETX", 3, "ReadWriteTxn" });
+            args.AddRange(["TXN", "READWRITETX", 3, "ReadWriteTxn"]);
 
             try
             {
@@ -751,11 +744,15 @@ namespace Garnet.test
             Assert.IsNull(resp);
 
             // Binary file not contained in allowed paths
-            args = new List<object>
-            {
-                "RMW", "MYDICTSET", 2, "MyDictFactory",
-                "SRC", Path.Combine(TestUtils.MethodTestDir, "testLib1.dll")
-            };
+            args =
+            [
+                "RMW",
+                "MYDICTSET",
+                2,
+                "MyDictFactory",
+                "SRC",
+                Path.Combine(TestUtils.MethodTestDir, "testLib1.dll")
+            ];
 
             try
             {
@@ -768,12 +765,15 @@ namespace Garnet.test
             Assert.IsNull(resp);
 
             // Class not in supplied dlls
-            args = new List<object>
-            {
-                "RMW", "MYDICTSET", 2, "MyDictFactory",
+            args =
+            [
+                "RMW",
+                "MYDICTSET",
+                2,
+                "MyDictFactory",
                 "SRC",
-            };
-            args.AddRange(libraryPaths.Skip(1));
+                .. libraryPaths.Skip(1),
+            ];
 
             try
             {
@@ -786,12 +786,15 @@ namespace Garnet.test
             Assert.IsNull(resp);
 
             // Class not in supported
-            args = new List<object>
-            {
-                "RMW", "MYDICTSET", 2, "TestClass",
+            args =
+            [
+                "RMW",
+                "MYDICTSET",
+                2,
+                "TestClass",
                 "SRC",
-            };
-            args.AddRange(libraryPaths);
+                .. libraryPaths,
+            ];
 
             try
             {

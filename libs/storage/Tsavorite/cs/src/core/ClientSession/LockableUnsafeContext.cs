@@ -74,8 +74,16 @@ namespace Tsavorite.core
         {
             clientSession.CheckIsAcquiredLockable();
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
-
-            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLock(TsavoriteSession, clientSession, keys, start, count);
+            while (true)
+            {
+                if (LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLock(TsavoriteSession, clientSession, keys, start, count))
+                {
+                    break;
+                }
+                // Suspend and resume epoch protection to give others a fair chance to progress
+                clientSession.store.epoch.Suspend();
+                clientSession.store.epoch.Resume();
+            }
         }
 
         /// <inheritdoc/>

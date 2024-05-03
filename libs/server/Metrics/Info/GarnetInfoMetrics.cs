@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using Garnet.common;
 
@@ -11,7 +12,7 @@ namespace Garnet.server
 {
     class GarnetInfoMetrics
     {
-        public static readonly InfoMetricsType[] defaultInfo = Enum.GetValues(typeof(InfoMetricsType)).Cast<InfoMetricsType>()
+        public static readonly InfoMetricsType[] defaultInfo = Enum.GetValues<InfoMetricsType>()
             .Where(e => e switch
             {
                 InfoMetricsType.STOREHASHTABLE => false,
@@ -164,7 +165,7 @@ namespace Garnet.server
                     new("total_pending", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_pending().ToString()),
                     new("total_found", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_found().ToString()),
                     new("total_notfound", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_notfound().ToString()),
-                    new("garnet_hit_rate", garnet_hit_rate.ToString("N2")),
+                    new("garnet_hit_rate", garnet_hit_rate.ToString("N2", CultureInfo.InvariantCulture)),
                     new("total_cluster_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_cluster_commands_processed().ToString()),
                     new("total_write_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_write_commands_processed().ToString()),
                     new("total_read_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_read_commands_processed().ToString()),
@@ -249,7 +250,7 @@ namespace Garnet.server
         {
             var metricsDisabled = storeWrapper.monitor == null;
             var globalMetrics = metricsDisabled ? default : storeWrapper.monitor.GlobalMetrics;
-            clientsInfo = [new("connected_clients", metricsDisabled ? "0" : globalMetrics.total_connections_received.ToString())];
+            clientsInfo = [new("connected_clients", metricsDisabled ? "0" : (globalMetrics.total_connections_received - globalMetrics.total_connections_disposed).ToString())];
         }
 
         private void PopulateKeyspaceInfo(StoreWrapper storeWrapper)
@@ -279,7 +280,7 @@ namespace Garnet.server
             };
         }
 
-        private string GetSectionRespInfo(InfoMetricsType infoType, MetricsItem[] info)
+        private static string GetSectionRespInfo(InfoMetricsType infoType, MetricsItem[] info)
         {
             if (info == null)
                 return "";

@@ -23,7 +23,7 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             var header = (RespInputHeader*)input.ToPointer();
             header->flags |= RespInputFlags.Deterministic;
-            var valueBytes = functionsState.garnetObjectSerializer.Serialize(value);
+            var valueBytes = GarnetObjectSerializer.Serialize(value);
             fixed (byte* ptr = key)
             {
                 fixed (byte* valPtr = valueBytes)
@@ -69,6 +69,8 @@ namespace Garnet.server
                 functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, version = version, sessionID = sessionID }, ref keySB, ref valSB, out _);
             }
         }
+
+        internal static bool CheckExpiry(IGarnetObject src) => src.Expiration < DateTimeOffset.UtcNow.Ticks;
 
         static void CopyRespNumber(long number, ref SpanByteAndMemory dst)
         {

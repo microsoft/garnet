@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -14,7 +15,6 @@ namespace Tsavorite.test
         private TsavoriteKV<MyKey, MyValue> store;
         private IDevice log, objlog;
         const int totalRecords = 250;
-        private string path;
 
         ITsavoriteEqualityComparer<MyKey> comparer = null;
 
@@ -37,10 +37,8 @@ namespace Tsavorite.test
         [SetUp]
         public void Setup()
         {
-            path = MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(path, wait: true);
+            DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             comparer = null;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -63,7 +61,7 @@ namespace Tsavorite.test
             objlog?.Dispose();
             objlog = null;
 
-            DeleteDirectory(path);
+            DeleteDirectory(MethodTestDir);
         }
 
         internal struct GenericPushScanTestFunctions : IScanIteratorFunctions<MyKey, MyValue>
@@ -95,8 +93,8 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void DiskWriteScanBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
-            log = CreateTestDevice(deviceType, $"{path}DiskWriteScanBasicTest_{deviceType}.log");
-            objlog = CreateTestDevice(deviceType, $"{path}DiskWriteScanBasicTest_{deviceType}.obj.log");
+            log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.log"));
+            objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.obj.log"));
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
@@ -169,8 +167,8 @@ namespace Tsavorite.test
 
         public void BlittableScanJumpToBeginAddressTest()
         {
-            log = Devices.CreateLogDevice($"{MethodTestDir}/test.log");
-            objlog = Devices.CreateLogDevice($"{MethodTestDir}/test.obj.log");
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"));
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
@@ -238,8 +236,8 @@ namespace Tsavorite.test
             const long PageSize = 1L << PageSizeBits;
             var recordSize = GenericAllocator<MyKey, MyValue>.RecordSize;
 
-            log = Devices.CreateLogDevice($"{MethodTestDir}/test.log");
-            objlog = Devices.CreateLogDevice($"{MethodTestDir}/test.obj.log");
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"));
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
@@ -329,8 +327,8 @@ namespace Tsavorite.test
 
         public void GenericScanCursorFilterTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
-            log = Devices.CreateLogDevice($"{MethodTestDir}/test.log");
-            objlog = Devices.CreateLogDevice($"{MethodTestDir}/test.obj.log");
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"));
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },

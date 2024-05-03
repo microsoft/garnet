@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-	<LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
@@ -12,9 +10,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-	<ItemGroup>
-		<PackageReference Include="CommandLineParser" Version="2.9.1" />
-	</ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\libs\client\Garnet.client.csproj" />
   </ItemGroup>

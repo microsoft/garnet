@@ -271,7 +271,7 @@ namespace Garnet.server
 
             if ((storeType == StoreType.Object || storeType == StoreType.All) && objectStoreSession != null)
             {
-                (*(RespInputHeader*)pcurr).type = GarnetObjectType.Ttl;
+                (*(RespInputHeader*)pcurr).type = milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl;
 
                 var keyBA = key.ToByteArray();
                 var objO = new GarnetObjectStoreOutput { spanByteAndMemory = output };
@@ -544,7 +544,7 @@ namespace Garnet.server
                         var memoryHandle = o.Memory.Memory.Pin();
                         var ptrVal = (byte*)memoryHandle.Pointer;
 
-                        RespReadUtils.ReadHeaderLength(out var headerLength, ref ptrVal, ptrVal + o.Length);
+                        RespReadUtils.ReadLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
                         var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
                         SET(ref newKey, ref value, ref context);
 

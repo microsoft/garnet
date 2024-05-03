@@ -340,7 +340,7 @@ namespace Garnet.cluster
             {
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
-                while (!RespWriteUtils.WriteAsciiBulkString(clusterProvider.clusterManager.CurrentConfig.GetLocalNodeId(), ref dcurr, dend))
+                while (!RespWriteUtils.WriteAsciiBulkString(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, ref dcurr, dend))
                     SendAndReset();
             }
             else if (param.SequenceEqual(CmdStrings.MYPARENTID) || param.SequenceEqual(CmdStrings.myparentid))
@@ -349,7 +349,7 @@ namespace Garnet.cluster
                 readHead = (int)(ptr - recvBufferPtr);
 
                 var current = clusterProvider.clusterManager.CurrentConfig;
-                var parentId = current.GetLocalNodeRole() == NodeRole.PRIMARY ? current.GetLocalNodeId() : current.GetLocalNodePrimaryId();
+                var parentId = current.LocalNodeRole == NodeRole.PRIMARY ? current.LocalNodeId : current.LocalNodePrimaryId;
                 while (!RespWriteUtils.WriteAsciiBulkString(parentId, ref dcurr, dend))
                     SendAndReset();
             }
@@ -461,12 +461,12 @@ namespace Garnet.cluster
                         var other = ClusterConfig.FromByteArray(gossipMessage);
                         // Accept gossip message if it is a gossipWithMeet or node from node that is already known and trusted
                         // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
-                        if (gossipWithMeet || current.IsKnown(other.GetLocalNodeId()))
+                        if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
                         {
                             _ = clusterProvider.clusterManager.TryMerge(other);
                         }
                         else
-                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.GetLocalNodeId());
+                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                     }
 
                     // Respond if configuration has changed or gossipWithMeet option is specified
@@ -501,7 +501,7 @@ namespace Garnet.cluster
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    if (option.ToUpper().Equals("HARD"))
+                    if (option.Equals("HARD", StringComparison.OrdinalIgnoreCase))
                         soft = false;
                 }
 
@@ -550,11 +550,8 @@ namespace Garnet.cluster
                     {
                         if (!RespReadUtils.ReadStringWithLengthHeader(out var failoverOptionStr, ref ptr, recvBufferPtr + bytesRead))
                             return false;
-                        try
-                        {
-                            failoverOption = (FailoverOption)Enum.Parse(typeof(FailoverOption), failoverOptionStr.ToUpper());
-                        }
-                        catch
+
+                        if (!Enum.TryParse(failoverOptionStr, ignoreCase: true, out failoverOption))
                         {
                             while (!RespWriteUtils.WriteError($"ERR Failover option ({failoverOptionStr}) not supported", ref dcurr, dend))
                                 SendAndReset();
@@ -579,7 +576,7 @@ namespace Garnet.cluster
                         else
                         {
                             var current = clusterProvider.clusterManager.CurrentConfig;
-                            var nodeRole = current.GetLocalNodeRole();
+                            var nodeRole = current.LocalNodeRole;
                             if (nodeRole == NodeRole.REPLICA)
                             {
                                 if (!clusterProvider.failoverManager.TryStartReplicaFailover(failoverOption, failoverTimeout))
@@ -1058,9 +1055,8 @@ namespace Garnet.cluster
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var subcommand, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    var slotState = SlotState.STABLE;
-                    try { slotState = (SlotState)Enum.Parse(typeof(SlotState), subcommand); }
-                    catch { }
+                    if (!Enum.TryParse(subcommand, ignoreCase: true, out SlotState slotState))
+                        slotState = SlotState.STABLE;
 
                     string nodeid = null;
                     if (count > 2)
@@ -1137,7 +1133,6 @@ namespace Garnet.cluster
                     // CLUSTER SETSLOTRANGE NODE <node-id> <slot-start> <slot-end> [slot-start slot-end]
                     // CLUSTER SETSLOTRANGE STABLE <slot-start> <slot-end> [slot-start slot-end]
 
-                    SlotState slotState;
                     string nodeid = default;
                     var _count = count - 1;
                     var ptr = recvBufferPtr + readHead;
@@ -1145,12 +1140,11 @@ namespace Garnet.cluster
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var subcommand, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    // Parse slot state
-                    try { slotState = (SlotState)Enum.Parse(typeof(SlotState), subcommand); }
-                    catch (Exception ex)
+                    // Try parse slot state
+                    if (!Enum.TryParse(subcommand, out SlotState slotState))
                     {
                         // Log error for invalid slot state option
-                        logger?.LogError(ex, "");
+                        logger?.LogError("The given input '{input}' is not a valid slot state option.", subcommand);
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;
                         errorFlag = true;
@@ -1304,6 +1298,8 @@ namespace Garnet.cluster
                     if (ptr + headerLength > recvBufferPtr + bytesRead)
                         return false;
 
+                    var currentConfig = clusterProvider.clusterManager.CurrentConfig;
+
                     if (storeType.Equals("SSTORE"))
                     {
                         var keyCount = *(int*)ptr;
@@ -1325,12 +1321,16 @@ namespace Garnet.cluster
 
                             // An error has occurred
                             if (migrateState > 0)
+                            {
+                                i++;
                                 continue;
+                            }
 
                             var slot = NumUtils.HashSlot(key.ToPointer(), key.LengthWithoutMetadata);
-                            if (!clusterProvider.clusterManager.IsImporting(slot))//Slot is not in importing state
+                            if (!currentConfig.IsImportingSlot(slot))//Slot is not in importing state
                             {
                                 migrateState = 1;
+                                i++;
                                 continue;
                             }
 
@@ -1360,7 +1360,7 @@ namespace Garnet.cluster
                                 continue;
 
                             var slot = NumUtils.HashSlot(key);
-                            if (!clusterProvider.clusterManager.IsImporting(slot))//Slot is not in importing state
+                            if (!currentConfig.IsImportingSlot(slot))//Slot is not in importing state
                             {
                                 migrateState = 1;
                                 continue;
@@ -1388,6 +1388,7 @@ namespace Garnet.cluster
 
                     if (migrateState == 1)
                     {
+                        logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE));
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOT_IN_IMPORTING_STATE, ref dcurr, dend))
                             SendAndReset();
                     }
@@ -1466,10 +1467,9 @@ namespace Garnet.cluster
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var backgroundFlag, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    backgroundFlag = backgroundFlag.ToUpper();
-                    if (backgroundFlag.Equals("SYNC"))
+                    if (backgroundFlag.Equals("SYNC", StringComparison.OrdinalIgnoreCase))
                         background = false;
-                    else if (backgroundFlag.Equals("ASYNC"))
+                    else if (backgroundFlag.Equals("ASYNC", StringComparison.OrdinalIgnoreCase))
                         background = true;
                     else
                     {
@@ -1552,8 +1552,8 @@ namespace Garnet.cluster
                 readHead = (int)(ptr - recvBufferPtr);
 
                 var currentConfig = clusterProvider.clusterManager.CurrentConfig;
-                var localRole = currentConfig.GetLocalNodeRole();
-                var primaryId = currentConfig.GetLocalNodePrimaryId();
+                var localRole = currentConfig.LocalNodeRole;
+                var primaryId = currentConfig.LocalNodePrimaryId;
                 if (localRole != NodeRole.REPLICA)
                 {
                     // TODO: handle this

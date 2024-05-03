@@ -114,11 +114,11 @@ namespace Garnet.server
                 var elapsedSec = TimeSpan.FromTicks(currTimestamp - startTimestamp).TotalSeconds;
                 globalMetrics.instantaneous_net_input_tpt = (globalMetrics.globalSessionMetrics.get_total_net_input_bytes() - instant_input_net_bytes) / (elapsedSec * GarnetServerMetrics.byteUnit);
                 globalMetrics.instantaneous_net_output_tpt = (globalMetrics.globalSessionMetrics.get_total_net_output_bytes() - instant_output_net_bytes) / (elapsedSec * GarnetServerMetrics.byteUnit);
-                globalMetrics.instantaneous_cmd_per_sec = (globalMetrics.globalSessionMetrics.get_total_commands_processed() - instant_commands_processed) / (elapsedSec * GarnetServerMetrics.byteUnit);
+                globalMetrics.instantaneous_cmd_per_sec = (globalMetrics.globalSessionMetrics.get_total_commands_processed() - instant_commands_processed) / elapsedSec;
 
                 globalMetrics.instantaneous_net_input_tpt = Math.Round(globalMetrics.instantaneous_net_input_tpt, 2);
                 globalMetrics.instantaneous_net_output_tpt = Math.Round(globalMetrics.instantaneous_net_output_tpt, 2);
-                globalMetrics.instantaneous_cmd_per_sec = Math.Round(globalMetrics.instantaneous_cmd_per_sec, 2);
+                globalMetrics.instantaneous_cmd_per_sec = Math.Round(globalMetrics.instantaneous_cmd_per_sec);
 
                 startTimestamp = currTimestamp;
                 instant_input_net_bytes = globalMetrics.globalSessionMetrics.get_total_net_input_bytes();
@@ -127,7 +127,7 @@ namespace Garnet.server
             }
         }
 
-        private void UpdatAllMetricsHistory()
+        private void UpdateAllMetricsHistory()
         {
             //Reset session metrics accumulator
             accSessionMetrics.Reset();
@@ -263,7 +263,7 @@ namespace Garnet.server
                     globalMetrics.total_connections_disposed = garnetServer.get_conn_disp();
 
                     UpdateInstantaneousMetrics();
-                    UpdatAllMetricsHistory();
+                    UpdateAllMetricsHistory();
                     UpdateAllMetrics(server);
 
                     //Reset & Cleanup

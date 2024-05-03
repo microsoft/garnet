@@ -25,27 +25,27 @@ namespace Garnet.cluster
             {
                 var worker = workers[i];
                 //40 bytes
-                writer.Write(worker.nodeid);
+                writer.Write(worker.Nodeid);
 
                 //16 bytes
-                writer.Write(worker.address);
+                writer.Write(worker.Address);
 
                 //29 bytes
-                writer.Write(worker.port);
-                writer.Write(worker.configEpoch);
-                writer.Write(worker.currentConfigEpoch);
-                writer.Write(worker.lastVotedConfigEpoch);
-                writer.Write((byte)worker.role);
+                writer.Write(worker.Port);
+                writer.Write(worker.ConfigEpoch);
+                writer.Write(worker.CurrentConfigEpoch);
+                writer.Write(worker.LastVotedConfigEpoch);
+                writer.Write((byte)worker.Role);
 
                 //1 byte
-                writer.Write(worker.replicaOfNodeId == null ? (byte)0 : (byte)1);
+                writer.Write(worker.ReplicaOfNodeId == null ? (byte)0 : (byte)1);
 
-                if (worker.replicaOfNodeId != null)
+                if (worker.ReplicaOfNodeId != null)
                     //40 bytes
-                    writer.Write(worker.replicaOfNodeId);
+                    writer.Write(worker.ReplicaOfNodeId);
 
                 //4 bytes
-                writer.Write(worker.replicationOffset);
+                writer.Write(worker.ReplicationOffset);
                 //1 byte
                 writer.Write(worker.hostname == null ? (byte)0 : (byte)1);
                 if (worker.hostname != null)
@@ -116,19 +116,19 @@ namespace Garnet.cluster
             var newWorkers = new Worker[numWorkers];
             for (int i = 1; i < numWorkers; i++)
             {
-                newWorkers[i].nodeid = reader.ReadString();
-                newWorkers[i].address = reader.ReadString();
-                newWorkers[i].port = reader.ReadInt32();
-                newWorkers[i].configEpoch = reader.ReadInt64();
-                newWorkers[i].currentConfigEpoch = reader.ReadInt64();
-                newWorkers[i].lastVotedConfigEpoch = reader.ReadInt64();
-                newWorkers[i].role = (NodeRole)reader.ReadByte();
+                newWorkers[i].Nodeid = reader.ReadString();
+                newWorkers[i].Address = reader.ReadString();
+                newWorkers[i].Port = reader.ReadInt32();
+                newWorkers[i].ConfigEpoch = reader.ReadInt64();
+                newWorkers[i].CurrentConfigEpoch = reader.ReadInt64();
+                newWorkers[i].LastVotedConfigEpoch = reader.ReadInt64();
+                newWorkers[i].Role = (NodeRole)reader.ReadByte();
 
                 byte isNull = reader.ReadByte();
                 if (isNull > 0)
-                    newWorkers[i].replicaOfNodeId = reader.ReadString();
+                    newWorkers[i].ReplicaOfNodeId = reader.ReadString();
 
-                newWorkers[i].replicationOffset = reader.ReadInt64();
+                newWorkers[i].ReplicationOffset = reader.ReadInt64();
 
                 isNull = reader.ReadByte();
                 if (isNull > 0)

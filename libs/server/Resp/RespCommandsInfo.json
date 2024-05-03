@@ -2335,6 +2335,36 @@
   },
   {
     "Command": "List",
+    "ArrayCommand": 14,
+    "Name": "LSET",
+    "IsInternal": false,
+    "Arity": 4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "List, Slow, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Update"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "List",
     "ArrayCommand": 7,
     "Name": "LTRIM",
     "IsInternal": false,
@@ -3264,7 +3294,7 @@
   },
   {
     "Command": "Set",
-    "ArrayCommand": 9,
+    "ArrayCommand": 11,
     "Name": "SDIFF",
     "IsInternal": false,
     "Arity": -2,
@@ -3296,7 +3326,7 @@
   },
   {
     "Command": "Set",
-    "ArrayCommand": 10,
+    "ArrayCommand": 12,
     "Name": "SDIFFSTORE",
     "IsInternal": false,
     "Arity": -3,
@@ -3535,7 +3565,7 @@
   },
   {
     "Command": "Set",
-    "ArrayCommand": 7,
+    "ArrayCommand": 8,
     "Name": "SISMEMBER",
     "IsInternal": false,
     "Arity": 3,
@@ -3612,6 +3642,50 @@
   },
   {
     "Command": "Set",
+    "ArrayCommand": 6,
+    "Name": "SMOVE",
+    "IsInternal": false,
+    "Arity": 4,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "Fast, Set, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "Set",
     "ArrayCommand": 2,
     "Name": "SPOP",
     "IsInternal": false,
@@ -3644,7 +3718,7 @@
   },
   {
     "Command": "Set",
-    "ArrayCommand": 6,
+    "ArrayCommand": 7,
     "Name": "SRANDMEMBER",
     "IsInternal": false,
     "Arity": -2,
@@ -3783,7 +3857,7 @@
   },
   {
     "Command": "Set",
-    "ArrayCommand": 8,
+    "ArrayCommand": 9,
     "Name": "SUNION",
     "IsInternal": false,
     "Arity": -2,
@@ -3800,6 +3874,50 @@
         "BeginSearch": {
           "TypeDiscriminator": "BeginSearchIndex",
           "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "Set",
+    "ArrayCommand": 10,
+    "Name": "SUNIONSTORE",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Set, Slow, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Update"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
         },
         "FindKeys": {
           "TypeDiscriminator": "FindKeysRange",

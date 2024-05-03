@@ -21,6 +21,8 @@ namespace Tsavorite.core
         /// <summary>Indicates whether this struct has been initialized</summary>
         public bool IsNull => clientSession is null;
 
+        const int KeyLockMaxRetryAttempts = 1000;
+
         internal LockableContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             this.clientSession = clientSession;
@@ -55,7 +57,7 @@ namespace Tsavorite.core
         public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys, start, count);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void DoInternalLock<TsavoriteSession, TLockableKey>(TsavoriteSession tsavoriteSession, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        internal static bool DoInternalLock<TsavoriteSession, TLockableKey>(TsavoriteSession tsavoriteSession, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
                                                                    TLockableKey[] keys, int start, int count)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
             where TLockableKey : ILockableKey
@@ -65,6 +67,7 @@ namespace Tsavorite.core
             // This is the same as DoInternalTryLock but without timeout; it will keep trying until it acquires all locks.
             var end = start + count - 1;
 
+            int retryCount = 0;
         Retry:
             long prevBucketIndex = -1;
 
@@ -84,12 +87,17 @@ namespace Tsavorite.core
 
                     // We've released our locks so this refresh will let other threads advance and release their locks, and we will retry with a full timeout.
                     clientSession.store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(status, tsavoriteSession);
+                    retryCount++;
+                    if (retryCount >= KeyLockMaxRetryAttempts)
+                    {
+                        return false;
+                    }
                     goto Retry;
                 }
             }
 
             // We reached the end of the list, possibly after a duplicate keyhash; all locks were successful.
-            return;
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -224,15 +232,18 @@ namespace Tsavorite.core
         {
             clientSession.CheckIsAcquiredLockable();
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for LockableUnsafeContext.Lock()");
-
-            clientSession.UnsafeResumeThread();
-            try
+            bool lockAquired = false;
+            while (!lockAquired)
             {
-                DoInternalLock(TsavoriteSession, clientSession, keys, start, count);
-            }
-            finally
-            {
-                clientSession.UnsafeSuspendThread();
+                clientSession.UnsafeResumeThread();
+                try
+                {
+                    lockAquired = DoInternalLock(TsavoriteSession, clientSession, keys, start, count);
+                }
+                finally
+                {
+                    clientSession.UnsafeSuspendThread();
+                }
             }
         }
 

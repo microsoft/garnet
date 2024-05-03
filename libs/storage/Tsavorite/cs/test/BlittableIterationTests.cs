@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -15,15 +16,12 @@ namespace Tsavorite.test
     {
         private TsavoriteKV<KeyStruct, ValueStruct> store;
         private IDevice log;
-        private string path;
 
         [SetUp]
         public void Setup()
         {
-            path = MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(path, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
         }
 
         [TearDown]
@@ -33,7 +31,7 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(path);
+            DeleteDirectory(MethodTestDir);
         }
 
         internal struct BlittablePushIterationTestFunctions : IScanIteratorFunctions<KeyStruct, ValueStruct>
@@ -62,7 +60,7 @@ namespace Tsavorite.test
         [Category(SmokeTestCategory)]
         public void BlittableIterationBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
-            log = CreateTestDevice(deviceType, $"{path}{deviceType}.log");
+            log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"{deviceType}.log"));
             store = new TsavoriteKV<KeyStruct, ValueStruct>
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
                  concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable);
@@ -146,7 +144,7 @@ namespace Tsavorite.test
         [Category(SmokeTestCategory)]
         public void BlittableIterationPushStopTest()
         {
-            log = Devices.CreateLogDevice($"{path}stop_test.log");
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "stop_test.log"));
             store = new TsavoriteKV<KeyStruct, ValueStruct>
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
 
@@ -184,7 +182,7 @@ namespace Tsavorite.test
         [Category(SmokeTestCategory)]
         public unsafe void BlittableIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ScanMode scanMode)
         {
-            log = Devices.CreateLogDevice($"{path}lock_test.log");
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "lock_test.log"));
             // Must be large enough to contain all records in memory to exercise locking
             store = new TsavoriteKV<KeyStruct, ValueStruct>(1L << 20,
                  new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20, SegmentSizeBits = 22 },

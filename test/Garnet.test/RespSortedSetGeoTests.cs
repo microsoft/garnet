@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Globalization;
 using System.Text;
 using Garnet.server;
 using NUnit.Framework;
@@ -146,13 +147,16 @@ namespace Garnet.test
             var entries = new GeoEntry[cities.GetLength(0)];
             for (int j = 0; j < cities.GetLength(0); j++)
             {
-                entries[j] = new GeoEntry(Double.Parse(cities[j, 0]), Double.Parse(cities[j, 1]), new RedisValue(cities[j, 2]));
+                entries[j] = new GeoEntry(
+                    double.Parse(cities[j, 0], CultureInfo.InvariantCulture),
+                    double.Parse(cities[j, 1], CultureInfo.InvariantCulture),
+                    new RedisValue(cities[j, 2]));
             }
             var response = db.GeoAdd(new RedisKey("cities"), entries, CommandFlags.None);
             Assert.AreEqual(23, response);
 
             var memresponse = db.Execute("MEMORY", "USAGE", "cities");
-            var actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            var actualValue = ResultType.Integer == memresponse.Type ? int.Parse(memresponse.ToString()) : -1;
             var expectedResponse = 3944;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -167,7 +171,10 @@ namespace Garnet.test
             var entries = new GeoEntry[worldcities.GetLength(0)];
             for (int j = 0; j < worldcities.GetLength(0); j++)
             {
-                entries[j] = new GeoEntry(Double.Parse(worldcities[j, 0]), Double.Parse(worldcities[j, 1]), new RedisValue($"{worldcities[j, 2]}"));
+                entries[j] = new GeoEntry(
+                    double.Parse(worldcities[j, 0], CultureInfo.InvariantCulture),
+                    double.Parse(worldcities[j, 1], CultureInfo.InvariantCulture),
+                    new RedisValue($"{worldcities[j, 2]}"));
             }
 
             //Number of objects that will trigger pending status in object store
@@ -188,7 +195,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.GeoAdd(new RedisKey("Sicily"), 13.361389, 38.115556, new RedisValue("Palermo"), CommandFlags.None);
-            var response = db.GeoPosition(new RedisKey("Sicily"), new RedisValue[] { "Palermo", "Unknown" });
+            var response = db.GeoPosition(new RedisKey("Sicily"), ["Palermo", "Unknown"]);
             Assert.AreEqual(2, response.Length);
             Assert.AreEqual(default(GeoPosition), response[1]);
 
@@ -198,7 +205,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
 
             db.GeoAdd(new RedisKey("SecondKey"), 13.361389, 38.115556, new RedisValue("Palermo"));
-            response = db.GeoPosition(new RedisKey("SecondKey"), new RedisValue[] { "Palermo" });
+            response = db.GeoPosition(new RedisKey("SecondKey"), ["Palermo"]);
             Assert.AreEqual(1, response.Length);
             Assert.IsNotNull(response[0]);
 
@@ -207,7 +214,7 @@ namespace Garnet.test
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
-            var responseHash = db.GeoHash(new RedisKey("SecondKey"), new RedisValue[] { "Palermo" });
+            var responseHash = db.GeoHash(new RedisKey("SecondKey"), ["Palermo"]);
             Assert.AreEqual(1, responseHash.Length);
             Assert.AreEqual("sqc8b49rnyt", responseHash[0]);
 
@@ -244,7 +251,10 @@ namespace Garnet.test
             var entries = new GeoEntry[cities.GetLength(0)];
             for (int j = 0; j < cities.GetLength(0); j++)
             {
-                entries[j] = new GeoEntry(Double.Parse(cities[j, 0]), Double.Parse(cities[j, 1]), new RedisValue(cities[j, 2]));
+                entries[j] = new GeoEntry(
+                    double.Parse(cities[j, 0], CultureInfo.InvariantCulture),
+                    double.Parse(cities[j, 1], CultureInfo.InvariantCulture),
+                    new RedisValue(cities[j, 2]));
             }
             var response = db.GeoAdd(new RedisKey("cities"), entries, CommandFlags.None);
             Assert.AreEqual(23, response);
@@ -445,8 +455,8 @@ namespace Garnet.test
             var coord = GeoHash.GetCoordinatesFromLong(r);
 
             //Assert difference is not higher than "0.000001" using fixed point format
-            var diff = (Math.Round(latitude, 9) - Math.Round(coord.Item1, 9)).ToString("F6");
-            Assert.IsTrue(double.Parse(diff) <= 0.000001);
+            var diff = (Math.Round(latitude, 9) - Math.Round(coord.Item1, 9)).ToString("F6", CultureInfo.InvariantCulture);
+            Assert.IsTrue(double.Parse(diff, CultureInfo.InvariantCulture) <= 0.000001);
         }
 
         [Test]

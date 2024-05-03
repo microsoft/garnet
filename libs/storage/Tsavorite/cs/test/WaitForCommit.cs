@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using System.Threading;
 using NUnit.Framework;
 using Tsavorite.core;
@@ -12,7 +13,6 @@ namespace Tsavorite.test
     {
         static TsavoriteLog log;
         public IDevice device;
-        private string path;
         static readonly byte[] entry = new byte[10];
         static readonly AutoResetEvent ev = new(false);
         static readonly AutoResetEvent done = new(false);
@@ -20,13 +20,11 @@ namespace Tsavorite.test
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "WaitForCommit", deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "WaitForCommit"), deleteOnClose: true);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device });
         }
 
@@ -39,7 +37,7 @@ namespace Tsavorite.test
             device = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         [TestCase("Sync")]  // use string here instead of Bool so shows up in Test Explorer with more descriptive name

@@ -137,7 +137,7 @@ namespace Garnet.cluster
                 recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
                 gcs.Connect();
 
-                var nodeId = current.GetLocalNodeId();
+                var nodeId = current.LocalNodeId;
                 cEntry = GetLatestCheckpointEntryFromDisk();
 
                 storeWrapper.RecoverAOF();
@@ -235,7 +235,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="type"></param>
         /// <returns></returns>
-        public bool ShouldInitialize(CheckpointFileType type)
+        public static bool ShouldInitialize(CheckpointFileType type)
         {
             //TODO: verify that the below checkpoint file types require initialization with segment size given as option
             return type switch

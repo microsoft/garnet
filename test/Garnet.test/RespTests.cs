@@ -41,13 +41,14 @@ namespace Garnet.test
         [Test]
         public void UniqueRespCommandIds()
         {
-            var ids = (RespCommand[])Enum.GetValues(typeof(RespCommand));
+            var ids = Enum.GetValues<RespCommand>();
 
             // Isolate command IDs that exist more than once in the array
             var duplicateIds = ids.GroupBy(e => e).Where(e => e.Count() > 1).Select(e => e.First());
 
             Assert.IsEmpty(duplicateIds, "Found ambiguous command IDs");
         }
+
 
         [Test]
         public void SingleSetGet()
@@ -182,11 +183,31 @@ namespace Garnet.test
             db.StringSet("mykey", origValue, TimeSpan.FromSeconds(1));
 
             string retValue = db.StringGet("mykey");
-            Assert.AreEqual(origValue, retValue);
+            Assert.AreEqual(origValue, retValue, "Get() before expiration");
 
+            var actualDbSize = db.Execute("DBSIZE");
+            Assert.AreEqual(1, (ulong)actualDbSize, "DBSIZE before expiration");
+
+            var actualKeys = db.Execute("KEYS", ["*"]);
+            Assert.AreEqual(1, ((RedisResult[])actualKeys).Length, "KEYS before expiration");
+
+            var actualScan = db.Execute("SCAN", "0");
+            Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN before expiration");
+
+            // Sleep to wait for expiration
             Thread.Sleep(2000);
+
             retValue = db.StringGet("mykey");
-            Assert.AreEqual(null, retValue);
+            Assert.AreEqual(null, retValue, "Get() after expiration");
+
+            actualDbSize = db.Execute("DBSIZE");
+            Assert.AreEqual(0, (ulong)actualDbSize, "DBSIZE after expiration");
+
+            actualKeys = db.Execute("KEYS", ["*"]);
+            Assert.AreEqual(0, ((RedisResult[])actualKeys).Length, "KEYS after expiration");
+
+            actualScan = db.Execute("SCAN", "0");
+            Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after expiration");
         }
 
         [Test]
@@ -551,6 +572,7 @@ namespace Garnet.test
 
         [Test]
         [TestCase("key1", 1000)]
+        [TestCase("key1", 0)]
         public void SingleDecr(string strKey, int nVal)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -559,6 +581,7 @@ namespace Garnet.test
             // Key storing integer
             db.StringSet(strKey, nVal);
             long n = db.StringDecrement(strKey);
+            Assert.AreEqual(nVal - 1, n);
             long nRetVal = Convert.ToInt64(db.StringGet(strKey));
             Assert.AreEqual(n, nRetVal);
         }
@@ -632,24 +655,25 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01"];
+            string[] values = ["", "7 3", "02+(34", "笑い男", "01", "-01", "7ab"];
 
-            foreach (var value in values)
+            for (var i = 0; i < values.Length; i++)
             {
+                var key = $"key{i}";
                 var exception = false;
                 if (initialize)
                 {
-                    var resp = db.StringSet(value, value);
+                    var resp = db.StringSet(key, values[i]);
                     Assert.AreEqual(true, resp);
                 }
                 try
                 {
                     _ = cmd switch
                     {
-                        RespCommand.INCR => db.StringIncrement(value),
-                        RespCommand.DECR => db.StringDecrement(value),
-                        RespCommand.INCRBY => (initialize ? db.StringIncrement(value, 10L) : (long)db.Execute("INCRBY", [value, value])),
-                        RespCommand.DECRBY => (initialize ? db.StringDecrement(value, 10L) : (long)db.Execute("DECRBY", [value, value])),
+                        RespCommand.INCR => db.StringIncrement(key),
+                        RespCommand.DECR => db.StringDecrement(key),
+                        RespCommand.INCRBY => initialize ? db.StringIncrement(key, 10L) : (long)db.Execute("INCRBY", [key, values[i]]),
+                        RespCommand.DECRBY => initialize ? db.StringDecrement(key, 10L) : (long)db.Execute("DECRBY", [key, values[i]]),
                         _ => throw new Exception($"Command {cmd} not supported!"),
                     };
                 }
@@ -766,7 +790,7 @@ namespace Garnet.test
             int valLen = 256;
             int keyLen = 8;
 
-            List<Tuple<string, string>> data = new();
+            List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
                 data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
@@ -809,7 +833,7 @@ namespace Garnet.test
             int valLen = 16;
             int keyLen = 8;
 
-            List<Tuple<string, string>> data = new();
+            List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
                 data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
@@ -837,7 +861,7 @@ namespace Garnet.test
             int valLen = 16;
             int keyLen = 8;
 
-            List<string> keys = new();
+            List<string> keys = [];
             for (int i = 0; i < keyCount; i++)
             {
                 keys.Add(GetRandomString(keyLen));
@@ -877,7 +901,7 @@ namespace Garnet.test
             int valLen = 16;
             int keyLen = 8;
 
-            List<Tuple<string, string>> data = new();
+            List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
                 data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
@@ -904,7 +928,7 @@ namespace Garnet.test
             int valLen = 16;
             int keyLen = 8;
 
-            List<string> keys = new();
+            List<string> keys = [];
             for (int i = 0; i < keyCount; i++)
             {
                 keys.Add(GetRandomString(keyLen));
@@ -972,15 +996,15 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var count = db.ListLeftPush("listKey", new RedisValue[] { "a", "b", "c", "d" });
+            var count = db.ListLeftPush("listKey", ["a", "b", "c", "d"]);
             Assert.AreEqual(4, count);
 
-            var zaddItems = db.SortedSetAdd("zset:test", new SortedSetEntry[] { new SortedSetEntry("a", 1), new SortedSetEntry("b", 2) });
+            var zaddItems = db.SortedSetAdd("zset:test", [new SortedSetEntry("a", 1), new SortedSetEntry("b", 2)]);
             Assert.AreEqual(2, zaddItems);
 
             db.StringSet("foo", "bar");
 
-            var exists = db.KeyExists(new RedisKey[] { "key", "listKey", "zset:test", "foo" });
+            var exists = db.KeyExists(["key", "listKey", "zset:test", "foo"]);
             Assert.AreEqual(3, exists);
         }
 
@@ -1278,7 +1302,7 @@ namespace Garnet.test
             if (command.Equals("EXPIRE"))
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
             else
-                db.Execute(command, new object[] { key, 1000 });
+                db.Execute(command, [key, 1000]);
 
             Thread.Sleep(1500);
 
@@ -1295,18 +1319,37 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var key = "keyA";
-            db.SortedSetAdd(key, new SortedSetEntry[] { new SortedSetEntry("element", 1.0) });
+            db.SortedSetAdd(key, [new SortedSetEntry("element", 1.0)]);
 
             var value = db.SortedSetScore(key, "element");
-            Assert.AreEqual(1.0, value);
+            Assert.AreEqual(1.0, value, "Get Score before expiration");
+
+            var actualDbSize = db.Execute("DBSIZE");
+            Assert.AreEqual(1, (ulong)actualDbSize, "DBSIZE before expiration");
+
+            var actualKeys = db.Execute("KEYS", ["*"]);
+            Assert.AreEqual(1, ((RedisResult[])actualKeys).Length, "KEYS before expiration");
+
+            var actualScan = db.Execute("SCAN", "0");
+            Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN before expiration");
 
             var exp = db.KeyExpire(key, command.Equals("EXPIRE") ? TimeSpan.FromSeconds(1) : TimeSpan.FromMilliseconds(1000));
             Assert.IsTrue(exp);
 
+            // Sleep to wait for expiration
             Thread.Sleep(1500);
 
             value = db.SortedSetScore(key, "element");
-            Assert.AreEqual(null, value);
+            Assert.AreEqual(null, value, "Get Score after expiration");
+
+            actualDbSize = db.Execute("DBSIZE");
+            Assert.AreEqual(0, (ulong)actualDbSize, "DBSIZE after expiration");
+
+            actualKeys = db.Execute("KEYS", ["*"]);
+            Assert.AreEqual(0, ((RedisResult[])actualKeys).Length, "KEYS after expiration");
+
+            actualScan = db.Execute("SCAN", "0");
+            Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after expiration");
         }
 
         [Test]
@@ -1318,7 +1361,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var key = "keyA";
-            object[] args = new object[] { key, 1000, "" };
+            object[] args = [key, 1000, ""];
             db.StringSet(key, key);
 
             args[2] = "XX";// XX -- Set expiry only when the key has an existing expiry

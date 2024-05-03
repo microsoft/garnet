@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,22 +21,19 @@ namespace Tsavorite.test
         private TsavoriteLog logReadOnly;
         private IDevice deviceReadOnly;
 
-        private static string path;
         const int commitPeriodMs = 2000;
         const int restorePeriodMs = 1000;
 
         [SetUp]
         public void Setup()
         {
-            path = TestUtils.MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(path, wait: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test
-            device = Devices.CreateLogDevice(path + "Recover", deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Recover"), deleteOnClose: true);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, MemorySizeBits = 11, PageSizeBits = 9, MutableFraction = 0.5, SegmentSizeBits = 9 });
-            deviceReadOnly = Devices.CreateLogDevice(path + "RecoverReadOnly");
+            deviceReadOnly = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "RecoverReadOnly"));
             logReadOnly = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, ReadOnlyMode = true, PageSizeBits = 9, SegmentSizeBits = 9 });
         }
 
@@ -52,7 +50,7 @@ namespace Tsavorite.test
             deviceReadOnly = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(path);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
 

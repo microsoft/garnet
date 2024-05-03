@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -62,7 +63,7 @@ namespace Tsavorite.test.ReadCacheTests
             DeleteDirectory(MethodTestDir, wait: true);
 
             ReadCacheSettings readCacheSettings = default;
-            string filename = MethodTestDir + "/BasicTests.log";
+            string filename = Path.Join(MethodTestDir, "BasicTests.log");
 
             var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
@@ -118,13 +119,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(StressTestCategory)]
         //[Repeat(300)]
         public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode,
-                                                [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ReadCacheMode readCacheMode,
-#if WINDOWS
-                                                [Values(DeviceType.LSD
-#else
-                                                [Values(DeviceType.MLSD
-#endif
-                                                )] DeviceType deviceType)
+                                                [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ReadCacheMode readCacheMode)
         {
             if (numThreads == 1 && keyContentionMode == KeyContentionMode.Contention)
                 Assert.Ignore("Skipped because 1 thread cannot have contention");

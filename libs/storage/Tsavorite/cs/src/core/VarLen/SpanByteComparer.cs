@@ -11,6 +11,12 @@ namespace Tsavorite.core
     /// </summary>
     public struct SpanByteComparer : ITsavoriteEqualityComparer<SpanByte>
     {
+        /// <summary>
+        /// The default instance.
+        /// </summary>
+        /// <remarks>Used to avoid allocating new comparers.</remarks>
+        public static readonly SpanByteComparer Instance = new();
+
         /// <inheritdoc />
         public unsafe long GetHashCode64(ref SpanByte spanByte) => StaticGetHashCode64(ref spanByte);
 

@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    class MemoryPageScanIterator<Key, Value> : ITsavoriteScanIterator<Key, Value>
+    internal sealed class MemoryPageScanIterator<Key, Value> : ITsavoriteScanIterator<Key, Value>
     {
         readonly Record<Key, Value>[] page;
         readonly long pageStartAddress;

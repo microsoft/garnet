@@ -3,8 +3,10 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -147,7 +149,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(), ref curr, end))
+                    while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 _output.bytesDone = 0;
@@ -199,7 +201,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(), ref curr, end))
+                        while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -240,9 +242,10 @@ namespace Garnet.server
                 return;
 
             //check if parameters are valid
-            if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) || !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
+            if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) ||
+                !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
             {
-                count = Int32.MaxValue;
+                count = int.MaxValue;
             }
             else
             {
@@ -280,7 +283,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
 
             //to validate partial execution
-            _output.countDone = Int32.MinValue;
+            _output.countDone = int.MinValue;
             try
             {
                 // read increment
@@ -292,9 +295,10 @@ namespace Garnet.server
                     return;
 
                 //check if increment value is valid
-                if (!double.TryParse(Encoding.ASCII.GetString(incrementByteArray), out var incrValue))
+                if (!Utf8Parser.TryParse(incrementByteArray, out double incrValue, out var incrBytesConsumed, default) ||
+                    incrBytesConsumed != incrementByteArray.Length)
                 {
-                    countDone = Int32.MaxValue;
+                    countDone = int.MaxValue;
                 }
                 else
                 {
@@ -313,7 +317,7 @@ namespace Garnet.server
                     }
 
                     // write the new score
-                    while (!RespWriteUtils.WriteAsciiBulkString(sortedSetDict[memberByteArray].ToString(), ref curr, end))
+                    while (!RespWriteUtils.WriteAsciiBulkString(sortedSetDict[memberByteArray].ToString(CultureInfo.InvariantCulture), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     countDone = 1;
                 }
@@ -379,31 +383,32 @@ namespace Garnet.server
                     {
                         if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var token, ref input_currptr, input + length))
                             return;
-                        switch (Encoding.ASCII.GetString(token).ToLower())
+                        switch (Encoding.ASCII.GetString(token).ToUpperInvariant())
                         {
-                            case "byscore":
+                            case "BYSCORE":
                                 options.ByScore = true;
                                 break;
-                            case "bylex":
+                            case "BYLEX":
                                 options.ByLex = true;
                                 break;
-                            case "rev":
+                            case "REV":
                                 options.Reverse = true;
                                 break;
-                            case "limit":
+                            case "LIMIT":
                                 // read the next two tokens
                                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var offset, ref input_currptr, input + length))
                                     return;
                                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countLimit, ref input_currptr, input + length))
                                     return;
-                                if (TryParseParameter(offset, out var offsetLimit, out bool _) && TryParseParameter(countLimit, out var countLimitNumber, out bool _))
+                                if (TryParseParameter(offset, out var offsetLimit, out _) &&
+                                    TryParseParameter(countLimit, out var countLimitNumber, out _))
                                 {
                                     options.Limit = ((int)offsetLimit, (int)countLimitNumber);
                                     options.ValidLimit = true;
                                     i += 2;
                                 }
                                 break;
-                            case "withscores":
+                            case "WITHSCORES":
                                 options.WithScores = true;
                                 break;
                             default:
@@ -415,8 +420,8 @@ namespace Garnet.server
 
                 if (count >= 2 && ((!options.ByScore && !options.ByLex) || options.ByScore))
                 {
-
-                    if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) | !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
+                    if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) |
+                        !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
                     {
                         while (!RespWriteUtils.WriteError("ERR max or min value is not a float value."u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -439,7 +444,7 @@ namespace Garnet.server
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             if (options.WithScores)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(), ref curr, end))
+                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
@@ -495,7 +500,7 @@ namespace Garnet.server
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 if (options.WithScores)
                                 {
-                                    while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(), ref curr, end))
+                                    while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
                                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 }
                             }
@@ -528,7 +533,7 @@ namespace Garnet.server
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             if (options.WithScores)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(), ref curr, end))
+                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
@@ -664,7 +669,8 @@ namespace Garnet.server
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, input + length))
                 return;
 
-            if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) || !TryParseParameter(maxParamByteArray, out double maxValue, out bool maxExclusive))
+            if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) ||
+                !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
             {
                 _output->countDone = int.MaxValue;
             }
@@ -742,7 +748,7 @@ namespace Garnet.server
 
                     if (withScores)
                     {
-                        while (!RespWriteUtils.WriteAsciiBulkString(element.Value.ToString(), ref curr, end))
+                        while (!RespWriteUtils.WriteAsciiBulkString(element.Value.ToString(CultureInfo.InvariantCulture), ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -848,7 +854,8 @@ namespace Garnet.server
             var elementsInLex = new List<(double, byte[])>();
 
             // parse boundaries
-            if (!TryParseLexParameter(minParamByteArray, out var minValue) || !TryParseLexParameter(maxParamByteArray, out var maxValue))
+            if (!TryParseLexParameter(minParamByteArray, out var minValueChars, out bool minValueExclusive) ||
+                !TryParseLexParameter(maxParamByteArray, out var maxValueChars, out bool maxValueExclusive))
             {
                 errorCode = int.MaxValue;
                 return elementsInLex;
@@ -856,17 +863,17 @@ namespace Garnet.server
 
             try
             {
-                var iterator = sortedSet.GetViewBetween((sortedSet.Min.Item1, minValue.chars), sortedSet.Max);
+                var iterator = sortedSet.GetViewBetween((sortedSet.Min.Item1, minValueChars.ToArray()), sortedSet.Max);
 
                 // using ToList method so we avoid the Invalid operation ex. when removing
                 foreach (var item in iterator.ToList())
                 {
-                    var inRange = new ReadOnlySpan<byte>(item.Item2).SequenceCompareTo(minValue.chars);
-                    if (inRange < 0 || (inRange == 0 && minValue.exclusive))
+                    var inRange = new ReadOnlySpan<byte>(item.Item2).SequenceCompareTo(minValueChars);
+                    if (inRange < 0 || (inRange == 0 && minValueExclusive))
                         continue;
 
-                    var outRange = maxValue.chars == null ? -1 : new ReadOnlySpan<byte>(item.Item2).SequenceCompareTo(maxValue.chars);
-                    if (outRange > 0 || (outRange == 0 && maxValue.exclusive))
+                    var outRange = maxValueChars == default ? -1 : new ReadOnlySpan<byte>(item.Item2).SequenceCompareTo(maxValueChars);
+                    if (outRange > 0 || (outRange == 0 && maxValueExclusive))
                         break;
 
                     if (rem)
@@ -1008,7 +1015,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteBulkString(max.Item2, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                    while (!RespWriteUtils.WriteAsciiBulkString(max.Item1.ToString(), ref curr, end))
+                    while (!RespWriteUtils.WriteAsciiBulkString(max.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     countDone++;
@@ -1039,57 +1046,61 @@ namespace Garnet.server
         /// Helper method to parse parameters min and max
         /// in commands including +inf -inf
         /// </summary>
-        /// <param name="val"></param>
-        /// <param name="valueDouble"></param>
-        /// <param name="exclusive"></param>
-        /// <returns></returns>
-        private static bool TryParseParameter(byte[] val, out double valueDouble, out bool exclusive)
+        private static bool TryParseParameter(ReadOnlySpan<byte> val, out double valueDouble, out bool exclusive)
         {
             exclusive = false;
-            var strVal = Encoding.ASCII.GetString(val);
-            if (string.Compare("+inf", strVal, StringComparison.InvariantCultureIgnoreCase) == 0)
-            {
-                valueDouble = double.PositiveInfinity;
-                return true;
-            }
-            else if (string.Compare("-inf", strVal, StringComparison.InvariantCultureIgnoreCase) == 0)
-            {
-                valueDouble = double.NegativeInfinity;
-                return true;
-            }
 
             // adjust for exclusion
             if (val[0] == '(')
             {
-                strVal = strVal[1..];
+                val = val.Slice(1);
                 exclusive = true;
             }
 
-            return double.TryParse(strVal, out valueDouble);
+            if (Utf8Parser.TryParse(val, out valueDouble, out int bytesConsumed, default) &&
+                bytesConsumed == val.Length)
+            {
+                return true;
+            }
+
+            var strVal = Encoding.ASCII.GetString(val);
+            if (string.Equals("+inf", strVal, StringComparison.OrdinalIgnoreCase))
+            {
+                valueDouble = double.PositiveInfinity;
+                exclusive = false;
+                return true;
+            }
+            else if (string.Equals("-inf", strVal, StringComparison.OrdinalIgnoreCase))
+            {
+                valueDouble = double.NegativeInfinity;
+                exclusive = false;
+                return true;
+            }
+            return false;
         }
 
         /// <summary>
         /// Helper method to parse parameter when using Lexicographical ranges
         /// </summary>
-        /// <param name="val"></param>
-        /// <param name="limit"></param>
-        /// <returns></returns>
-        private static bool TryParseLexParameter(byte[] val, out (byte[] chars, bool exclusive) limit)
+        private static bool TryParseLexParameter(ReadOnlySpan<byte> val, out ReadOnlySpan<byte> limitChars, out bool limitExclusive)
         {
-            switch ((char)val[0])
+            limitChars = default;
+            limitExclusive = false;
+
+            switch (val[0])
             {
-                case '+':
-                case '-':
-                    limit = (null, false);
+                case (byte)'+':
+                case (byte)'-':
                     return true;
-                case '[':
-                    limit = (new Span<byte>(val)[1..].ToArray(), false);
+                case (byte)'[':
+                    limitChars = val.Slice(1);
+                    limitExclusive = false;
                     return true;
-                case '(':
-                    limit = (new Span<byte>(val)[1..].ToArray(), true);
+                case (byte)'(':
+                    limitChars = val.Slice(1);
+                    limitExclusive = true;
                     return true;
                 default:
-                    limit = default;
                     return false;
             }
         }

@@ -26,11 +26,6 @@ namespace Garnet.server
         protected readonly ParameterSerializer serializer;
 
         /// <summary>
-        /// KV broker
-        /// </summary>
-        protected readonly SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> kvBroker;
-
-        /// <summary>
         /// Broker
         /// </summary>
         protected readonly SubscribeBroker<Key, Value, IKeySerializer<Key>> broker;
@@ -45,11 +40,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="store"></param>
         /// <param name="serializer"></param>
-        /// <param name="kvBroker"></param>
         /// <param name="broker"></param>
         /// <param name="recoverStore"></param>
         /// <param name="maxSizeSettings"></param>
-        public TsavoriteKVProviderBase(TsavoriteKV<Key, Value> store, ParameterSerializer serializer, SubscribeKVBroker<Key, Value, Input, IKeyInputSerializer<Key, Input>> kvBroker = null, SubscribeBroker<Key, Value, IKeySerializer<Key>> broker = null, bool recoverStore = false, MaxSizeSettings maxSizeSettings = default)
+        public TsavoriteKVProviderBase(TsavoriteKV<Key, Value> store, ParameterSerializer serializer, SubscribeBroker<Key, Value, IKeySerializer<Key>> broker = null, bool recoverStore = false, MaxSizeSettings maxSizeSettings = default)
         {
             this.store = store;
             if (recoverStore)
@@ -61,7 +55,6 @@ namespace Garnet.server
                 catch
                 { }
             }
-            this.kvBroker = kvBroker;
             this.broker = broker;
             this.serializer = serializer;
             this.maxSizeSettings = maxSizeSettings ?? new MaxSizeSettings();

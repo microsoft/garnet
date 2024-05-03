@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.IO;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -13,15 +14,12 @@ namespace Tsavorite.test
         private TsavoriteKV<string, string> store;
         private ClientSession<string, string, string, string, Empty, MyFuncs> session;
         private IDevice log, objlog;
-        private string path;
 
         [SetUp]
         public void Setup()
         {
-            path = MethodTestDir + "/";
-
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(path, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
         }
 
         [TearDown]
@@ -36,7 +34,7 @@ namespace Tsavorite.test
             objlog?.Dispose();
             objlog = null;
 
-            DeleteDirectory(path);
+            DeleteDirectory(MethodTestDir);
         }
 
         [Test]
@@ -44,8 +42,8 @@ namespace Tsavorite.test
         [Category("Smoke")]
         public void StringBasicTest([Values] DeviceType deviceType)
         {
-            string logfilename = path + "GenericStringTests" + deviceType.ToString() + ".log";
-            string objlogfilename = path + "GenericStringTests" + deviceType.ToString() + ".obj.log";
+            string logfilename = Path.Join(MethodTestDir, "GenericStringTests" + deviceType.ToString() + ".log");
+            string objlogfilename = Path.Join(MethodTestDir, "GenericStringTests" + deviceType.ToString() + ".obj.log");
 
             log = CreateTestDevice(deviceType, logfilename);
             objlog = CreateTestDevice(deviceType, objlogfilename);

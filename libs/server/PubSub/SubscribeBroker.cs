@@ -132,7 +132,7 @@ namespace Garnet.server
         {
             try
             {
-                var uniqueKeys = new Dictionary<byte[], (byte[], byte[])>(new ByteArrayComparer());
+                var uniqueKeys = new Dictionary<byte[], (byte[], byte[])>(ByteArrayComparer.Instance);
                 long truncateUntilAddress = log.BeginAddress;
 
                 while (true)
@@ -215,8 +215,8 @@ namespace Garnet.server
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
                 done.Reset();
-                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
-                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(new ByteArrayComparer());
+                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
+                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(ByteArrayComparer.Instance);
                 Task.Run(() => Start(cts.Token));
             }
             else
@@ -226,7 +226,7 @@ namespace Garnet.server
             var subscriptionKey = new Span<byte>(start, (int)(key - start)).ToArray();
             subscriptions.TryAdd(subscriptionKey, new ConcurrentDictionary<int, ServerSessionBase>());
             if (subscriptions.TryGetValue(subscriptionKey, out var val))
-                val.TryAdd(sid, session);
+                val.TryAdd(id, session);
             return id;
         }
 
@@ -245,8 +245,8 @@ namespace Garnet.server
             if (Interlocked.CompareExchange(ref publishQueue, new AsyncQueue<(byte[], byte[])>(), null) == null)
             {
                 done.Reset();
-                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(new ByteArrayComparer());
-                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(new ByteArrayComparer());
+                subscriptions = new ConcurrentDictionary<byte[], ConcurrentDictionary<int, ServerSessionBase>>(ByteArrayComparer.Instance);
+                prefixSubscriptions = new ConcurrentDictionary<byte[], (bool, ConcurrentDictionary<int, ServerSessionBase>)>(ByteArrayComparer.Instance);
                 Task.Run(() => Start(cts.Token));
             }
             else
@@ -256,7 +256,7 @@ namespace Garnet.server
             var subscriptionPrefix = new Span<byte>(start, (int)(prefix - start)).ToArray();
             prefixSubscriptions.TryAdd(subscriptionPrefix, (ascii, new ConcurrentDictionary<int, ServerSessionBase>()));
             if (prefixSubscriptions.TryGetValue(subscriptionPrefix, out var val))
-                val.Item2.TryAdd(sid, session);
+                val.Item2.TryAdd(id, session);
             return id;
         }
 

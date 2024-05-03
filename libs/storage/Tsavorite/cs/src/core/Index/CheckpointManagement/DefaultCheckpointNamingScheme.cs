@@ -3,7 +3,6 @@
 
 using System;
 using System.IO;
-using System.Linq;
 
 namespace Tsavorite.core
 {
@@ -12,7 +11,8 @@ namespace Tsavorite.core
     /// </summary>
     public class DefaultCheckpointNamingScheme : ICheckpointNamingScheme
     {
-        readonly string baseName;
+        /// <inheritdoc />
+        public string BaseName { get; }
 
         /// <summary>
         /// Create instance of default naming scheme
@@ -20,46 +20,39 @@ namespace Tsavorite.core
         /// <param name="baseName">Overall location specifier (e.g., local path or cloud container name)</param>
         public DefaultCheckpointNamingScheme(string baseName = "")
         {
-            this.baseName = baseName;
+            BaseName = baseName;
         }
 
         /// <inheritdoc />
-        public string BaseName() => baseName;
+        public FileDescriptor LogCheckpointBase(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), null);
+        /// <inheritdoc />
+        public FileDescriptor LogCheckpointMetadata(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), "info.dat");
+        /// <inheritdoc />
+        public FileDescriptor LogSnapshot(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), "snapshot.dat");
+        /// <inheritdoc />
+        public FileDescriptor ObjectLogSnapshot(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), "snapshot.obj.dat");
+        /// <inheritdoc />
+        public FileDescriptor DeltaLog(Guid token) => new(Path.Join(LogCheckpointBasePath, token.ToString()), "delta.dat");
 
         /// <inheritdoc />
-        public FileDescriptor LogCheckpointBase(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", null);
-
+        public FileDescriptor IndexCheckpointBase(Guid token) => new(Path.Join(IndexCheckpointBasePath, token.ToString()), null);
         /// <inheritdoc />
-        public FileDescriptor LogCheckpointMetadata(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "info.dat");
-
+        public FileDescriptor IndexCheckpointMetadata(Guid token) => new(Path.Join(IndexCheckpointBasePath, token.ToString()), "info.dat");
         /// <inheritdoc />
-        public FileDescriptor LogSnapshot(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "snapshot.dat");
+        public FileDescriptor HashTable(Guid token) => new(Path.Join(IndexCheckpointBasePath, token.ToString()), "ht.dat");
         /// <inheritdoc />
-        public FileDescriptor ObjectLogSnapshot(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "snapshot.obj.dat");
-        /// <inheritdoc />
-        public FileDescriptor DeltaLog(Guid token) => new FileDescriptor($"{LogCheckpointBasePath()}/{token}", "delta.dat");
-
-
-        /// <inheritdoc />
-        public FileDescriptor IndexCheckpointBase(Guid token) => new FileDescriptor($"{IndexCheckpointBasePath()}/{token}", null);
-
-        /// <inheritdoc />
-        public FileDescriptor IndexCheckpointMetadata(Guid token) => new FileDescriptor($"{IndexCheckpointBasePath()}/{token}", "info.dat");
-        /// <inheritdoc />
-        public FileDescriptor HashTable(Guid token) => new FileDescriptor($"{IndexCheckpointBasePath()}/{token}", "ht.dat");
-        /// <inheritdoc />
-        public FileDescriptor TsavoriteLogCommitMetadata(long commitNumber) => new FileDescriptor($"{TsavoriteLogCommitBasePath()}", $"commit.{commitNumber}");
+        public FileDescriptor TsavoriteLogCommitMetadata(long commitNumber) => new(TsavoriteLogCommitBasePath, $"commit.{commitNumber}");
 
         /// <inheritdoc />
         public Guid Token(FileDescriptor fileDescriptor) => Guid.Parse(new DirectoryInfo(fileDescriptor.directoryName).Name);
         /// <inheritdoc />
-        public long CommitNumber(FileDescriptor fileDescriptor) => long.Parse(fileDescriptor.fileName.Split('.').Reverse().Take(2).Last());
+        public long CommitNumber(FileDescriptor fileDescriptor) => long.Parse(fileDescriptor.fileName.Split('.')[^2]);
 
         /// <inheritdoc />
-        public string IndexCheckpointBasePath() => "index-checkpoints";
+        public string IndexCheckpointBasePath => "index-checkpoints";
         /// <inheritdoc />
-        public string LogCheckpointBasePath() => "cpr-checkpoints";
+        public string LogCheckpointBasePath => "cpr-checkpoints";
         /// <inheritdoc />
-        public string TsavoriteLogCommitBasePath() => "log-commits";
+        public string TsavoriteLogCommitBasePath => "log-commits";
     }
 }

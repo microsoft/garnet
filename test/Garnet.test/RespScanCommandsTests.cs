@@ -60,27 +60,50 @@ namespace Garnet.test
             // one key object at object store
             db.SortedSetAdd("keyThree", new RedisValue("OneKey"), 1, CommandFlags.None);
 
-            var actualResponse = db.Execute("KEYS", new object[] { "key*" });
+            var actualResponse = db.Execute("KEYS", ["key*"]);
             Assert.AreEqual(3, ((RedisResult[])actualResponse).Length);
             var listKeys = new List<string>((string[])actualResponse);
             Assert.IsTrue(listKeys.Contains("keyOne"));
             Assert.IsTrue(listKeys.Contains("keyTwo"));
             Assert.IsTrue(listKeys.Contains("keyThree"));
 
-            actualResponse = db.Execute("KEYS", new object[] { "*other*" });
+            actualResponse = db.Execute("KEYS", ["*other*"]);
             Assert.AreEqual(1, ((RedisResult[])actualResponse).Length);
 
             listKeys = new List<string>((string[])actualResponse);
             Assert.IsTrue(listKeys.Contains("Another"));
 
-            actualResponse = db.Execute("KEYS", new object[] { "*simple*" });
+            actualResponse = db.Execute("KEYS", ["*simple*"]);
             Assert.AreEqual(0, ((RedisResult[])actualResponse).Length);
 
-            actualResponse = db.Execute("KEYS", new object[] { "key??" });
+            actualResponse = db.Execute("KEYS", ["key??"]);
             Assert.AreEqual(0, ((RedisResult[])actualResponse).Length);
 
-            actualResponse = db.Execute("KEYS", new object[] { "*" });
+            actualResponse = db.Execute("KEYS", ["*"]);
             Assert.AreEqual(4, ((RedisResult[])actualResponse).Length);
+        }
+
+        [Test]
+        public void SeKeysCursorTest()
+        {
+            // Test a large number of keys
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // set 10_000 strings
+            const int KeyCount = 10_000;
+            for (int i = 0; i < KeyCount; ++i)
+                db.StringSet($"try:{i}", i);
+
+            // get and count keys using SE Redis, using the default pageSize of 250
+            var server = redis.GetServers()[db.Database];
+            var keyCount1 = server.Keys().ToArray().Length;
+            Assert.AreEqual(KeyCount, keyCount1, "IServer.Keys()");
+
+            // get and count keys using KEYS
+            var res = db.Execute("KEYS", "*");
+            var keyCount2 = ((RedisValue[])res!).Length;
+            Assert.AreEqual(KeyCount, keyCount2, "KEYS *");
         }
 
         [Test]
@@ -91,37 +114,37 @@ namespace Garnet.test
 
             // add keys in both stores
             db.StringSet(new RedisKey("keyOne"), new RedisValue("valueone"));
-            db.SortedSetAdd(new RedisKey("myss"), new SortedSetEntry[] { new SortedSetEntry("a", 1) });
-            db.ListLeftPush(new RedisKey("mylist"), new RedisValue[] { new RedisValue("1") });
+            db.SortedSetAdd(new RedisKey("myss"), [new SortedSetEntry("a", 1)]);
+            db.ListLeftPush(new RedisKey("mylist"), [new RedisValue("1")]);
             db.SetAdd(new RedisKey("myset"), new RedisValue("elementone"));
-            db.HashSet(new RedisKey("myhash"), new HashEntry[] { new HashEntry("a", "1") });
+            db.HashSet(new RedisKey("myhash"), [new HashEntry("a", "1")]);
 
-            string[] data = new string[] { "a", "b", "c", "d", "e", "f" };
+            string[] data = ["a", "b", "c", "d", "e", "f"];
             string key = "hllKey";
             for (int i = 0; i < data.Length; i++)
             {
                 db.HyperLogLogAdd(key, data[i]);
             }
 
-            var r = db.Execute("MEMORY", new object[] { "USAGE", "keyOne" });
+            var r = db.Execute("MEMORY", ["USAGE", "keyOne"]);
             Assert.AreEqual("40", r.ToString());
 
-            r = db.Execute("MEMORY", new object[] { "USAGE", "myss" });
+            r = db.Execute("MEMORY", ["USAGE", "myss"]);
             Assert.AreEqual("344", r.ToString());
 
-            r = db.Execute("MEMORY", new object[] { "USAGE", "mylist" });
+            r = db.Execute("MEMORY", ["USAGE", "mylist"]);
             Assert.AreEqual("176", r.ToString());
 
-            r = db.Execute("MEMORY", new object[] { "USAGE", "myset" });
+            r = db.Execute("MEMORY", ["USAGE", "myset"]);
             Assert.AreEqual("200", r.ToString());
 
-            r = db.Execute("MEMORY", new object[] { "USAGE", "myhash" });
+            r = db.Execute("MEMORY", ["USAGE", "myhash"]);
             Assert.AreEqual("264", r.ToString());
 
-            r = db.Execute("MEMORY", new object[] { "USAGE", "foo" });
+            r = db.Execute("MEMORY", ["USAGE", "foo"]);
             Assert.IsTrue(r.IsNull);
 
-            r = db.Execute("MEMORY", new object[] { "USAGE", "hllKey" });
+            r = db.Execute("MEMORY", ["USAGE", "hllKey"]);
             Assert.AreEqual("304", r.ToString());
         }
 
@@ -134,24 +157,24 @@ namespace Garnet.test
 
             // add keys in both stores
             db.StringSet(new RedisKey("keyOne"), new RedisValue("valueone"));
-            db.SortedSetAdd(new RedisKey("myss"), new SortedSetEntry[] { new SortedSetEntry("a", 1) });
-            db.ListLeftPush(new RedisKey("mylist"), new RedisValue[] { new RedisValue("1") });
+            db.SortedSetAdd(new RedisKey("myss"), [new SortedSetEntry("a", 1)]);
+            db.ListLeftPush(new RedisKey("mylist"), [new RedisValue("1")]);
             db.SetAdd(new RedisKey("myset"), new RedisValue("elementone"));
-            db.HashSet(new RedisKey("myhash"), new HashEntry[] { new HashEntry("a", "1") });
+            db.HashSet(new RedisKey("myhash"), [new HashEntry("a", "1")]);
 
-            var r = db.Execute("TYPE", new object[] { "keyOne" });
+            var r = db.Execute("TYPE", ["keyOne"]);
             Assert.IsTrue(r.ToString() == "string");
 
-            r = db.Execute("TYPE", new object[] { "myss" });
+            r = db.Execute("TYPE", ["myss"]);
             Assert.IsTrue(r.ToString() == "zset");
 
-            r = db.Execute("TYPE", new object[] { "mylist" });
+            r = db.Execute("TYPE", ["mylist"]);
             Assert.IsTrue(r.ToString() == "list");
 
-            r = db.Execute("TYPE", new object[] { "myset" });
+            r = db.Execute("TYPE", ["myset"]);
             Assert.IsTrue(r.ToString() == "set");
 
-            r = db.Execute("TYPE", new object[] { "myhash" });
+            r = db.Execute("TYPE", ["myhash"]);
             Assert.IsTrue(r.ToString() == "hash");
         }
 
@@ -172,7 +195,7 @@ namespace Garnet.test
             db.StringSet(new RedisKey("hllo"), new RedisValue("four"));
 
 
-            var actualResponse = db.Execute("KEYS", new object[] { "h?llo" });
+            var actualResponse = db.Execute("KEYS", ["h?llo"]);
             Assert.AreEqual(3, ((RedisResult[])actualResponse).Length);
             var listKeys = new List<string>((string[])actualResponse);
             Assert.IsTrue(listKeys.Contains("hello"));
@@ -180,7 +203,7 @@ namespace Garnet.test
             Assert.IsTrue(listKeys.Contains("hxllo"));
 
 
-            actualResponse = db.Execute("KEYS", new object[] { "h*llo" });
+            actualResponse = db.Execute("KEYS", ["h*llo"]);
             Assert.AreEqual(4, ((RedisResult[])actualResponse).Length);
             listKeys = new List<string>((string[])actualResponse);
             Assert.IsTrue(listKeys.Contains("hllo"));
@@ -188,19 +211,19 @@ namespace Garnet.test
             Assert.IsTrue(listKeys.Contains("hxllo"));
             Assert.IsTrue(listKeys.Contains("hello"));
 
-            actualResponse = db.Execute("KEYS", new object[] { "h[ae]llo" });
+            actualResponse = db.Execute("KEYS", ["h[ae]llo"]);
             Assert.AreEqual(2, ((RedisResult[])actualResponse).Length);
             listKeys = new List<string>((string[])actualResponse);
             Assert.IsTrue(listKeys.Contains("hallo"));
             Assert.IsTrue(listKeys.Contains("hello"));
 
-            actualResponse = db.Execute("KEYS", new object[] { "h[^e]llo" });
+            actualResponse = db.Execute("KEYS", ["h[^e]llo"]);
             Assert.AreEqual(2, ((RedisResult[])actualResponse).Length);
             listKeys = new List<string>((string[])actualResponse);
             Assert.IsTrue(listKeys.Contains("hallo"));
             Assert.IsTrue(listKeys.Contains("hxllo"));
 
-            actualResponse = db.Execute("KEYS", new object[] { "h[a-b]llo" });
+            actualResponse = db.Execute("KEYS", ["h[a-b]llo"]);
             Assert.AreEqual(1, ((RedisResult[])actualResponse).Length);
             listKeys = new List<string>((string[])actualResponse);
             Assert.IsTrue(listKeys.Contains("hallo"));
@@ -215,7 +238,7 @@ namespace Garnet.test
             db.StringSet(new RedisKey("keyone"), new RedisValue("valueone"));
             db.StringSet(new RedisKey("keytwo"), new RedisValue("valuetwo"));
             db.StringSet(new RedisKey("keythree"), new RedisValue("valuethree"));
-            var actualResponse = db.Execute("KEYS", new object[] { "*" });
+            var actualResponse = db.Execute("KEYS", ["*"]);
             Assert.AreEqual(3, ((RedisResult[])actualResponse).Length);
         }
 
@@ -230,16 +253,16 @@ namespace Garnet.test
             db.StringSet(new RedisKey(@"he\*\*foo"), new RedisValue("keyvaluethree"));
             db.StringSet(new RedisKey(@"he**foo"), new RedisValue("keyvaluefour"));
 
-            var actualResponse = db.Execute("KEYS", new object[] { @"he\*\*" });
+            var actualResponse = db.Execute("KEYS", [@"he\*\*"]);
             Assert.AreEqual(1, ((RedisResult[])actualResponse).Length);
             Assert.IsTrue(String.Equals(@"he**", (((RedisResult[])actualResponse)[0]).ToString()));
 
-            actualResponse = db.Execute("KEYS", new object[] { @"he\\*\\*" });
+            actualResponse = db.Execute("KEYS", [@"he\\*\\*"]);
             Assert.AreEqual(2, ((RedisResult[])actualResponse).Length);
             Assert.IsTrue(String.Equals(@"he\*\*", (((RedisResult[])actualResponse)[0]).ToString()));
             Assert.IsTrue(String.Equals(@"he\*\*foo", (((RedisResult[])actualResponse)[1]).ToString()));
 
-            actualResponse = db.Execute("KEYS", new object[] { @"he**" });
+            actualResponse = db.Execute("KEYS", [@"he**"]);
             Assert.AreEqual(4, ((RedisResult[])actualResponse).Length);
         }
 
@@ -251,21 +274,21 @@ namespace Garnet.test
             db.StringSet(new RedisKey("he**"), new RedisValue("keyvalueone"));
             db.StringSet(new RedisKey(@"he**foo"), new RedisValue("keyvaluetwo"));
 
-            var actualResponse = db.Execute("KEYS", new object[] { @"he\*\*" });
+            var actualResponse = db.Execute("KEYS", [@"he\*\*"]);
             Assert.AreEqual(1, ((RedisResult[])actualResponse).Length);
             Assert.IsTrue(String.Equals(@"he**", (((RedisResult[])actualResponse)[0]).ToString()));
 
-            actualResponse = db.Execute("KEYS", new object[] { @"he\\*\\*" });
+            actualResponse = db.Execute("KEYS", [@"he\\*\\*"]);
             Assert.AreEqual(0, ((RedisResult[])actualResponse).Length);
 
             db.StringSet(new RedisKey(@"\\bar"), new RedisValue("secondvalue"));
-            actualResponse = db.Execute("KEYS", new object[] { @"\\bar" });
+            actualResponse = db.Execute("KEYS", [@"\\bar"]);
             Assert.AreEqual(0, ((RedisResult[])actualResponse).Length);
 
-            actualResponse = db.Execute("KEYS", new object[] { @"\\\bar" });
+            actualResponse = db.Execute("KEYS", [@"\\\bar"]);
             Assert.AreEqual(0, ((RedisResult[])actualResponse).Length);
 
-            actualResponse = db.Execute("KEYS", new object[] { @"\\\\bar" });
+            actualResponse = db.Execute("KEYS", [@"\\\\bar"]);
             Assert.AreEqual(1, ((RedisResult[])actualResponse).Length);
             Assert.IsTrue(String.Equals(@"\\bar", (((RedisResult[])actualResponse)[0]).ToString()));
         }
@@ -404,7 +427,7 @@ namespace Garnet.test
 
             for (int i = 0; i < 10; i++)
             {
-                db.HashSet(new RedisKey($"hskey:{i}"), new HashEntry[] { new HashEntry("field1", "1") });
+                db.HashSet(new RedisKey($"hskey:{i}"), [new HashEntry("field1", "1")]);
             }
 
             for (int i = 0; i < 10; i++)
@@ -456,26 +479,26 @@ namespace Garnet.test
 
             for (int i = 0; i < nKeys; i++)
             {
-                db.HashSet(new RedisKey($"hskey:{i}"), new HashEntry[] { new HashEntry("field1", "1") });
+                db.HashSet(new RedisKey($"hskey:{i}"), [new HashEntry("field1", "1")]);
             }
 
             for (int i = 0; i < nKeys; i++)
             {
-                db.SortedSetAdd(new RedisKey($"sskey:{i}"), new SortedSetEntry[] { new SortedSetEntry("a", 1) });
+                _ = db.SortedSetAdd(new RedisKey($"sskey:{i}"), [new SortedSetEntry("a", 1)]);
             }
 
-            int cursor = 0;
+            long cursor = 0;
             int recordsReturned = 0;
 
             do
             {
                 var result = db.Execute("SCAN", cursor.ToString());
-                _ = int.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
+                _ = long.TryParse(((RedisValue[])((RedisResult[])result!)[0])[0], out cursor);
                 RedisValue[] keysMatch = ((RedisValue[])((RedisResult[])result!)[1]);
                 recordsReturned += keysMatch.Length;
             } while (cursor != 0);
 
-            Assert.IsTrue(recordsReturned == nKeys * 3);
+            Assert.AreEqual(nKeys * 3, recordsReturned, "records returned");
         }
 
 
@@ -493,7 +516,7 @@ namespace Garnet.test
 
             for (int i = 0; i < nKeys; i++)
             {
-                db.HashSet(new RedisKey($"hskey:{i}"), new HashEntry[] { new HashEntry("field1", "1") });
+                db.HashSet(new RedisKey($"hskey:{i}"), [new HashEntry("field1", "1")]);
             }
 
             int cursor = 0;

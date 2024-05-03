@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -24,10 +25,10 @@ namespace Tsavorite.test
         public async ValueTask PageBlobTsavoriteLogTest1([Values] LogChecksumType logChecksum, [Values] TsavoriteLogTestBase.IteratorType iteratorType)
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
-            var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "Tsavoritelog.log", deleteOnClose: true, logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
+            var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "Tsavoritelog.log", deleteOnClose: true, logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
             var checkpointManager = new DeviceLogCommitCheckpointManager(
                 new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
+                new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             await TsavoriteLogTest1(logChecksum, device, checkpointManager, iteratorType);
             device.Dispose();
             checkpointManager.PurgeAll();
@@ -39,10 +40,10 @@ namespace Tsavorite.test
         public async ValueTask PageBlobTsavoriteLogTestWithLease([Values] LogChecksumType logChecksum, [Values] TsavoriteLogTestBase.IteratorType iteratorType)
         {
             TestUtils.IgnoreIfNotRunningAzureTests();
-            var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, $"{TestUtils.AzureTestContainer}", TestUtils.AzureTestDirectory, "TsavoritelogLease.log", deleteOnClose: true, underLease: true, blobManager: null, logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
+            var device = new AzureStorageDevice(TestUtils.AzureEmulatedStorageString, TestUtils.AzureTestContainer, TestUtils.AzureTestDirectory, "TsavoritelogLease.log", deleteOnClose: true, underLease: true, blobManager: null, logger: TestUtils.TestLoggerFactory.CreateLogger("asd"));
             var checkpointManager = new DeviceLogCommitCheckpointManager(
                 new AzureStorageNamedDeviceFactory(TestUtils.AzureEmulatedStorageString),
-                new DefaultCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
+                new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
             await TsavoriteLogTest1(logChecksum, device, checkpointManager, iteratorType);
             device.Dispose();
             checkpointManager.PurgeAll();
@@ -57,7 +58,7 @@ namespace Tsavorite.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             // Create devices \ log for test for in memory device
-            using var device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20, fileName: TestUtils.MethodTestDir + "/test.log");
+            using var device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, latencyMs: 20, fileName: Path.Join(TestUtils.MethodTestDir, "test.log"));
             using var LocalMemorylog = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 80, MemorySizeBits = 20, GetMemory = null, SegmentSizeBits = 80, MutableFraction = 0.2, LogCommitManager = null });
 
             int entryLength = 10;

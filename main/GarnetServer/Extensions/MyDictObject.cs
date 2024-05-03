@@ -27,13 +27,13 @@ namespace Garnet
         public MyDict(byte type)
             : base(type, 0, MemoryUtils.DictionaryOverhead)
         {
-            dict = new(new ByteArrayComparer());
+            dict = new(ByteArrayComparer.Instance);
         }
 
         public MyDict(byte type, BinaryReader reader)
             : base(type, reader, MemoryUtils.DictionaryOverhead)
         {
-            dict = new(new ByteArrayComparer());
+            dict = new(ByteArrayComparer.Instance);
 
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)

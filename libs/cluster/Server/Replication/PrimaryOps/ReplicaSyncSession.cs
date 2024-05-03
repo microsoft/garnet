@@ -397,7 +397,7 @@ namespace Garnet.cluster
             logger?.LogInformation("<Begin sending checkpoint file segments {guid} {type} {startAddress} {endAddress}", token, type, startAddress, endAddress);
 
             Debug.Assert(device != null);
-            batchSize = !clusterProvider.replicationManager.ShouldInitialize(type) ?
+            batchSize = !ReplicationManager.ShouldInitialize(type) ?
                 batchSize : (int)Math.Min(batchSize, 1L << clusterProvider.serverOptions.SegmentSizeBits());
             string resp;
             try

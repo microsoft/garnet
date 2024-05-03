@@ -478,7 +478,7 @@ ClusterRedirectTests.TestFlags testFlags)
             #endregion
         };
 
-        private (ResponseState, string, string[]) SendToNodeFromSlot(ref LightClientRequest[] connections, string cmd, int slot, string cmdTag, bool checkAssert = true)
+        private static (ResponseState, string, string[]) SendToNodeFromSlot(ref LightClientRequest[] connections, string cmd, int slot, string cmdTag, bool checkAssert = true)
         {
             var nodeIndex = ClusterTestUtils.GetSourceNodeIndexFromSlot(ref connections, (ushort)slot);
             var result = connections[nodeIndex].SendCommand(cmd);
