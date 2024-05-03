@@ -1423,8 +1423,6 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             const string key = "x:expire_trap";
-            const string keyExists = ":1\r\n";
-            const string keyNotExists = ":0\r\n";
 
             // Set
             {
@@ -1434,50 +1432,72 @@ namespace Garnet.test
                 Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial add");
                 Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial add");
                 var actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial add");
+                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial ADD");
 
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
                 await Task.Delay(TimeSpan.FromSeconds(2));
 
                 Assert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
-                Assert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after expiration");
+                Assert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after ADD expiration");
                 actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after expiration");
+                Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after ADD expiration");
 
                 db.SetAdd(key, "v2");
 
-                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-add");
-                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-add");
+                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-ADD");
+                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-ADD");
                 actualScan = db.Execute("SCAN", "0");
-                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-add");
+                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-ADD");
             }
             // List
             {
                 db.KeyDelete(key);
                 db.ListRightPush(key, "v1");
+
+                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial RPUSH");
+                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial RPUSH");
+                var actualScan = db.Execute("SCAN", "0");
+                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial RPUSH");
+
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
                 await Task.Delay(TimeSpan.FromSeconds(2));
 
                 Assert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
+                Assert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after RPUSH expiration");
+                actualScan = db.Execute("SCAN", "0");
+                Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after RPUSH expiration");
 
                 db.ListRightPush(key, "v2");
 
-                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-add");
-                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-add");
+                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-RPUSH");
+                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-RPUSH");
+                actualScan = db.Execute("SCAN", "0");
+                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-RPUSH");
             }
             // Hash
             {
                 db.KeyDelete(key);
                 db.HashSet(key, "f1", "v1");
+
+                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial HSET");
+                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial HSET");
+                var actualScan = db.Execute("SCAN", "0");
+                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial HSET");
+
                 db.KeyExpire(key, TimeSpan.FromSeconds(1));
                 await Task.Delay(TimeSpan.FromSeconds(2));
 
                 Assert.IsFalse(db.KeyExists(key), $"KeyExists after expiration");
+                Assert.AreEqual("0", db.Execute("EXISTS", key).ToString(), "EXISTS after HSET expiration");
+                actualScan = db.Execute("SCAN", "0");
+                Assert.AreEqual(0, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after HSET expiration");
 
                 db.HashSet(key, "f1", "v2");
 
-                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-add");
-                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-add");
+                Assert.IsTrue(db.KeyExists(key), $"KeyExists after initial re-HSET");
+                Assert.AreEqual("1", db.Execute("EXISTS", key).ToString(), "EXISTS after initial re-HSET");
+                actualScan = db.Execute("SCAN", "0");
+                Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-HSET");
             }
         }
 
