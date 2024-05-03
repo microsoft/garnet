@@ -41,6 +41,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
+            rmwInput->header.flags = 0;
             rmwInput->header.HashOp = nx ? HashOperation.HSETNX : HashOperation.HSET;
             rmwInput->count = 1;
             rmwInput->done = 0;
@@ -73,6 +74,7 @@ namespace Garnet.server
             // Prepare header in buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
+            rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HSET;
             rmwInput->count = elements.Length;
             rmwInput->done = 0;
@@ -127,6 +129,7 @@ namespace Garnet.server
             // Prepare header in buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
+            rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HDEL;
             rmwInput->count = fields.Length;
             rmwInput->done = 0;
@@ -197,6 +200,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
+            rmwInput->header.flags = 0;
             rmwInput->header.HashOp = fields == default ? HashOperation.HGETALL : HashOperation.HGET;
             rmwInput->count = fields == default ? 0 : fields.Length;
             rmwInput->done = 0;
@@ -247,6 +251,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
+            rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HLEN;
             rmwInput->count = 1;
             rmwInput->done = 0;
@@ -278,6 +283,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
+            rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HEXISTS;
             rmwInput->count = 1;
             rmwInput->done = 0;
@@ -308,6 +314,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
+            rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HRANDFIELD;
             rmwInput->count = 2;
             rmwInput->done = 0;
@@ -350,6 +357,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
+            rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HRANDFIELD;
             rmwInput->count = 4;
             rmwInput->done = 0;
@@ -417,6 +425,7 @@ namespace Garnet.server
             var inputSize = ObjectInputHeader.Size + sizeof(int);
             var rmwInput = scratchBufferManager.CreateArgSlice(inputSize).ptr;
             ((ObjectInputHeader*)rmwInput)->header.type = GarnetObjectType.Hash;
+            ((ObjectInputHeader*)rmwInput)->header.flags = 0;
             ((ObjectInputHeader*)rmwInput)->header.HashOp = HashOperation.HSCAN;
 
             // Number of tokens in the input after the header (match, value, count, value)

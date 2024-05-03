@@ -74,6 +74,7 @@ namespace Garnet.server
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
             inputPtr->header.SortedSetOp = SortedSetOperation.ZADD;
             inputPtr->count = inputCount;
             inputPtr->done = zaddDoneCount;
@@ -143,6 +144,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 rmwInput->header.type = GarnetObjectType.SortedSet;
+                rmwInput->header.flags = 0;
                 rmwInput->header.SortedSetOp = SortedSetOperation.ZREM;
                 rmwInput->count = inputCount;
                 rmwInput->done = zaddDoneCount;
@@ -226,6 +228,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZCARD;
                 inputPtr->count = 1;
                 inputPtr->done = 0;
@@ -312,6 +315,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = op;
                 inputPtr->count = count - 1;
                 inputPtr->done = 0;
@@ -411,6 +415,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZSCORE;
                 inputPtr->count = scoreKeySize;
                 inputPtr->done = 0;
@@ -485,6 +490,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZMSCORE;
                 inputPtr->count = inputCount;
                 inputPtr->done = 0;
@@ -572,6 +578,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = op;
                 inputPtr->count = popCount;
                 inputPtr->done = zaddDoneCount;
@@ -649,6 +656,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZCOUNT;
                 inputPtr->count = 0;
                 inputPtr->done = 0;
@@ -739,6 +747,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = op;
                 inputPtr->count = 0;
                 inputPtr->done = 0;
@@ -823,6 +832,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZINCRBY;
                 inputPtr->count = count - 1;
                 inputPtr->done = 0;
@@ -925,6 +935,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = op;
                 inputPtr->count = memberSize;
                 inputPtr->done = 0;
@@ -997,6 +1008,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = op;
                 inputPtr->count = 0;
                 inputPtr->done = 0;
@@ -1101,6 +1113,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
+                inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZRANDMEMBER;
                 inputPtr->count = count == 1 ? 1 : paramCount;
                 inputPtr->done = withScoresSpan.SequenceEqual(includeWithScores) ? 1 : 0;

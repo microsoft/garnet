@@ -68,6 +68,7 @@ namespace Garnet.server
 
                 // ObjectInputHeader
                 (*(ObjectInputHeader*)(pcurr)).header.type = objectType;
+                (*(ObjectInputHeader*)(pcurr)).header.flags = 0;
 
                 switch (objectType)
                 {
