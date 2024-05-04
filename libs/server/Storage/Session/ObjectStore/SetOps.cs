@@ -36,6 +36,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SADD;
             rmwInput->count = 1;
             rmwInput->done = 0;
@@ -68,6 +69,7 @@ namespace Garnet.server
             // Prepare header in buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SADD;
             rmwInput->count = members.Length;
             rmwInput->done = 0;
@@ -108,6 +110,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SREM;
             rmwInput->count = 1;
             rmwInput->done = 0;
@@ -141,6 +144,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SREM;
             rmwInput->count = members.Length;
             rmwInput->done = 0;
@@ -180,6 +184,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SCARD;
             rmwInput->count = 1;
             rmwInput->done = 0;
@@ -210,6 +215,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SMEMBERS;
             rmwInput->count = 1;
             rmwInput->done = 0;
@@ -266,6 +272,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SPOP;
             rmwInput->count = count;
             rmwInput->done = 0;
@@ -308,6 +315,7 @@ namespace Garnet.server
             var inputSize = ObjectInputHeader.Size + sizeof(int);
             var rmwInput = scratchBufferManager.CreateArgSlice(inputSize).ptr;
             ((ObjectInputHeader*)rmwInput)->header.type = GarnetObjectType.Set;
+            ((ObjectInputHeader*)rmwInput)->header.flags = 0;
             ((ObjectInputHeader*)rmwInput)->header.SetOp = SetOperation.SSCAN;
 
             // Number of tokens in the input after the header (match, value, count, value)
