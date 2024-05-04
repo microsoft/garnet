@@ -1202,18 +1202,23 @@ namespace Tsavorite.core
             return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
+        private void ComputeScanBoundaries(long beginAddress, long endAddress, out long pageStartAddress, out int start, out int end)
+        {
+            pageStartAddress = beginAddress & ~PageSizeMask;
+            start = (int)(beginAddress & PageSizeMask) / RecordSize;
+            var count = (int)(endAddress - beginAddress) / RecordSize;
+            end = start + count;
+        }
+
+        /// <inheritdoc />
         public override void EvictPage(long page)
         {
             if (OnEvictionObserver is not null)
             {
                 var beginAddress = page << LogPageSizeBits;
                 var endAddress = (page + 1) << LogPageSizeBits;
-                var pageStartAddress = beginAddress & ~PageSizeMask;
-                var start = (int)(beginAddress & PageSizeMask) / RecordSize;
-                var count = (int)(endAddress - beginAddress) / RecordSize;
-                var end = start + count;
-                var pageIndex = (int)(page % BufferSize);
-                using var iter = new MemoryPageScanIterator<Key, Value>(values[pageIndex], start, end, pageStartAddress, RecordSize);
+                ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
+                using var iter = new MemoryPageScanIterator<Key, Value>(values[(int)(page % BufferSize)], start, end, pageStartAddress, RecordSize);
                 OnEvictionObserver?.OnNext(iter);
             }
 
@@ -1224,10 +1229,7 @@ namespace Tsavorite.core
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<Key, Value>> observer)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
-            long pageStartAddress = beginAddress & ~PageSizeMask;
-            int start = (int)(beginAddress & PageSizeMask) / RecordSize;
-            int count = (int)(endAddress - beginAddress) / RecordSize;
-            int end = start + count;
+            ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
             using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end, pageStartAddress, RecordSize);
             Debug.Assert(epoch.ThisInstanceProtected());
             try

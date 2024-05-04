@@ -75,6 +75,12 @@ namespace Garnet.server
             }
         }
 
+        public void Start()
+        {
+            mainLogTracker.Start();
+            readCacheTracker?.Start();
+        }
+
         /// <summary>
         /// Calculates target size for both the main cache and read cache.
         /// Target size will be checked against the total size of the index, log pages and heap memory size.

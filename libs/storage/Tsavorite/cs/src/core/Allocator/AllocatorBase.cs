@@ -1454,10 +1454,14 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Invokes eviction observer if set and then frees the page.
+        /// </summary>
+        /// <param name="page"></param>
         public virtual void EvictPage(long page)
         {
-            long start = page << LogPageSizeBits;
-            long end = (page + 1) << LogPageSizeBits;
+            var start = page << LogPageSizeBits;
+            var end = (page + 1) << LogPageSizeBits;
             if (OnEvictionObserver is not null)
                 MemoryPageScan(start, end, OnEvictionObserver);
             FreePage(page);

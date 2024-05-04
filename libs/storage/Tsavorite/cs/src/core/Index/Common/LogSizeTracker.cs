@@ -106,6 +106,10 @@ namespace Tsavorite.core
             highTargetSize = targetSize + delta;
             this.LogSizeCalculator = logSizeCalculator;
             this.logger = logger;
+        }
+
+        public void Start()
+        {
             Task.Run(ResizerTask);
         }
 
