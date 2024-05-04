@@ -2673,9 +2673,13 @@ namespace Garnet.test.cluster
             try
             {
                 var server = redis.GetServer(endPoint);
-
-                while (server.LastSave() < time)
+                while (true)
+                {
+                    var lastSaveTime = server.LastSave();
+                    if (lastSaveTime >= time)
+                        break;
                     BackOff();
+                }
             }
             catch (Exception ex)
             {
