@@ -43,7 +43,7 @@ namespace Garnet.cluster
         }
 
         public long GetMinAofCoveredAddress()
-            => Math.Min(storeCheckpointCoveredAofAddress, objectCheckpointCoveredAofAddress);
+            => Math.Max(Math.Min(storeCheckpointCoveredAofAddress, objectCheckpointCoveredAofAddress), 64);
 
         /// <summary>
         /// Indicate addition of new reader by trying to increment reader counter
