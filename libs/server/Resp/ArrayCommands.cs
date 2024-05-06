@@ -677,7 +677,7 @@ namespace Garnet.server
             else
             {
 
-                if (!storeWrapper.serverOptions.EnableCluster && string.Equals(result, "0"))
+                if (string.Equals(result, "0"))
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
