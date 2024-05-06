@@ -250,6 +250,9 @@ namespace CommandInfoUpdater
         /// </summary>
         public byte? ArrayCommand { get; set; }
 
+        /// <summary>
+        /// Default constructor provided for JSON serialization
+        /// </summary>
         public SupportedCommand()
         {
 
