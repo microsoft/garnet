@@ -668,15 +668,25 @@ namespace Garnet.server
 
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (string.Equals(result, "0"))
+            if (storeWrapper.serverOptions.EnableCluster)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                // Cluster mode does not allow DBID
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_CLUSTER_MODE, ref dcurr, dend))
                     SendAndReset();
             }
             else
             {
-                while (!RespWriteUtils.WriteError("ERR invalid database index."u8, ref dcurr, dend))
-                    SendAndReset();
+
+                if (!storeWrapper.serverOptions.EnableCluster && string.Equals(result, "0"))
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SELECT_INVALID_INDEX, ref dcurr, dend))
+                        SendAndReset();
+                }
             }
             return true;
         }
@@ -727,7 +737,6 @@ namespace Garnet.server
 
             return true;
         }
-
 
         private bool NetworkSCAN<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
