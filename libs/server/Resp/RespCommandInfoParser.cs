@@ -276,10 +276,14 @@ namespace Garnet.server
         {
             private static BeginSearchIndexParser instance;
 
-            private BeginSearchIndexParser()
-            {
-            }
+            /// <summary>
+            /// Disallow default constructor (singleton)
+            // </summary>
+            private BeginSearchIndexParser() { }
 
+            /// <summary>
+            /// Returns the singleton instance of <see cref="BeginSearchIndexParser">.
+            /// </summary>
             public static BeginSearchIndexParser Instance
             {
                 get { return instance ??= new BeginSearchIndexParser(); }
