@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 #if NET8_0_OR_GREATER
@@ -17,10 +18,12 @@ namespace Garnet.server
     /// </summary>
     public static class GeoHash
     {
-        // Constraints from EPSG:900913 / EPSG:3785 / OSGEO:41001
+        // Constraints from WGS 84 / Pseudo-Mercator (EPSG:3857)
         private const double LongitudeMin = -180.0;
         private const double LongitudeMax = 180.0;
 
+        // TODO: These are "wrong" in a sense that EPSG:3857
+        // says that the latitude should be from -85.05112878 to 85.05112878
         private const double LatitudeMin = -90.0;
         private const double LatitudeMax = 90.0;
 
@@ -45,14 +48,11 @@ namespace Garnet.server
                 return -1L;
             }
 
-            const double LatToUnitRangeReciprocal = 1 / 180.0;
-            const double LonToUnitRangeReciprocal = 1 / 360.0;
-
             // Credits to https://mmcloughlin.com/posts/geohash-assembly for the quantization approach!
 
-            // The coordinates are quantized by first mapping them to the unit interval [0, 1] and
+            // The coordinates are quantized by first mapping them to the unit interval [0.0, 1.0] and
             // then multiplying the 2^32. For example, to get 32-bit quantized integer representation of the latitude
-            // which is in range [-90, 90] we would do:
+            // which is in range [-90.0, 90.0] we would do:
             //
             // latQuantized = floor(2.0^32 * (latitude + 90.0) / 180.0)
             //
@@ -62,32 +62,39 @@ namespace Garnet.server
             //
             // floor(2^52 * x) where x = (latitude + 90.0) / 180.0.
             //
-            // and further that the value of this can be read from binary representation of x+1.
+            // and further that the result of this calculation can be read simply from
+            // the IEEE-754 binary representation of x + 1.0.
 
-            // In otherwords to quantize, we need to first map value to unit range [0, 1].
-            // We achieve this by multiplying: [-value, value] * rangeReciprocal = [-0.5, 0.5]
-            // Then by adding 1.5, we shift the value range to [1, 2],
-            // for which the IEEE-754 double-precision representation is as follows:
-            //
-            // (-1)^sign * 2^(exp-1023) * (1.0 + significand/2^52)
-            // where s=0, exp=1023, significand=floor(2^52 * x)
-            // 
-            // Now we can read value of floor(2^52 * x) directly from binary representation of 1.0 + x,
-            // where the now "quantized" value is stored as the 32 most significant bits of the signicand!
-            static uint Quantize(double value, double rangeReciprocal) => (uint)(BitConverter.DoubleToUInt64Bits(Math.FusedMultiplyAdd(value, rangeReciprocal, 1.5)) >> 20);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            static uint Quantize(double value, double rangeReciprocal)
+            {
+                // In otherwords; we need to first map value to unit range [0.0, 1.0].
+                // We achieve this by multiplying [-value, value] by rangeReciprocal, giving us value in range [-0.5, 0.5]
+                // Then by adding 1.5, we shift the value range to [1.0, 2.0],
+                // for which the IEEE-754 double-precision representation is as follows:
+                //
+                // (-1)^sign * 2^(exp-1023) * (1.0 + significand/2^52)
+                // where sign=0, exp=1023, significand=floor(2^52 * x), for x in [1.0, 2.0)
+                //
+                // Now we can read value of floor(2^52 * x) directly from binary representation of y = 1.0 + x,
+                // where the now "quantized" value is stored as the 32 most significant bits of the signicand!
+                var y = BitConverter.DoubleToUInt64Bits(Math.FusedMultiplyAdd(value, rangeReciprocal, 1.5)) >> 20;
+
+                // Except we need to handle the corner-case where value rounds to the maximumm the range: 2.0
+                //
+                // We do this branchlessly by comparing the 64-bit binary representation to 0x40000000000 (e=1024).
+                // This way the JIT will emit cmp + cmov for x86-64 and cmp + csel for arm64 instead of branch.
+                return y >= 0x40000000000 ? uint.MaxValue : (uint)y;
+            }
+
+            const double LatToUnitRangeReciprocal = 1 / 180.0;
+            const double LonToUnitRangeReciprocal = 1 / 360.0;
 
             var latQuantized = Quantize(latitude, LatToUnitRangeReciprocal);
             var lonQuantized = Quantize(longitude, LonToUnitRangeReciprocal);
 
-            // Morton encode the quantized values, i.e.
-            // latQuantBits = xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx
-            // lonQuantBits = yyyyyyyy yyyyyyyy yyyyyyyy yyyyyyyy
-
+            // Morton encode the quantized values
             var result = MortonEncode(x: latQuantized, y: lonQuantized);
-
-            // Now:
-            // resultBits   = xyxyxyxy xyxyxyxy xyxyxyxy xyxyxyxy
-            //                xyxyxyxy xyxyxyxy xyxyxyxy xyxyxyxy
 
             // Shift to 52-bit precision.
             return (long)(result >> ((sizeof(ulong) * 8) - BitsOfPrecision));
@@ -105,12 +112,12 @@ namespace Garnet.server
             // Credits to https://github.com/georust/geohash for the hash de-quantization method!
             static double Dequantize(uint quantizedValue, double rangeMax)
             {
-                // Construct the IEEE-754 double-precision representation of the value, which is in range [1, 2]
+                // Construct the IEEE-754 double-precision representation of the value, which is in range [1, 2)
                 var value = BitConverter.UInt64BitsToDouble(((ulong)quantizedValue << 20) | (1023UL << 52));
 
                 // Now:
-                // (2*rangeMax) * ([1, 2]-1) = [0, 2*rangeMax]
-                // [0, 2*rangeMax] - rangeMax = [-rangeMax, rangeMax]
+                // (2*rangeMax) * ([1.0, 2.0) - 1.0) = [0.0, 2*rangeMax)
+                // [0.0, 2*rangeMax) - rangeMax = [-rangeMax, rangeMax)
                 return Math.FusedMultiplyAdd(rangeMax + rangeMax, value - 1.0, -rangeMax);
             }
 
@@ -143,7 +150,19 @@ namespace Garnet.server
         /// </summary>
         /// <param name="x">The x-coordinate to encode.</param>
         /// <param name="y">The y-coordinate to encode.</param>
-        /// <returns>A ulong value representing the Morton encoding of the given coordinates.</returns>
+        /// <returns>
+        /// A 64-bit value representing the Morton encoding of the given coordinates.
+        /// i.e. in binary representation, for:
+        /// <code>
+        /// x = xxxxxxxx xxxxxxxx xxxxxxxx xxxxxxxx
+        /// y = yyyyyyyy yyyyyyyy yyyyyyyy yyyyyyyy
+        /// </code>
+        /// Method returns:
+        /// <code>
+        /// yxyxyxyx yxyxyxyx yxyxyxyx yxyxyxyx
+        /// yxyxyxyx yxyxyxyx yxyxyxyx yxyxyxyx
+        /// </code>
+        /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static ulong MortonEncode(uint x, uint y)
         {
@@ -159,7 +178,7 @@ namespace Garnet.server
             }
 
 #if NET8_0_OR_GREATER
-            // You may wonder, why is this also guarded behind AVX512F in addition to BMI2?
+            // One may ask: Why is this also guarded behind AVX512F in addition to BMI2?
             // The answer is that on AMD platforms before Zen 3, the PDEP (and PEXT) are implemented in microcode
             // and work bit-by-bit basis. It has been measured[^1] that for every bit set in the mask operand,
             // there is 8~ uops issued, meaning that we would do 32 bits per mask * 8 uops * 2 = 512~ uops in total for the encoding instead of just 1 uop.
@@ -183,7 +202,7 @@ namespace Garnet.server
         /// This is essentially a bit de-interleaving operation where the even and odd bits of <paramref name="x"/> are "squashed" into separate 32-bit values representing the x- and y-coordinates respectively.
         /// </summary>
         /// <param name="x">The 64-bit value to decode.</param>
-        /// <returns>A tuple of values representing the x- and y-coordinates decoded from the given Morton code.</returns>
+        /// <returns>A tuple of 32-bit values representing the x- and y-coordinates decoded from the given Morton code.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static (uint X, uint Y) MortonDecode(ulong x)
         {
