@@ -19,7 +19,7 @@ For more information about using the associated command refer to the slot migrat
 The implementation of migration operation is separated into two components
 
 1. Command parsing and validation component.
-2. Migrate session operation and management component.
+2. Migration session operation and management component.
 
 The first component is responsible for parsing and validating the migration command arguments.
 Validation involves the following:
@@ -180,7 +180,7 @@ When all key-value pairs have migrated to the target node, the issues has to res
 
 ```MigrateKeys``` is the main driver for the migration operation using ```KEYS`` option.
 This method iterates over the list of provided keys and sends them over to the target node.
-This happens in two steps: (1) look in the main store and if a key exists send it over while removing it from the list of keys to be send, (2) search object store for any remaining keys, not found in the main store and send them over if they are found.
+This happens in two steps: (1) look in the main store and if a key exists send it over while removing it from the list of keys to be send and (2) search object store for any remaining keys, not found in the main store and send them over if they are found.
 It is possible that a key cannot be retrieved from either store, because it might have expired.
 In that case, no error is raised.
 When data transmission completes, and depending if COPY option is enabled, ```MigrateKeys``` deletes the keys from the both stores.
