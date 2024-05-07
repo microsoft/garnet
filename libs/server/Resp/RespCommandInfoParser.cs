@@ -278,11 +278,11 @@ namespace Garnet.server
 
             /// <summary>
             /// Disallow default constructor (singleton)
-            // </summary>
+            /// </summary>
             private BeginSearchIndexParser() { }
 
             /// <summary>
-            /// Returns the singleton instance of <see cref="BeginSearchIndexParser">.
+            /// Returns the singleton instance of <see cref="BeginSearchIndexParser" />.
             /// </summary>
             public static BeginSearchIndexParser Instance
             {
@@ -315,10 +315,14 @@ namespace Garnet.server
         {
             private static BeginSearchKeywordParser instance;
 
-            private BeginSearchKeywordParser()
-            {
-            }
+            /// <summary>
+            /// Disallow default constructor (singleton)
+            /// </summary>
+            private BeginSearchKeywordParser() { }
 
+            /// <summary>
+            /// Returns the singleton instance of <see cref="BeginSearchKeywordParser" />.
+            /// </summary>
             public static BeginSearchKeywordParser Instance
             {
                 get { return instance ??= new BeginSearchKeywordParser(); }
@@ -352,10 +356,14 @@ namespace Garnet.server
         {
             private static BeginSearchUnknownParser instance;
 
-            private BeginSearchUnknownParser()
-            {
-            }
+            /// <summary>
+            /// Disallow default constructor (singleton)
+            /// </summary>
+            private BeginSearchUnknownParser() { }
 
+            /// <summary>
+            /// Returns the singleton instance of <see cref="BeginSearchUnknownParser" />.
+            /// </summary>
             public static BeginSearchUnknownParser Instance
             {
                 get { return instance ??= new BeginSearchUnknownParser(); }
@@ -382,10 +390,14 @@ namespace Garnet.server
         {
             private static FindKeysRangeParser instance;
 
-            private FindKeysRangeParser()
-            {
-            }
+            /// <summary>
+            /// Disallow default constructor (singleton)
+            /// </summary>
+            private FindKeysRangeParser() { }
 
+            /// <summary>
+            /// Returns the singleton instance of <see cref="FindKeysRangeParser" />.
+            /// </summary>
             public static FindKeysRangeParser Instance
             {
                 get { return instance ??= new FindKeysRangeParser(); }
@@ -424,10 +436,15 @@ namespace Garnet.server
         {
             private static FindKeysKeyNumParser instance;
 
-            private FindKeysKeyNumParser()
-            {
-            }
+            /// <summary>
+            /// Disallow default constructor (singleton)
+            /// </summary>
+            private FindKeysKeyNumParser() { }
 
+
+            /// <summary>
+            /// Returns the singleton instance of <see cref="FindKeysKeyNumParser" />.
+            /// </summary>
             public static FindKeysKeyNumParser Instance
             {
                 get { return instance ??= new FindKeysKeyNumParser(); }
@@ -466,10 +483,14 @@ namespace Garnet.server
         {
             private static FindKeysUnknownParser instance;
 
-            private FindKeysUnknownParser()
-            {
-            }
+            /// <summary>
+            /// Disallow default constructor (singleton)
+            /// </summary>
+            private FindKeysUnknownParser() { }
 
+            /// <summary>
+            /// Returns the singleton instance of <see cref="FindKeysUnknownParser" />.
+            /// </summary>
             public static FindKeysUnknownParser Instance
             {
                 get { return instance ??= new FindKeysUnknownParser(); }
