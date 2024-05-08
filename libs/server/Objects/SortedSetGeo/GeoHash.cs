@@ -131,17 +131,12 @@ namespace Garnet.server
             var minLongitude = Dequantize(lonQuantized, LongitudeMax);
 
             // We get the bounding box upper-bounds by calculating the maximum error per given precision.
-            //
-            // var (latitudeError, longitudeError) = GetGeoErrorByPrecision();
-            //
-            // Given our Precision is 52, we need to add below constants to our coordinates to get the BB center.
-            const double HalfLatitudeError = /* latitudeError */ 0.00000268220901489 / 2.0;
-            const double HalfLongitudeError = /* longitudeError */ 0.00000536441802979 / 2.0;
+            var (latitudeError, longitudeError) = GetGeoErrorByPrecision();
 
             // We consider the center of the bounding box to be our "coordinate" for given hash
             return (
-                Latitude: minLatitude + HalfLatitudeError,
-                Longitude: minLongitude + HalfLongitudeError);
+                Latitude: minLatitude + (latitudeError / 2.0),
+                Longitude: minLongitude + (longitudeError / 2.0));
         }
 
 
@@ -301,6 +296,7 @@ namespace Garnet.server
         /// <summary>
         /// Calculates the error in latitude and longitude based on <see cref="BitsOfPrecision">the number of bits used for precision</see> (52).
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (double LatError, double LonError) GetGeoErrorByPrecision()
         {
             const int LatBits = BitsOfPrecision / 2;
