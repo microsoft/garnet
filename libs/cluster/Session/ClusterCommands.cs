@@ -109,6 +109,7 @@ namespace Garnet.cluster
 
                 if (slotStart > slotEnd)
                 {
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR Invalid range {slotStart} > {slotEnd}!");
                     invalidRange = true;
                     continue;
                 }
