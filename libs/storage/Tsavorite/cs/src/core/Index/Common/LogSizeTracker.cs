@@ -26,12 +26,13 @@ namespace Tsavorite.core
         Deserialize
     }
 
-    public class LogOperationObserver<Key, Value> : IObserver<ITsavoriteScanIterator<Key, Value>>
+    public class LogOperationObserver<Key, Value, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<Key, Value>>
+        where TLogSizeCalculator : ILogSizeCalculator<Key, Value>
     {
-        private readonly LogSizeTracker<Key, Value, ILogSizeCalculator<Key, Value>> logSizeTracker;
+        private readonly LogSizeTracker<Key, Value, TLogSizeCalculator> logSizeTracker;
         private readonly LogOperationType logOperationType;
 
-        public LogOperationObserver(LogSizeTracker<Key, Value, ILogSizeCalculator<Key, Value>> logSizeTracker, LogOperationType logOperationType)
+        public LogOperationObserver(LogSizeTracker<Key, Value, TLogSizeCalculator> logSizeTracker, LogOperationType logOperationType)
         {
             this.logSizeTracker = logSizeTracker;
             this.logOperationType = logOperationType;
