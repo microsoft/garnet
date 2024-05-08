@@ -11,7 +11,7 @@ using SetOperation = Garnet.server.SetOperation;
 namespace Garnet.test
 {
     /// <summary>
-    /// This test class tests the RESP COMMAND & COMMAND INFO commands
+    /// This test class tests the RESP COMMAND and COMMAND INFO commands
     /// </summary>
     [TestFixture]
     public class RespCommandTests
