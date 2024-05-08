@@ -200,7 +200,7 @@ This can be configured at start-up by using ***--gossip-sp*** flag.
 ## Slot Verification
 
 Resp data commands operate either on a single key or a collection of keys.
-In addition, they can be classified either as readonly (e.g. GET mykey) or read-write (e.g. SET mykey foo).
+In addition, they can be classified either as readonly (e.g. *GET* mykey) or read-write (e.g. SET mykey foo).
 When operating in cluster mode and before processing any command Garnet performs an extra slot verification step.
 Slot verification involves inspecting the key or keys associated with a given command and validating that it maps to a slot that can be served by the node receiving the associated request.
 Garnet primary nodes can serve read and read-write requests for slots that they own, while Garnet replica nodes can only serve read requests for slots that their primary owns.

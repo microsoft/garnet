@@ -10,13 +10,13 @@ In Garnet, slot migration describes the process of reassigning slot ownership an
 This operation allows for efficient resource utilization and load balancing across the cluster when adding or removing nodes.
 The migration operation is only available in cluster mode.
 Slot migration can be initiated by the owner (referred to as the *source* node) of a given slot, and addressed towards another already known, and trusted primary node (referred to as the *target* node).
-Actual data migration can be initiated by using the ```MIGRATE ```command that operates in two modes: (1) Migrate individual keys (2) Migrate entire slots or range of slots.
+Actual data migration can be initiated by using the ```MIGRATE ``` command that operates in two modes: (1) Migrate individual keys (2) Migrate entire slots or range of slots.
 This page is focused on the slot migration implementation details.
 For more information about using the associated command refer to the slot migration [user guide](../../cluster/key-migration).
 
 # Implementation Details
 
-The implementation of migration operation is separated into two components
+The implementation of the migration operation is separated into two components:
 
 1. Command parsing and validation component.
 2. Migration session operation and management component.
@@ -32,7 +32,7 @@ Validation involves the following:
 6. Validate that the target of the migration is known, trusted and has the role of a primary.
 
 When parsing completes succesfully, a *migration* session is created and executed.
-Depending on the chosen option, the *migration* session executes as a foreground task (using KEYS option) or a background task (SLOTS/SLOTSRANGE option).
+Depending on the chosen option, the *migration* session executes either as a foreground task (using ```KEYS``` option) or a background task (```SLOTS/SLOTSRANGE``` option).
 
 The second component is separated into the following sub-components:
 
@@ -41,7 +41,7 @@ The second component is separated into the following sub-components:
 3. ```MigrateSession```
 
 The ```MigrationManager``` is responsible for managing the active ```MigrateSession``` tasks.
-It uses ```MigrateSessionTaskStore``` to atomically add or remove new ```MigrateSession```.
+It uses the ```MigrateSessionTaskStore``` to atomically add or remove new instances of ```MigrateSession```.
 It is also responsible for ensuring that existing sessions do not conflict with sessions that are about to be added, by checking if the referred slots in each session do not conflict.
 Finally, it provideds information on the number of ongoing migrate tasks.
 
@@ -50,14 +50,14 @@ Finally, it provideds information on the number of ongoing migrate tasks.
 Since slot migration can be initiated while a Garnet cluster is operational, it needs to be carefully orchestrated to avoid any data integrity issues when clients attempt to write new data.
 In addition, whatever solution is put forth should not hinder data avaibility while migration is in progress.
 
-Our implementation leverages on the concept slot based sharding to ensure that keys mapping to the related slot cannot be modified while a migrate task is active.
+Our implementation leverages on the concept of slot-based sharding to ensure that keys mapping to the related slot cannot be modified while a migrate task is active.
 This is achieved by setting the slot state to ***MIGRATING*** in the source node.
 This prevents any write requests though it still allows for reads.
 Write requests can be issued towards the target node using ***ASKING***, though there are not consistency guarantees from Garnet if this option is used.
 Garnet guarantees that no keys can be lost during regular migration (i.e. with using ***ASKING***).
 
-Because Garnet operates in a multi-threaded environment, the transition from ```STABLE``` to ```MIGRATING``` needs to happen safely, so every thread has then change to observe that state change.
-This can be achieved using epoch protection.
+Because Garnet operates in a multi-threaded environment, the transition from ```STABLE``` to ```MIGRATING``` needs to happen safely, so every thread has a chance to observe that state change.
+This can happen using epoch protection.
 Specifically, when a slot transitions to a new state, the segment that implements the actual state transition will have to spin-wait after making the change and return only after all active client sessions have moved to the next epoch.
 
 An excerpt of the code related to epoch protection during slot state transition is shown below.
@@ -142,10 +142,10 @@ Therefore, any active client session will process subsequent commands considerin
 
 During migration, the change in slot state (i.e., ```MIGRATING```) is transient from the perspective of the source node.
 This means that until migration completes the slot is still owned by the source node.
-However, because it is necessary to produce -ASK redirect messages, the workerId is set to the workerId of the target node, without bumping the current local epoch (to avoid propagation of this transient update to the whole cluster).
-Therefore, depending on the context of the operation being executed, the actual owner of the node can be determined by accessing ```workerId``` property, while the target node for migration is determined through ```_workerId``` variable.
-For example, the ```CLUSTER NODES``` will use ``workerId``` property (through GetSlotRange(workerId)) since it has to return actual owner of the node even during migration.
-At the same, time it needs to return all nodes that are in ```MIGRATING``` or ```IMPORTING`` state and the node-id associated with that state which can be done by inspecting the _workerId variable (through GetSpecialStates(workerId)).
+However, because it is necessary to produce ```-ASK``` redirect messages, the *workerId* is set to the *workerId* of the target node, without bumping the current local epoch (to avoid propagation of this transient update to the whole cluster).
+Therefore, depending on the context of the operation being executed, the actual owner of the node can be determined by accessing *workerId* property, while the target node for migration is determined through *_workerId* variable.
+For example, the ```CLUSTER NODES``` will use *workerId* property (through GetSlotRange(*workerId*)) since it has to return actual owner of the node even during migration.
+At the same, time it needs to return all nodes that are in ```MIGRATING``` or ```IMPORTING``` state and the node-id associated with that state which can be done by inspecting the *_workerId* variable (through GetSpecialStates(*workerId*)).
 
 <details>
         <summary>HashSlot Definition</summary>
@@ -178,7 +178,7 @@ When using this option, the issuer of the migration command will have to make su
 In addition, the issuer has to provide all keys that map to a specific slot either in one call to MIGRATE or across multiple call before the migration completes.
 When all key-value pairs have migrated to the target node, the issues has to reset the slot state and assign ownership of the slot to the new node.
 
-```MigrateKeys``` is the main driver for the migration operation using ```KEYS`` option.
+```MigrateKeys``` is the main driver for the migration operation using ```KEYS``` option.
 This method iterates over the list of provided keys and sends them over to the target node.
 This happens in two steps: (1) look in the main store and if a key exists send it over while removing it from the list of keys to be send and (2) search object store for any remaining keys, not found in the main store and send them over if they are found.
 It is possible that a key cannot be retrieved from either store, because it might have expired.
@@ -216,7 +216,7 @@ When data transmission completes, and depending if COPY option is enabled, ```Mi
 ## Migrate SLOTS Details
 
 The SLOTS or SLOTSRANGE options enables Garnet to migrate a collection of slots and all the associated keys mapping to these slots.
-These options differ from the ```KEYS`` options in the following ways:
+These options differ from the ```KEYS``` options in the following ways:
 
 1. No specific knowledge of key to slot mapping is needed from the client. It needs to simply provide the corresponding slot number.
 2. Keys do need to be retrieved (i.e. using ```CLUSTER GETKEYSINSLOT```) and send over back to the source node which is potentially an expensive operation.
@@ -224,7 +224,7 @@ These options differ from the ```KEYS`` options in the following ways:
 4. ```MIGRATE SLOTS``` has to scan through main and object stores and find all keys mapping to the associated slot. 
 
 The last bullet indicates that this operatin is potentially expensive if a slot that is being migrated contains only a few keys from a large DB of keys.
-However, it is no more expensive than ```CLUSTER GETKYESINSLOT``` (which is used for ```KEYS`` option) and in practice the cost of the scan can be amortized if multiple slots are migrated concurrently.
+However, it is no more expensive than ```CLUSTER GETKYESINSLOT``` (which is used for ```KEYS``` option) and in practice the cost of the scan can be amortized if multiple slots are migrated concurrently.
 
 As shown from the below code excerpt, the ```MIGRATE SLOTS``` task, will safely transition the state of the slot of the remote node config to ```IMPORTING``` and the slot state of local node config to ```MIGRATING```, by relying on the epoch protection mechanism as described previously.
 Following, it will start migrating the data to the target node in batches.
