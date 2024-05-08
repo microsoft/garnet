@@ -89,7 +89,7 @@ namespace CommandInfoUpdater
         /// <param name="logger">Logger</param>
         /// <param name="commandsInfo">Dictionary mapping command name to RespCommandsInfo</param>
         /// <returns>True if deserialization was successful</returns>
-        private static bool TryGetRespCommandsInfo(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
+        private static bool TryGetRespCommandsInfo(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo>? commandsInfo)
         {
             commandsInfo = default;
 
