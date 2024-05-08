@@ -580,7 +580,7 @@ namespace Garnet.server
                     if (!success1) return false;
                 }
 
-                if (count != currentCustomTransaction.NumParams)
+                if (currentCustomTransaction.NumParams < int.MaxValue && count != currentCustomTransaction.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}", ref dcurr, dend))
                         SendAndReset();
