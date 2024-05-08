@@ -175,14 +175,16 @@ At the same, time it needs to return all nodes that are in ```MIGRATING``` or ``
 
 Using the ```KEYS`` option, Garnet will iterate through the provided list of keys and migrate them in batches to the target node.
 When using this option, the issuer of the migration command will have to make sure that the slot state is set appropriately in the source, and target node.
-In addition, the issuer has to provide all keys that map to a specific slot either in one call to MIGRATE or across multiple call before the migration completes.
-When all key-value pairs have migrated to the target node, the issues has to reset the slot state and assign ownership of the slot to the new node.
+In addition, the issuer has to provide all keys that map to a specific slot either in one call to ```MIGRATE``` or across multiple call before the migration completes.
+When all key-value pairs have migrated to the target node, the issuer has to reset the slot state and assign ownership of the slot to the new node.
 
-```MigrateKeys``` is the main driver for the migration operation using ```KEYS``` option.
+```MigrateKeys``` is the main driver for the migration operation using the ```KEYS``` option.
 This method iterates over the list of provided keys and sends them over to the target node.
-This happens in two steps: (1) look in the main store and if a key exists send it over while removing it from the list of keys to be send and (2) search object store for any remaining keys, not found in the main store and send them over if they are found.
-It is possible that a key cannot be retrieved from either store, because it might have expired.
-In that case, no error is raised.
+This occurs in the following two phases: 
+1. find all keys provided by ```MIGRATE``` command and send them over to the *target* node.
+2. for all remaining keys not found in the main store, lookup into the object store, and if they are found send them over to the *target* node.
+It is possible that a given key cannot be retrieved from either store, because it might have expired.
+In that case, execution proceeds to the next available key and no specific error is raised.
 When data transmission completes, and depending if COPY option is enabled, ```MigrateKeys``` deletes the keys from the both stores.
 
 <details>
@@ -215,23 +217,22 @@ When data transmission completes, and depending if COPY option is enabled, ```Mi
 
 ## Migrate SLOTS Details
 
-The SLOTS or SLOTSRANGE options enables Garnet to migrate a collection of slots and all the associated keys mapping to these slots.
+The ```SLOTS``` or ```SLOTSRANGE``` options enables Garnet to migrate a collection of slots and all the associated keys mapping to these slots.
 These options differ from the ```KEYS``` options in the following ways:
 
-1. No specific knowledge of key to slot mapping is needed from the client. It needs to simply provide the corresponding slot number.
-2. Keys do need to be retrieved (i.e. using ```CLUSTER GETKEYSINSLOT```) and send over back to the source node which is potentially an expensive operation.
-3. Client does not need to handle slot state transitions. They are automatically handled when ```MIGRATE SLOTS``` executes.
-4. ```MIGRATE SLOTS``` has to scan through main and object stores and find all keys mapping to the associated slot. 
+1. There is no need to have specific knowledge of the individual keys that are being migrated and how they map to the associated slots. The user simply needs to provide just a slot number.
+2. State transitions are handled entirely on the server side.
+3. For the migration operation to complete, we have to scan both main and object stores to find and migrate all keys associated with a given slot. 
 
-The last bullet indicates that this operatin is potentially expensive if a slot that is being migrated contains only a few keys from a large DB of keys.
-However, it is no more expensive than ```CLUSTER GETKYESINSLOT``` (which is used for ```KEYS``` option) and in practice the cost of the scan can be amortized if multiple slots are migrated concurrently.
+It might seem, based on the last bullet point from above that the migration operation using ```SLOTS``` or ```SLOTSRANGE``` is more expensive, especially if the slot that is being migrated contains only a few keys.
+However, it is generally less expensive compared to the ```KEYS``` option which requires multiple roundtrips between client and server (so any relevant keys can be used as input to the ```MIGRATE``` command), in addition to having to perform a full scan of both stores.
 
-As shown from the below code excerpt, the ```MIGRATE SLOTS``` task, will safely transition the state of the slot of the remote node config to ```IMPORTING``` and the slot state of local node config to ```MIGRATING```, by relying on the epoch protection mechanism as described previously.
+As shown in the code excerpt below, the ```MIGRATE SLOTS``` task will safely transition the state of a slot in the remote node config to ```IMPORTING``` and the slot state of the local node config to ```MIGRATING```, by relying on the epoch protection mechanism as described previously.
 Following, it will start migrating the data to the target node in batches.
 On completion of data migration, the task will conclude with performing next slot state transition where ownership of the slots being migrates will be handed to the target node.
 The slot ownership exchange becomes visible to the whole cluster by bumping the local node's configuration epoch (i.e. using RelinquishOwnership command).
-Finally, the source node will issue ```CLUSTER SETSLOT NODE``` to the target node to make it explicitly an owner of the corresponding slot collection.
-This last step is not necessary, and it used only to speed up the config propagation.
+Finally, the source node will issue ```CLUSTER SETSLOT NODE``` to the target node to explicitly make it an owner of the corresponding slot collection.
+This last step is not necessary and it is used only to speed up the config propagation.
 
 <details>
         <summary>Migrate SLOTS Task</summary>
