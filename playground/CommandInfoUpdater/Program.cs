@@ -38,7 +38,7 @@ class Program
 
         var parserResult = parser.ParseArguments<Options>(args);
 
-        Options? config = default;
+        Options config = default;
 
         parserResult.WithParsed(op => config = op)
             .WithNotParsed(errs => DisplayHelp(parserResult, errs));

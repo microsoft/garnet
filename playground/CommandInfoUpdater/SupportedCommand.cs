@@ -10,17 +10,6 @@ namespace CommandInfoUpdater
     /// </summary>
     public class SupportedCommand
     {
-        /// <summary>
-        /// Map between a supported command's name and its SupportedCommand object
-        /// </summary>
-        public static IReadOnlyDictionary<string, SupportedCommand> SupportedCommandsMap => _supportedCommandsMap.Value;
-
-        private static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> _supportedCommandsMap =
-            new(() =>
-                {
-                    return AllSupportedCommands.ToDictionary(sc => sc.Command, sc => sc);
-                });
-
         private static readonly SupportedCommand[] AllSupportedCommands = {
             new("ACL", RespCommand.ACL, 0, new[]
             {
@@ -230,6 +219,17 @@ namespace CommandInfoUpdater
             new("ZSCORE", RespCommand.SortedSet, (byte) SortedSetOperation.ZSCORE),
         };
 
+        private static readonly Lazy<IReadOnlyDictionary<string, SupportedCommand>> LazySupportedCommandsMap =
+            new(() =>
+            {
+                return AllSupportedCommands.ToDictionary(sc => sc.Command, sc => sc);
+            });
+
+        /// <summary>
+        /// Map between a supported command's name and its SupportedCommand object
+        /// </summary>
+        public static IReadOnlyDictionary<string, SupportedCommand> SupportedCommandsMap => LazySupportedCommandsMap.Value;
+
         /// <summary>
         /// Supported command's name
         /// </summary>
@@ -238,7 +238,7 @@ namespace CommandInfoUpdater
         /// <summary>
         /// Supported command's sub-commands' names
         /// </summary>
-        public HashSet<string>? SubCommands { get; set; }
+        public HashSet<string> SubCommands { get; set; }
 
         /// <summary>
         /// Garnet RespCommand
@@ -259,7 +259,7 @@ namespace CommandInfoUpdater
         }
 
         public SupportedCommand(string command, RespCommand respCommand = RespCommand.NONE, byte? arrayCommand = null,
-            IEnumerable<string>? subCommands = null) : this()
+            IEnumerable<string> subCommands = null) : this()
         {
             this.Command = command;
             this.SubCommands = subCommands == null ? null : new HashSet<string>(subCommands);

@@ -114,6 +114,7 @@ namespace Garnet.server
         private string respFormat;
 
         private static bool IsInitialized = false;
+        private static readonly object IsInitializedLock = new();
         private static IReadOnlyDictionary<string, RespCommandsInfo> AllRespCommandsInfo = null;
         private static IReadOnlyDictionary<string, RespCommandsInfo> ExternalRespCommandsInfo = null;
         private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> BasicRespCommandsInfo = null;
@@ -126,6 +127,17 @@ namespace Garnet.server
 
         private readonly string[] respFormatFlags;
         private readonly string[] respFormatAclCategories;
+
+        private static bool TryInitialize(ILogger logger)
+        {
+            lock (IsInitializedLock)
+            {
+                if (IsInitialized) return true;
+
+                IsInitialized = TryInitializeRespCommandsInfo(logger);
+                return IsInitialized;
+            }
+        }
 
         private static bool TryInitializeRespCommandsInfo(ILogger logger = null)
         {
@@ -171,7 +183,6 @@ namespace Garnet.server
                             (IReadOnlyDictionary<byte, RespCommandsInfo>)new ReadOnlyDictionary<byte, RespCommandsInfo>(
                                 kvp.Value)));
 
-            IsInitialized = true;
             return true;
         }
 
@@ -185,7 +196,7 @@ namespace Garnet.server
         internal static bool TryGetRespCommandsInfoCount(out int count, bool externalOnly = false, ILogger logger = null)
         {
             count = -1;
-            if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
+            if (!IsInitialized && !TryInitialize(logger)) return false;
 
             count = externalOnly ? ExternalRespCommandsInfo!.Count : AllRespCommandsInfo!.Count;
             return true;
@@ -201,7 +212,7 @@ namespace Garnet.server
         public static bool TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> respCommandsInfo, bool externalOnly = false, ILogger logger = null)
         {
             respCommandsInfo = default;
-            if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
+            if (!IsInitialized && !TryInitialize(logger)) return false;
 
             respCommandsInfo = externalOnly ? ExternalRespCommandsInfo : AllRespCommandsInfo;
             return true;
@@ -217,7 +228,7 @@ namespace Garnet.server
         public static bool TryGetRespCommandNames(out IReadOnlySet<string> respCommandNames, bool externalOnly = false, ILogger logger = null)
         {
             respCommandNames = default;
-            if (!IsInitialized && !TryInitializeRespCommandsInfo(logger)) return false;
+            if (!IsInitialized && !TryInitialize(logger)) return false;
 
             respCommandNames = externalOnly ? ExternalRespCommandNames : AllRespCommandNames;
             return true;
@@ -233,7 +244,7 @@ namespace Garnet.server
         internal static bool TryGetRespCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo, ILogger logger = null)
         {
             respCommandsInfo = default;
-            if ((!IsInitialized && !TryInitializeRespCommandsInfo(logger)) ||
+            if ((!IsInitialized && !TryInitialize(logger)) ||
                 !AllRespCommandsInfo.ContainsKey(cmdName)) return false;
 
             respCommandsInfo = AllRespCommandsInfo[cmdName];
@@ -253,7 +264,7 @@ namespace Garnet.server
             out RespCommandsInfo respCommandsInfo, byte subCmd = 0, bool txnOnly = false, ILogger logger = null)
         {
             respCommandsInfo = default;
-            if ((!IsInitialized && !TryInitializeRespCommandsInfo(logger))) return false;
+            if (!IsInitialized && !TryInitialize(logger)) return false;
 
             RespCommandsInfo tmpRespCommandInfo = default;
             if (ArrayRespCommandsInfo.ContainsKey(cmd) && ArrayRespCommandsInfo[cmd].ContainsKey(subCmd))

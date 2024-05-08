@@ -25,7 +25,7 @@ namespace CommandInfoUpdater
         /// <param name="logger">Logger</param>
         /// <returns>True if file generated successfully</returns>
         public static bool TryUpdateCommandInfo(string outputPath, int respServerPort, IPAddress respServerHost,
-            IEnumerable<string>? ignoreCommands, bool force, ILogger logger)
+            IEnumerable<string> ignoreCommands, bool force, ILogger logger)
         {
             logger.LogInformation("Attempting to update RESP commands info...");
 
@@ -46,14 +46,14 @@ namespace CommandInfoUpdater
                 return false;
             }
 
-            if (!TryGetRespCommandsInfo(GarnetCommandInfoJsonPath, logger, out var garnetCommandsInfo))
+            if (!TryGetRespCommandsInfo(GarnetCommandInfoJsonPath, logger, out var garnetCommandsInfo) ||
+                garnetCommandsInfo == null)
             {
                 logger.LogError($"Unable to read Garnet RESP commands info from {GarnetCommandInfoJsonPath}.");
                 return false;
             }
 
-            IDictionary<string, RespCommandsInfo> additionalCommandsInfo;
-            IDictionary<string, RespCommandsInfo>? queriedCommandsInfo = default;
+            IDictionary<string, RespCommandsInfo> queriedCommandsInfo = default;
             var commandsToQuery = commandsToAdd.Select(c => c.Key.Command).Except(garnetCommandsInfo.Keys).ToArray();
             if (commandsToQuery.Length > 0 && !TryGetCommandsInfo(commandsToQuery, respServerPort, respServerHost,
                     logger, out queriedCommandsInfo))
@@ -62,8 +62,7 @@ namespace CommandInfoUpdater
                 return false;
             }
 
-            additionalCommandsInfo =
-                (queriedCommandsInfo == null
+            IDictionary<string, RespCommandsInfo> additionalCommandsInfo = (queriedCommandsInfo == null
                     ? garnetCommandsInfo
                     : queriedCommandsInfo.UnionBy(garnetCommandsInfo, kvp => kvp.Key))
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
@@ -89,7 +88,7 @@ namespace CommandInfoUpdater
         /// <param name="logger">Logger</param>
         /// <param name="commandsInfo">Dictionary mapping command name to RespCommandsInfo</param>
         /// <returns>True if deserialization was successful</returns>
-        private static bool TryGetRespCommandsInfo(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo>? commandsInfo)
+        private static bool TryGetRespCommandsInfo(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
         {
             commandsInfo = default;
 
@@ -113,7 +112,7 @@ namespace CommandInfoUpdater
         /// <returns>Commands to add and commands to remove mapped to a boolean determining if parent command should be added / removed</returns>
         private static (IDictionary<SupportedCommand, bool>, IDictionary<SupportedCommand, bool>)
             GetCommandsToAddAndRemove(IReadOnlyDictionary<string, RespCommandsInfo> existingCommandsInfo,
-                IEnumerable<string>? ignoreCommands)
+                IEnumerable<string> ignoreCommands)
         {
             var commandsToAdd = new Dictionary<SupportedCommand, bool>();
             var commandsToRemove = new Dictionary<SupportedCommand, bool>();
@@ -269,7 +268,7 @@ namespace CommandInfoUpdater
         /// <param name="commandsInfo">Queried commands info</param>
         /// <returns>True if succeeded</returns>
         private static unsafe bool TryGetCommandsInfo(string[] commandsToQuery, int respServerPort,
-            IPAddress respServerHost, ILogger logger, out IDictionary<string, RespCommandsInfo>? commandsInfo)
+            IPAddress respServerHost, ILogger logger, out IDictionary<string, RespCommandsInfo> commandsInfo)
         {
             commandsInfo = default;
 
@@ -387,7 +386,7 @@ namespace CommandInfoUpdater
             foreach (var command in commandsToAdd.Keys)
             {
                 RespCommandsInfo baseCommand;
-                List<RespCommandsInfo>? updatedSubCommands;
+                List<RespCommandsInfo> updatedSubCommands;
                 // If parent command already exists
                 if (existingCommandsInfo.ContainsKey(command.Command))
                 {
