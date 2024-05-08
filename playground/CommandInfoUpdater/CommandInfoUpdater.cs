@@ -269,7 +269,7 @@ namespace CommandInfoUpdater
         /// <param name="commandsInfo">Queried commands info</param>
         /// <returns>True if succeeded</returns>
         private static unsafe bool TryGetCommandsInfo(string[] commandsToQuery, int respServerPort,
-            IPAddress respServerHost, ILogger logger, out IDictionary<string, RespCommandsInfo> commandsInfo)
+            IPAddress respServerHost, ILogger logger, out IDictionary<string, RespCommandsInfo>? commandsInfo)
         {
             commandsInfo = default;
 
