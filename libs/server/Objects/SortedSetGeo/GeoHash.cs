@@ -114,7 +114,7 @@ namespace Garnet.server
             // Credits to https://github.com/georust/geohash for the hash de-quantization method!
             static double Dequantize(uint quantizedValue, double rangeMax)
             {
-                // Construct the IEEE-754 double-precision representation of the value, which is in range [1, 2)
+                // Construct the IEEE-754 double-precision representation of the value, which is in range [1.0, 2.0)
                 var value = BitConverter.UInt64BitsToDouble(((ulong)quantizedValue << 20) | (1023UL << 52));
 
                 // Now:
@@ -294,7 +294,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Calculates the error in latitude and longitude based on <see cref="BitsOfPrecision">the number of bits used for precision</see> (52).
+        /// Calculates the error in latitude and longitude based on <see cref="BitsOfPrecision">the number of bits used for precision</see>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (double LatError, double LonError) GetGeoErrorByPrecision()
