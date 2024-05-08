@@ -13,7 +13,7 @@ using Garnet.common;
 namespace Garnet.server
 {
     /// <summary>
-    /// Enconding and decoding methods for Geospatial
+    /// Encoding and decoding methods for Geospatial
     /// </summary>
     public static class GeoHash
     {
@@ -67,7 +67,7 @@ namespace Garnet.server
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             static uint Quantize(double value, double rangeReciprocal)
             {
-                // In otherwords; we need to first map value to unit range [0.0, 1.0].
+                // In other words; we need to first map value to unit range [0.0, 1.0].
                 // We achieve this by multiplying [-value, value] by rangeReciprocal, giving us value in range [-0.5, 0.5]
                 // Then by adding 1.5, we shift the value range to [1.0, 2.0],
                 // for which the IEEE-754 double-precision representation is as follows:
@@ -79,7 +79,7 @@ namespace Garnet.server
                 // where the now "quantized" value is stored as the 32 most significant bits of the signicand!
                 var y = BitConverter.DoubleToUInt64Bits(Math.FusedMultiplyAdd(value, rangeReciprocal, 1.5)) >> 20;
 
-                // Except we need to handle the corner-case where value rounds to the maximumm the range: 2.0
+                // Except we need to handle the corner-case where value rounds to the maximum the range: 2.0
                 // We handle this by comparing the shifted 64-bit binary representation
                 // to the shifted representation of 2.0 (JIT folds it as constant).
                 if (y == (BitConverter.DoubleToUInt64Bits(2.0) >> 20))
