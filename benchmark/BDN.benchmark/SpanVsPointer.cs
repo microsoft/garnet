@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using BenchmarkDotNet.Attributes;
 using System.Runtime.CompilerServices;
+using BenchmarkDotNet.Attributes;
 
 namespace BDN.benchmark
 {
@@ -47,7 +47,7 @@ namespace BDN.benchmark
                 span[i] = tmp;
             }
         }
-            
+
         [BenchmarkCategory("Swap"), Benchmark]
         public void SpanToPointer()
         {
