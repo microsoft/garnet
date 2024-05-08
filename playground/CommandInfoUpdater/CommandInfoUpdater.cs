@@ -53,7 +53,7 @@ namespace CommandInfoUpdater
             }
 
             IDictionary<string, RespCommandsInfo> additionalCommandsInfo;
-            IDictionary<string, RespCommandsInfo> queriedCommandsInfo = default;
+            IDictionary<string, RespCommandsInfo>? queriedCommandsInfo = default;
             var commandsToQuery = commandsToAdd.Select(c => c.Key.Command).Except(garnetCommandsInfo.Keys).ToArray();
             if (commandsToQuery.Length > 0 && !TryGetCommandsInfo(commandsToQuery, respServerPort, respServerHost,
                     logger, out queriedCommandsInfo))
