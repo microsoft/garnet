@@ -111,5 +111,27 @@ namespace Garnet.test
 
             Assert.IsTrue(retrieved.All(r => r));
         }
+
+        [Test]
+        public void Test()
+        {
+            var cl = new LightClientRequest("127.0.0.1", 6379, 0);
+            var t1 = Task.Run(() =>
+            {
+                var res = cl.SendCommands("BLPOP l1 30", "LPUSH l1 e1");
+                var strRes = Encoding.ASCII.GetString(res);
+            });
+            var t2 = Task.Run(() =>
+            {
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                var cl2 = new LightClientRequest("127.0.0.1", 6379, 0);
+                cl2.SendCommand("LPUSH l1 e2");
+            });
+
+            Task.WaitAll(t1, t2);
+
+            var cl3 = new LightClientRequest("127.0.0.1", 6379, 0);
+            cl3.SendCommand("LPOP l1");
+        }
     }
 }

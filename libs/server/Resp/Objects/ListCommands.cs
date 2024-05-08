@@ -217,7 +217,7 @@ namespace Garnet.server
             RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
                 recvBufferPtr + bytesRead);
 
-            itemBroker.ListSubscribe(keys.Select(k => k.Span.ToArray()).ToArray(), lop, this, timeout);
+            itemBroker.GetListItemAsync(keys.Select(k => k.Span.ToArray()).ToArray(), lop, this, timeout);
 
             // Move input head
             readHead = (int)(ptr - recvBufferPtr);

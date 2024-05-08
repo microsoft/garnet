@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,13 +20,11 @@ namespace Garnet.server
     public class CollectionItemBroker : IDisposable
     {
         // Queue of keys whose objects need to be checked for items
-        private readonly AsyncQueue<byte[]> updatedKeysQueue = new();
-
-        // Queue of observers that have a specified timeout, prioritized by time of expiry in ticks
-        private readonly PriorityQueue<CollectionItemObserver, long> expiringObservers = new();
+        private readonly AsyncQueue<BrokerEventBase> brokerEventsQueue = new();
 
         // Mapping of observed keys to queue of observers, by order of subscription
-        private readonly ConcurrentDictionary<byte[], ConcurrentQueue<CollectionItemObserver>> keysToObservers = new(new ByteArrayComparer());
+        private readonly ConcurrentDictionary<byte[], ConcurrentQueue<CollectionItemObserver>> keysToObservers =
+            new(new ByteArrayComparer());
 
         // Mapping of RespServerSession ID (ObjectStoreSessionID) to observer instance
         private readonly ConcurrentDictionary<int, CollectionItemObserver> sessionIdToObserver = new();
@@ -41,7 +38,6 @@ namespace Garnet.server
         private bool disposed = false;
         private bool isStarted = false;
         private readonly object isStartedLock = new();
-        private readonly ReaderWriterLockSlim expiringObserversLock = new();
 
         /// <summary>
         /// Subscribe blocking operation for list objects
@@ -50,9 +46,11 @@ namespace Garnet.server
         /// <param name="operation">Type of list operation</param>
         /// <param name="session">Calling session instance</param>
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds)</param>
-        internal void ListSubscribe(byte[][] keys, ListOperation operation, RespServerSession session, double timeoutInSeconds)
+        internal async Task<CollectionItemResult> GetListItemAsync(byte[][] keys, ListOperation operation,
+            RespServerSession session, double timeoutInSeconds)
         {
-            Subscribe(keys, GarnetObjectType.List, (byte)operation, session, timeoutInSeconds);
+            return await GetCollectionItemAsync(keys, GarnetObjectType.List, (byte)operation, session,
+                timeoutInSeconds);
         }
 
         /// <summary>
@@ -62,9 +60,11 @@ namespace Garnet.server
         /// <param name="operation">Type of sorted set operation</param>
         /// <param name="session">Calling session instance</param>
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds)</param>
-        internal void SortedSetSubscribe(byte[][] keys, SortedSetOperation operation, RespServerSession session, double timeoutInSeconds)
+        internal async Task<CollectionItemResult> GetSortedSetItemAsync(byte[][] keys, SortedSetOperation operation,
+            RespServerSession session, double timeoutInSeconds)
         {
-            Subscribe(keys, GarnetObjectType.SortedSet, (byte)operation, session, timeoutInSeconds);
+            return await GetCollectionItemAsync(keys, GarnetObjectType.SortedSet, (byte)operation, session,
+                timeoutInSeconds);
         }
 
         /// <summary>
@@ -89,7 +89,7 @@ namespace Garnet.server
             if (!keysToObservers.ContainsKey(key)) return;
 
             // Add key to queue
-            updatedKeysQueue.Enqueue(key);
+            brokerEventsQueue.Enqueue(new CollectionUpdatedEvent(key));
         }
 
         /// <summary>
@@ -117,27 +117,16 @@ namespace Garnet.server
             sessionIdToObserver.TryRemove(session.ObjectStoreSessionID, out _);
         }
 
-        private void Subscribe(byte[][] keys, GarnetObjectType objectType, byte operation, RespServerSession session, double timeoutInSeconds)
+        private async Task<CollectionItemResult> GetCollectionItemAsync(byte[][] keys, GarnetObjectType objectType,
+            byte operation, RespServerSession session, double timeoutInSeconds)
         {
             // Create the new observer object
-            var observer = new CollectionItemObserver(session, objectType, operation);
+            var observer = new CollectionItemObserver(session, keys, objectType, operation);
+
+            brokerEventsQueue.Enqueue(new NewObserverEvent(observer, keys));
 
             // Add the session ID to observer mapping
             sessionIdToObserver.TryAdd(session.ObjectStoreSessionID, observer);
-
-            // If timeout is specified, add observer to expiring sessions priority queue
-            if (timeoutInSeconds > 0)
-            {
-                expiringObserversLock.EnterWriteLock();
-                try
-                {
-                    expiringObservers.Enqueue(observer, DateTime.Now.AddSeconds(timeoutInSeconds).Ticks);
-                }
-                finally
-                {
-                    expiringObserversLock.ExitWriteLock();
-                }
-            }
 
             // Enqueue observer in each key's observer queue
             // Enqueue key in updated keys queue (in case there are already existing items to assign)
@@ -145,8 +134,6 @@ namespace Garnet.server
             {
                 var queue = keysToObservers.GetOrAdd(key, new ConcurrentQueue<CollectionItemObserver>());
                 queue.Enqueue(observer);
-
-                updatedKeysQueue.Enqueue(key);
             }
 
             // Check if main loop has started, if not, start the main loop
@@ -156,11 +143,17 @@ namespace Garnet.server
                 {
                     if (!isStarted)
                     {
-                        Task.Run(Start);
+                        _ = Task.Run(Start);
                     }
+
                     isStarted = true;
                 }
             }
+
+            await Task.Delay(TimeSpan.FromSeconds(timeoutInSeconds), observer.CancellationTokenSource.Token);
+            observer.Result ??= CollectionItemResult.Empty;
+
+            return observer.Result;
         }
 
         private void HandleExpiredObserver(CollectionItemObserver observer)
@@ -179,7 +172,25 @@ namespace Garnet.server
             {
                 observer.ObserverStatusLock.ExitReadLock();
             }
+        }
 
+
+        private bool TryHandleBrokerEvent(BrokerEventBase brokerEvent)
+        {
+            switch (brokerEvent)
+            {
+                case NewObserverEvent noe:
+                    return TryInitializeObserver(noe.Observer, noe.Keys);
+                case CollectionUpdatedEvent cue:
+                    return TryAssignItemFromKey(cue.Key);
+                default:
+                    return false;
+            }
+        }
+
+        private bool TryInitializeObserver(CollectionItemObserver observer, byte[][] keys)
+        {
+            return true;
         }
 
         private bool TryAssignItemFromKey(byte[] key)
@@ -226,7 +237,7 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    observer.ObserverStatusLock.ExitReadLock();
+                    observer?.ObserverStatusLock.ExitReadLock();
                 }
             }
 
@@ -277,7 +288,8 @@ namespace Garnet.server
             return true;
         }
 
-        private bool TryGetNextItem(byte[] key, StorageSession storageSession, GarnetObjectType objectType, byte operation, out int currCount, out byte[] nextItem)
+        private bool TryGetNextItem(byte[] key, StorageSession storageSession, GarnetObjectType objectType,
+            byte operation, out int currCount, out byte[] nextItem)
         {
             currCount = default;
             nextItem = default;
@@ -326,60 +338,26 @@ namespace Garnet.server
 
         private async Task Start()
         {
+            Task handleNextEvent = default;
             // Main loop logic
             try
             {
-                Task dequeueTask = null;
                 while (!disposed && !cts.IsCancellationRequested)
                 {
-                    var currTicks = DateTime.Now.Ticks;
-                    long nextExpiryInTicks;
-
-                    // Handle any expired observers
-                    expiringObserversLock.EnterUpgradeableReadLock();
-                    try
-                    {
-                        // Peek at first observer in queue and check if it's expired
-                        if (expiringObservers.TryPeek(out var observer, out nextExpiryInTicks) && nextExpiryInTicks <= currTicks)
-                        {
-                            expiringObserversLock.EnterWriteLock();
-                            try
-                            {
-                                // Dequeue and handle all expired observers
-                                while (nextExpiryInTicks <= currTicks)
-                                {
-                                    expiringObservers.Dequeue();
-                                    HandleExpiredObserver(observer);
-                                    if (!expiringObservers.TryPeek(out observer, out nextExpiryInTicks))
-                                        break;
-                                }
-                            }
-                            finally
-                            {
-                                expiringObserversLock.ExitWriteLock();
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        expiringObserversLock.ExitUpgradeableReadLock();
-                    }
 
                     // Check if current dequeue task is done
-                    if (dequeueTask == null || dequeueTask.IsCompleted)
+                    if (handleNextEvent == null || handleNextEvent.IsCompleted)
                     {
                         // Set dequeue task to get next updated key and call assignment method
-                        dequeueTask = updatedKeysQueue.DequeueAsync(cts.Token).ContinueWith(t =>
+                        handleNextEvent = brokerEventsQueue.DequeueAsync(cts.Token).ContinueWith(t =>
                         {
                             if (t.Status == TaskStatus.RanToCompletion)
-                                TryAssignItemFromKey(t.Result);
+                                TryHandleBrokerEvent(t.Result);
                         }, cts.Token);
                     }
 
                     // If next observer expiry exists, wait until the expiry or until dequeue task is done
-                    await (nextExpiryInTicks == default
-                        ? dequeueTask
-                        : Task.WhenAny(dequeueTask, Task.Delay(TimeSpan.FromTicks(nextExpiryInTicks - currTicks))));
+                    await handleNextEvent;
                 }
             }
             finally
@@ -412,14 +390,63 @@ namespace Garnet.server
             // Status of the observer
             internal ObserverStatus Status { get; set; } = ObserverStatus.Ready;
 
+            internal CollectionItemResult Result { get; set; }
+
             // Lock for the status of the observer
             internal ReaderWriterLockSlim ObserverStatusLock { get; } = new();
 
-            internal CollectionItemObserver(RespServerSession session, GarnetObjectType objestType, byte operation)
+            internal CancellationTokenSource CancellationTokenSource { get; } = new();
+
+            internal CollectionItemObserver(RespServerSession session, byte[][] observedKeys,
+                GarnetObjectType objectType, byte operation)
             {
                 Session = session;
-                ObjectType = objestType;
+                ObjectType = objectType;
                 Operation = operation;
+            }
+        }
+
+        internal class CollectionItemResult
+        {
+            internal bool Found => Key != default;
+
+            internal byte[] Key { get; }
+
+            internal byte[] Item { get; }
+
+            public CollectionItemResult(byte[] key, byte[] item)
+            {
+                Key = key;
+                Item = item;
+            }
+
+            internal static readonly CollectionItemResult Empty = new(null, null);
+        }
+
+        private abstract class BrokerEventBase
+        {
+        }
+
+        private class CollectionUpdatedEvent : BrokerEventBase
+        {
+            internal byte[] Key { get; }
+
+            public CollectionUpdatedEvent(byte[] key)
+            {
+                Key = key;
+            }
+        }
+
+        private class NewObserverEvent : BrokerEventBase
+        {
+            internal CollectionItemObserver Observer { get; }
+
+            internal byte[][] Keys { get; }
+
+            internal NewObserverEvent(CollectionItemObserver observer, byte[][] keys)
+            {
+                Observer = observer;
+                Keys = keys;
             }
         }
 
