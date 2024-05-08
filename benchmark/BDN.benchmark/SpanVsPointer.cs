@@ -4,7 +4,7 @@
 using BenchmarkDotNet.Attributes;
 using System.Runtime.CompilerServices;
 
-namespace TemplateStuff
+namespace BDN.benchmark
 {
     public unsafe class SpanVsPointer
     {
