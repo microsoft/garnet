@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 #if NET8_0_OR_GREATER
@@ -307,11 +306,8 @@ namespace Garnet.server
             const int LatBits = BitsOfPrecision / 2;
             const int LongBits = BitsOfPrecision - LatBits;
 
-            // Equivalent to Math.Pow(2, e) but avoids calling into C runtime implementation.
-            static double Pow2(long exponent) => BitConverter.Int64BitsToDouble((exponent + 1023L) << 52);
-
-            var latError = 180.0 * Pow2(-LatBits);
-            var longError = 360.0 * Pow2(-LongBits);
+            var latError = 180.0 * Math.Pow(2, -LatBits);
+            var longError = 360.0 * Math.Pow(2, -LongBits);
 
             return (latError, longError);
         }
