@@ -81,10 +81,13 @@ namespace Garnet.server
                 var y = BitConverter.DoubleToUInt64Bits(Math.FusedMultiplyAdd(value, rangeReciprocal, 1.5)) >> 20;
 
                 // Except we need to handle the corner-case where value rounds to the maximumm the range: 2.0
-                //
-                // We do this branchlessly by comparing the 64-bit binary representation to 0x40000000000 (e=1024).
-                // This way the JIT will emit cmp + cmov for x86-64 and cmp + csel for arm64 instead of branch.
-                return y >= 0x40000000000 ? uint.MaxValue : (uint)y;
+                // We handle this by comparing the shifted 64-bit binary representation
+                // to the shifted representation of 2.0 (JIT folds it as constant).
+                if (y == (BitConverter.DoubleToUInt64Bits(2.0) >> 20))
+                {
+                    return uint.MaxValue;
+                }
+                else return (uint)y;
             }
 
             const double LatToUnitRangeReciprocal = 1 / 180.0;
