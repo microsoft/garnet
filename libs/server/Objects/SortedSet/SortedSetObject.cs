@@ -353,9 +353,9 @@ namespace Garnet.server
                 return [];
 
             if (dict2 == null)
-                return new Dictionary<byte[], double>(dict1);
+                return new Dictionary<byte[], double>(dict1, dict1.Comparer);
 
-            Dictionary<byte[], double> result = [];
+            var result = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
             foreach (var item in dict1)
             {
                 if (!dict2.ContainsKey(item.Key))
