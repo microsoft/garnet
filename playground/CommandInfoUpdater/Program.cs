@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 /// To run this tool:
 /// a) Make the desired changes to AllSupportedCommands in SupportedCommand.cs (i.e. add / remove supported commands / sub-commands)
 /// b) If you're adding commands / sub-commands that are not supported by the RESP server, manually insert their command info into GarnetCommandsInfo.json.
-/// c) Build and run the tool. You'll need to specify an output path and optionally the RESP server host & port (if different than default).
+/// c) Build and run the tool. You'll need to specify an output path and optionally the RESP server host and port (if different than default).
 ///    Run the tool with -h or --help for more information.
 /// d) Replace Garnet's RespCommandsInfo.json file contents with the contents of the updated file.
 /// e) Rebuild Garnet to include the latest changes.

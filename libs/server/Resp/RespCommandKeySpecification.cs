@@ -29,7 +29,7 @@ namespace Garnet.server
         /// <summary>
         /// Notes about non-obvious key specs considerations
         /// </summary>
-        public string? Notes { get; init; }
+        public string Notes { get; init; }
 
         /// <summary>
         /// Flags that provide more details about the key
@@ -200,9 +200,11 @@ namespace Garnet.server
         /// </summary>
         public int Index { get; init; }
 
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatType => "$5\r\nindex";
 
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatSpec
         {
@@ -211,10 +213,12 @@ namespace Garnet.server
 
         private string respFormatSpec;
 
+        /// <inheritdoc />
         public BeginSearchIndex()
         {
         }
 
+        /// <inheritdoc />
         public BeginSearchIndex(int index) : this()
         {
             this.Index = index;
@@ -237,9 +241,11 @@ namespace Garnet.server
         /// </summary>
         public int StartFrom { get; init; }
 
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatType => "$7\r\nkeyword";
 
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatSpec
         {
@@ -248,9 +254,11 @@ namespace Garnet.server
 
         private string respFormatSpec;
 
+        /// <inheritdoc />
         public BeginSearchKeyword() { }
 
-        public BeginSearchKeyword(string? keyword, int startFrom) : this()
+        /// <inheritdoc />
+        public BeginSearchKeyword(string keyword, int startFrom) : this()
         {
             this.Keyword = keyword;
             this.StartFrom = startFrom;
@@ -262,16 +270,18 @@ namespace Garnet.server
     /// </summary>
     public class BeginSearchUnknown : BeginSearchKeySpecMethodBase
     {
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatType => "$7\r\nunknown";
 
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*0"; }
+            get { return this.respFormatSpec ??= $"*0"; }
         }
 
-        private string? _respFormatSpec;
+        private string respFormatSpec;
     }
 
     /// <summary>
@@ -306,19 +316,23 @@ namespace Garnet.server
         /// </summary>
         public int Limit { get; init; }
 
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatType => "$5\r\nrange";
 
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatSpec
         {
             get { return this.respFormatSpec ??= $"*6\r\n$7\r\nlastkey\r\n:{this.LastKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}\r\n$5\r\nlimit\r\n:{this.Limit}"; }
         }
 
-        private string? respFormatSpec;
+        private string respFormatSpec;
 
+        /// <inheritdoc />
         public FindKeysRange() { }
 
+        /// <inheritdoc />
         public FindKeysRange(int lastKey, int keyStep, int limit) : this()
         {
             this.LastKey = lastKey;
@@ -348,19 +362,23 @@ namespace Garnet.server
         /// </summary>
         public int KeyStep { get; init; }
 
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatType => "$6\r\nkeynum";
 
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatSpec
         {
             get { return this.respFormatSpec ??= $"*6\r\n$9\r\nkeynumidx\r\n:{this.KeyNumIdx}\r\n$8\r\nfirstkey\r\n:{this.FirstKey}\r\n$7\r\nkeystep\r\n:{this.KeyStep}"; }
         }
 
-        private string? respFormatSpec;
+        private string respFormatSpec;
 
+        /// <inheritdoc />
         public FindKeysKeyNum() { }
 
+        /// <inheritdoc />
         public FindKeysKeyNum(int keyNumIdx, int firstKey, int keyStep) : this()
         {
             this.KeyNumIdx = keyNumIdx;
@@ -374,16 +392,18 @@ namespace Garnet.server
     /// </summary>
     public class FindKeysUnknown : FindKeysKeySpecMethodBase
     {
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatType => "$7\r\nunknown";
 
+        /// <inheritdoc />
         [JsonIgnore]
         public sealed override string RespFormatSpec
         {
-            get { return this._respFormatSpec ??= $"*0"; }
+            get { return this.respFormatSpec ??= $"*0"; }
         }
 
-        private string? _respFormatSpec;
+        private string respFormatSpec;
     }
 
     /// <summary>
@@ -391,8 +411,10 @@ namespace Garnet.server
     /// </summary>
     public class KeySpecConverter : JsonConverter<KeySpecMethodBase>
     {
+        /// <inheritdoc />
         public override bool CanConvert(Type typeToConvert) => typeof(KeySpecMethodBase).IsAssignableFrom(typeToConvert);
 
+        /// <inheritdoc />
         public override KeySpecMethodBase Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             if (!typeof(KeySpecMethodBase).IsAssignableFrom(typeToConvert)) return null;
@@ -408,7 +430,7 @@ namespace Garnet.server
                 throw new JsonException();
             }
 
-            string? propertyName = reader.GetString();
+            var propertyName = reader.GetString();
             if (propertyName != "TypeDiscriminator")
             {
                 throw new JsonException();
@@ -422,7 +444,7 @@ namespace Garnet.server
 
             var typeDiscriminator = reader.GetString();
 
-            int index = 0;
+            var index = 0;
             string keyword = null;
             var startFrom = 0;
             var lastKey = 0;
@@ -510,6 +532,7 @@ namespace Garnet.server
             throw new JsonException();
         }
 
+        /// <inheritdoc />
         public override void Write(Utf8JsonWriter writer, KeySpecMethodBase keySpecMethod, JsonSerializerOptions options)
         {
             writer.WriteStartObject();
