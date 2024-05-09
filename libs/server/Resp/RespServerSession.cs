@@ -413,6 +413,7 @@ namespace Garnet.server
                 RespCommand.RUNTXP => NetworkRUNTXP(count, ptr),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
+                RespCommand.COMMAND => NetworkCOMMAND(count),
 
                 _ => ProcessArrayCommands(cmd, subcmd, count, ref storageApi)
             };

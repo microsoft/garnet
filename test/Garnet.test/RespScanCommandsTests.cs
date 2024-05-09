@@ -15,11 +15,14 @@ namespace Garnet.test
     public class RespScanCommandsTests
     {
         GarnetServer server;
+        private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
+            Assert.IsNotNull(respCustomCommandsInfo);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
         }
@@ -549,8 +552,8 @@ namespace Garnet.test
             // create a custom object
             var factory = new MyDictFactory();
 
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, respCustomCommandsInfo["MYDICTSET"]);
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, respCustomCommandsInfo["MYDICTGET"]);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
