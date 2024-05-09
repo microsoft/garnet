@@ -4,10 +4,9 @@
 using System;
 using System.Net.Security;
 using System.Text;
-using Garnet.common;
 using Garnet.networking;
 
-namespace Garnet.test
+namespace Garnet.common
 {
     public unsafe class LightClientRequest : IDisposable
     {

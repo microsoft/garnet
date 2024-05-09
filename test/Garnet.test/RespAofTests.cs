@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using Garnet.server;
@@ -14,6 +15,8 @@ namespace Garnet.test
     public class RespAofTests
     {
         GarnetServer server;
+        private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
+
         static readonly SortedSetEntry[] entries =
         [
             new SortedSetEntry("a", 1),
@@ -32,6 +35,8 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
+            Assert.IsNotNull(respCustomCommandsInfo);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true);
             server.Start();
         }
@@ -414,8 +419,8 @@ namespace Garnet.test
             void RegisterCustomCommand(GarnetServer gServer)
             {
                 var factory = new MyDictFactory();
-                gServer.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
-                gServer.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
+                gServer.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, respCustomCommandsInfo["MYDICTSET"]);
+                gServer.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, respCustomCommandsInfo["MYDICTGET"]);
             }
 
             server.Dispose(false);
