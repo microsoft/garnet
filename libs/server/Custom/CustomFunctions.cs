@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using Garnet.common;
 
 namespace Garnet.server
@@ -72,6 +73,28 @@ namespace Garnet.server
                 var curr = ptr;
                 RespWriteUtils.WriteArrayLength(values.Length, ref curr, ptr + totalLen);
                 for (int i = 0; i < values.Length; i++)
+                    RespWriteUtils.WriteBulkString(values[i].Span, ref curr, ptr + totalLen);
+            }
+        }
+
+        /// <summary>
+        /// Create output as an array of bulk strings, from given array of ArgSlice values
+        /// </summary>
+        protected static unsafe void WriteBulkStringArray(ref MemoryResult<byte> output, List<ArgSlice> values)
+        {
+            int totalLen = 1 + NumUtils.NumDigits(values.Count) + 2;
+            for (int i = 0; i < values.Count; i++)
+                totalLen += RespWriteUtils.GetBulkStringLength(values[i].Length);
+
+            output.MemoryOwner?.Dispose();
+            output.MemoryOwner = MemoryPool.Rent(totalLen);
+            output.Length = totalLen;
+
+            fixed (byte* ptr = output.MemoryOwner.Memory.Span)
+            {
+                var curr = ptr;
+                RespWriteUtils.WriteArrayLength(values.Count, ref curr, ptr + totalLen);
+                for (int i = 0; i < values.Count; i++)
                     RespWriteUtils.WriteBulkString(values[i].Span, ref curr, ptr + totalLen);
             }
         }

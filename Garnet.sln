@@ -91,6 +91,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Embedded.perftest", "playgr
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BDN.benchmark", "benchmark\BDN.benchmark\BDN.benchmark.csproj", "{9F6E4734-6341-4A9C-A7FF-636A39D8BEAD}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CommandInfoUpdater", "playground\CommandInfoUpdater\CommandInfoUpdater.csproj", "{9BE474A2-1547-43AC-B4F2-FB48A01FA995}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -259,6 +261,14 @@ Global
 		{9F6E4734-6341-4A9C-A7FF-636A39D8BEAD}.Release|Any CPU.Build.0 = Release|Any CPU
 		{9F6E4734-6341-4A9C-A7FF-636A39D8BEAD}.Release|x64.ActiveCfg = Release|Any CPU
 		{9F6E4734-6341-4A9C-A7FF-636A39D8BEAD}.Release|x64.Build.0 = Release|Any CPU
+		{9BE474A2-1547-43AC-B4F2-FB48A01FA995}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9BE474A2-1547-43AC-B4F2-FB48A01FA995}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9BE474A2-1547-43AC-B4F2-FB48A01FA995}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9BE474A2-1547-43AC-B4F2-FB48A01FA995}.Debug|x64.Build.0 = Debug|Any CPU
+		{9BE474A2-1547-43AC-B4F2-FB48A01FA995}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9BE474A2-1547-43AC-B4F2-FB48A01FA995}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9BE474A2-1547-43AC-B4F2-FB48A01FA995}.Release|x64.ActiveCfg = Release|Any CPU
+		{9BE474A2-1547-43AC-B4F2-FB48A01FA995}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -286,6 +296,7 @@ Global
 		{8941A05C-099B-45AC-A7BF-F0E226BD59A8} = {69A71E2C-00E3-42F3-854E-BE157A24834E}
 		{5BEDAC1F-6458-4EBA-8174-EC06B07F2132} = {69A71E2C-00E3-42F3-854E-BE157A24834E}
 		{9F6E4734-6341-4A9C-A7FF-636A39D8BEAD} = {346A5A53-51E4-4A75-B7E6-491D950382CE}
+		{9BE474A2-1547-43AC-B4F2-FB48A01FA995} = {69A71E2C-00E3-42F3-854E-BE157A24834E}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {2C02C405-4798-41CA-AF98-61EDFEF6772E}

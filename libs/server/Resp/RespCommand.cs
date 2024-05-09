@@ -79,7 +79,6 @@ namespace Garnet.server
         PSUBSCRIBE = 0x9,
         UNSUBSCRIBE = 0xA,
         PUNSUBSCRIBE = 0xB,
-        NOAUTH = 0xC,
         ASKING = 0xD,
         MIGRATE = 0xE,
         SELECT = 0xF,
