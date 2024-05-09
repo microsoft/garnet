@@ -59,6 +59,9 @@ namespace Garnet
             // Register stored procedure to run a transactional command
             server.Register.NewTransactionProc("MSETPX", () => new MSetPxTxn());
 
+            // Register stored procedure to run a transactional command
+            server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM());
+
             // Register stored procedure to run a non-transactional command
             server.Register.NewTransactionProc("GETTWOKEYSNOTXN", 2, () => new GetTwoKeysNoTxn());
 
