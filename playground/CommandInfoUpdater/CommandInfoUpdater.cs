@@ -11,6 +11,9 @@ using Microsoft.Extensions.Logging;
 
 namespace CommandInfoUpdater
 {
+    /// <summary>
+    /// Main logic for CommandInfoUpdater tool
+    /// </summary>
     public class CommandInfoUpdater
     {
         private static readonly string GarnetCommandInfoJsonPath = "GarnetCommandsInfo.json";
@@ -22,6 +25,7 @@ namespace CommandInfoUpdater
         /// <param name="respServerPort">RESP server port to query commands info</param>
         /// <param name="respServerHost">RESP server host to query commands info</param>
         /// <param name="ignoreCommands">Commands to ignore</param>
+        /// <param name="force">Force update all commands</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if file generated successfully</returns>
         public static bool TryUpdateCommandInfo(string outputPath, int respServerPort, IPAddress respServerHost,
@@ -40,7 +44,7 @@ namespace CommandInfoUpdater
             var (commandsToAdd, commandsToRemove) =
                 GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands);
 
-            if (!GetUserConfirmation(existingCommandsInfo, commandsToAdd, commandsToRemove, logger))
+            if (!GetUserConfirmation(commandsToAdd, commandsToRemove, logger))
             {
                 logger.LogInformation($"User cancelled update operation.");
                 return false;
@@ -202,13 +206,11 @@ namespace CommandInfoUpdater
         /// <summary>
         /// Indicates to the user which commands and sub-commands are added / removed and get their confirmation to proceed
         /// </summary>
-        /// <param name="existingCommandsInfo">Existing command names mapped to current command info</param>
         /// <param name="commandsToAdd">Commands to add</param>
         /// <param name="commandsToRemove">Commands to remove</param>
         /// <param name="logger">Logger</param>
         /// <returns>True if user wishes to continue, false otherwise</returns>
-        private static bool GetUserConfirmation(IReadOnlyDictionary<string, RespCommandsInfo> existingCommandsInfo,
-            IDictionary<SupportedCommand, bool> commandsToAdd, IDictionary<SupportedCommand, bool> commandsToRemove,
+        private static bool GetUserConfirmation(IDictionary<SupportedCommand, bool> commandsToAdd, IDictionary<SupportedCommand, bool> commandsToRemove,
             ILogger logger)
         {
             var logCommandsToAdd = commandsToAdd.Where(kvp => kvp.Value).Select(c => c.Key.Command).ToList();
@@ -302,13 +304,16 @@ namespace CommandInfoUpdater
                 var end = ptr + response.Length;
 
                 // Read the array length (# of commands info returned)
-                RespReadUtils.ReadArrayLength(out var cmdCount, ref ptr, end);
+                if (!RespReadUtils.ReadArrayLength(out var cmdCount, ref ptr, end))
+                {
+                    logger.LogError($"Unable to read RESP command info count from server");
+                    return false;
+                }
 
                 // Parse each command's command info
                 for (var cmdIdx = 0; cmdIdx < cmdCount; cmdIdx++)
                 {
-                    if (!RespCommandInfoParser.TryReadFromResp(ref ptr, end, supportedCommands,
-                            out RespCommandsInfo command) ||
+                    if (!RespCommandInfoParser.TryReadFromResp(ref ptr, end, supportedCommands, out var command) ||
                         command == null)
                     {
                         logger.LogError(

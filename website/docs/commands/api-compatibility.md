@@ -191,6 +191,12 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | BGREWRITEAOF | ➖ |  |
 |  | [BGSAVE](checkpoint.md#bgsave) | ➕ |  |
 |  | [COMMAND](server.md#command) | ➕ |  |
+|  | [COMMAND COUNT](server.md#command-count) | ➕ |  |
+|  | COMMAND DOCS | ➖ |  |
+|  | COMMAND GETKEYS | ➖ |  |
+|  | COMMAND GETKEYSANDFLAGS | ➖ |  | 
+|  | [COMMAND INFO](server.md#command-info) | ➕ |  | 
+|  | COMMAND LIST | ➖ |  | 
 |  | [COMMITAOF](server.md#commitaof) | ➕ |  |
 |  | [CONFIG GET](server.md#config-get) | ➕ |  |
 |  | [CONFIG SET](server.md#config-set) | ➕ |  |

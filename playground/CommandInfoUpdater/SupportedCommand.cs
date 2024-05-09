@@ -258,13 +258,20 @@ namespace CommandInfoUpdater
 
         }
 
+        /// <summary>
+        /// SupportedCommand constructor
+        /// </summary>
+        /// <param name="command">Supported command name</param>
+        /// <param name="respCommand">RESP Command enum</param>
+        /// <param name="arrayCommand">Array Command byte (if applicable)</param>
+        /// <param name="subCommands">List of supported sub-command names (optional)</param>
         public SupportedCommand(string command, RespCommand respCommand = RespCommand.NONE, byte? arrayCommand = null,
             IEnumerable<string> subCommands = null) : this()
         {
-            this.Command = command;
-            this.SubCommands = subCommands == null ? null : new HashSet<string>(subCommands);
-            this.RespCommand = respCommand;
-            this.ArrayCommand = arrayCommand;
+            Command = command;
+            SubCommands = subCommands == null ? null : new HashSet<string>(subCommands);
+            RespCommand = respCommand;
+            ArrayCommand = arrayCommand;
         }
     }
 }
