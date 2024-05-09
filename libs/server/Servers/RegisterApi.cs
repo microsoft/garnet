@@ -27,6 +27,7 @@ namespace Garnet.server
         /// <param name="numParams">Numer of parameters (excluding the key, which is always the first parameter)</param>
         /// <param name="type">Type of command (e.g., read)</param>
         /// <param name="customFunctions">Custom functions for command logic</param>
+        /// <param name="commandInfo">RESP command info</param>
         /// <param name="expirationTicks">
         /// Expiration for value, in ticks.
         /// -1 => remove existing expiration metadata;
@@ -34,8 +35,8 @@ namespace Garnet.server
         /// >0 => set expiration to given value.
         /// </param>
         /// <returns>ID of the registered command</returns>
-        public int NewCommand(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, long expirationTicks = 0)
-            => provider.StoreWrapper.customCommandManager.Register(name, numParams, type, customFunctions, expirationTicks);
+        public int NewCommand(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, long expirationTicks = 0)
+            => provider.StoreWrapper.customCommandManager.Register(name, numParams, type, customFunctions, commandInfo, expirationTicks);
 
         /// <summary>
         /// Register transaction procedure with Garnet
@@ -70,9 +71,10 @@ namespace Garnet.server
         /// <param name="numParams">Numer of parameters (excluding the key, which is always the first parameter)</param>
         /// <param name="commandType">Type of command (e.g., read)</param>
         /// <param name="type">Type ID for factory, registered using RegisterType</param>
+        /// <param name="commandInfo">RESP command info</param>
         /// <returns>ID of the registered command</returns>
-        public int NewCommand(string name, int numParams, CommandType commandType, int type)
-            => provider.StoreWrapper.customCommandManager.Register(name, numParams, commandType, type);
+        public int NewCommand(string name, int numParams, CommandType commandType, int type, RespCommandsInfo commandInfo)
+            => provider.StoreWrapper.customCommandManager.Register(name, numParams, commandType, type, commandInfo);
 
         /// <summary>
         /// Register custom command with Garnet
@@ -81,9 +83,10 @@ namespace Garnet.server
         /// <param name="numParams">Numer of parameters (excluding the key, which is always the first parameter)</param>
         /// <param name="commandType">Type of command (e.g., read)</param>
         /// <param name="factory">Custom factory for object</param>
+        /// <param name="commandInfo">RESP command info</param>
         /// <returns>ID of the registered command</returns>
-        public (int, int) NewCommand(string name, int numParams, CommandType commandType, CustomObjectFactory factory)
-            => provider.StoreWrapper.customCommandManager.Register(name, numParams, commandType, factory);
+        public (int, int) NewCommand(string name, int numParams, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo)
+            => provider.StoreWrapper.customCommandManager.Register(name, numParams, commandType, factory, commandInfo);
 
     }
 }

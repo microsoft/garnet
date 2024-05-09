@@ -10,9 +10,9 @@ using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 using Tsavorite.devices;
 
-namespace Garnet
+namespace Garnet.common
 {
-    internal enum FileLocationType
+    public enum FileLocationType
     {
         Local,
         AzureStorage,
@@ -22,7 +22,7 @@ namespace Garnet
     /// <summary>
     /// Interface for reading / writing into local / remote files
     /// </summary>
-    internal interface IStreamProvider
+    public interface IStreamProvider
     {
         /// <summary>
         /// Read data from file specified in path
@@ -112,15 +112,16 @@ namespace Garnet
     /// <summary>
     /// Provides a StreamProvider instance
     /// </summary>
-    internal class StreamProviderFactory
+    public class StreamProviderFactory
     {
         /// <summary>
         /// Get a StreamProvider instance
         /// </summary>
         /// <param name="locationType">Type of location of files the stream provider reads from / writes to</param>
         /// <param name="connectionString">Connection string to Azure Storage, if applicable</param>
+        /// <param name="resourceAssembly">Assembly from which to load the embedded resource, if applicable</param>
         /// <returns>StreamProvider instance</returns>
-        internal static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null)
+        public static IStreamProvider GetStreamProvider(FileLocationType locationType, string connectionString = null, Assembly resourceAssembly = null)
         {
             switch (locationType)
             {
@@ -131,7 +132,7 @@ namespace Garnet
                 case FileLocationType.Local:
                     return new LocalFileStreamProvider();
                 case FileLocationType.EmbeddedResource:
-                    return new EmbeddedResourceStreamProvider();
+                    return new EmbeddedResourceStreamProvider(resourceAssembly);
                 default:
                     throw new NotImplementedException();
             }
@@ -199,22 +200,29 @@ namespace Garnet
     /// </summary>
     internal class EmbeddedResourceStreamProvider : IStreamProvider
     {
+        private readonly Assembly assembly;
+
+        public EmbeddedResourceStreamProvider(Assembly assembly)
+        {
+            this.assembly = assembly;
+        }
+
         public Stream Read(string path)
         {
-            var assembly = Assembly.GetExecutingAssembly();
-            var resourceName = assembly.GetManifestResourceNames().FirstOrDefault(rn => rn.EndsWith(path));
+            var resourceName = assembly.GetManifestResourceNames()
+                .FirstOrDefault(rn => rn.EndsWith($".{path}"));
             if (resourceName == null) return null;
 
-            return Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
+            return assembly.GetManifestResourceStream(resourceName);
         }
 
         public void Write(string path, byte[] data)
         {
-            var assembly = Assembly.GetExecutingAssembly();
-            var resourceName = assembly.GetManifestResourceNames().FirstOrDefault(rn => rn.EndsWith(path));
+            var resourceName = assembly.GetManifestResourceNames()
+                .FirstOrDefault(rn => rn.EndsWith($".{path}"));
             if (resourceName == null) return;
 
-            using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
+            using var stream = assembly.GetManifestResourceStream(resourceName);
             if (stream != null)
                 stream.Write(data, 0, data.Length);
         }

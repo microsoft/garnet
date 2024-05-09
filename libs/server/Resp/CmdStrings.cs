@@ -42,6 +42,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> AUTH => "AUTH"u8;
         public static ReadOnlySpan<byte> auth => "auth"u8;
         public static ReadOnlySpan<byte> INFO => "INFO"u8;
+        public static ReadOnlySpan<byte> info => "info"u8;
+        public static ReadOnlySpan<byte> DOCS => "DOCS"u8;
+        public static ReadOnlySpan<byte> docs => "docs"u8;
         public static ReadOnlySpan<byte> COMMAND => "COMMAND"u8;
         public static ReadOnlySpan<byte> LATENCY => "LATENCY"u8;
         public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;
@@ -132,6 +135,7 @@ namespace Garnet.server
         /// </summary>
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
         public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
+        public const string GenericErrUnknownSubCommand = "ERR unknown subcommand '{0}'. Try {1} HELP";
 
         /// <summary>
         /// Object types
