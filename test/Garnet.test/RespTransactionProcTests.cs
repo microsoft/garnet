@@ -363,5 +363,53 @@ namespace Garnet.test
             Assert.AreEqual(value1, ((string[])result)[0]);
             Assert.AreEqual(value2, ((string[])result)[1]);
         }
+
+        [Test]
+        public void TransactionProcMSetPxTest()
+        {
+            server.Register.NewTransactionProc("MSETPX", () => new MSetPxTxn());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const int NumKeys = 5;
+
+            var args = new string[1 + 2 * NumKeys];
+
+            // Set expiry to 2 seconds
+            args[0] = "2000";
+
+            // Set key-value pairs
+            for (int i = 0; i < NumKeys; i++)
+            {
+                args[2 * i + 1] = $"key{i}";
+                args[2 * i + 2] = $"value{i}";
+            }
+
+            // Execute transaction
+            var result = db.Execute("MSETPX", args);
+
+            // Verify transaction succeeded
+            Assert.AreEqual("OK", (string)result);
+
+            // Read keys to verify transaction succeeded
+            for (int i = 0; i < NumKeys; i++)
+            {
+                string key = $"key{i}";
+                string value = $"value{i}";
+                string retValue = db.StringGet(key);
+                Assert.AreEqual(value, retValue);
+            }
+
+            // Wait for keys to expire
+            Thread.Sleep(2100);
+
+            // Verify that keys have expired
+            for (int i = 0; i < NumKeys; i++)
+            {
+                string key = $"key{i}";
+                string retValue = db.StringGet(key);
+                Assert.IsNull(retValue);
+            }
+        }
     }
 }
