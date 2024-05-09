@@ -24,7 +24,7 @@ namespace Garnet.server
         /// Register custom command with Garnet
         /// </summary>
         /// <param name="name">Name of command</param>
-        /// <param name="numParams">Numer of parameters (excluding the key, which is always the first parameter)</param>
+        /// <param name="numParams">Number of parameters (excluding the key, which is always the first parameter)</param>
         /// <param name="type">Type of command (e.g., read)</param>
         /// <param name="customFunctions">Custom functions for command logic</param>
         /// <param name="commandInfo">RESP command info</param>
@@ -39,14 +39,23 @@ namespace Garnet.server
             => provider.StoreWrapper.customCommandManager.Register(name, numParams, type, customFunctions, commandInfo, expirationTicks);
 
         /// <summary>
-        /// Register transaction procedure with Garnet
+        /// Register transaction procedure with Garnet, with a fixed number of parameters
         /// </summary>
-        /// <param name="name"></param>
-        /// <param name="numParams"></param>
-        /// <param name="proc"></param>
-        /// <returns></returns>
+        /// <param name="name">Name of command</param>
+        /// <param name="numParams">Number of parameters</param>
+        /// <param name="proc">Custom stored procedure</param>
+        /// <returns>ID of the registered command</returns>
         public int NewTransactionProc(string name, int numParams, Func<CustomTransactionProcedure> proc)
             => provider.StoreWrapper.customCommandManager.Register(name, numParams, proc);
+
+        /// <summary>
+        /// Register transaction procedure with Garnet, with a variable number of parameters
+        /// </summary>
+        /// <param name="name">Name of command</param>
+        /// <param name="proc">Custom stored procedure</param>
+        /// <returns>ID of the registered command</returns>
+        public int NewTransactionProc(string name, Func<CustomTransactionProcedure> proc)
+            => provider.StoreWrapper.customCommandManager.Register(name, int.MaxValue, proc);
 
         /// <summary>
         /// Register object type with server

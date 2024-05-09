@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <Compile Include="..\..\main\GarnetServer\Extensions\DeleteIfMatch.cs" Link="DeleteIfMatch.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MGetIfPM.cs" Link="MGetIfPM.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MSetPx.cs" Link="MSetPx.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="MyDictObject.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\GetTwoKeysNoTxn.cs" Link="GetTwoKeysNoTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\ReadWriteTxn.cs" Link="ReadWriteTxn.cs" />
