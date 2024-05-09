@@ -33,8 +33,24 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-
         #region SEClientTests
+        [Test]
+        [TestCase("")]
+        [TestCase("myset")]
+        public void CandDoSaddBasic(string key)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = db.SetAdd(key, "Hello");
+            Assert.IsTrue(result);
+
+            result = db.SetAdd(key, "World");
+            Assert.IsTrue(result);
+
+            result = db.SetAdd(key, "World");
+            Assert.IsFalse(result);
+        }
 
         [Test]
         public void CanAddAndListMembers()
@@ -74,7 +90,6 @@ namespace Garnet.test
             Assert.IsFalse(setDoesNotExist);
         }
 
-
         [Test]
         public void CanAddAndGetAllMembersWithPendingStatus()
         {
@@ -98,18 +113,35 @@ namespace Garnet.test
             Assert.AreEqual(100, members.Length);
         }
 
-
         [Test]
         public void CanReturnEmptySet()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var members = db.SetMembers(new RedisKey("myset"));
+            _ = db.SetMembers(new RedisKey("myset"));
 
             var response = db.Execute("MEMORY", "USAGE", "myset");
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Type ? int.Parse(response.ToString()) : -1;
             var expectedResponse = -1;
             Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanDoMembersWhenEmptyKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var empty = "";
+
+            var addResult = db.SetAdd(empty, ["one", "two", "three", "four", "five"]);
+            Assert.AreEqual(5, addResult);
+
+            var result = db.SetMembers(empty);
+            Assert.AreEqual(5, result.Length);
+            var strResult = result.Select(r => r.ToString());
+            var expectedResult = new[] { "one", "two", "three", "four", "five" };
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
         }
 
         [Test]
@@ -381,15 +413,17 @@ namespace Garnet.test
 
 
         [Test]
-        public void CanDoSdiff()
+        [TestCase("key1", "key2")]
+        [TestCase("", "key2")]
+        [TestCase("key1", "")]
+        public void CanDoSdiff(string key1, string key2)
+
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var key1 = "key1";
             var key1Value = new RedisValue[] { "a", "b", "c", "d" };
 
-            var key2 = "key2";
             var key2Value = new RedisValue[] { "c" };
 
             var addResult = db.SetAdd(key1, key1Value);
@@ -460,11 +494,45 @@ namespace Garnet.test
             Assert.AreEqual(2, addResult);
 
             result = db.Execute("SDIFFSTORE", key, key3, key4);
+            Assert.AreEqual(1, (int)result);
+
             membersResult = db.SetMembers("key");
             Assert.AreEqual(1, membersResult.Length);
             Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("c")));
         }
 
+        [Test]
+        [TestCase("myset", "myotherset")]
+        [TestCase("", "myotherset")]
+        [TestCase("myset", "")]
+        public void CanDoSmoveBasic(string source, string destination)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var addResult = db.SetAdd(source, ["one"]);
+            Assert.AreEqual(1, addResult);
+            addResult = db.SetAdd(source, ["two"]);
+            Assert.AreEqual(1, addResult);
+
+            addResult = db.SetAdd(destination, ["three"]);
+            Assert.AreEqual(1, addResult);
+
+            var result = db.SetMove(source, destination, "two");
+            Assert.IsTrue(result);
+
+            var membersResult = db.SetMembers(source);
+            Assert.AreEqual(1, membersResult.Length);
+
+            var strResult = membersResult.Select(r => r.ToString()).ToArray();
+            var expectedResult = new[] { "one" };
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
+
+            membersResult = db.SetMembers(destination);
+            strResult = membersResult.Select(r => r.ToString()).ToArray();
+            expectedResult = ["three", "two"];
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
+        }
         #endregion
 
 
@@ -970,17 +1038,19 @@ namespace Garnet.test
         }
 
         [Test]
-        public void CanDoSdiffStoreLC()
+        [TestCase("")]
+        [TestCase("key")]
+        public void CanDoSdiffStoreLC(string key)
         {
             var lightClientRequest = TestUtils.CreateRequest();
-            lightClientRequest.SendCommand("SADD key1 a b c d");
-            lightClientRequest.SendCommand("SADD key2 c");
-            lightClientRequest.SendCommand("SADD key3 a c e");
-            var response = lightClientRequest.SendCommand("SDIFFSTORE key key1 key2 key3");
+            _ = lightClientRequest.SendCommand("SADD key1 a b c d");
+            _ = lightClientRequest.SendCommand("SADD key2 c");
+            _ = lightClientRequest.SendCommand("SADD key3 a c e");
+            var response = lightClientRequest.SendCommand($"SDIFFSTORE {key} key1 key2 key3");
             var expectedResponse = ":2\r\n";
             Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
 
-            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            var membersResponse = lightClientRequest.SendCommand($"SMEMBERS {key}");
             expectedResponse = "*2\r\n$1\r\nb\r\n$1\r\nd\r\n";
             Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }

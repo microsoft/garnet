@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -62,6 +61,7 @@ namespace Garnet.server
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.List;
+            inputPtr->header.flags = 0;
             inputPtr->header.ListOp = lop;
             inputPtr->count = inputCount;
             inputPtr->done = listItemsDoneCount;
@@ -158,6 +158,7 @@ namespace Garnet.server
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.List;
+            inputPtr->header.flags = 0;
             inputPtr->header.ListOp = lop;
             inputPtr->done = 0;
             inputPtr->count = popCount;
@@ -231,6 +232,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.List;
+                inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LLEN;
                 inputPtr->count = count;
                 inputPtr->done = 0;
@@ -308,6 +310,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.List;
+                inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LTRIM;
                 inputPtr->count = start;
                 inputPtr->done = stop;
@@ -376,6 +379,7 @@ namespace Garnet.server
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
                 inputPtr->header.type = GarnetObjectType.List;
+                inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LRANGE;
                 inputPtr->count = start;
                 inputPtr->done = end;
@@ -450,6 +454,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.List;
+                inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LINDEX;
                 inputPtr->count = index;
                 inputPtr->done = 0;
@@ -525,6 +530,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.List;
+                inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LINSERT;
                 inputPtr->done = 0;
                 inputPtr->count = 0;
@@ -611,6 +617,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.List;
+                inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LREM;
                 inputPtr->count = nCount;
                 inputPtr->done = 0;
@@ -819,6 +826,7 @@ namespace Garnet.server
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.List;
+                inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LSET;
                 inputPtr->count = 0;
                 inputPtr->done = 0;

@@ -391,6 +391,22 @@ namespace Garnet.cluster
         #region GetFromSlot
 
         /// <summary>
+        /// Check if slot is set as IMPORTING
+        /// </summary>
+        /// <param name="slot">Slot number.</param>
+        /// <returns>True if slot is in IMPORTING state, false otherwise.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool IsImportingSlot(ushort slot) => slotMap[slot]._state == SlotState.IMPORTING;
+
+        /// <summary>
+        /// Check if slot is set as MIGRATING
+        /// </summary>
+        /// <param name="slot">Slot number.</param>
+        /// <returns>True if slot is in MIGRATING state, false otherwise.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool IsMigratingSlot(ushort slot) => slotMap[slot]._state == SlotState.MIGRATING;
+
+        /// <summary>
         /// Get slot state
         /// </summary>
         /// <param name="slot">Slot number.</param>

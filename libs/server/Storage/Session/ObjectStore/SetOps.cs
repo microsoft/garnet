@@ -31,19 +31,17 @@ namespace Garnet.server
         {
             saddCount = 0;
 
-            if (key.Length == 0)
-                return GarnetStatus.OK;
-
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
 
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SADD;
             rmwInput->count = 1;
             rmwInput->done = 0;
 
-            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            _ = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             saddCount = output.opsDone;
             return GarnetStatus.OK;
@@ -71,6 +69,7 @@ namespace Garnet.server
             // Prepare header in buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SADD;
             rmwInput->count = members.Length;
             rmwInput->done = 0;
@@ -106,14 +105,12 @@ namespace Garnet.server
         {
             sremCount = 0;
 
-            if (key.Length == 0)
-                return GarnetStatus.OK;
-
             var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
 
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SREM;
             rmwInput->count = 1;
             rmwInput->done = 0;
@@ -147,6 +144,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SREM;
             rmwInput->count = members.Length;
             rmwInput->done = 0;
@@ -186,6 +184,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SCARD;
             rmwInput->count = 1;
             rmwInput->done = 0;
@@ -216,6 +215,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SMEMBERS;
             rmwInput->count = 1;
             rmwInput->done = 0;
@@ -272,6 +272,7 @@ namespace Garnet.server
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;
             rmwInput->header.type = GarnetObjectType.Set;
+            rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SPOP;
             rmwInput->count = count;
             rmwInput->done = 0;
@@ -314,6 +315,7 @@ namespace Garnet.server
             var inputSize = ObjectInputHeader.Size + sizeof(int);
             var rmwInput = scratchBufferManager.CreateArgSlice(inputSize).ptr;
             ((ObjectInputHeader*)rmwInput)->header.type = GarnetObjectType.Set;
+            ((ObjectInputHeader*)rmwInput)->header.flags = 0;
             ((ObjectInputHeader*)rmwInput)->header.SetOp = SetOperation.SSCAN;
 
             // Number of tokens in the input after the header (match, value, count, value)
@@ -376,9 +378,6 @@ namespace Garnet.server
         {
             smoveResult = 0;
 
-            if (sourceKey.Length == 0 || destinationKey.Length == 0)
-                return GarnetStatus.OK;
-
             // If the keys are the same, no operation is performed.
             var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
             if (sameKey)
@@ -386,13 +385,13 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            bool createTransaction = false;
+            var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
                 txnManager.SaveKeyEntryToLock(sourceKey, true, LockType.Exclusive);
                 txnManager.SaveKeyEntryToLock(destinationKey, true, LockType.Exclusive);
-                txnManager.Run(true);
+                _ = txnManager.Run(true);
             }
 
             var objectLockableContext = txnManager.ObjectStoreLockableContext;
@@ -411,7 +410,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                SetAdd(destinationKey, member, out smoveResult, ref objectLockableContext);
+                _ = SetAdd(destinationKey, member, out smoveResult, ref objectLockableContext);
             }
             finally
             {
@@ -569,7 +568,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output)
         {
-            output = new HashSet<byte[]>(new ByteArrayComparer());
+            output = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
             if (keys.Length == 0)
                 return GarnetStatus.OK;
@@ -613,6 +612,9 @@ namespace Garnet.server
         {
             count = default;
 
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
             var destination = scratchBufferManager.CreateArgSlice(key);
 
             var createTransaction = false;
@@ -655,7 +657,7 @@ namespace Garnet.server
         private HashSet<byte[]> SetUnion<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
-            var result = new HashSet<byte[]>(new ByteArrayComparer());
+            var result = new HashSet<byte[]>(ByteArrayComparer.Instance);
             if (keys.Length == 0)
             {
                 return result;
@@ -781,6 +783,7 @@ namespace Garnet.server
         public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> members)
         {
             members = default;
+
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
@@ -823,7 +826,7 @@ namespace Garnet.server
         {
             count = default;
 
-            if (key.Length == 0 || keys.Length == 0)
+            if (keys.Length == 0)
                 return GarnetStatus.OK;
 
             var destination = scratchBufferManager.CreateArgSlice(key);
@@ -880,7 +883,7 @@ namespace Garnet.server
             {
                 if (first.garnetObject is SetObject firstObject)
                 {
-                    result = new HashSet<byte[]>(firstObject.Set, new ByteArrayComparer());
+                    result = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
                 }
             }
             else

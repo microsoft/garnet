@@ -48,7 +48,7 @@ namespace Garnet.server
         public SetObject(long expiration = 0)
             : base(expiration, MemoryUtils.HashSetOverhead)
         {
-            set = new HashSet<byte[]>(new ByteArrayComparer());
+            set = new HashSet<byte[]>(ByteArrayComparer.Instance);
         }
 
         /// <summary>
@@ -57,7 +57,7 @@ namespace Garnet.server
         public SetObject(BinaryReader reader)
             : base(reader, MemoryUtils.HashSetOverhead)
         {
-            set = new HashSet<byte[]>(new ByteArrayComparer());
+            set = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)

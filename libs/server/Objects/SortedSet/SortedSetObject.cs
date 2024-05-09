@@ -72,11 +72,8 @@ namespace Garnet.server
     /// </summary>
     public partial class SortedSetObject : GarnetObjectBase
     {
-        readonly SortedSet<(double, byte[])> sortedSet;
-        readonly Dictionary<byte[], double> sortedSetDict;
-
-        static readonly SortedSetComparer sortedSetComparer = new();
-        static readonly ByteArrayComparer byteArrayComparer = new();
+        private readonly SortedSet<(double, byte[])> sortedSet;
+        private readonly Dictionary<byte[], double> sortedSetDict;
 
         /// <summary>
         /// Constructor
@@ -84,8 +81,8 @@ namespace Garnet.server
         public SortedSetObject(long expiration = 0)
             : base(expiration, MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
         {
-            sortedSet = new(sortedSetComparer);
-            sortedSetDict = new Dictionary<byte[], double>(byteArrayComparer);
+            sortedSet = new(SortedSetComparer.Instance);
+            sortedSetDict = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
         }
 
         /// <summary>
@@ -94,8 +91,8 @@ namespace Garnet.server
         public SortedSetObject(BinaryReader reader)
             : base(reader, MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
         {
-            sortedSet = new(sortedSetComparer);
-            sortedSetDict = new Dictionary<byte[], double>(byteArrayComparer);
+            sortedSet = new(SortedSetComparer.Instance);
+            sortedSetDict = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
 
             int count = reader.ReadInt32();
             for (int i = 0; i < count; i++)
@@ -352,14 +349,17 @@ namespace Garnet.server
         /// </summary>
         public static Dictionary<byte[], double> CopyDiff(Dictionary<byte[], double> dict1, Dictionary<byte[], double> dict2)
         {
-            Dictionary<byte[], double> result = new();
-            if (dict1 != null)
+            if (dict1 == null)
+                return [];
+
+            if (dict2 == null)
+                return new Dictionary<byte[], double>(dict1);
+
+            Dictionary<byte[], double> result = [];
+            foreach (var item in dict1)
             {
-                foreach (var item in dict1)
-                {
-                    if (dict2 == null || !dict2.ContainsKey(item.Key))
-                        result.Add(item.Key, item.Value);
-                }
+                if (!dict2.ContainsKey(item.Key))
+                    result.Add(item.Key, item.Value);
             }
             return result;
         }
