@@ -431,7 +431,7 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
         {
-            output = new HashSet<byte[]>(new ByteArrayComparer());
+            output = default;
 
             if (keys.Length == 0)
                 return GarnetStatus.OK;
@@ -474,6 +474,11 @@ namespace Garnet.server
         public GarnetStatus SetIntersectStore(byte[] key, ArgSlice[] keys, out int count)
         {
             count = default;
+
+            if (keys.Length == 0)
+            {
+                return GarnetStatus.OK;
+            }
 
             var destination = scratchBufferManager.CreateArgSlice(key);
 
@@ -518,23 +523,20 @@ namespace Garnet.server
         private HashSet<byte[]> SetIntersect<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
         {
-            var result = new HashSet<byte[]>(new ByteArrayComparer());
             if (keys.Length == 0)
             {
-                return result;
+                return new HashSet<byte[]>(ByteArrayComparer.Instance);
             }
 
+            HashSet<byte[]> result;
             var status = GET(keys[0].ToArray(), out var first, ref objectContext);
-            if (status == GarnetStatus.OK)
+            if (status == GarnetStatus.OK && first.garnetObject is SetObject firstObject)
             {
-                if (first.garnetObject is SetObject firstObject)
-                {
-                    result = new HashSet<byte[]>(firstObject.Set, new ByteArrayComparer());
-                }
+                result = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
             }
             else
             {
-                return result;
+                return new HashSet<byte[]>(ByteArrayComparer.Instance);
             }
 
 
@@ -547,12 +549,13 @@ namespace Garnet.server
                 }
 
                 status = GET(keys[i].ToArray(), out var next, ref objectContext);
-                if (status == GarnetStatus.OK)
+                if (status == GarnetStatus.OK && next.garnetObject is SetObject nextObject)
                 {
-                    if (next.garnetObject is SetObject nextObject)
-                    {
-                        result.IntersectWith(nextObject.Set);
-                    }
+                    result.IntersectWith(nextObject.Set);
+                }
+                else
+                {
+                    return new HashSet<byte[]>(ByteArrayComparer.Instance);
                 }
             }
 

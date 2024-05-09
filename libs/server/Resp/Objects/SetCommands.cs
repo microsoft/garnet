@@ -130,17 +130,29 @@ namespace Garnet.server
                 return true;
             }
 
-            storageApi.SetIntersect(keys, out var result);
+            var status = storageApi.SetIntersect(keys, out var result);
 
-            // write the size of result
-            var resultCount = result.Count;
-            while (!RespWriteUtils.WriteArrayLength(resultCount, ref dcurr, dend))
-                SendAndReset();
-
-            foreach (var item in result)
+            if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.WriteBulkString(item, ref dcurr, dend))
-                    SendAndReset();
+                // write the size of result
+                int resultCount = 0;
+                if(result != null)
+                {
+                    resultCount = result.Count;
+                    while (!RespWriteUtils.WriteArrayLength(resultCount, ref dcurr, dend))
+                        SendAndReset();
+
+                    foreach (var item in result)
+                    {
+                        while (!RespWriteUtils.WriteBulkString(item, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteArrayLength(resultCount, ref dcurr, dend))
+                        SendAndReset();
+                }   
             }
 
             // update read pointers
