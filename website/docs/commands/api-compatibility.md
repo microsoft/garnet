@@ -47,7 +47,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [WHOAMI](acl.md#acl-whoami) | ➕ |  |
 | <span id="bitmap">**BITMAP**</span> | [BITCOUNT](analytics.md#bitcount) | ➕ |  |
 |  | [BITFIELD](analytics.md#bitfield) | ➕ |  |
-|  | BITFIELD_RO | ➖ |  |
+|  | [BITFIELD_RO](analytics.md#bitfield_ro) | ➕ |  |
 |  | [BITOP AND](analytics.md#bitop-and) | ➕ |  |
 |  | [BITOP NOT](analytics.md#bitop-not) | ➕ |  |
 |  | [BITPOS](analytics.md#bitpos) | ➕ |  |
@@ -191,6 +191,12 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | BGREWRITEAOF | ➖ |  |
 |  | [BGSAVE](checkpoint.md#bgsave) | ➕ |  |
 |  | [COMMAND](server.md#command) | ➕ |  |
+|  | [COMMAND COUNT](server.md#command-count) | ➕ |  |
+|  | COMMAND DOCS | ➖ |  |
+|  | COMMAND GETKEYS | ➖ |  |
+|  | COMMAND GETKEYSANDFLAGS | ➖ |  | 
+|  | [COMMAND INFO](server.md#command-info) | ➕ |  | 
+|  | COMMAND LIST | ➖ |  | 
 |  | [COMMITAOF](server.md#commitaof) | ➕ |  |
 |  | [CONFIG GET](server.md#config-get) | ➕ |  |
 |  | [CONFIG SET](server.md#config-set) | ➕ |  |

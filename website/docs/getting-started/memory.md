@@ -37,7 +37,7 @@ reasoning for this is:
 The index described above does not hold keys or values. Instead, both keys and values are stored in a separate structure 
 called the hybrid log. The memory occupied by the log is configured using `MemorySize` (`-m` or `--memory`).
 
-Memory is organized as a circular buffer of pages, where each page has size cofigured using `PageSize` (`-page`). The page
+Memory is organized as a circular buffer of pages, where each page has size cofigured using `PageSize` (`-p` or `--page`). The page
 size controls the maximum key or value size you can store, as a record needs to fit entirely within a page.
 
 A record in the Garnet main store consists of:

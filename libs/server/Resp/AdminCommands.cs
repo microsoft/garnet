@@ -248,36 +248,6 @@ namespace Garnet.server
             {
                 return ProcessInfoCommand(count);
             }
-            else if (command == RespCommand.COMMAND)
-            {
-                if (count != 0)
-                {
-                    if (!DrainCommands(bufSpan, count))
-                        return false;
-                    errorFlag = true;
-                    errorCmd = "command";
-                }
-                else
-                {
-                    // TODO: include the built-in commands
-                    string resultStr = "";
-                    int cnt = 0;
-                    for (int i = 0; i < storeWrapper.customCommandManager.CommandId; i++)
-                    {
-                        var cmd = storeWrapper.customCommandManager.commandMap[i];
-                        if (cmd != null)
-                        {
-                            cnt++;
-                            resultStr += $"*6\r\n${cmd.nameStr.Length}\r\n{cmd.nameStr}\r\n:{1 + cmd.NumKeys + cmd.NumParams}\r\n*1\r\n+fast\r\n:1\r\n:1\r\n:1\r\n";
-                        }
-                    }
-
-                    while (!RespWriteUtils.WriteAsciiDirect($"*{cnt}\r\n", ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.WriteAsciiDirect(resultStr, ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
             else if (command == RespCommand.PING)
             {
                 if (count == 0)

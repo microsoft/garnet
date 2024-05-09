@@ -23,8 +23,15 @@
     <Compile Include="..\..\main\GarnetServer\Extensions\SetWPIfPGT.cs" Link="SetWPIFPGT.cs" />
   </ItemGroup>
 
+	<ItemGroup>
+	  <EmbeddedResource Include="..\..\main\GarnetServer\CustomRespCommandsInfo.json" Link="CustomRespCommandsInfo.json">
+	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+	  </EmbeddedResource>
+	</ItemGroup>
+
   <ItemGroup>
-    <None Include="..\testcerts\testcert.pfx" Link="testcert.pfx">
+	  <EmbeddedResource Include="..\..\libs\host\defaults.conf" Link="defaults.conf" />
+	  <None Include="..\testcerts\testcert.pfx" Link="testcert.pfx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
