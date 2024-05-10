@@ -267,7 +267,7 @@ namespace Garnet.client
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);
             byte* curr = offset;
-            int arraySize = 8;
+            int arraySize = 9;
 
             while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
             {

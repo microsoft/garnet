@@ -61,6 +61,7 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> meet => "meet"u8;
         public static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
         public static ReadOnlySpan<byte> MTASKS => "MTASKS"u8;
+        public static ReadOnlySpan<byte> mtasks => "mtasks"u8;
         public static ReadOnlySpan<byte> MYID => "MYID"u8;
         public static ReadOnlySpan<byte> myid => "myid"u8;
         public static ReadOnlySpan<byte> MYPARENTID => "MYPARENTID"u8;
