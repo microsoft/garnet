@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,22 +13,23 @@ namespace Garnet.server
 {
     /// <summary>
     /// This class brokers collection items for blocking operations.
-    /// When a supported blocking command is initiated, RespServerSession will call the Subscribe method with the desired object type and operation
-    /// and a list of keys to the desired objects.
-    /// When an item is added to a collection, the StorageSession will call the Publish method with the relevant object key.
-    /// The main loop, in the Start method, listens for published item additions and writes a response to the calling RespServerSession if an item was found.
+    /// When a supported blocking command is initiated, RespServerSession will call the GetCollectionItemAsync method
+    /// with the desired object type and operation and a list of keys to the desired objects.
+    /// When an item is added to a collection, the StorageSession will call the Publish method with the relevant object key
+    /// to notify the broker that a new item may be available.
+    /// The main loop, in the Start method, listens for published item additions as well as new observers
+    /// and notifies the calling method if an item was found.
     /// </summary>
     public class CollectionItemBroker : IDisposable
     {
-        // Queue of keys whose objects need to be checked for items
+        // Queue of events to be handled by the main loops
         private readonly AsyncQueue<BrokerEventBase> brokerEventsQueue = new();
-
-        // Mapping of observed keys to queue of observers, by order of subscription
-        private readonly ConcurrentDictionary<byte[], ConcurrentQueue<CollectionItemObserver>> keysToObservers =
-            new(new ByteArrayComparer());
 
         // Mapping of RespServerSession ID (ObjectStoreSessionID) to observer instance
         private readonly ConcurrentDictionary<int, CollectionItemObserver> sessionIdToObserver = new();
+
+        // Mapping of observed keys to queue of observers, by order of subscription
+        private readonly Dictionary<byte[], Queue<CollectionItemObserver>> keysToObservers = new(new ByteArrayComparer());
 
         // Cancellation token for the main loop
         private readonly CancellationTokenSource cts = new();
@@ -38,14 +40,15 @@ namespace Garnet.server
         private bool disposed = false;
         private bool isStarted = false;
         private readonly object isStartedLock = new();
+        private readonly object keysToObserversLock = new();
 
         /// <summary>
-        /// Subscribe blocking operation for list objects
+        /// Asynchronously wait for item from list object
         /// </summary>
         /// <param name="keys">Keys of objects to observe</param>
         /// <param name="operation">Type of list operation</param>
         /// <param name="session">Calling session instance</param>
-        /// <param name="timeoutInSeconds">Timeout of operation (in seconds)</param>
+        /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
         internal async Task<CollectionItemResult> GetListItemAsync(byte[][] keys, ListOperation operation,
             RespServerSession session, double timeoutInSeconds)
         {
@@ -54,12 +57,12 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Subscribe blocking operation for sorted set objects
+        /// Asynchronously wait for item from sorted set object
         /// </summary>
         /// <param name="keys">Keys of objects to observe</param>
         /// <param name="operation">Type of sorted set operation</param>
         /// <param name="session">Calling session instance</param>
-        /// <param name="timeoutInSeconds">Timeout of operation (in seconds)</param>
+        /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
         internal async Task<CollectionItemResult> GetSortedSetItemAsync(byte[][] keys, SortedSetOperation operation,
             RespServerSession session, double timeoutInSeconds)
         {
@@ -68,10 +71,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Publish an item addition to a collection object in specified key
+        /// Notify broker that an item was added to a collection object in specified key
         /// </summary>
-        /// <param name="key">Key for which the value colleciton object was added to</param>
-        internal void Publish(byte[] key)
+        /// <param name="key">Key of the updated collection object</param>
+        internal void HandleCollectionUpdate(byte[] key)
         {
             // Check if main loop is started
             if (!isStarted)
@@ -86,55 +89,52 @@ namespace Garnet.server
             }
 
             // Check if there are any observers to specified key
-            if (!keysToObservers.ContainsKey(key)) return;
+            if (!keysToObservers.ContainsKey(key))
+            {
+                lock (keysToObserversLock)
+                {
+                    if (!keysToObservers.ContainsKey(key)) return;
+                }
+            }
 
-            // Add key to queue
+            // Add collection updated event to queue
             brokerEventsQueue.Enqueue(new CollectionUpdatedEvent(key));
         }
 
         /// <summary>
-        /// Remove subscription for specified session
+        /// Notify broker that a RespServerSession object is being disposed
         /// </summary>
-        /// <param name="session">The session for which to remove the subscription</param>
-        internal void RemoveSubscription(RespServerSession session)
+        /// <param name="session">The disposed session</param>
+        internal void HandleSessionDisposed(RespServerSession session)
         {
-            // Get the observer object for the specified session
-            if (!sessionIdToObserver.TryGetValue(session.ObjectStoreSessionID, out var observer))
+            // Try to remove session ID from mapping & get the observer object for the specified session, if exists
+            if (!sessionIdToObserver.TryRemove(session.ObjectStoreSessionID, out var observer))
                 return;
 
             // Change observer status to reflect that its session has been disposed
-            observer.ObserverStatusLock.EnterWriteLock();
-            try
-            {
-                observer.Status = ObserverStatus.SessionDisposed;
-            }
-            finally
-            {
-                observer.ObserverStatusLock.ExitWriteLock();
-            }
-
-            // Remove mapping of session ID to observer
-            sessionIdToObserver.TryRemove(session.ObjectStoreSessionID, out _);
+            observer.HandleSessionDisposed();
         }
 
+        /// <summary>
+        /// Asynchronously wait for item from collection object
+        /// </summary>
+        /// <param name="keys">Keys of objects to observe</param>
+        /// <param name="objectType">Type of object to observe</param>
+        /// <param name="operation">Type of operation</param>
+        /// <param name="session">Calling session instance</param>
+        /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
+        /// <returns></returns>
         private async Task<CollectionItemResult> GetCollectionItemAsync(byte[][] keys, GarnetObjectType objectType,
             byte operation, RespServerSession session, double timeoutInSeconds)
         {
             // Create the new observer object
-            var observer = new CollectionItemObserver(session, keys, objectType, operation);
-
-            brokerEventsQueue.Enqueue(new NewObserverEvent(observer, keys));
+            var observer = new CollectionItemObserver(session, objectType, operation);
 
             // Add the session ID to observer mapping
             sessionIdToObserver.TryAdd(session.ObjectStoreSessionID, observer);
 
-            // Enqueue observer in each key's observer queue
-            // Enqueue key in updated keys queue (in case there are already existing items to assign)
-            foreach (var key in keys)
-            {
-                var queue = keysToObservers.GetOrAdd(key, new ConcurrentQueue<CollectionItemObserver>());
-                queue.Enqueue(observer);
-            }
+            // Add a new observer event to the event queue
+            brokerEventsQueue.Enqueue(new NewObserverEvent(observer, keys));
 
             // Check if main loop has started, if not, start the main loop
             if (!isStarted)
@@ -150,71 +150,117 @@ namespace Garnet.server
                 }
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(timeoutInSeconds), observer.CancellationTokenSource.Token);
-            observer.Result ??= CollectionItemResult.Empty;
+            var timeout = timeoutInSeconds == 0
+                ? TimeSpan.FromMilliseconds(-1)
+                : TimeSpan.FromSeconds(timeoutInSeconds);
+
+            try
+            {
+                // Wait for either the result found notification or the timeout to expire
+                await observer.ResultFoundSemaphore.WaitAsync(timeout, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
+
+            // Check if observer is still waiting for result
+            if (observer.Status == ObserverStatus.WaitingForResult)
+            {
+                // Try to set the observer result to an empty one
+                observer.HandleSetResult(CollectionItemResult.Empty);
+            }
 
             return observer.Result;
         }
 
-        private void HandleExpiredObserver(CollectionItemObserver observer)
-        {
-            // If the observer session has been disposed, there is nothing to do
-            if (observer.Status == ObserverStatus.SessionDisposed) return;
-
-            observer.ObserverStatusLock.EnterReadLock();
-            try
-            {
-                // If the observer session has not been disposed, write a null response to the client
-                if (observer.Status != ObserverStatus.SessionDisposed)
-                    observer.Session.WriteBlockedOperationResult(null, null);
-            }
-            finally
-            {
-                observer.ObserverStatusLock.ExitReadLock();
-            }
-        }
-
-
-        private bool TryHandleBrokerEvent(BrokerEventBase brokerEvent)
+        /// <summary>
+        /// Calls the appropriate method based on the broker event type
+        /// </summary>
+        /// <param name="brokerEvent"></param>
+        private void HandleBrokerEvent(BrokerEventBase brokerEvent)
         {
             switch (brokerEvent)
             {
                 case NewObserverEvent noe:
-                    return TryInitializeObserver(noe.Observer, noe.Keys);
+                    InitializeObserver(noe.Observer, noe.Keys);
+                    return;
                 case CollectionUpdatedEvent cue:
-                    return TryAssignItemFromKey(cue.Key);
-                default:
-                    return false;
+                    TryAssignItemFromKey(cue.Key);
+                    return;
             }
         }
 
-        private bool TryInitializeObserver(CollectionItemObserver observer, byte[][] keys)
+        /// <summary>
+        /// Handles a new observer
+        /// </summary>
+        /// <param name="observer">The new observer instance</param>
+        /// <param name="keys">Keys observed by the new observer</param>
+        private void InitializeObserver(CollectionItemObserver observer, byte[][] keys)
         {
-            return true;
+            // Iterate over the keys in order, set the observer's result if collection in key contains an item
+            foreach (var key in keys)
+            {
+                // If the key already has a non-empty observer queue, it does not have an item to retrieve
+                if (keysToObservers.ContainsKey(key) && keysToObservers[key].Count > 0) continue;
+
+                // This lock is for synchronization with incoming collection updated events 
+                lock (keysToObserversLock)
+                {
+                    // Try to get an item from collection
+                    if (!TryGetNextItem(key, observer.Session.storageSession, observer.ObjectType, observer.Operation,
+                            out _, out var nextItem))
+                    {
+                        // Add the key to the observed keys map (this is to enable incoming collection updated events for this key)
+                        if (!keysToObservers.ContainsKey(key))
+                            keysToObservers.Add(key, new Queue<CollectionItemObserver>());
+
+                        continue;
+                    }
+
+                    // An item was found - set the observer result and return
+                    sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
+                    observer.HandleSetResult(new CollectionItemResult(key, nextItem));
+                    return;
+                }
+            }
+
+            // No item was found, enqueue new observer in every observed keys queue
+            foreach (var key in keys)
+            {
+                keysToObservers[key].Enqueue(observer);
+            }
         }
 
+        /// <summary>
+        /// Try to assign item available (if exists) with next ready observer in queue
+        /// </summary>
+        /// <param name="key">Key of collection from which to assign item</param>
+        /// <returns>True if successful in assigning item</returns>
         private bool TryAssignItemFromKey(byte[] key)
         {
-            if (!keysToObservers.TryGetValue(key, out var observers))
+            // If queue doesn't exist for key or is empty, nothing to do
+            if (!keysToObservers.TryGetValue(key, out var observers) || observers.Count == 0)
                 return false;
 
             // Peek at next observer in queue
             while (observers.TryPeek(out var observer))
             {
-                // If observer's session is disposed, dequeue it and continue to next observer in queue
-                if (observer.Status == ObserverStatus.SessionDisposed)
+                // If observer is not waiting for result, dequeue it and continue to next observer in queue
+                if (observer.Status != ObserverStatus.WaitingForResult)
                 {
-                    observers.TryDequeue(out observer);
+                    observers.Dequeue();
                     continue;
                 }
 
-                observer.ObserverStatusLock.EnterReadLock();
+                observer.ObserverStatusLock.EnterUpgradeableReadLock();
                 try
                 {
-                    // If observer's session is disposed, dequeue it and continue to next observer in queue
-                    if (observer.Status == ObserverStatus.SessionDisposed)
+                    // If observer is not waiting for result, dequeue it and continue to next observer in queue
+                    if (observer.Status != ObserverStatus.WaitingForResult)
                     {
-                        observers.TryDequeue(out observer);
+                        observers.Dequeue();
                         continue;
                     }
 
@@ -228,23 +274,31 @@ namespace Garnet.server
                         return false;
                     }
 
-                    // Dequeue the observer, and write the key and item to the client
+                    // Dequeue the observer, and set the observer's result
                     observers.TryDequeue(out observer);
-                    sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
-                    observer.Session.WriteBlockedOperationResult(key, nextItem);
+
+                    sessionIdToObserver.TryRemove(observer!.Session.ObjectStoreSessionID, out _);
+                    observer.HandleSetResult(new CollectionItemResult(key, nextItem));
 
                     return true;
                 }
                 finally
                 {
-                    observer?.ObserverStatusLock.ExitReadLock();
+                    observer?.ObserverStatusLock.ExitUpgradeableReadLock();
                 }
             }
 
             return false;
         }
 
-        private bool TryGetNextListItem(ListObject listObj, byte operation, out byte[] nextItem)
+        /// <summary>
+        /// Try to get next available item from list object
+        /// </summary>
+        /// <param name="listObj">List object</param>
+        /// <param name="operation">List operation</param>
+        /// <param name="nextItem">Item retrieved</param>
+        /// <returns>True if found available item</returns>
+        private static bool TryGetNextListItem(ListObject listObj, byte operation, out byte[] nextItem)
         {
             nextItem = default;
 
@@ -255,11 +309,11 @@ namespace Garnet.server
             switch ((ListOperation)operation)
             {
                 case ListOperation.BRPOP:
-                    nextItem = listObj.LnkList.Last.Value;
+                    nextItem = listObj.LnkList.Last!.Value;
                     listObj.LnkList.RemoveLast();
                     break;
                 case ListOperation.BLPOP:
-                    nextItem = listObj.LnkList.First.Value;
+                    nextItem = listObj.LnkList.First!.Value;
                     listObj.LnkList.RemoveFirst();
                     break;
                 default:
@@ -271,7 +325,14 @@ namespace Garnet.server
             return true;
         }
 
-        private bool TryGetNextSetObject(SortedSetObject sortedSetObj, byte operation, out byte[] nextItem)
+        /// <summary>
+        /// Try to get next available item from sorted set object
+        /// </summary>
+        /// <param name="sortedSetObj">Sorted set object</param>
+        /// <param name="operation">Sorted set operation</param>
+        /// <param name="nextItem">Item retrieved</param>
+        /// <returns>True if found available item</returns>
+        private static bool TryGetNextSetObject(SortedSetObject sortedSetObj, byte operation, out byte[] nextItem)
         {
             nextItem = default;
 
@@ -284,10 +345,18 @@ namespace Garnet.server
                 default:
                     return false;
             }
-
-            return true;
         }
 
+        /// <summary>
+        /// Try to get next available item from object
+        /// </summary>
+        /// <param name="key">Key of object</param>
+        /// <param name="storageSession">Current storage session</param>
+        /// <param name="objectType">Type of object</param>
+        /// <param name="operation">Operation type</param>
+        /// <param name="currCount">Collection size</param>
+        /// <param name="nextItem">Retrieved item</param>
+        /// <returns>True if found available item</returns>
         private bool TryGetNextItem(byte[] key, StorageSession storageSession, GarnetObjectType objectType,
             byte operation, out int currCount, out byte[] nextItem)
         {
@@ -295,7 +364,7 @@ namespace Garnet.server
             nextItem = default;
             var createTransaction = false;
 
-            // Create a transaction to try and get the next available item
+            // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)
             {
                 Debug.Assert(storageSession.txnManager.state == TxnState.None);
@@ -336,28 +405,38 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Broker's main loop logic
+        /// </summary>
+        /// <returns>Task</returns>
         private async Task Start()
         {
             Task handleNextEvent = default;
-            // Main loop logic
             try
             {
+                // Repeat while not disposed or cancelled
                 while (!disposed && !cts.IsCancellationRequested)
                 {
-
-                    // Check if current dequeue task is done
+                    // Check if current task is done
                     if (handleNextEvent == null || handleNextEvent.IsCompleted)
                     {
-                        // Set dequeue task to get next updated key and call assignment method
+                        // Set task to asynchronously dequeue next event in broker's queue
+                        // once event is dequeued successfully, call handler method
                         handleNextEvent = brokerEventsQueue.DequeueAsync(cts.Token).ContinueWith(t =>
                         {
                             if (t.Status == TaskStatus.RanToCompletion)
-                                TryHandleBrokerEvent(t.Result);
+                                HandleBrokerEvent(t.Result);
                         }, cts.Token);
                     }
 
-                    // If next observer expiry exists, wait until the expiry or until dequeue task is done
-                    await handleNextEvent;
+                    // Wait until the current task completes
+                    try
+                    {
+                        await handleNextEvent;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
                 }
             }
             finally
@@ -366,6 +445,7 @@ namespace Garnet.server
             }
         }
 
+        /// <inheritdoc />
         public void Dispose()
         {
             disposed = true;
@@ -378,57 +458,118 @@ namespace Garnet.server
         /// </summary>
         private class CollectionItemObserver
         {
-            // The session in which the blocking command was called
+            /// <summary>
+            /// The session in which the blocking command was called
+            /// </summary>
             internal RespServerSession Session { get; }
 
-            // The object type of the blocking command
+            /// <summary>
+            /// The object type of the blocking command
+            /// </summary>
             internal GarnetObjectType ObjectType { get; }
 
-            // The operation type for the blocking command
+            /// <summary>
+            /// The operation type for the blocking command
+            /// </summary>
             internal byte Operation { get; }
 
-            // Status of the observer
-            internal ObserverStatus Status { get; set; } = ObserverStatus.Ready;
+            /// <summary>
+            /// Status of the observer
+            /// </summary>
+            internal ObserverStatus Status { get; set; } = ObserverStatus.WaitingForResult;
 
-            internal CollectionItemResult Result { get; set; }
+            /// <summary>
+            /// Result of the observer
+            /// </summary>
+            internal CollectionItemResult Result { get; private set; }
 
-            // Lock for the status of the observer
+            /// <summary>
+            /// Lock for the status of the observer
+            /// </summary>
             internal ReaderWriterLockSlim ObserverStatusLock { get; } = new();
 
-            internal CancellationTokenSource CancellationTokenSource { get; } = new();
+            /// <summary>
+            /// Semaphore to notify the ResultSet status
+            /// </summary>
+            internal SemaphoreSlim ResultFoundSemaphore { get; } = new(0, 1);
 
-            internal CollectionItemObserver(RespServerSession session, byte[][] observedKeys,
-                GarnetObjectType objectType, byte operation)
+            internal CollectionItemObserver(RespServerSession session, GarnetObjectType objectType, byte operation)
             {
                 Session = session;
                 ObjectType = objectType;
                 Operation = operation;
             }
-        }
 
-        internal class CollectionItemResult
-        {
-            internal bool Found => Key != default;
-
-            internal byte[] Key { get; }
-
-            internal byte[] Item { get; }
-
-            public CollectionItemResult(byte[] key, byte[] item)
+            /// <summary>
+            /// Safely set the result for the observer
+            /// </summary>
+            /// <param name="result"></param>
+            internal void HandleSetResult(CollectionItemResult result)
             {
-                Key = key;
-                Item = item;
+                // If the result is already set or the observer session is disposed
+                // There is no need to set the result
+                if (Status != ObserverStatus.WaitingForResult)
+                    return;
+
+                ObserverStatusLock.EnterWriteLock();
+                try
+                {
+                    if (Status != ObserverStatus.WaitingForResult)
+                        return;
+
+                    // Set the result, update the status and release the semaphore
+                    Result = result;
+                    Status = ObserverStatus.ResultSet;
+                    ResultFoundSemaphore.Release();
+                }
+                finally
+                {
+                    ObserverStatusLock.ExitWriteLock();
+                }
             }
 
-            internal static readonly CollectionItemResult Empty = new(null, null);
+            /// <summary>
+            /// Safely set the status of the observer to reflect that its calling session was disposed
+            /// </summary>
+            internal void HandleSessionDisposed()
+            {
+                ObserverStatusLock.EnterWriteLock();
+                try
+                {
+                    Status = ObserverStatus.SessionDisposed;
+                }
+                finally
+                {
+                    ObserverStatusLock.ExitWriteLock();
+                }
+            }
         }
 
+        private enum ObserverStatus
+        {
+            // Observer is ready and waiting for result
+            WaitingForResult,
+            // Observer's result is set
+            ResultSet,
+            // Observer's calling RESP server session is disposed
+            SessionDisposed,
+        }
+
+        /// <summary>
+        /// Base class for events handled by CollectionItemBroker's main loop
+        /// </summary>
         private abstract class BrokerEventBase
         {
         }
 
+        /// <summary>
+        /// Event to notify CollectionItemBroker that a collection has been updated
+        /// </summary>
         private class CollectionUpdatedEvent : BrokerEventBase
         {
+            /// <summary>
+            /// Key of updated collection
+            /// </summary>
             internal byte[] Key { get; }
 
             public CollectionUpdatedEvent(byte[] key)
@@ -437,10 +578,19 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Event to notify CollectionItemBroker that a new observer was created
+        /// </summary>
         private class NewObserverEvent : BrokerEventBase
         {
+            /// <summary>
+            /// The new observer instance
+            /// </summary>
             internal CollectionItemObserver Observer { get; }
 
+            /// <summary>
+            /// The keys that the observer requests to subscribe on
+            /// </summary>
             internal byte[][] Keys { get; }
 
             internal NewObserverEvent(CollectionItemObserver observer, byte[][] keys)
@@ -449,11 +599,37 @@ namespace Garnet.server
                 Keys = keys;
             }
         }
+    }
 
-        private enum ObserverStatus
+    /// <summary>
+    /// Result of item retrieved from observed collection
+    /// </summary>
+    internal class CollectionItemResult
+    {
+        /// <summary>
+        /// True if item was found
+        /// </summary>
+        internal bool Found => Key != default;
+
+        /// <summary>
+        /// Key of collection from which item was retrieved
+        /// </summary>
+        internal byte[] Key { get; }
+
+        /// <summary>
+        /// Item retrieved from collection
+        /// </summary>
+        internal byte[] Item { get; }
+
+        /// <summary>
+        /// Instance of empty result
+        /// </summary>
+        internal static readonly CollectionItemResult Empty = new(null, null);
+
+        public CollectionItemResult(byte[] key, byte[] item)
         {
-            Ready,
-            SessionDisposed,
+            Key = key;
+            Item = item;
         }
     }
 }

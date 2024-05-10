@@ -207,17 +207,37 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
+            if (NetworkKeyArraySlotVerify(ref keys, false))
             {
                 var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count)) return false;
+                if (!DrainCommands(bufSpan, count))
+                    return false;
                 return true;
             }
 
-            RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
-                recvBufferPtr + bytesRead);
+            if (!RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
+                recvBufferPtr + bytesRead) || !parsed)
+                return false;
 
-            itemBroker.GetListItemAsync(keys.Select(k => k.Span.ToArray()).ToArray(), lop, this, timeout);
+            var arrKeys = keys.Select(k => k.Span.ToArray()).ToArray();
+            var result = itemBroker.GetListItemAsync(arrKeys, lop, this, timeout).Result;
+
+            if (!result.Found)
+            {
+                while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Key), ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
+                    SendAndReset();
+            }
 
             // Move input head
             readHead = (int)(ptr - recvBufferPtr);

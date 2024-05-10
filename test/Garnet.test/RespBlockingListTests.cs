@@ -48,7 +48,7 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
-            response = lightClientRequest.SendCommand($"{blockingCmd} {key} 10", 2);
+            response = lightClientRequest.SendCommand($"{blockingCmd} {key} 10", 3);
             expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -56,10 +56,10 @@ namespace Garnet.test
             var blockingTask = taskFactory.StartNew(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
-                var response = lcr.SendCommand($"{blockingCmd} {key2} 30", 2);
-                var expectedResponse = $"*2\r\n${key2.Length}\r\n{key2}\r\n${value2.Length}\r\n{value2}\r\n";
-                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-                Assert.AreEqual(expectedResponse, actualValue);
+                var btResponse = lcr.SendCommand($"{blockingCmd} {key2} 30", 3);
+                var btExpectedResponse = $"*2\r\n${key2.Length}\r\n{key2}\r\n${value2.Length}\r\n{value2}\r\n";
+                var btActualValue = Encoding.ASCII.GetString(btResponse).Substring(0, btExpectedResponse.Length);
+                Assert.AreEqual(btExpectedResponse, btActualValue);
             });
 
             var releasingTask = taskFactory.StartNew(() =>
@@ -69,7 +69,7 @@ namespace Garnet.test
                 return lcr.SendCommand($"LPUSH {key2} {value2}");
             });
 
-            Task.WaitAll(new[] { blockingTask, releasingTask });
+            Task.WaitAll(blockingTask, releasingTask);
 
             var valRgx = new Regex(@$"^\*2\r\n\${key3.Length}\r\n{key3}\r\n\$\d+\r\n(\d+)\r\n");
             var batchSize = Environment.ProcessorCount / 2;
@@ -83,8 +83,8 @@ namespace Garnet.test
                 tasks[i] = taskFactory.StartNew(() =>
                 {
                     using var lcr = TestUtils.CreateRequest();
-                    var response = lcr.SendCommand($"{blockingCmd} {key3} 10", 2);
-                    var match = valRgx.Match(Encoding.ASCII.GetString(response));
+                    var tResponse = lcr.SendCommand($"{blockingCmd} {key3} 10", 3);
+                    var match = valRgx.Match(Encoding.ASCII.GetString(tResponse));
                     Assert.IsTrue(match.Success && match.Groups.Count > 1);
                     Assert.IsTrue(int.TryParse(match.Groups[1].Value, out var val));
                     Assert.GreaterOrEqual(val, 0);
@@ -113,25 +113,71 @@ namespace Garnet.test
         }
 
         [Test]
-        public void Test()
+        [TestCase("BRPOP")]
+        [TestCase("BLPOP")]
+        public void ListBlockingPopOrderTest(string blockingCmd)
         {
-            var cl = new LightClientRequest("127.0.0.1", 6379, 0);
-            var t1 = Task.Run(() =>
+            var keys = new[] { "key1", "key2", "key3", "key4", "key5" };
+            var values = new[] { "value1", "value2", "value3", "value4", "value5" };
+
+            byte[] response;
+            string expectedResponse;
+            string actualValue;
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+            for (var i = 0; i < keys.Length; i++)
             {
-                var res = cl.SendCommands("BLPOP l1 30", "LPUSH l1 e1");
-                var strRes = Encoding.ASCII.GetString(res);
+                response = lightClientRequest.SendCommand($"LPUSH {keys[i]} {values[i]}");
+                expectedResponse = ":1\r\n";
+                actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                Assert.AreEqual(expectedResponse, actualValue);
+            }
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                response = lightClientRequest.SendCommand($"{blockingCmd} {string.Join(' ', keys)} 10", 3);
+                expectedResponse = $"*2\r\n${keys[i].Length}\r\n{keys[i]}\r\n${values[i].Length}\r\n{values[i]}\r\n";
+                actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                Assert.AreEqual(expectedResponse, actualValue);
+            }
+        }
+
+        [Test]
+        [TestCase("BRPOP")]
+        [TestCase("BLPOP")]
+        public void BlockingClientEventsTests(string blockingCmd)
+        {
+            var key = "mykey";
+            var value1 = "myval";
+            var value2 = "myval2";
+
+            var blockingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var response = lcr.SendCommands($"{blockingCmd} {key} 30", $"LPUSH {key} {value1}", 3, 1);
+                var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value2.Length}\r\n{value2}\r\n:1\r\n";
+                var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                Assert.AreEqual(expectedResponse, actualValue);
+
+                response = lcr.SendCommand($"LLEN {key}");
+                expectedResponse = ":1\r\n";
+                actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                Assert.AreEqual(expectedResponse, actualValue);
+
+                response = lcr.SendCommand($"LPOP {key}");
+                expectedResponse = $"${value1.Length}\r\n{value1}\r\n";
+                actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+                Assert.AreEqual(expectedResponse, actualValue);
             });
-            var t2 = Task.Run(() =>
+
+            var releasingTask = taskFactory.StartNew(() =>
             {
+                using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
-                var cl2 = new LightClientRequest("127.0.0.1", 6379, 0);
-                cl2.SendCommand("LPUSH l1 e2");
+                return lcr.SendCommand($"LPUSH {key} {value2}");
             });
 
-            Task.WaitAll(t1, t2);
-
-            var cl3 = new LightClientRequest("127.0.0.1", 6379, 0);
-            cl3.SendCommand("LPOP l1");
+            Task.WaitAll(blockingTask, releasingTask);
         }
     }
 }

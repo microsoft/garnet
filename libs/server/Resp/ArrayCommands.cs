@@ -906,33 +906,5 @@ namespace Garnet.server
                     SendAndReset();
             }
         }
-
-        public void WriteBlockedOperationResult(byte[] key, byte[] result)
-        {
-            networkSender.GetResponseObject();
-
-            var d = networkSender.GetResponseObjectHead();
-            var dend = networkSender.GetResponseObjectTail();
-            var dcurr = d; // reserve space for size
-
-            if (result == null)
-            {
-                while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
-                    SendAndReset();
-
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(key), ref dcurr, dend))
-                    SendAndReset();
-
-                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result), ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), (int)(dcurr - d));
-        }
     }
 }

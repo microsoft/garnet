@@ -165,7 +165,7 @@ namespace Garnet.server
                 storeWrapper.monitor.AddMetricsHistory(sessionMetrics, latencyMetrics);
 
             subscribeBroker?.RemoveSubscription(this);
-            itemBroker?.RemoveSubscription(this);
+            itemBroker?.HandleSessionDisposed(this);
 
             storageSession.Dispose();
         }
