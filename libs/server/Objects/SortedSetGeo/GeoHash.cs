@@ -56,13 +56,8 @@ namespace Garnet.server
             // latQuantized = floor(2.0^32 * (latitude + 90.0) / 180.0)
             //
             // However, some with clever math (See McLoughlin's great article above for the details!)
-            // and by abusing the IEEE-754 representation of double-precision floating-point numbers
-            // it is shown that the above calculation is equivalent to:
-            //
-            // floor(2^52 * x) where x = (latitude + 90.0) / 180.0.
-            //
-            // and further that the result of this calculation can be read simply from
-            // the IEEE-754 binary representation of x + 1.0.
+            // it is shown that the above calculation can be read from IEEE-754 double precision binary
+            // representation of of x + 1.0.
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             static uint Quantize(double value, double rangeReciprocal)
@@ -79,7 +74,7 @@ namespace Garnet.server
                 // where the now "quantized" value is stored as the 32 most significant bits of the signicand!
                 var y = BitConverter.DoubleToUInt64Bits(Math.FusedMultiplyAdd(value, rangeReciprocal, 1.5)) >> 20;
 
-                // Except we need to handle the corner-case where value rounds to the maximum the range: 2.0
+                // But we need to handle the corner-case where value rounds to the maximum of the range: 2.0
                 // We handle this by comparing the shifted 64-bit binary representation
                 // to the shifted representation of 2.0 (JIT folds it as constant).
                 if (y == (BitConverter.DoubleToUInt64Bits(2.0) >> 20))
