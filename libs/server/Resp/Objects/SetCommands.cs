@@ -136,7 +136,7 @@ namespace Garnet.server
             {
                 // write the size of result
                 int resultCount = 0;
-                if(result != null)
+                if (result != null)
                 {
                     resultCount = result.Count;
                     while (!RespWriteUtils.WriteArrayLength(resultCount, ref dcurr, dend))
@@ -152,7 +152,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteArrayLength(resultCount, ref dcurr, dend))
                         SendAndReset();
-                }   
+                }
             }
 
             // update read pointers
