@@ -218,6 +218,30 @@ Returns all values in the hash stored at **key**.
 
 ## List
 
+### BLPOP
+
+#### Syntax
+
+```bash 
+    BLPOP key [key ...] timeout
+```
+
+BLPOP is a blocking list pop primitive. It is the blocking version of [LPOP](#lpop) because it blocks the connection when there are no elements to pop from any of the given lists. An element is popped from the head of the first list that is non-empty, with the given keys being checked in the order that they are given.
+
+---
+
+### BRPOP
+
+#### Syntax
+
+```bash 
+    BRPOP key [key ...] timeout
+```
+
+BRPOP is a blocking list pop primitive. It is the blocking version of [RPOP](#rpop) because it blocks the connection when there are no elements to pop from any of the given lists. An element is popped from the tail of the first list that is non-empty, with the given keys being checked in the order that they are given.
+
+---
+
 ### LINDEX
 
 #### Syntax

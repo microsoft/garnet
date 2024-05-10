@@ -366,6 +366,66 @@
     "SubCommands": null
   },
   {
+    "Command": "List",
+    "ArrayCommand": 16,
+    "Name": "BLPOP",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "Blocking, Write",
+    "FirstKey": 1,
+    "LastKey": -2,
+    "Step": 1,
+    "AclCategories": "Blocking, List, Slow, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -2,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "List",
+    "ArrayCommand": 15,
+    "Name": "BRPOP",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "Blocking, Write",
+    "FirstKey": 1,
+    "LastKey": -2,
+    "Step": 1,
+    "AclCategories": "Blocking, List, Slow, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -2,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "CLIENT",
     "ArrayCommand": null,
     "Name": "CLIENT",
