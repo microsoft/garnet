@@ -646,30 +646,11 @@ namespace Tsavorite.core
             }
         }
 
-        private void ReadPagesWithMemoryConstraint(long endAddress, int capacity, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead, ref long lastFreedPage)
+        private void ReadPagesWithMemoryConstraint(long endAddress, int capacity, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead)
         {
             // Before reading in additional pages, make sure that any previously allocated pages that would violate the memory size
             // constraint are freed.
             FreePagesBeyondUsableCapacity(startPage: page, capacity: capacity, usableCapacity: capacity - hlog.MinEmptyPageCount, pagesToRead: numPagesToRead, recoveryStatus);
-
-            if (hlog.IsSizeBeyondLimit != null)
-            {
-                // free up additional pages, one at a time, to bring memory usage under control
-                var scanPage = Math.Max(0, page - capacity); // start with the earliest possible page
-
-                while (scanPage < page && hlog.IsSizeBeyondLimit())
-                {
-                    var pageIndex = hlog.GetPageIndexForPage(scanPage);
-                    if (hlog.IsAllocated(pageIndex))
-                    {
-                        recoveryStatus.WaitFlush(pageIndex);
-                        hlog.EvictPage(scanPage);
-                        lastFreedPage = scanPage;
-                    }
-
-                    scanPage++;
-                }
-            }
 
             // Issue request to read pages as much as possible
             for (var p = page; p < endPage; p++) recoveryStatus.readStatus[hlog.GetPageIndexForPage(p)] = ReadStatus.Pending;
@@ -679,10 +660,29 @@ namespace Tsavorite.core
                                           recoveryStatus.recoveryDevice, recoveryStatus.objectLogRecoveryDevice);
         }
 
-        private (long ReadEndPage, long LastFreedPage) ReadPagesForRecovery(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int capacity, int numPagesToReadPerIteration, long page)
+        private long FreePagesToLimitHeapMemory(RecoveryStatus recoveryStatus, long page)
+        {
+            long lastFreedPage = NoPageFreed;
+            if (hlog.IsSizeBeyondLimit == null) return lastFreedPage;
+
+            // free up additional pages, one at a time, to bring memory usage under control starting with the earliest possible page
+            for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlog.IsSizeBeyondLimit(); p++)
+            {
+                var pageIndex = hlog.GetPageIndexForPage(p);
+                if (hlog.IsAllocated(pageIndex))
+                {
+                    recoveryStatus.WaitFlush(pageIndex);
+                    hlog.EvictPage(p);
+                    lastFreedPage = p;
+                }
+            }
+
+            return lastFreedPage;
+        }
+
+        private long ReadPagesForRecovery(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int capacity, int numPagesToReadPerIteration, long page)
         {
             var readEndPage = Math.Min(page + numPagesToReadPerIteration, endPage);
-            long lastFreedPage = NoPageFreed;
             if (page < readEndPage)
             {
                 var numPagesToRead = (int)(readEndPage - page);
@@ -691,16 +691,15 @@ namespace Tsavorite.core
                 // this must be done in batches of "all flushes' followed by "all reads" to ensure proper sequencing of reads when
                 // usableCapacity != capacity (and thus the page-read index is not equal to the page-flush index).
                 WaitUntilAllPagesHaveBeenFlushed(page, readEndPage, recoveryStatus);
-                ReadPagesWithMemoryConstraint(untilAddress, capacity, recoveryStatus, page, readEndPage, numPagesToRead, ref lastFreedPage);
+                ReadPagesWithMemoryConstraint(untilAddress, capacity, recoveryStatus, page, readEndPage, numPagesToRead);
             }
 
-            return (readEndPage, lastFreedPage);
+            return readEndPage;
         }
 
-        private async ValueTask<(long ReadEndPage, long LastFreedPage)> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int capacity, int numPagesToReadPerIteration, long page, CancellationToken cancellationToken)
+        private async ValueTask<long> ReadPagesForRecoveryAsync(long untilAddress, RecoveryStatus recoveryStatus, long endPage, int capacity, int numPagesToReadPerIteration, long page, CancellationToken cancellationToken)
         {
             var readEndPage = Math.Min(page + numPagesToReadPerIteration, endPage);
-            long lastFreedPage = NoPageFreed;
             if (page < readEndPage)
             {
                 var numPagesToRead = (int)(readEndPage - page);
@@ -709,10 +708,30 @@ namespace Tsavorite.core
                 // this must be done in batches of "all flushes' followed by "all reads" to ensure proper sequencing of reads when
                 // usableCapacity != capacity (and thus the page-read index is not equal to the page-flush index).
                 await WaitUntilAllPagesHaveBeenFlushedAsync(page, readEndPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
-                ReadPagesWithMemoryConstraint(untilAddress, capacity, recoveryStatus, page, readEndPage, numPagesToRead, ref lastFreedPage);
+                ReadPagesWithMemoryConstraint(untilAddress, capacity, recoveryStatus, page, readEndPage, numPagesToRead);
             }
 
-            return (readEndPage, lastFreedPage);
+            return readEndPage;
+        }
+
+        private async Task<long> FreePagesToLimitHeapMemoryAsync(RecoveryStatus recoveryStatus, long page, CancellationToken cancellationToken)
+        {
+            long lastFreedPage = NoPageFreed;
+            if (hlog.IsSizeBeyondLimit == null) return lastFreedPage;
+
+            // free up additional pages, one at a time, to bring memory usage under control starting with the earliest possible page
+            for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlog.IsSizeBeyondLimit(); p++)
+            {
+                var pageIndex = hlog.GetPageIndexForPage(p);
+                if (hlog.IsAllocated(pageIndex))
+                {
+                    await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken);
+                    hlog.EvictPage(p);
+                    lastFreedPage = p;
+                }
+            }
+
+            return lastFreedPage;
         }
 
         private long RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, CheckpointType checkpointType, RecoveryOptions options)
@@ -724,15 +743,16 @@ namespace Tsavorite.core
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                var result = ReadPagesForRecovery(untilAddress, recoveryStatus, endPage, capacity, numPagesToReadPerIteration, page);
-                var end = result.ReadEndPage;
-                if (result.LastFreedPage != NoPageFreed) lastFreedPage = result.LastFreedPage;
+                var end = ReadPagesForRecovery(untilAddress, recoveryStatus, endPage, capacity, numPagesToReadPerIteration, page);
 
                 for (var p = page; p < end; p++)
                 {
                     // Ensure page has been read into memory
                     int pageIndex = hlog.GetPageIndexForPage(p);
                     recoveryStatus.WaitRead(pageIndex);
+
+                    var freedPage = FreePagesToLimitHeapMemory(recoveryStatus, p);
+                    if (freedPage != NoPageFreed) lastFreedPage = freedPage;
 
                     // We make an extra pass to clear locks when reading every page back into memory
                     ClearLocksOnPage(p, options);
@@ -754,15 +774,16 @@ namespace Tsavorite.core
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                var result = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, capacity, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
-                var end = result.ReadEndPage;
-                if (result.LastFreedPage != NoPageFreed) lastFreedPage = result.LastFreedPage;
+                var end = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, capacity, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
 
                 for (var p = page; p < end; p++)
                 {
                     // Ensure page has been read into memory
                     int pageIndex = hlog.GetPageIndexForPage(p);
                     await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+
+                    var freedPage = await FreePagesToLimitHeapMemoryAsync(recoveryStatus, p, cancellationToken).ConfigureAwait(false);
+                    if (freedPage != NoPageFreed) lastFreedPage = freedPage;
 
                     // We make an extra pass to clear locks when reading every page back into memory
                     ClearLocksOnPage(p, options);
@@ -853,9 +874,8 @@ namespace Tsavorite.core
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                var result = ReadPagesForRecovery(snapshotEndAddress, recoveryStatus, snapshotEndPage, capacity, numPagesToReadPerIteration, page);
+                ReadPagesForRecovery(snapshotEndAddress, recoveryStatus, snapshotEndPage, capacity, numPagesToReadPerIteration, page);
                 var end = Math.Min(page + numPagesToReadPerIteration, endPage);
-                if (result.LastFreedPage != NoPageFreed) lastFreedPage = result.LastFreedPage;
                 for (long p = page; p < end; p++)
                 {
                     int pageIndex = hlog.GetPageIndexForPage(p);
@@ -863,6 +883,8 @@ namespace Tsavorite.core
                     {
                         // Ensure the page is read from file
                         recoveryStatus.WaitRead(pageIndex);
+                        var freedPage = FreePagesToLimitHeapMemory(recoveryStatus, p);
+                        if (freedPage != NoPageFreed) lastFreedPage = freedPage;
 
                         // We make an extra pass to clear locks when reading pages back into memory
                         ClearLocksOnPage(p, options);
@@ -895,8 +917,6 @@ namespace Tsavorite.core
                 var result = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, capacity, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
 
                 var end = Math.Min(page + numPagesToReadPerIteration, endPage);
-                if (result.LastFreedPage != NoPageFreed) lastFreedPage = result.LastFreedPage;
-
                 for (long p = page; p < end; p++)
                 {
                     int pageIndex = hlog.GetPageIndexForPage(p);
@@ -904,6 +924,8 @@ namespace Tsavorite.core
                     {
                         // Ensure the page is read from file
                         await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+                        var freedPage = await FreePagesToLimitHeapMemoryAsync(recoveryStatus, p, cancellationToken).ConfigureAwait(false);
+                        if (freedPage != NoPageFreed) lastFreedPage = freedPage;
 
                         // We make an extra pass to clear locks when reading pages back into memory
                         ClearLocksOnPage(p, options);
