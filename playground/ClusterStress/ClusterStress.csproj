@@ -19,7 +19,6 @@
     <Compile Include="..\..\benchmark\Resp.benchmark\OnlineReqGen.cs" Link="OnlineReqGen.cs" />
     <Compile Include="..\..\benchmark\Resp.benchmark\NumUtils.cs" Link="NumUtils.cs" />
     <Compile Include="..\..\benchmark\Resp.benchmark\HashUtils.cs" Link="HashUtils.cs" />
-    <Compile Include="..\..\libs\server\Resp\RespInfo.cs" Link="RespInfo.cs" />
     <Compile Include="..\..\benchmark\Resp.benchmark\BenchmarkLoggerProvider.cs" Link="BenchmarkLoggerProvider.cs" />
     <Compile Include="..\..\benchmark\Resp.benchmark\RespPerfBench.cs" Link="RespPerfBench.cs" />
     <Compile Include="..\..\benchmark\Resp.benchmark\ReqGenLoadBuffers.cs" Link="ReqGenLoadBuffers.cs" />
@@ -34,6 +33,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\libs\client\Garnet.client.csproj" />
+    <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
   </ItemGroup>
 
 </Project>

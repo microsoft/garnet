@@ -363,5 +363,115 @@ namespace Garnet.test
             Assert.AreEqual(value1, ((string[])result)[0]);
             Assert.AreEqual(value2, ((string[])result)[1]);
         }
+
+        [Test]
+        public void TransactionProcMSetPxTest()
+        {
+            server.Register.NewTransactionProc("MSETPX", () => new MSetPxTxn());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const int NumKeys = 5;
+
+            var args = new string[1 + 2 * NumKeys];
+
+            // Set expiry to 2 seconds
+            args[0] = "2000";
+
+            // Set key-value pairs
+            for (int i = 0; i < NumKeys; i++)
+            {
+                args[2 * i + 1] = $"key{i}";
+                args[2 * i + 2] = $"value{i}";
+            }
+
+            // Execute transaction
+            var result = db.Execute("MSETPX", args);
+
+            // Verify transaction succeeded
+            Assert.AreEqual("OK", (string)result);
+
+            // Read keys to verify transaction succeeded
+            for (int i = 0; i < NumKeys; i++)
+            {
+                string key = $"key{i}";
+                string value = $"value{i}";
+                string retValue = db.StringGet(key);
+                Assert.AreEqual(value, retValue);
+            }
+
+            // Wait for keys to expire
+            Thread.Sleep(2100);
+
+            // Verify that keys have expired
+            for (int i = 0; i < NumKeys; i++)
+            {
+                string key = $"key{i}";
+                string retValue = db.StringGet(key);
+                Assert.IsNull(retValue);
+            }
+        }
+
+        [Test]
+        public void TransactionProcMGetIfPMTest()
+        {
+            server.Register.NewTransactionProc("MSETPX", () => new MSetPxTxn());
+            server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const int NumKeys = 15;
+            const string prefix = "value1";
+
+            var args1 = new string[1 + 2 * NumKeys];
+
+            // Set expiry to 600 seconds
+            args1[0] = "600000";
+
+            // Set key-value pairs
+            for (int i = 0; i < NumKeys; i++)
+            {
+                args1[2 * i + 1] = $"key{i}";
+                args1[2 * i + 2] = $"value{i}";
+            }
+
+            // Execute transaction
+            var result1 = (string)db.Execute("MSETPX", args1);
+
+            // Verify transaction succeeded
+            Assert.AreEqual("OK", result1);
+
+            // Read keys to verify transaction succeeded
+            for (int i = 0; i < NumKeys; i++)
+            {
+                string key = $"key{i}";
+                string value = $"value{i}";
+                string retValue = db.StringGet(key);
+                Assert.AreEqual(value, retValue);
+            }
+
+            var args2 = new string[1 + NumKeys];
+
+            // Set prefix
+            args2[0] = prefix;
+
+            // Set keys
+            for (int i = 0; i < NumKeys; i++)
+            {
+                args2[i + 1] = $"key{i}";
+            }
+
+            // Execute transaction
+            var result2 = (string[])db.Execute("MGETIFPM", args2);
+
+            // Verify results
+            int expectedCount = NumKeys - 9; // only values with specified prefix
+            Assert.AreEqual(2 * expectedCount, result2.Length);
+            // Verify that keys have the correct prefix
+            for (int i = 0; i < expectedCount; i++)
+            {
+                Assert.AreEqual(prefix, result2[2 * i + 1].Substring(0, prefix.Length));
+            }
+        }
     }
 }

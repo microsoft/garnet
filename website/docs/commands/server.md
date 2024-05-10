@@ -13,11 +13,43 @@ slug: server
 COMMAND
 ```
 
-Return an array with details about every Redis command.
+Return an array with details about every Garnet command.
 
 #### Resp Reply
 
-Array reply: a nested list of command details. The order of the commands in the array is random.
+Array reply: a nested list of command details.
+
+---
+### COMMAND COUNT
+#### Syntax
+
+```bash
+COMMAND COUNT
+```
+
+Returns Integer reply of number of total commands in this Garnet server.
+
+#### Resp Reply
+
+Integer reply: the number of commands returned by COMMAND.
+
+---
+### COMMAND INFO
+#### Syntax
+
+```bash
+COMMAND INFO [command-name [command-name ...]]
+```
+
+Returns Array reply of details about multiple Garnet commands.
+
+Same result format as COMMAND except you can specify which commands get returned.
+
+If you request details about non-existing commands, their return position will be nil.
+
+#### Resp Reply
+
+Array reply: a nested list of command details.
 
 ---
 ### COMMITAOF
