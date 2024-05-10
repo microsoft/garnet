@@ -39,8 +39,8 @@ namespace Garnet.server
 
         private bool disposed = false;
         private bool isStarted = false;
-        private readonly object isStartedLock = new();
-        private readonly object keysToObserversLock = new();
+        private readonly ReaderWriterLockSlim isStartedLock = new();
+        private readonly ReaderWriterLockSlim keysToObserversLock = new();
 
         /// <summary>
         /// Asynchronously wait for item from list object
@@ -77,23 +77,27 @@ namespace Garnet.server
         internal void HandleCollectionUpdate(byte[] key)
         {
             // Check if main loop is started
-            if (!isStarted)
+            isStartedLock.EnterReadLock();
+            try
             {
-                lock (isStartedLock)
-                {
-                    if (!isStarted)
-                    {
-                        return;
-                    }
-                }
+                if (!isStarted) return;
+            }
+            finally
+            {
+                isStartedLock.ExitReadLock();
             }
 
             // Check if there are any observers to specified key
-            if (!keysToObservers.ContainsKey(key))
+            if (!keysToObservers.ContainsKey(key) || keysToObservers[key].Count == 0)
             {
-                lock (keysToObserversLock)
+                keysToObserversLock.EnterReadLock();
+                try
                 {
-                    if (!keysToObservers.ContainsKey(key)) return;
+                    if (!keysToObservers.ContainsKey(key) || keysToObservers[key].Count == 0) return;
+                }
+                finally
+                {
+                    keysToObserversLock.ExitReadLock();
                 }
             }
 
@@ -139,14 +143,26 @@ namespace Garnet.server
             // Check if main loop has started, if not, start the main loop
             if (!isStarted)
             {
-                lock (isStartedLock)
+                isStartedLock.EnterUpgradeableReadLock();
+                try
                 {
                     if (!isStarted)
                     {
-                        _ = Task.Run(Start);
+                        isStartedLock.EnterWriteLock();
+                        try
+                        {
+                            _ = Task.Run(Start);
+                            isStarted = true;
+                        }
+                        finally
+                        {
+                            isStartedLock.ExitWriteLock();
+                        }
                     }
-
-                    isStarted = true;
+                }
+                finally
+                {
+                    isStartedLock.ExitUpgradeableReadLock();
                 }
             }
 
@@ -199,37 +215,37 @@ namespace Garnet.server
         /// <param name="keys">Keys observed by the new observer</param>
         private void InitializeObserver(CollectionItemObserver observer, byte[][] keys)
         {
-            // Iterate over the keys in order, set the observer's result if collection in key contains an item
-            foreach (var key in keys)
+            // This lock is for synchronization with incoming collection updated events 
+            keysToObserversLock.EnterWriteLock();
+            try
             {
-                // If the key already has a non-empty observer queue, it does not have an item to retrieve
-                if (keysToObservers.ContainsKey(key) && keysToObservers[key].Count > 0) continue;
-
-                // This lock is for synchronization with incoming collection updated events 
-                lock (keysToObserversLock)
+                // Iterate over the keys in order, set the observer's result if collection in key contains an item
+                foreach (var key in keys)
                 {
-                    // Try to get an item from collection
-                    if (!TryGetNextItem(key, observer.Session.storageSession, observer.ObjectType, observer.Operation,
-                            out _, out var nextItem))
-                    {
-                        // Add the key to the observed keys map (this is to enable incoming collection updated events for this key)
-                        if (!keysToObservers.ContainsKey(key))
-                            keysToObservers.Add(key, new Queue<CollectionItemObserver>());
-
-                        continue;
-                    }
+                    // If the key already has a non-empty observer queue, it does not have an item to retrieve
+                    // Otherwise, try to retrieve next available item
+                    if ((keysToObservers.ContainsKey(key) && keysToObservers[key].Count > 0) ||
+                        !TryGetNextItem(key, observer.Session.storageSession, observer.ObjectType, observer.Operation,
+                            out _, out var nextItem)) continue;
 
                     // An item was found - set the observer result and return
                     sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
                     observer.HandleSetResult(new CollectionItemResult(key, nextItem));
                     return;
                 }
-            }
 
-            // No item was found, enqueue new observer in every observed keys queue
-            foreach (var key in keys)
+                // No item was found, enqueue new observer in every observed keys queue
+                foreach (var key in keys)
+                {
+                    if (!keysToObservers.ContainsKey(key))
+                        keysToObservers.Add(key, new Queue<CollectionItemObserver>());
+
+                    keysToObservers[key].Enqueue(observer);
+                }
+            }
+            finally
             {
-                keysToObservers[key].Enqueue(observer);
+                keysToObserversLock.ExitWriteLock();
             }
         }
 
