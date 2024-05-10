@@ -21,8 +21,7 @@ namespace Garnet.server
         private const double LongitudeMin = -180.0;
         private const double LongitudeMax = 180.0;
 
-        // TODO: These are "wrong" in a sense that EPSG:3857
-        // says that the latitude should be from -85.05112878 to 85.05112878
+        // TODO: These are "wrong" in a sense that according to EPSG:3857 latitude should be from -85.05112878 to 85.05112878
         private const double LatitudeMin = -90.0;
         private const double LatitudeMax = 90.0;
 
@@ -32,7 +31,7 @@ namespace Garnet.server
         public const int BitsOfPrecision = 52;
 
         /// <summary>
-        /// The length of the geohash "standard textual representation" given the <see cref="BitsOfPrecision">bit precision</see> is 52.
+        /// The length of the geohash "standard textual representation".
         /// </summary>
         public const int CodeLength = 11;
 
@@ -55,9 +54,8 @@ namespace Garnet.server
             //
             // latQuantized = floor(2.0^32 * (latitude + 90.0) / 180.0)
             //
-            // However, some with clever math (See McLoughlin's great article above for the details!)
-            // it is shown that the above calculation can be read from IEEE-754 double precision binary
-            // representation of of x + 1.0.
+            // However, some with clever math it is shown that the result of above calculation can be read
+            // from the IEEE-754 double-precision binary representation of x + 1.0
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             static uint Quantize(double value, double rangeReciprocal)
