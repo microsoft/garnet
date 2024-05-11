@@ -159,16 +159,6 @@ namespace Garnet.cluster
             }
         }
 
-        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                GetCommand(bufSpan, out bool success1);
-                if (!success1) return false;
-            }
-            return true;
-        }
-
         /// <summary>
         /// Updates the user currently authenticated in the session.
         /// </summary>
@@ -225,7 +215,17 @@ namespace Garnet.cluster
             return true;
         }
 
-        ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
+        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                _ = GetNextToken(bufSpan, out bool success1);
+                if (!success1) return false;
+            }
+            return true;
+        }
+
+        Span<byte> GetNextToken(ReadOnlySpan<byte> bufSpan, out bool success)
         {
             success = false;
 
@@ -253,10 +253,24 @@ namespace Garnet.cluster
             }
 
             success = true;
-            var result = bufSpan.Slice(readHead, length);
+            var result = new Span<byte>(recvBufferPtr + readHead, length);
             readHead += length + 2;
 
             return result;
         }
+
+        /// <summary>
+        /// Retrieve next token from receive buffer and make upper case on success
+        /// </summary>
+        /// <param name="bufSpan"></param>
+        /// <param name="success"></param>
+        /// <returns></returns>
+        Span<byte> GetNextTokenUpperCase(ReadOnlySpan<byte> bufSpan, out bool success)
+        {
+            var result = GetNextToken(bufSpan, out success);
+            if (success) ConvertUtils.MakeUpperCase(result);
+            return result;
+        }
+
     }
 }
