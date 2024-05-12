@@ -25,15 +25,19 @@ namespace Garnet.server.Auth
         /// </summary>
         User _user = null;
 
+
+        private IGarnetAuthenticator _authenticator;
+
         /// <summary>
         /// Initializes a new ACLAuthenticator instance.
         /// </summary>
         /// <param name="accessControlList">Access control list to authenticate against</param>
         /// <param name="logger">The logger to use</param>
-        public GarnetACLAuthenticator(AccessControlList accessControlList, ILogger logger)
+        public GarnetACLAuthenticator(AccessControlList accessControlList, ILogger logger, IGarnetAuthenticator wrapperAuthenticator = null)
         {
             _acl = accessControlList;
             _logger = logger;
+            _authenticator = wrapperAuthenticator;
         }
 
         /// <summary>
@@ -65,6 +69,22 @@ namespace Garnet.server.Auth
                 // Check if user exists and set default user if username is unspecified
                 string uname = Encoding.ASCII.GetString(username);
                 User user = string.IsNullOrEmpty(uname) ? _acl.GetDefaultUser() : _acl.GetUser(uname);
+                
+                if(user == null)
+                {
+                    return false;
+                }
+
+                // Use injected authenticator if configured.
+                if (_authenticator != null)
+                {
+                    if (user.IsEnabled && _authenticator.Authenticate(password, username))
+                    {
+                        _user = user;
+                        successful = true;
+                    }
+                    return successful;
+                }
 
                 // Try to authenticate user
                 ACLPassword passwordHash = ACLPassword.ACLPasswordFromString(Encoding.ASCII.GetString(password));

@@ -31,14 +31,16 @@ namespace Garnet.server.Auth.Aad
 
         private readonly ILogger _logger;
 
-        private IssuerSigningTokenProvider(string authority, IReadOnlyCollection<SecurityKey> signingTokens, ILogger logger)
+        private IssuerSigningTokenProvider(string authority, IReadOnlyCollection<SecurityKey> signingTokens, ILogger logger, bool refreshTokens = true)
         {
             _authority = authority;
-            _refreshTimer = new Timer(RefreshSigningTokens, null, TimeSpan.Zero, TimeSpan.FromDays(1));
+            if (refreshTokens) 
+                _refreshTimer = new Timer(RefreshSigningTokens, null, TimeSpan.Zero, TimeSpan.FromDays(1));
             _signingTokens = signingTokens;
 
             _logger = logger;
         }
+
 
         private void RefreshSigningTokens(object _)
         {
@@ -104,6 +106,17 @@ namespace Garnet.server.Auth.Aad
 
             var signingTokens = RetrieveSigningTokens(authority);
             return new IssuerSigningTokenProvider(authority, signingTokens, logger);
+        }
+
+        /// <summary>
+        /// [Used for testing]
+        /// Creates an instance of IssuerSigningTokenProvider without refresh of tokens and hence this doesn't need authority. 
+        /// 
+        /// </summary>
+        /// <param name="logger">The logger</param>
+        public static IssuerSigningTokenProvider Create(IReadOnlyCollection<SecurityKey> signingToken, ILogger logger)
+        {
+            return new IssuerSigningTokenProvider(string.Empty, signingToken, logger, refreshTokens: false);
         }
     }
 }

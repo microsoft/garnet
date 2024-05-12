@@ -31,7 +31,12 @@ namespace Garnet.server.Auth
         /// <summary>
         /// ACL - Garnet validates new connections and commands against configured ACL users and access rules.
         /// </summary>
-        ACL
+        ACL,
+
+        /// <summary>
+        /// ACL mode using Aad token instead of password. Here username is expected to be objectId and token will be validated for claims.
+        /// </summary>
+        AclWithAad
     }
 
     /// <summary>
@@ -116,6 +121,7 @@ namespace Garnet.server.Auth
         private readonly IReadOnlyCollection<string> _audiences;
         private readonly IReadOnlyCollection<string> _issuers;
         private IssuerSigningTokenProvider _signingTokenProvider;
+        private bool _validateUsername;
         private bool _disposed;
 
         /// <summary>
@@ -153,13 +159,27 @@ namespace Garnet.server.Auth
             _signingTokenProvider = signingTokenProvier;
         }
 
+        public AadAuthenticationSettings WithUsernameValidation()
+        {
+            _validateUsername = true;
+            return this;
+        }
+
         /// <summary>
         /// Creates an AAD auth authenticator
         /// </summary>
         /// <param name="storeWrapper">The main store the authenticator will be associated with.</param>
         public IGarnetAuthenticator CreateAuthenticator(StoreWrapper storeWrapper)
         {
-            return new GarnetAadAuthenticator(_authorizedAppIds, _audiences, _issuers, _signingTokenProvider, storeWrapper.logger);
+            var config = new AadValidationConfig
+            {
+                _audiences = _audiences,
+                _authorizedAppIds = _authorizedAppIds,
+                _issuers = _issuers,
+                _signingTokenProvider = _signingTokenProvider,
+                ValidateUsername = _validateUsername,
+            };
+            return new GarnetAadAuthenticator(config, storeWrapper.logger);
         }
 
         /// <summary>
@@ -205,15 +225,18 @@ namespace Garnet.server.Auth
         /// </summary>
         public readonly string DefaultPassword;
 
+        private IAuthenticationSettings settings;
+
         /// <summary>
         /// Creates and initializes new ACL authentication settings
         /// </summary>
         /// <param name="aclConfigurationFile">Location of the ACL configuration file</param>
         /// <param name="defaultPassword">Optional default password, if not defined through aclConfigurationFile</param>
-        public AclAuthenticationSettings(string aclConfigurationFile, string defaultPassword = "")
+        public AclAuthenticationSettings(string aclConfigurationFile, string defaultPassword = "", IAuthenticationSettings settings =  null)
         {
             AclConfigurationFile = aclConfigurationFile;
             DefaultPassword = defaultPassword;
+            this.settings = settings;
         }
 
         /// <summary>
@@ -222,7 +245,7 @@ namespace Garnet.server.Auth
         /// <param name="storeWrapper">The main store the authenticator will be associated with.</param>
         public IGarnetAuthenticator CreateAuthenticator(StoreWrapper storeWrapper)
         {
-            return new GarnetACLAuthenticator(storeWrapper.accessControlList, storeWrapper.logger);
+            return new GarnetACLAuthenticator(storeWrapper.accessControlList, storeWrapper.logger, settings?.CreateAuthenticator(storeWrapper));
         }
 
         /// <summary>

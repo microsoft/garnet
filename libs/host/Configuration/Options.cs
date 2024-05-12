@@ -624,6 +624,11 @@ namespace Garnet
                     return new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger));
                 case GarnetAuthenticationMode.ACL:
                     return new AclAuthenticationSettings(AclFile, Password);
+                case GarnetAuthenticationMode.AclWithAad:
+                    var aadAuthSettings = new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger));
+                    aadAuthSettings  = aadAuthSettings.WithUsernameValidation();
+                    return new AclAuthenticationSettings(AclFile, Password, aadAuthSettings);
+
                 default:
                     logger?.LogError("Unsupported authentication mode: {mode}", AuthenticationMode);
                     throw new Exception($"Authentication mode {AuthenticationMode} is not supported.");

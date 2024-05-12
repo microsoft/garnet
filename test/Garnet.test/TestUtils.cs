@@ -266,7 +266,8 @@ namespace Garnet.test
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
             X509CertificateCollection certificates = null,
-            ILoggerFactory loggerFactory = null)
+            ILoggerFactory loggerFactory = null,
+            AadAuthenticationSettings authenticationSettings = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -304,7 +305,8 @@ namespace Garnet.test
                     useAcl: useAcl,
                     aclFile: aclFile,
                     certificates: certificates,
-                    logger: loggerFactory?.CreateLogger("GarnetServer"));
+                    logger: loggerFactory?.CreateLogger("GarnetServer"),
+                    aadAuthenticationSettings: authenticationSettings);
 
                 Assert.IsNotNull(opts);
                 int iter = 0;
@@ -348,7 +350,8 @@ namespace Garnet.test
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
             X509CertificateCollection certificates = null,
-            ILogger logger = null)
+            ILogger logger = null,
+            AadAuthenticationSettings aadAuthenticationSettings = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -365,7 +368,8 @@ namespace Garnet.test
             IAuthenticationSettings authenticationSettings = null;
             if (useAcl)
             {
-                authenticationSettings = new AclAuthenticationSettings(aclFile, authPassword);
+
+                authenticationSettings = new AclAuthenticationSettings(aclFile, authPassword, aadAuthenticationSettings);
             }
             else if (authPassword != null)
             {
