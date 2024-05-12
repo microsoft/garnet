@@ -287,7 +287,7 @@ namespace Garnet.cluster
                 foreach (var s in sessions)
                 {
                     var entryEpoch = s.LocalCurrentEpoch;
-                    if (entryEpoch != 0 && entryEpoch >= currentEpoch)
+                    if (entryEpoch != 0 && entryEpoch < currentEpoch)
                         goto retry;
                 }
                 break;

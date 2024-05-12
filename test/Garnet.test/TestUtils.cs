@@ -9,6 +9,7 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
+using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using Garnet.client;
@@ -41,6 +42,12 @@ namespace Garnet.test
         /// </summary>
         static readonly bool useTestLogger = false;
 
+        private static int procId = Process.GetCurrentProcess().Id;
+        private static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
+
+        private static bool CustomCommandsInfoInitialized;
+        private static IReadOnlyDictionary<string, RespCommandsInfo> RespCustomCommandsInfo;
+
         internal static string AzureTestContainer
         {
             get
@@ -67,6 +74,48 @@ namespace Garnet.test
                 }
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Get command info for custom commands defined in custom commands json file
+        /// </summary>
+        /// <param name="customCommandsInfo">Mapping between command name and command info</param>
+        /// <param name="logger">Logger</param>
+        /// <returns></returns>
+        internal static bool TryGetCustomCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> customCommandsInfo, ILogger logger = null)
+        {
+            customCommandsInfo = default;
+
+            if (!CustomCommandsInfoInitialized && !TryInitializeCustomCommandsInfo(logger)) return false;
+
+            customCommandsInfo = RespCustomCommandsInfo;
+            return true;
+        }
+
+        private static bool TryInitializeCustomCommandsInfo(ILogger logger)
+        {
+            if (!TryGetRespCommandsInfo(CustomRespCommandInfoJsonPath, logger, out var tmpCustomCommandsInfo))
+                return false;
+
+            RespCustomCommandsInfo = tmpCustomCommandsInfo;
+            CustomCommandsInfoInitialized = true;
+            return true;
+        }
+
+        private static bool TryGetRespCommandsInfo(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
+        {
+            commandsInfo = default;
+
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, Assembly.GetExecutingAssembly());
+            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
+
+            var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(resourcePath,
+                streamProvider, out var tmpCommandsInfo, logger);
+
+            if (!importSucceeded) return false;
+
+            commandsInfo = tmpCommandsInfo;
+            return true;
         }
 
         static bool IsAzuriteRunning()
@@ -469,7 +518,10 @@ namespace Garnet.test
             string authPassword = null,
             X509CertificateCollection certificates = null)
         {
-            var cmds = RespInfo.GetCommands();
+            var cmds = RespCommandsInfo.TryGetRespCommandNames(out var names)
+                ? new HashSet<string>(names)
+                : new HashSet<string>();
+
             if (disablePubSub)
             {
                 cmds.Remove("SUBSCRIBE");

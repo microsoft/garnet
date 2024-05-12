@@ -236,6 +236,9 @@ namespace Garnet.test.cluster
                 context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
             else
                 context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount);
+
+            var primaryLastSaveTime = context.clusterTestUtils.LastSave(0, logger: context.logger);
+            var replicaLastSaveTime = context.clusterTestUtils.LastSave(1, logger: context.logger);
             context.clusterTestUtils.Checkpoint(0, logger: context.logger);
 
             // Populate Primary
@@ -243,8 +246,8 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
 
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
-            context.clusterTestUtils.WaitFirstCheckpoint(0, context.logger);
-            context.clusterTestUtils.WaitFirstCheckpoint(1, context.logger);
+            context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
+            context.clusterTestUtils.WaitCheckpoint(1, replicaLastSaveTime, logger: context.logger);
 
             // Shutdown secondary
             context.nodes[1].Store.CommitAOF(true);
@@ -599,9 +602,11 @@ namespace Garnet.test.cluster
 
             if (checkpoint)
             {
+                var primaryLastSaveTime = context.clusterTestUtils.LastSave(0, logger: context.logger);
+                var replicaLastSaveTime = context.clusterTestUtils.LastSave(1, logger: context.logger);
                 context.clusterTestUtils.Checkpoint(0);
-                context.clusterTestUtils.WaitFirstCheckpoint(0, logger: context.logger);
-                context.clusterTestUtils.WaitFirstCheckpoint(1, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(1, replicaLastSaveTime, logger: context.logger);
             }
 
             #region InitiateFailover
@@ -667,8 +672,9 @@ namespace Garnet.test.cluster
 
             if (takePrimaryCheckpoint)
             {
+                var primaryLastSaveTime = context.clusterTestUtils.LastSave(0, logger: context.logger);
                 context.clusterTestUtils.Checkpoint(0, logger: context.logger);
-                context.clusterTestUtils.WaitFirstCheckpoint(0, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
             }
 
             // Wait for replication offsets to synchronize
@@ -692,8 +698,9 @@ namespace Garnet.test.cluster
 
             if (takeNewPrimaryCheckpoint)
             {
+                var newPrimaryLastSaveTime = context.clusterTestUtils.LastSave(1, logger: context.logger);
                 context.clusterTestUtils.Checkpoint(1, logger: context.logger);
-                context.clusterTestUtils.WaitFirstCheckpoint(1, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(1, newPrimaryLastSaveTime, logger: context.logger);
             }
             context.clusterTestUtils.WaitForReplicaAofSync(1, 2, context.logger);
 
@@ -912,11 +919,19 @@ namespace Garnet.test.cluster
             }
             else context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex: oldPrimaryIndex, set: set);
 
-            if (ckptBeforeDivergence) context.clusterTestUtils.Checkpoint(oldPrimaryIndex, logger: context.logger);
+            if (ckptBeforeDivergence)
+            {
+                var oldPrimaryLastSaveTime = context.clusterTestUtils.LastSave(oldPrimaryIndex, logger: context.logger);
+                var newPrimaryLastSaveTime = context.clusterTestUtils.LastSave(newPrimaryIndex, logger: context.logger);
+                var replicaLastSaveTime = context.clusterTestUtils.LastSave(replicaIndex, logger: context.logger);
+                context.clusterTestUtils.Checkpoint(oldPrimaryIndex, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(oldPrimaryIndex, oldPrimaryLastSaveTime, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(newPrimaryIndex, newPrimaryLastSaveTime, logger: context.logger);
+                context.clusterTestUtils.WaitCheckpoint(replicaIndex, replicaLastSaveTime, logger: context.logger);
+            }
+
             context.clusterTestUtils.WaitForReplicaAofSync(oldPrimaryIndex, newPrimaryIndex, context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(oldPrimaryIndex, replicaIndex, context.logger);
-            context.clusterTestUtils.WaitFirstCheckpoint(newPrimaryIndex, logger: context.logger);
-            context.clusterTestUtils.WaitFirstCheckpoint(replicaIndex, logger: context.logger);
 
             // Make this replica of no-one
             _ = context.clusterTestUtils.ReplicaOf(1, logger: context.logger);
