@@ -196,7 +196,7 @@ namespace Garnet.client
         }
 
         static ReadOnlySpan<byte> CLUSTER => "$7\r\nCLUSTER\r\n"u8;
-        static ReadOnlySpan<byte> appendLog => "appendlog"u8;
+        static ReadOnlySpan<byte> appendLog => "APPENDLOG"u8;
 
         /// <summary>
         /// ClusterAppendLog

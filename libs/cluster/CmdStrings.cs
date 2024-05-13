@@ -18,12 +18,6 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> NODES => "NODES"u8;
         public static ReadOnlySpan<byte> ADDSLOTS => "ADDSLOTS"u8;
         public static ReadOnlySpan<byte> ADDSLOTSRANGE => "ADDSLOTSRANGE"u8;
-        public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
-        public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;
-        public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
-        public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
-        public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
-        public static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
         public static ReadOnlySpan<byte> BUMPEPOCH => "BUMPEPOCH"u8;
         public static ReadOnlySpan<byte> BANLIST => "BANLIST"u8;
         public static ReadOnlySpan<byte> COUNTKEYSINSLOT => "COUNTKEYSINSLOT"u8;
@@ -32,9 +26,6 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> DELSLOTS => "DELSLOTS"u8;
         public static ReadOnlySpan<byte> DELSLOTSRANGE => "DELSLOTSRANGE"u8;
         public static ReadOnlySpan<byte> FAILOVER => "FAILOVER"u8;
-        public static ReadOnlySpan<byte> failauthreq => "FAILAUTHREQ"u8;
-        public static ReadOnlySpan<byte> failstopwrites => "FAILSTOPWRITES"u8;
-        public static ReadOnlySpan<byte> failreplicationoffset => "FAILREPLICATIONOFFSET"u8;
         public static ReadOnlySpan<byte> FORGET => "FORGET"u8;
         public static ReadOnlySpan<byte> GETKEYSINSLOT => "GETKEYSINSLOT"u8;
         public static ReadOnlySpan<byte> KEYSLOT => "KEYSLOT"u8;
@@ -56,6 +47,20 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> GOSSIP => "GOSSIP"u8;
         public static ReadOnlySpan<byte> WITHMEET => "WITHMEET"u8;
         public static ReadOnlySpan<byte> RESET => "RESET"u8;
+
+        /// <summary>
+        /// Internode communication cluster commands
+        /// </summary>
+        public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
+        public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;
+        public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
+        public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+        public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
+        public static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
+        public static ReadOnlySpan<byte> failauthreq => "FAILAUTHREQ"u8;
+        public static ReadOnlySpan<byte> failstopwrites => "FAILSTOPWRITES"u8;
+        public static ReadOnlySpan<byte> failreplicationoffset => "FAILREPLICATIONOFFSET"u8;
+
 
         /// <summary>
         /// Response strings

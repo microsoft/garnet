@@ -258,19 +258,5 @@ namespace Garnet.cluster
 
             return result;
         }
-
-        /// <summary>
-        /// Retrieve next token from receive buffer and make upper case on success
-        /// </summary>
-        /// <param name="bufSpan"></param>
-        /// <param name="success"></param>
-        /// <returns></returns>
-        Span<byte> GetNextTokenUpperCase(ReadOnlySpan<byte> bufSpan, out bool success)
-        {
-            var result = GetNextToken(bufSpan, out success);
-            if (success) ConvertUtils.MakeUpperCase(result);
-            return result;
-        }
-
     }
 }

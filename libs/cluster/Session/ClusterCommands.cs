@@ -144,7 +144,7 @@ namespace Garnet.cluster
             if (count > 0)
             {
                 var invalidParameters = false;
-                if (!ParseClusterSubcommand(bufSpan, out var subcmd)) return false;
+                if (!ParseClusterSubcommand(bufSpan, out var subcommand, out var subcmd)) return false;
                 switch (subcmd)
                 {
                     case ClusterSubcommand.BUMPEPOCH:
@@ -273,7 +273,7 @@ namespace Garnet.cluster
                     default:
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;
-                        while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for '{subcmd}'. Try CLUSTER HELP.", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for '{Encoding.ASCII.GetString(subcommand)}'. Try CLUSTER HELP.", ref dcurr, dend))
                             SendAndReset();
                         break;
 
