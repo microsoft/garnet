@@ -69,15 +69,15 @@ namespace Garnet.server.Auth
                 // Check if user exists and set default user if username is unspecified
                 string uname = Encoding.ASCII.GetString(username);
                 User user = string.IsNullOrEmpty(uname) ? _acl.GetDefaultUser() : _acl.GetUser(uname);
-                
-                if(user == null)
-                {
-                    return false;
-                }
 
                 // Use injected authenticator if configured.
                 if (_authenticator != null)
                 {
+                    if (user == null || password.Length == 0)
+                    {
+                        return false;
+                    }
+
                     if (user.IsEnabled && _authenticator.Authenticate(password, username))
                     {
                         _user = user;

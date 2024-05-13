@@ -32,9 +32,8 @@ namespace Garnet.server.Auth
         /// ACL - Garnet validates new connections and commands against configured ACL users and access rules.
         /// </summary>
         ACL,
-
         /// <summary>
-        /// ACL mode using Aad token instead of password. Here username is expected to be objectId and token will be validated for claims.
+        /// ACL mode using Aad token instead of password. Here username is expected to be ObjectId and token will be validated for claims.
         /// </summary>
         AclWithAad
     }
@@ -232,7 +231,7 @@ namespace Garnet.server.Auth
         /// </summary>
         /// <param name="aclConfigurationFile">Location of the ACL configuration file</param>
         /// <param name="defaultPassword">Optional default password, if not defined through aclConfigurationFile</param>
-        public AclAuthenticationSettings(string aclConfigurationFile, string defaultPassword = "", IAuthenticationSettings settings =  null)
+        public AclAuthenticationSettings(string aclConfigurationFile, string defaultPassword = "", IAuthenticationSettings settings = null)
         {
             AclConfigurationFile = aclConfigurationFile;
             DefaultPassword = defaultPassword;

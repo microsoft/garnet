@@ -34,8 +34,10 @@ namespace Garnet.server.Auth.Aad
         private IssuerSigningTokenProvider(string authority, IReadOnlyCollection<SecurityKey> signingTokens, ILogger logger, bool refreshTokens = true)
         {
             _authority = authority;
-            if (refreshTokens) 
+            if (refreshTokens)
+            {
                 _refreshTimer = new Timer(RefreshSigningTokens, null, TimeSpan.Zero, TimeSpan.FromDays(1));
+            }
             _signingTokens = signingTokens;
 
             _logger = logger;

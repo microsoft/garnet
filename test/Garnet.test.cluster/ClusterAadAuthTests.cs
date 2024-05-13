@@ -56,7 +56,7 @@ namespace Garnet.test.cluster
             var token = tokenGenerator.CreateToken(tokenClaims, DateTime.Now.AddMinutes(10));
             // Generate default ACL file
 
-            var userCredential = new ServerCredential { user = objId, IsAdmin= true, IsClearText = true };
+            var userCredential = new ServerCredential { user = objId, IsAdmin = true, IsClearText = true };
             var clientCredentials = new ServerCredential { user = objId, password = token };
             context.GenerateCredentials([userCredential]);
             context.CreateInstances(nodes, useAcl: true, clusterCreds: clientCredentials, authenticationSettings: authSettings);
@@ -71,7 +71,6 @@ namespace Garnet.test.cluster
                 var ex = Assert.Throws<AssertionException>(() => context.clusterTestUtils.Authenticate(i, "randomUserId", clientCredentials.password, context.logger));
                 Assert.AreEqual("WRONGPASS Invalid username/password combination", ex.Message);
             }
-
         }
     }
 }

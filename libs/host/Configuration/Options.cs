@@ -626,7 +626,7 @@ namespace Garnet
                     return new AclAuthenticationSettings(AclFile, Password);
                 case GarnetAuthenticationMode.AclWithAad:
                     var aadAuthSettings = new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger));
-                    aadAuthSettings  = aadAuthSettings.WithUsernameValidation();
+                    aadAuthSettings = aadAuthSettings.WithUsernameValidation();
                     return new AclAuthenticationSettings(AclFile, Password, aadAuthSettings);
 
                 default:

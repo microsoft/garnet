@@ -19,11 +19,8 @@ namespace Garnet.server.Auth
         internal IReadOnlyCollection<string> _authorizedAppIds { get; set; }
         internal IReadOnlyCollection<string> _audiences { get; set; }
         internal IReadOnlyCollection<string> _issuers { get; set; }
-
         internal IssuerSigningTokenProvider _signingTokenProvider { get; set; }
-        
-        internal bool ValidateUsername { get;  set; }
-
+        internal bool ValidateUsername { get; set; }
     }
 
     class GarnetAadAuthenticator : IGarnetAuthenticator
@@ -89,12 +86,7 @@ namespace Garnet.server.Auth
                     IssuerSigningKeys = _signingTokenProvider.SigningTokens
                 };
                 parameters.EnableAadSigningKeyIssuerValidation();
-                var passwordStr = Encoding.UTF8.GetString(password);
-                if (string.IsNullOrWhiteSpace(passwordStr))
-                {
-                    return false;
-                }
-                var identity = _tokenHandler.ValidateToken(passwordStr, parameters, out var token);
+                var identity = _tokenHandler.ValidateToken(Encoding.UTF8.GetString(password), parameters, out var token);
 
                 _validFrom = token.ValidFrom;
                 _validateTo = token.ValidTo;
@@ -120,10 +112,9 @@ namespace Garnet.server.Auth
                 .GroupBy(claim => claim.Type)
                 .ToDictionary(group => group.Key, group => string.Join(',', group.Select(c => c.Value)), StringComparer.OrdinalIgnoreCase);
 
-            bool isValid =   IsApplicationPrincipal(claims) && IsApplicationAuthorized(claims);
+            bool isValid = IsApplicationPrincipal(claims) && IsApplicationAuthorized(claims);
             return !ValidateUsername ? isValid : ValidateUsername && IsUserNameAuthorized(claims, userName);
         }
-
         private bool IsApplicationAuthorized(IDictionary<string, string> claims)
         {
             return claims.TryGetValue(_appIdClaim, out var appId) && _authorizedAppIds.Contains(appId);

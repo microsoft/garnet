@@ -25,11 +25,11 @@ namespace Garnet.test.cluster
         // the token handler we'll use to actually issue tokens
         public readonly JwtSecurityTokenHandler JwtSecurityTokenHandler = new();
 
-        internal JwtTokenGenerator(string issuer) 
+        internal JwtTokenGenerator(string issuer)
         {
             Issuer = issuer;
-            SecurityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("this is my custom Secret key for authentication"));
-            SigningCredentials  = new SigningCredentials(SecurityKey, SecurityAlgorithms.HmacSha256);
+            SecurityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("Test secret key for authentication and signing the token to be generated"));
+            SigningCredentials = new SigningCredentials(SecurityKey, SecurityAlgorithms.HmacSha256);
         }
 
         internal string CreateToken(List<Claim> claims, DateTime expiryTime)
