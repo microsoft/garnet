@@ -84,20 +84,10 @@ namespace Garnet.cluster
                 }
                 else if (command == RespCommand.FAILOVER)
                 {
-                    if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
-                    {
-                        return success;
-                    }
-
                     result = TryFAILOVER(count, recvBufferPtr + readHead);
                 }
                 else if ((command == RespCommand.REPLICAOF) || (command == RespCommand.SECONDARYOF))
                 {
-                    if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
-                    {
-                        return success;
-                    }
-
                     result = TryREPLICAOF(count, recvBufferPtr + readHead);
                 }
                 else
@@ -179,18 +169,20 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Performs @admin command group permission checks for the current user and the given command.
-        /// (NOTE: This function is temporary until per-command permissions are implemented)
+        /// Performs permission checks for the current user and the given command.
+        /// (NOTE: This function does not check keyspaces)
         /// </summary>
+        /// <param name="cmd">Command be processed</param>
+        /// <param name="subCommand">Id (w.r.t. <see cref="RespCommandsInfo"/>) of any sub command - will be 0 if no sub command is being processed</param>
         /// <param name="bufSpan">Buffer containing the current command in RESP3 style.</param>
         /// <param name="count">Number of parameters left in the command specification.</param>
         /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLAdminPermissions(ReadOnlySpan<byte> bufSpan, int count, out bool processingCompleted)
+        bool CheckACLPermissions(RespCommand cmd, byte subCommand, ReadOnlySpan<byte> bufSpan, int count, out bool processingCompleted)
         {
             Debug.Assert(!authenticator.IsAuthenticated || (user != null));
 
-            if (!authenticator.IsAuthenticated || (!user.CanAccessCategory(CommandCategory.Flag.Admin)))
+            if (!authenticator.IsAuthenticated || !user.CanAccessCommand(cmd, subCommand))
             {
                 if (!DrainCommands(bufSpan, count))
                 {
@@ -210,20 +202,6 @@ namespace Garnet.cluster
             return true;
         }
 
-        /// <summary>
-        /// Performs @admin command group permission checks for the current user and the given command.
-        /// (NOTE: This function is temporary until per-command permissions are implemented)
-        /// Does not write to response buffer. Caller responsible for handling error.
-        /// </summary>
-        /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLAdminPermissions()
-        {
-            Debug.Assert(!authenticator.IsAuthenticated || (user != null));
-
-            if (!authenticator.IsAuthenticated || (!user.CanAccessCategory(CommandCategory.Flag.Admin)))
-                return false;
-            return true;
-        }
 
         ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
         {

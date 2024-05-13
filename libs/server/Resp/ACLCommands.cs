@@ -60,7 +60,7 @@ namespace Garnet.server
             // Subcommand: LIST
             if (subcommand.Equals("LIST", StringComparison.OrdinalIgnoreCase) && (count == 1))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLPermissions(RespCommand.ACL, RespCommandsInfo.SubCommandIds.AclList, count - 1, out bool success))
                 {
                     return success;
                 }
@@ -77,7 +77,7 @@ namespace Garnet.server
             // Subcommand: USERS
             else if (subcommand.Equals("USERS", StringComparison.OrdinalIgnoreCase) && (count == 1))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLPermissions(RespCommand.ACL, RespCommandsInfo.SubCommandIds.AclUsers, count - 1, out bool success))
                 {
                     return success;
                 }
@@ -94,6 +94,11 @@ namespace Garnet.server
             // Subcommand: CAT
             else if (subcommand.Equals("CAT", StringComparison.OrdinalIgnoreCase) && (count == 1))
             {
+                if (!CheckACLPermissions(RespCommand.ACL, RespCommandsInfo.SubCommandIds.AclCat, count - 1, out bool success))
+                {
+                    return success;
+                }
+
                 var categories = CommandCategory.ListCategories();
                 RespWriteUtils.WriteArrayLength(categories.Count, ref dcurr, dend);
 
@@ -106,7 +111,7 @@ namespace Garnet.server
             // Subcommand: SETUSER <username> [<ops>...]
             else if (subcommand.Equals("SETUSER", StringComparison.OrdinalIgnoreCase) && (count >= 2))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLPermissions(RespCommand.ACL, RespCommandsInfo.SubCommandIds.AclSetUser, count - 1, out bool success))
                 {
                     return success;
                 }
@@ -157,7 +162,7 @@ namespace Garnet.server
             // Subcommand: DELUSER [<username> ...]
             else if (subcommand.Equals("DELUSER", StringComparison.OrdinalIgnoreCase) && (count >= 1))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLPermissions(RespCommand.ACL, RespCommandsInfo.SubCommandIds.AclDelUser, count - 1, out bool success))
                 {
                     return success;
                 }
@@ -199,6 +204,11 @@ namespace Garnet.server
             // Subcommand: WHOAMI
             else if (subcommand.Equals("WHOAMI", StringComparison.OrdinalIgnoreCase) && (count == 1))
             {
+                if (!CheckACLPermissions(RespCommand.ACL, RespCommandsInfo.SubCommandIds.AclWhoAmI, count - 1, out bool success))
+                {
+                    return success;
+                }
+
                 // Return the name of the currently authenticated user.
                 Debug.Assert(aclAuthenticator.GetUser() != null);
                 while (!RespWriteUtils.WriteSimpleString(aclAuthenticator.GetUser().Name, ref dcurr, dend))
@@ -207,7 +217,7 @@ namespace Garnet.server
             // Subcommand: LOAD
             else if (subcommand.Equals("LOAD", StringComparison.OrdinalIgnoreCase) && (count == 1))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                if (!CheckACLPermissions(RespCommand.ACL, RespCommandsInfo.SubCommandIds.AclLoad, count - 1, out bool success))
                 {
                     return success;
                 }

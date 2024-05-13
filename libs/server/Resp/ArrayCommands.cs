@@ -347,6 +347,11 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkREGISTERCS(int count, byte* ptr, CustomCommandManager customCommandManager)
         {
+            if (!CheckACLPermissions(RespCommand.REGISTERCS, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             var leftTokens = count;
             var readPathsOnly = false;
 
@@ -609,6 +614,10 @@ namespace Garnet.server
         private bool NetworkDEL<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.DEL, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
 
             if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: false, out bool retVal))
             {

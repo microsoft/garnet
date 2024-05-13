@@ -18,9 +18,14 @@ namespace Garnet.server
         /// <summary>
         /// GET
         /// </summary>
-        bool NetworkGET<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        bool NetworkGET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.GET, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkGET_SG(ptr, ref storageApi);
 
@@ -238,9 +243,14 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        private bool NetworkSET<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.Set, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -270,9 +280,14 @@ namespace Garnet.server
         /// <summary>
         /// SETRANGE
         /// </summary>
-        private bool NetworkSetRange<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSetRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.SETRANGE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -317,9 +332,14 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkGetRange<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkGetRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.GETRANGE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -372,9 +392,14 @@ namespace Garnet.server
         /// <summary>
         /// SETEX
         /// </summary>
-        private bool NetworkSETEX<TGarnetApi>(byte* ptr, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSETEX<TGarnetApi>(RespCommand cmd, int count, byte* ptr, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(cmd, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -433,6 +458,11 @@ namespace Garnet.server
         private bool NetworkSETEXNX<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.SETEXNX, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             var _ptr = ptr;
 
             byte* keyPtr = null, valPtr = null;
@@ -765,11 +795,16 @@ namespace Garnet.server
         /// <summary> 
         /// Increment (INCRBY, DECRBY, INCR, DECR)
         /// </summary>
-        private bool NetworkIncrement<TGarnetApi>(byte* ptr, RespCommand cmd, ref TGarnetApi storageApi)
+        private bool NetworkIncrement<TGarnetApi>(int count, byte* ptr, RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || cmd == RespCommand.INCR ||
                          cmd == RespCommand.DECR);
+
+            if (!CheckACLPermissions(cmd, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
 
             // Parse key argument
             byte* keyPtr = null;
@@ -849,9 +884,14 @@ namespace Garnet.server
         /// <summary>
         /// APPEND command - appends value at the end of existing string
         /// </summary>
-        private bool NetworkAppend<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkAppend<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.APPEND, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -886,8 +926,13 @@ namespace Garnet.server
         /// <summary>
         /// PING
         /// </summary>
-        private bool NetworkPING()
+        private bool NetworkPING(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.PING, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
                 SendAndReset();
             return true;
@@ -896,8 +941,13 @@ namespace Garnet.server
         /// <summary>
         /// ASKING
         /// </summary>
-        private bool NetworkASKING()
+        private bool NetworkASKING(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.ASKING, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             //*1\r\n$6\r\n ASKING\r\n = 16
             if (storeWrapper.serverOptions.EnableCluster)
                 SessionAsking = 2;
@@ -909,8 +959,13 @@ namespace Garnet.server
         /// <summary>
         /// QUIT
         /// </summary>
-        private bool NetworkQUIT()
+        private bool NetworkQUIT(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.QUIT, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             toDispose = true;
@@ -921,8 +976,13 @@ namespace Garnet.server
         /// Mark this session as readonly session
         /// </summary>
         /// <returns></returns>
-        private bool NetworkREADONLY()
+        private bool NetworkREADONLY(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.READONLY, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             //*1\r\n$8\r\nREADONLY\r\n
             clusterSession?.SetReadOnlySession();
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -934,8 +994,13 @@ namespace Garnet.server
         /// Mark this session as readwrite
         /// </summary>
         /// <returns></returns>
-        private bool NetworkREADWRITE()
+        private bool NetworkREADWRITE(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.READWRITE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             //*1\r\n$9\r\nREADWRITE\r\n
             clusterSession?.SetReadWriteSession();
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -998,6 +1063,11 @@ namespace Garnet.server
             // Handle COMMAND COUNT
             if (count > 0 && (subCommand.SequenceEqual(CmdStrings.COUNT) || subCommand.SequenceEqual(CmdStrings.count)))
             {
+                if (!CheckACLPermissions(RespCommand.COMMAND, RespCommandsInfo.SubCommandIds.CommandCount, count - 1, out bool success))
+                {
+                    return success;
+                }
+
                 if (!RespCommandsInfo.TryGetRespCommandsInfoCount(out var respCommandCount, true, logger))
                 {
                     respCommandCount = 0;
@@ -1011,6 +1081,21 @@ namespace Garnet.server
             // Handle COMMAND and COMMAND INFO
             else if (count == 0 || subCommand.SequenceEqual(CmdStrings.INFO) || subCommand.SequenceEqual(CmdStrings.info))
             {
+                if (count == 0)
+                {
+                    if (!CheckACLPermissions(RespCommand.COMMAND, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+                    {
+                        return success;
+                    }
+                }
+                else
+                {
+                    if (!CheckACLPermissions(RespCommand.COMMAND, RespCommandsInfo.SubCommandIds.CommandInfo, count - 1, out bool success))
+                    {
+                        return success;
+                    }
+                }
+
                 // Handle COMMAND and COMMAND INFO without command names - return all commands
                 if (count < 2)
                 {
@@ -1067,6 +1152,11 @@ namespace Garnet.server
             // Placeholder for handling DOCS sub-command - returning Nil in the meantime.
             else if (count > 0 && (subCommand.SequenceEqual(CmdStrings.DOCS) || subCommand.SequenceEqual(CmdStrings.docs)))
             {
+                if (!CheckACLPermissions(RespCommand.COMMAND, RespCommandsInfo.SubCommandIds.CommandDocs, count - 1, out bool success))
+                {
+                    return success;
+                }
+
                 if (!DrainCommands(bufSpan, count - 1))
                     return false;
 

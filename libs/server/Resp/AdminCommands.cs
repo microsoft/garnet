@@ -7,7 +7,6 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
-using Garnet.server.ACL;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -24,6 +23,8 @@ namespace Garnet.server
             string errorCmd = string.Empty;
             hasAdminCommand = true;
 
+            bool success;
+
             if (command == RespCommand.AUTH)
             {
                 // AUTH [<username>] <password>
@@ -38,7 +39,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    bool success = true;
+                    success = true;
 
                     // Optional Argument: <username>
                     ReadOnlySpan<byte> username = (count > 1) ? GetCommand(bufSpan, out success) : null;
@@ -96,11 +97,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CONFIG)
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
-                {
-                    return success;
-                }
-
                 var param = GetCommand(bufSpan, out bool success1);
                 if (!success1) return false;
                 if (param.SequenceEqual(CmdStrings.GET) || param.SequenceEqual(CmdStrings.get))
@@ -114,6 +110,11 @@ namespace Garnet.server
                     }
                     else
                     {
+                        if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.ConfigGet, count - 1, out success))
+                        {
+                            return success;
+                        }
+
                         var key = GetCommand(bufSpan, out bool success2);
                         if (!success2) return false;
 
@@ -123,12 +124,22 @@ namespace Garnet.server
                 }
                 else if (param.SequenceEqual(CmdStrings.REWRITE) || param.SequenceEqual(CmdStrings.rewrite))
                 {
+                    if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.ConfigRewrite, count - 1, out success))
+                    {
+                        return success;
+                    }
+
                     storeWrapper.clusterProvider?.FlushConfig();
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
                 }
                 else if (param.SequenceEqual(CmdStrings.SET) || param.SequenceEqual(CmdStrings.set))
                 {
+                    if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.ConfigSet, count - 1, out success))
+                    {
+                        return success;
+                    }
+
                     string certFileName = null;
                     string certPassword = null;
                     string clusterUsername = null;
@@ -227,6 +238,11 @@ namespace Garnet.server
             }
             else if (command == RespCommand.ECHO)
             {
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
                 if (count != 1)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -246,10 +262,20 @@ namespace Garnet.server
             }
             else if (command == RespCommand.INFO)
             {
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
                 return ProcessInfoCommand(count);
             }
             else if (command == RespCommand.PING)
             {
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
                 if (count == 0)
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
@@ -292,6 +318,11 @@ namespace Garnet.server
             }
             else if (command == RespCommand.TIME)
             {
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
                 if (count != 0)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -311,6 +342,11 @@ namespace Garnet.server
             }
             else if (command == RespCommand.QUIT)
             {
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
                 if (!DrainCommands(bufSpan, count))
                     return false;
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -319,7 +355,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.SAVE)
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
                 {
                     return success;
                 }
@@ -340,8 +376,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.LASTSAVE)
             {
-                bool success;
-                if (!CheckACLAdminPermissions(bufSpan, count, out success))
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
                 {
                     return success;
                 }
@@ -354,8 +389,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.BGSAVE)
             {
-                bool success;
-                if (!CheckACLAdminPermissions(bufSpan, count, out success))
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
                 {
                     return success;
                 }
@@ -377,6 +411,11 @@ namespace Garnet.server
             }
             else if (command == RespCommand.COMMITAOF)
             {
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
@@ -386,6 +425,11 @@ namespace Garnet.server
             }
             else if (command == RespCommand.FLUSHDB)
             {
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
                 bool unsafeTruncateLog = false;
                 bool async = false;
                 if (count > 0)
@@ -418,6 +462,11 @@ namespace Garnet.server
             }
             else if (command == RespCommand.FORCEGC)
             {
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
                 var generation = GC.MaxGeneration;
                 if (count == 1)
                 {
@@ -457,11 +506,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.MONITOR)
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
-                {
-                    return success;
-                }
-
                 return NetworkMONITOR(count, recvBufferPtr + readHead);
             }
             else if (command == RespCommand.ACL)
@@ -501,20 +545,23 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Performs @admin command group permission checks for the current user and the given command.
-        /// (NOTE: This function is temporary until per-command permissions are implemented)
+        /// Performs permission checks for the current user and the given command.
+        /// (NOTE: This function does not check keyspaces)
         /// </summary>
-        /// <param name="bufSpan">Buffer containing the current command in RESP3 style.</param>
+        /// <param name="cmd">Command be processed</param>
+        /// <param name="subCommand">Id (w.r.t. <see cref="RespCommandsInfo"/>) of any sub command - will be 0 if no sub command is being processed</param>
         /// <param name="count">Number of parameters left in the command specification.</param>
         /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLAdminPermissions(ReadOnlySpan<byte> bufSpan, int count, out bool processingCompleted)
+        bool CheckACLPermissions(RespCommand cmd, byte subCommand, int count, out bool processingCompleted)
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
 
-            if (!_authenticator.IsAuthenticated || (!_user.CanAccessCategory(CommandCategory.Flag.Admin)))
+            if (!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd, subCommand))
             {
-                if (!DrainCommands(bufSpan, count))
+                ReadOnlySpan<byte> toDrain = new(recvBufferPtr, bytesRead);
+
+                if (!DrainCommands(toDrain, count))
                 {
                     processingCompleted = false;
                 }
@@ -556,6 +603,11 @@ namespace Garnet.server
 
             if (memoryOption.Equals("USAGE", StringComparison.OrdinalIgnoreCase))
             {
+                if (!CheckACLPermissions(RespCommand.MEMORY, RespCommandsInfo.SubCommandIds.MemoryUsage, count - 1, out bool success))
+                {
+                    return success;
+                }
+
                 // read key
                 byte* keyPtr = null;
                 int kSize = 0;
@@ -593,6 +645,11 @@ namespace Garnet.server
 
         private bool NetworkMONITOR(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.MONITOR, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             //todo:Not supported yet.
             return true;
         }

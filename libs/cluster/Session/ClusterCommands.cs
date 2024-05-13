@@ -203,7 +203,7 @@ namespace Garnet.cluster
             errorCmd = string.Empty;
             if (param.SequenceEqual(CmdStrings.BUMPEPOCH) || param.SequenceEqual(CmdStrings.bumpepoch))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -235,7 +235,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.FORGET) || param.SequenceEqual(CmdStrings.forget))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterForget, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -276,6 +276,11 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.INFO) || param.SequenceEqual(CmdStrings.info))
             {
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterInfo, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 if (count > 0)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -294,6 +299,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.HELP) || param.SequenceEqual(CmdStrings.help))
             {
+                // todo: HELP isn't part of the Redis API, tying to Info for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterInfo, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
                 var clusterCommands = ClusterCommandInfo.GetClusterCommands();
@@ -307,7 +318,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.MEET) || param.SequenceEqual(CmdStrings.meet))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterMeet, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -338,6 +349,11 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.MYID) || param.SequenceEqual(CmdStrings.myid))
             {
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterMyId, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
                 while (!RespWriteUtils.WriteAsciiBulkString(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, ref dcurr, dend))
@@ -345,6 +361,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.MYPARENTID) || param.SequenceEqual(CmdStrings.myparentid))
             {
+                // todo: MyParentId is not documented, tying to MyId for now...
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterMyId, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
 
@@ -355,6 +377,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.ENDPOINT) || param.SequenceEqual(CmdStrings.endpoint))
             {
+                // todo: EndPoint isn't documented, tying to Nodes for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterNodes, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeid, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -366,6 +394,11 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.NODES) || param.SequenceEqual(CmdStrings.nodes))
             {
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterNodes, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 if (count > 0)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -384,6 +417,11 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.set_config_epoch) || param.SequenceEqual(CmdStrings.SET_CONFIG_EPOCH))
             {
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterSetConfigEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 if (count != 1)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -420,6 +458,11 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.SHARDS) || param.SequenceEqual(CmdStrings.shards))
             {
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterShards, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
                 var shardsInfo = clusterProvider.clusterManager.CurrentConfig.GetShardsInfo();
@@ -428,6 +471,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.GOSSIP))
             {
+                // todo: Gossip isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 if (count < 1)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -488,7 +537,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.RESET) || param.SequenceEqual(CmdStrings.reset))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterReset, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -529,7 +578,7 @@ namespace Garnet.cluster
             errorCmd = string.Empty;
             if (param.SequenceEqual(CmdStrings.FAILOVER) || param.SequenceEqual(CmdStrings.failover))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterFailover, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -606,6 +655,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.failauthreq))
             {
+                // todo: FailAuthReq isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var nodeIdBytes, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -626,6 +681,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.failstopwrites))
             {
+                // todo: FailStopWrites isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var nodeIdBytes, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -637,6 +698,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.failreplicationoffset))
             {
+                // todo: FailReplicationOffset isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 if (!RespReadUtils.ReadLongWithLengthHeader(out var primaryReplicationOffset, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -656,7 +723,7 @@ namespace Garnet.cluster
             errorCmd = string.Empty;
             if (param.SequenceEqual(CmdStrings.ADDSLOTS) || param.SequenceEqual(CmdStrings.addslots))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterAddSlots, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -702,7 +769,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.ADDSLOTSRANGE) || param.SequenceEqual(CmdStrings.addslotsrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterAddSlotsRange, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -748,6 +815,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.BANLIST) || param.SequenceEqual(CmdStrings.banlist))
             {
+                // todo: FailReplicationOffset isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
                 var banlist = clusterProvider.clusterManager.GetBanList();
@@ -762,6 +835,11 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.COUNTKEYSINSLOT) || param.SequenceEqual(CmdStrings.countkeysinslot))
             {
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterCountKeysInSlot, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var current = clusterProvider.clusterManager.CurrentConfig;
                 if (count != 1)
                 {
@@ -805,7 +883,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.DELSLOTS) || param.SequenceEqual(CmdStrings.delslots))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterDelSlots, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -850,7 +928,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.DELSLOTSRANGE) || param.SequenceEqual(CmdStrings.delslotsrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterDelSlotsRange, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -897,7 +975,8 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.DELKEYSINSLOT) || param.SequenceEqual(CmdStrings.delkeysinslot))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                // todo: DelKeysInSlot isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -928,7 +1007,8 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.DELKEYSINSLOTRANGE) || param.SequenceEqual(CmdStrings.delkeysinslotrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                // todo: DELKEYSINSLOTRANGE isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -968,6 +1048,11 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.GETKEYSINSLOT) || param.SequenceEqual(CmdStrings.getkeysinslot))
             {
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterGetKeysInSlot, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var current = clusterProvider.clusterManager.CurrentConfig;
 
                 if (count < 2)
@@ -1011,6 +1096,11 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.KEYSLOT) || param.SequenceEqual(CmdStrings.keyslot))
             {
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterKeySlot, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 if (count < 1)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -1034,7 +1124,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.SETSLOT) || param.SequenceEqual(CmdStrings.setslot))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterSetSlot, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -1114,7 +1204,8 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.SETSLOTSRANGE) || param.SequenceEqual(CmdStrings.setslotsrange))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                // todo: SETSLOTSRANGE isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -1211,6 +1302,11 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.SLOTS) || param.SequenceEqual(CmdStrings.slots))
             {
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterSlots, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 readHead = (int)(ptr - recvBufferPtr);
                 var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo();
@@ -1219,6 +1315,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.SLOTSTATE) || param.SequenceEqual(CmdStrings.slotstate))
             {
+                // todo: SLOTSTATE isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 // CLUSTER SLOTSTATE <slot>
                 if (count < 1)
                 {
@@ -1261,7 +1363,7 @@ namespace Garnet.cluster
 
             if (param.SequenceEqual(CmdStrings.MIGRATE))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.MIGRATE, RespCommandsInfo.SubCommandIds.None, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -1405,6 +1507,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.MTASKS))
             {
+                // todo: MTASKS isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 if (count != 0)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -1431,7 +1539,7 @@ namespace Garnet.cluster
             errorCmd = string.Empty;
             if (param.SequenceEqual(CmdStrings.REPLICAS) || param.SequenceEqual(CmdStrings.replicas))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterReplicas, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -1452,7 +1560,7 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.REPLICATE) || param.SequenceEqual(CmdStrings.replicate))
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterReplicate, bufSpan, count, out var success))
                 {
                     return success;
                 }
@@ -1502,6 +1610,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.aofsync))
             {
+                // todo: AofSync isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeid, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -1532,6 +1646,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.appendlog))
             {
+                // todo: AofSync isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 if (!RespReadUtils.ReadStringWithLengthHeader(out string nodeId, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -1575,6 +1695,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.initiate_replica_sync))
             {
+                // todo: initiate_replica_sync isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeId, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -1604,6 +1730,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.send_ckpt_metadata))
             {
+                // todo: send_ckpt_metadata isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var fileTokenBytes, ref ptr, recvBufferPtr + bytesRead))
                     return false;
@@ -1621,6 +1753,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.send_ckpt_file_segment))
             {
+                // todo: send_ckpt_file_segment isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
                 Span<byte> data = default;
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var fileTokenBytes, ref ptr, recvBufferPtr + bytesRead))
@@ -1646,6 +1784,12 @@ namespace Garnet.cluster
             }
             else if (param.SequenceEqual(CmdStrings.begin_replica_recover))
             {
+                // todo: begin_replica_recover isn't public, tying to bump epoch for now
+                if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, bufSpan, count, out var success))
+                {
+                    return success;
+                }
+
                 var ptr = recvBufferPtr + readHead;
 
                 if (!RespReadUtils.ReadBoolWithLengthHeader(out var recoverMainStoreFromToken, ref ptr, recvBufferPtr + bytesRead))

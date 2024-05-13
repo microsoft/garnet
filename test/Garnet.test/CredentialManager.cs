@@ -35,9 +35,36 @@ namespace Garnet.test
 
                 var user = cred.user;
                 var password = cred.IsClearText ? cred.password : Convert.ToHexString(cred.hash);
-                aclConfig += $"user {user} on " +
-                    $"{(cred.IsClearText ? ">" : "#")}{password} " +
-                    $"{(cred.IsAdmin ? "+@admin" : "-@admin")}";
+
+                if (user == "default")
+                {
+                    aclConfig += "user default on ";
+                    if (cred.IsClearText)
+                    {
+                        aclConfig += ">";
+                    }
+                    else
+                    {
+                        aclConfig += "#";
+                    }
+                    aclConfig += password;
+
+                    // default user ACL list is: ~* &* +@all
+                    // but we don't support key or channel filters yet
+                    aclConfig += " +@all";
+                }
+                else
+                {
+                    aclConfig += $"user {user} on " +
+                    $"{(cred.IsClearText ? ">" : "#")}{password} ";
+
+                    aclConfig += "+@all";
+
+                    if (!cred.IsAdmin)
+                    {
+                        aclConfig += "-@admin";
+                    }
+                }
             }
 
             _ = Directory.CreateDirectory(TestFolder);

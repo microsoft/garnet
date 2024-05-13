@@ -66,10 +66,15 @@ namespace Garnet.server
         /// <summary>
         /// PUBLISH
         /// </summary>
-        private bool NetworkPUBLISH(byte* ptr)
+        private bool NetworkPUBLISH(int count, byte* ptr)
         {
             Debug.Assert(isSubscriptionSession == false);
             // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n
+
+            if (!CheckACLPermissions(RespCommand.PUBLISH, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
 
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;

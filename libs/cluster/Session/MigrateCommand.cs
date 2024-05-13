@@ -279,7 +279,7 @@ namespace Garnet.cluster
                 return true;
 
             // Check if session is authorized to perform migration.
-            if (!CheckACLAdminPermissions())
+            if (!CheckACLPermissions(RespCommand.MIGRATE, RespCommandsInfo.SubCommandIds.None, default, 0, out _))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
                     SendAndReset();

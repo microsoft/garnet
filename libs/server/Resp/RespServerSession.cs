@@ -298,9 +298,9 @@ namespace Garnet.server
                         }
                         else success = cmd switch
                         {
-                            RespCommand.EXEC => NetworkEXEC(),
-                            RespCommand.MULTI => NetworkMULTI(),
-                            RespCommand.DISCARD => NetworkDISCARD(),
+                            RespCommand.EXEC => NetworkEXEC(count, ptr),
+                            RespCommand.MULTI => NetworkMULTI(count, ptr),
+                            RespCommand.DISCARD => NetworkDISCARD(count, ptr),
                             _ => NetworkSKIP(cmd, subcmd, count),
                         };
                     }
@@ -377,42 +377,42 @@ namespace Garnet.server
 
             bool success = cmd switch
             {
-                RespCommand.GET => NetworkGET(ptr, ref storageApi),
-                RespCommand.SET => NetworkSET(ptr, ref storageApi),
-                RespCommand.SETEX => NetworkSETEX(ptr, false, ref storageApi),
-                RespCommand.PSETEX => NetworkSETEX(ptr, true, ref storageApi),
+                RespCommand.GET => NetworkGET(count, ptr, ref storageApi),
+                RespCommand.SET => NetworkSET(count, ptr, ref storageApi),
+                RespCommand.SETEX => NetworkSETEX(cmd, count, ptr, false, ref storageApi),
+                RespCommand.PSETEX => NetworkSETEX(cmd, count, ptr, true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(count, ptr, ref storageApi),
                 RespCommand.DEL => NetworkDEL(count, ptr, ref storageApi),
-                RespCommand.RENAME => NetworkRENAME(ptr, ref storageApi),
+                RespCommand.RENAME => NetworkRENAME(count, ptr, ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(count, ptr, ref storageApi),
-                RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, count, ptr, ref storageApi),
-                RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, count, ptr, ref storageApi),
-                RespCommand.PERSIST => NetworkPERSIST(ptr, ref storageApi),
-                RespCommand.GETRANGE => NetworkGetRange(ptr, ref storageApi),
-                RespCommand.TTL => NetworkTTL(ptr, RespCommand.TTL, ref storageApi),
-                RespCommand.PTTL => NetworkTTL(ptr, RespCommand.PTTL, ref storageApi),
-                RespCommand.SETRANGE => NetworkSetRange(ptr, ref storageApi),
-                RespCommand.GETDEL => NetworkGETDEL(ptr, ref storageApi),
-                RespCommand.APPEND => NetworkAppend(ptr, ref storageApi),
-                RespCommand.INCR => NetworkIncrement(ptr, RespCommand.INCR, ref storageApi),
-                RespCommand.INCRBY => NetworkIncrement(ptr, RespCommand.INCRBY, ref storageApi),
-                RespCommand.DECR => NetworkIncrement(ptr, RespCommand.DECR, ref storageApi),
-                RespCommand.DECRBY => NetworkIncrement(ptr, RespCommand.DECRBY, ref storageApi),
-                RespCommand.SETBIT => StringSetBit(ptr, ref storageApi),
-                RespCommand.GETBIT => StringGetBit(ptr, ref storageApi),
-                RespCommand.BITCOUNT => StringBitCount(ptr, count, ref storageApi),
-                RespCommand.BITPOS => StringBitPosition(ptr, count, ref storageApi),
-                RespCommand.PUBLISH => NetworkPUBLISH(ptr),
-                RespCommand.PING => count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, subcmd, count, ref storageApi),
-                RespCommand.ASKING => NetworkASKING(),
-                RespCommand.MULTI => NetworkMULTI(),
-                RespCommand.EXEC => NetworkEXEC(),
-                RespCommand.UNWATCH => NetworkUNWATCH(),
-                RespCommand.DISCARD => NetworkDISCARD(),
-                RespCommand.QUIT => NetworkQUIT(),
+                RespCommand.EXPIRE => NetworkEXPIRE(count, ptr, RespCommand.EXPIRE, ref storageApi),
+                RespCommand.PEXPIRE => NetworkEXPIRE(count, ptr, RespCommand.PEXPIRE, ref storageApi),
+                RespCommand.PERSIST => NetworkPERSIST(count, ptr, ref storageApi),
+                RespCommand.GETRANGE => NetworkGetRange(count, ptr, ref storageApi),
+                RespCommand.TTL => NetworkTTL(count, ptr, RespCommand.TTL, ref storageApi),
+                RespCommand.PTTL => NetworkTTL(count, ptr, RespCommand.PTTL, ref storageApi),
+                RespCommand.SETRANGE => NetworkSetRange(count, ptr, ref storageApi),
+                RespCommand.GETDEL => NetworkGETDEL(count, ptr, ref storageApi),
+                RespCommand.APPEND => NetworkAppend(count, ptr, ref storageApi),
+                RespCommand.INCR => NetworkIncrement(count, ptr, RespCommand.INCR, ref storageApi),
+                RespCommand.INCRBY => NetworkIncrement(count, ptr, RespCommand.INCRBY, ref storageApi),
+                RespCommand.DECR => NetworkIncrement(count, ptr, RespCommand.DECR, ref storageApi),
+                RespCommand.DECRBY => NetworkIncrement(count, ptr, RespCommand.DECRBY, ref storageApi),
+                RespCommand.SETBIT => StringSetBit(count, ptr, ref storageApi),
+                RespCommand.GETBIT => StringGetBit(count, ptr, ref storageApi),
+                RespCommand.BITCOUNT => StringBitCount(count, ptr, ref storageApi),
+                RespCommand.BITPOS => StringBitPosition(count, ptr, ref storageApi),
+                RespCommand.PUBLISH => NetworkPUBLISH(count, ptr),
+                RespCommand.PING => count == 0 ? NetworkPING(count, ptr) : ProcessArrayCommands(cmd, subcmd, count, ref storageApi),
+                RespCommand.ASKING => NetworkASKING(count, ptr),
+                RespCommand.MULTI => NetworkMULTI(count, ptr),
+                RespCommand.EXEC => NetworkEXEC(count, ptr),
+                RespCommand.UNWATCH => NetworkUNWATCH(count, ptr),
+                RespCommand.DISCARD => NetworkDISCARD(count, ptr),
+                RespCommand.QUIT => NetworkQUIT(count, ptr),
                 RespCommand.RUNTXP => NetworkRUNTXP(count, ptr),
-                RespCommand.READONLY => NetworkREADONLY(),
-                RespCommand.READWRITE => NetworkREADWRITE(),
+                RespCommand.READONLY => NetworkREADONLY(count, ptr),
+                RespCommand.READWRITE => NetworkREADWRITE(count, ptr),
                 RespCommand.COMMAND => NetworkCOMMAND(count),
 
                 _ => ProcessArrayCommands(cmd, subcmd, count, ref storageApi)
@@ -549,11 +549,17 @@ namespace Garnet.server
 
             if (command == RespCommand.CLIENT)
             {
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+                {
+                    return success;
+                }
+
                 for (int i = 0; i < count; i++)
                 {
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
                 }
+
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
@@ -658,13 +664,13 @@ namespace Garnet.server
             return true;
         }
 
-        ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
+        ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success, bool isArray = false)
         {
             var ptr = recvBufferPtr + readHead;
             var end = recvBufferPtr + bytesRead;
 
             // Try the command length
-            if (!RespReadUtils.ReadLengthHeader(out int length, ref ptr, end))
+            if (!RespReadUtils.ReadLengthHeader(out int length, ref ptr, end, isArray: isArray))
             {
                 success = false;
                 return default;

@@ -52,6 +52,7 @@ namespace CommandInfoUpdater
                 "CLUSTER|RESET",
                 "CLUSTER|SET-CONFIG-EPOCH",
                 "CLUSTER|SETSLOT",
+                "CLUSTER|SHARDS",
                 "CLUSTER|SLOTS"
 
             }),
@@ -59,6 +60,7 @@ namespace CommandInfoUpdater
             {
                 "COMMAND|INFO",
                 "COMMAND|COUNT",
+                "COMMAND|DOCS",
             }),
             new("COMMITAOF", RespCommand.COMMITAOF),
             new("CONFIG", RespCommand.CONFIG, 0, new []

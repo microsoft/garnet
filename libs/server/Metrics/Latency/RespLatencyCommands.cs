@@ -23,7 +23,7 @@ namespace Garnet.server
 
                 if (param.SequenceEqual(CmdStrings.HISTOGRAM) || param.SequenceEqual(CmdStrings.histogram))
                 {
-                    if (!CheckACLAdminPermissions(bufSpan, count - 1, out bool success))
+                    if (!CheckACLPermissions(RespCommand.LATENCY, RespCommandsInfo.SubCommandIds.LatencyHistogram, count - 1, out bool success))
                     {
                         return success;
                     }
@@ -71,7 +71,7 @@ namespace Garnet.server
                 }
                 else if (param.SequenceEqual(CmdStrings.RESET) || param.SequenceEqual(CmdStrings.reset))
                 {
-                    if (!CheckACLAdminPermissions(bufSpan, count - 1, out bool success))
+                    if (!CheckACLPermissions(RespCommand.LATENCY, RespCommandsInfo.SubCommandIds.LatencyReset, count - 1, out bool success))
                     {
                         return success;
                     }
@@ -132,6 +132,11 @@ namespace Garnet.server
                 }
                 else if (param.SequenceEqual(CmdStrings.HELP) || param.SequenceEqual(CmdStrings.help))
                 {
+                    if (!CheckACLPermissions(RespCommand.LATENCY, RespCommandsInfo.SubCommandIds.LatencyHelp, count - 1, out bool success))
+                    {
+                        return success;
+                    }
+
                     var ptr = recvBufferPtr + readHead;
                     readHead = (int)(ptr - recvBufferPtr);
                     List<string> latencyCommands = RespLatencyHelp.GetLatencyCommands();

@@ -16,8 +16,13 @@ namespace Garnet.server
         /// <summary>
         /// MULTI
         /// </summary>
-        private bool NetworkMULTI()
+        private bool NetworkMULTI(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.MULTI, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (txnManager.state != TxnState.None)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NESTED_MULTI, ref dcurr, dend))
@@ -36,8 +41,13 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkEXEC()
+        private bool NetworkEXEC(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.EXEC, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             // pass over the EXEC in buffer during execution
             if (txnManager.state == TxnState.Running)
             {
@@ -178,8 +188,13 @@ namespace Garnet.server
         /// <summary>
         /// DISCARD
         /// </summary>
-        private bool NetworkDISCARD()
+        private bool NetworkDISCARD(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.DISCARD, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (txnManager.state == TxnState.None)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI, ref dcurr, dend))
@@ -231,8 +246,13 @@ namespace Garnet.server
         /// <summary>
         /// UNWATCH
         /// </summary>
-        private bool NetworkUNWATCH()
+        private bool NetworkUNWATCH(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.UNWATCH, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (txnManager.state == TxnState.None)
             {
                 txnManager.watchContainer.Reset();

@@ -19,6 +19,11 @@ namespace Garnet.cluster
             var abort = false;
             var force = false;
 
+            if (!CheckACLPermissions(RespCommand.FAILOVER, RespCommandsInfo.SubCommandIds.None, new ReadOnlySpan<byte>(ptr, count), count, out var success))
+            {
+                return success;
+            }
+
             while (args > 0)
             {
                 if (!RespReadUtils.ReadStringWithLengthHeader(out var option, ref ptr, recvBufferPtr + bytesRead))

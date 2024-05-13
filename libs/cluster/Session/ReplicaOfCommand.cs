@@ -12,6 +12,11 @@ namespace Garnet.cluster
     {
         private bool TryREPLICAOF(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.REPLICAOF, RespCommandsInfo.SubCommandIds.None, new ReadOnlySpan<byte>(ptr, count), count, out var success))
+            {
+                return success;
+            }
+
             if (!RespReadUtils.ReadStringWithLengthHeader(out var address, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 

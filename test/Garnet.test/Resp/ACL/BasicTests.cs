@@ -38,7 +38,7 @@ namespace Garnet.test.Resp.ACL
             Assert.AreEqual("default", response);
 
             // Add the testuser and password
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", "nopass", "+@admin");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", "nopass", "+@admin", "+@slow");
             Assert.IsTrue(response.StartsWith("OK"));
 
             // Change users and verify whoami changes
@@ -60,8 +60,8 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task BasicListTest()
         {
-            const string ExpectedDefaultRule = "user default on nopass +@admin";
-            const string ExpectedTestUserRule = $"user {TestUserA} off";
+            const string ExpectedDefaultRule = "user default on nopass +@all";
+            const string ExpectedTestUserRule = $"user {TestUserA} off -@all";
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();

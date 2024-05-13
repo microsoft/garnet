@@ -129,9 +129,9 @@ namespace Garnet.server.ACL
 
             while (!_users.TryGetValue(DefaultUserName, out defaultUser))
             {
-                // Default user is always admin
+                // Default user always has full access
                 defaultUser = new User(DefaultUserName);
-                defaultUser.AddCategory(CommandCategory.Flag.Admin);
+                defaultUser.AddCategory(CommandCategory.Flag.All);
 
                 // Automatically created default users are always enabled
                 defaultUser.IsEnabled = true;

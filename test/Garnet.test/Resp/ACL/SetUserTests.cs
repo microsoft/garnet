@@ -480,7 +480,7 @@ namespace Garnet.test.Resp.ACL
                 // Ensure the user user has been fully reset and disabled
                 if (user.StartsWith($"user {TestUserA}"))
                 {
-                    Assert.AreEqual(user, $"user {TestUserA} off");
+                    Assert.AreEqual(user, $"user {TestUserA} off -@all");
                 }
             }
         }

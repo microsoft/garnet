@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
+using Garnet.server.ACL;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server

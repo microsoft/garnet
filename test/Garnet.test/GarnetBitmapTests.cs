@@ -2243,7 +2243,7 @@ namespace Garnet.test
             Assert.AreEqual(14, count);
         }
 
-        [Test, Order(33)]
+        [Test, Order(34)]
         [Category("BITPOS")]
         public void BitmapBitPosFixedTests()
         {
