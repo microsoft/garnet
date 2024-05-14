@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Garnet.common
 {
@@ -33,5 +34,13 @@ namespace Garnet.common
         public GarnetException(string message, Exception innerException) : base(message, innerException)
         {
         }
+
+        /// <summary>
+        /// Throw helper that throws a GarnetException.
+        /// </summary>
+        /// <param name="message">Exception message.</param>
+        [DoesNotReturn]
+        public static void Throw(string message) =>
+            throw new GarnetException(message);
     }
 }

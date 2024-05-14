@@ -169,7 +169,7 @@ namespace Garnet.common
         /// <summary>
         /// Writes the contents of <paramref name="span"/> as byte array to <paramref name="curr"/>
         /// </summary>
-        /// <returns><see langword="true"/> if the the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
+        /// <returns><see langword="true"/> if the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
         public static bool WriteDirect(ReadOnlySpan<byte> span, ref byte* curr, byte* end)
         {
             if (span.Length > (int)(end - curr))
