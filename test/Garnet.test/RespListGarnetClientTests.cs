@@ -6,134 +6,135 @@ using System.Threading.Tasks;
 using Garnet.client;
 using NUnit.Framework;
 
-namespace Garnet.test;
-
-[TestFixture]
-public class RespListGarnetClientTests
+namespace Garnet.test
 {
-    private GarnetServer _server;
-
-    [OneTimeSetUp]
-    public void Setup()
+    [TestFixture]
+    public class RespListGarnetClientTests
     {
-        TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-        _server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
-        _server.Start();
-    }
+        private GarnetServer _server;
 
-    [Test]
-    public void AddElementsToTheListHead_WithCallback()
-    {
-        // Arrange
-        using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
-        db.Connect();
-
-        ManualResetEventSlim e = new();
-
-        // Act & Assert
-        db.ListLeftPush("list1", "foo", (_, returnValue, _) =>
+        [OneTimeSetUp]
+        public void Setup()
         {
-            Assert.IsTrue(1 == returnValue);
-            e.Set();
-        });
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            _server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            _server.Start();
+        }
 
-        e.Wait();
-        e.Reset();
-
-        db.ListLeftPush("list1", ["bar", "baz"], (_, returnValue, _) =>
+        [Test]
+        public void AddElementsToTheListHead_WithCallback()
         {
-            Assert.IsTrue(3 == returnValue);
-            e.Set();
-        });
+            // Arrange
+            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            db.Connect();
 
-        e.Wait();
-        e.Reset();
+            ManualResetEventSlim e = new();
 
-        db.ListLeftPush("list2", ["foo", "baz"], (_, returnValue, _) =>
+            // Act & Assert
+            db.ListLeftPush("list1", "foo", (_, returnValue, _) =>
+            {
+                Assert.IsTrue(1 == returnValue);
+                e.Set();
+            });
+
+            e.Wait();
+            e.Reset();
+
+            db.ListLeftPush("list1", ["bar", "baz"], (_, returnValue, _) =>
+            {
+                Assert.IsTrue(3 == returnValue);
+                e.Set();
+            });
+
+            e.Wait();
+            e.Reset();
+
+            db.ListLeftPush("list2", ["foo", "baz"], (_, returnValue, _) =>
+            {
+                Assert.IsTrue(2 == returnValue);
+                e.Set();
+            });
+
+            e.Wait();
+            e.Reset();
+            e.Dispose();
+        }
+
+        [Test]
+        [TestCase("list3", new string[] { "foo", "bar" }, 2)]
+        [TestCase("list4", new string[] { "foo", "bar", "baz" }, 3)]
+        [TestCase("list3", new string[] { "baz" }, 3)]
+        [TestCase("list5", new string[] { "foo" }, 1)]
+        public async Task AddElementsToTheListHead_ReturnsListItemsCount(string key, string[] elements, int result)
         {
-            Assert.IsTrue(2 == returnValue);
-            e.Set();
-        });
+            // Arrange
+            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            db.Connect();
 
-        e.Wait();
-        e.Reset();
-        e.Dispose();
-    }
+            // Act & Assert
+            Assert.AreEqual(result, await db.ListLeftPushAsync(key, elements));
+        }
 
-    [Test]
-    [TestCase("list3", new string[] { "foo", "bar" }, 2)]
-    [TestCase("list4", new string[] { "foo", "bar", "baz" }, 3)]
-    [TestCase("list3", new string[] { "baz" }, 3)]
-    [TestCase("list5", new string[] { "foo" }, 1)]
-    public async Task AddElementsToTheListHead_ReturnsListItemsCount(string key, string[] elements, int result)
-    {
-        // Arrange
-        using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
-        db.Connect();
-
-        // Act & Assert
-        Assert.AreEqual(result, await db.ListLeftPushAsync(key, elements));
-    }
-
-    [Test]
-    public void AddElementsToListTail_WithCallback()
-    {
-        // Arrange
-        using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
-        db.Connect();
-
-        ManualResetEventSlim e = new();
-
-        // Act & Assert
-        db.ListRightPush("list6", "foo", (_, returnValue, _) =>
+        [Test]
+        public void AddElementsToListTail_WithCallback()
         {
-            Assert.IsTrue(1 == returnValue);
-            e.Set();
-        });
+            // Arrange
+            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            db.Connect();
 
-        e.Wait();
-        e.Reset();
+            ManualResetEventSlim e = new();
 
-        db.ListRightPush("list6", ["bar", "baz"], (_, returnValue, _) =>
+            // Act & Assert
+            db.ListRightPush("list6", "foo", (_, returnValue, _) =>
+            {
+                Assert.IsTrue(1 == returnValue);
+                e.Set();
+            });
+
+            e.Wait();
+            e.Reset();
+
+            db.ListRightPush("list6", ["bar", "baz"], (_, returnValue, _) =>
+            {
+                Assert.IsTrue(3 == returnValue);
+                e.Set();
+            });
+
+            e.Wait();
+            e.Reset();
+
+            db.ListRightPush("list7", ["foo", "baz"], (_, returnValue, _) =>
+            {
+                Assert.IsTrue(2 == returnValue);
+                e.Set();
+            });
+
+            e.Wait();
+            e.Reset();
+            e.Dispose();
+        }
+
+        [Test]
+        [TestCase("list8", new string[] { "foo", "bar" }, 2)]
+        [TestCase("list9", new string[] { "foo", "bar", "baz" }, 3)]
+        [TestCase("list8", new string[] { "baz" }, 3)]
+        [TestCase("list10", new string[] { "foo" }, 1)]
+        public async Task AddElementsToTheListTail_ReturnsListItemsCount(string key, string[] elements, int result)
         {
-            Assert.IsTrue(3 == returnValue);
-            e.Set();
-        });
+            // Arrange
+            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            db.Connect();
 
-        e.Wait();
-        e.Reset();
+            // Act & Assert
+            Assert.AreEqual(result, await db.ListRightPushAsync(key, elements));
+        }
 
-        db.ListRightPush("list7", ["foo", "baz"], (_, returnValue, _) =>
+        [OneTimeTearDown]
+        public void TearDown()
         {
-            Assert.IsTrue(2 == returnValue);
-            e.Set();
-        });
+            _server.Dispose();
 
-        e.Wait();
-        e.Reset();
-        e.Dispose();
-    }
-
-    [Test]
-    [TestCase("list8", new string[] { "foo", "bar" }, 2)]
-    [TestCase("list9", new string[] { "foo", "bar", "baz" }, 3)]
-    [TestCase("list8", new string[] { "baz" }, 3)]
-    [TestCase("list10", new string[] { "foo" }, 1)]
-    public async Task AddElementsToTheListTail_ReturnsListItemsCount(string key, string[] elements, int result)
-    {
-        // Arrange
-        using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
-        db.Connect();
-
-        // Act & Assert
-        Assert.AreEqual(result, await db.ListRightPushAsync(key, elements));
-    }
-
-    [OneTimeTearDown]
-    public void TearDown()
-    {
-        _server.Dispose();
-
-        TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
     }
 }
