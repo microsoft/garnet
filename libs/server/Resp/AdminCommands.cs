@@ -240,8 +240,7 @@ namespace Garnet.server
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
                     var length = readHead - oldReadHead;
-                    while (!RespWriteUtils.WriteDirect(bufSpan.Slice(oldReadHead, length), ref dcurr, dend))
-                        SendAndReset();
+                    WriteDirectLarge(bufSpan.Slice(oldReadHead, length));
                 }
             }
             else if (command == RespCommand.INFO)
