@@ -19,21 +19,9 @@ It can only change its current role only after receiving a ```CLUSTER REPLICATE`
 We follow this constrain to avoid having to deal with cluster misconfiguration in the event of network partitions.
 This convention also extends to slot assignment, which is managed through direct requests to cluster instances made using the ```CLUSTER [ADDSLOTS|DELSLOTS]``` and ```CLUSTER [ADDSLOTSRANGE|DELSLOTSRANGE]``` commands.
 
-<details>
-    <summary>ClusterConfig Definition</summary>
-    ```bash
-        /// <summary>
-        /// Cluster configuration
-        /// </summary>
-        internal sealed partial class ClusterConfig
-        {
-            ...
-            readonly HashSlot[] slotMap;
-            readonly Worker[] workers;
-            ...
-        }
-    ```
-</details>
+```csharp reference title="Hashlot & Worker Array Declaration"
+https://github.com/microsoft/garnet/blob/8856dc3990fb0863141cb902bbf64c13202d5f85/libs/cluster/Server/ClusterConfig.cs#L16-L42
+```
 
 Initially, the cluster nodes are empty, taking the role of a **PRIMARY**, having no assigned slots and with no knowledge of any other node in the cluster.
 The local node contains information only about itself stored at workers[1] while workers[0] is reserved for special use to indicate unassigned slots.
@@ -41,147 +29,27 @@ Garnet cluster nodes are connected to each other through the ```CLUSTER MEET``` 
 This message forces a remote node to add the sender to its list of trusted nodes.
 Remote nodes are stored in any order starting from workers[2].
 
-<details>
-    <summary>Worker Definition</summary>
-    ```bash
-        /// <summary>
-        /// Cluster worker definition
-        /// </summary>
-        public struct Worker
-        {
-            /// <summary>
-            /// Unique node ID
-            /// </summary>
-            public string nodeid;
-
-            /// <summary>
-            /// IP address
-            /// </summary>
-            public string address;
-
-            /// <summary>
-            /// Port
-            /// </summary>
-            public int port;
-
-            /// <summary>
-            /// Configuration epoch.
-            /// </summary>
-            public long configEpoch;
-
-            /// <summary>
-            /// Current config epoch used for voting.
-            /// </summary>
-            public long currentConfigEpoch;
-
-            /// <summary>
-            /// Last config epoch this worker has voted for.
-            /// </summary>
-            public long lastVotedConfigEpoch;
-
-            /// <summary>
-            /// Role of node (i.e 0: primary 1: replica).
-            /// </summary>
-            public NodeRole role;
-
-            /// <summary>
-            /// Node ID that this node is replicating (i.e. primary id).
-            /// </summary>
-            public string replicaOfNodeId;
-
-            /// <summary>
-            /// Replication offset (readonly value for information only)
-            /// </summary>
-            public long replicationOffset;
-
-            /// <summary>
-            /// Hostname of this instance
-            /// </summary>
-            public string hostname;
-
-            /// <summary>
-            /// ToString
-            /// </summary>
-            /// <returns></returns>
-            public override string ToString() => $"{nodeid} {address} {port} {configEpoch} {role} {replicaOfNodeId}";
-        }
-    ```
-</details>
+```csharp reference title="Worker Definition"
+https://github.com/microsoft/garnet/blob/951cf82c120d4069e940e832db03bfa018c688ea/libs/cluster/Server/Worker.cs#L28-L85
+```
 
 Information about the individual slot assignment is captured within the configuration object using an array of HashSlot struct type.
 It maintains information about the slot state and corresponding owner.
 The slot owner is represented using the offset in the local copy of the workers array.
 The slot state is used to determine how to serve requests for keys that map to the relevant slot.
 
-<details>
-    <summary>HashSlot Definition</summary>
-    ```bash
-        /// <summary>
-        /// Hashslot info
-        /// </summary>
-        [StructLayout(LayoutKind.Explicit)]
-        public struct HashSlot
-        {
-            /// <summary>
-            /// WorkerId of slot owner.
-            /// </summary>
-            [FieldOffset(0)]
-            public ushort _workerId;
-
-            /// <summary>
-            /// State of this slot.
-            /// </summary>
-            [FieldOffset(2)]
-            public SlotState _state;
-
-            /// <summary>
-            /// Slot in migrating state points to target node though still owned by local node until migration completes.
-            /// </summary>
-            public ushort workerId => _state == SlotState.MIGRATING ? (ushort)1 : _workerId;
-        }
-    ```
-</details>
+```csharp reference title="HashSlot Definition"
+https://github.com/microsoft/garnet/blob/951cf82c120d4069e940e832db03bfa018c688ea/libs/cluster/Server/HashSlot.cs#L43-L61
+```
 
 At cluster startup slots are are unassigned, hence their initial state is set to **OFFLINE** and workerId to 0.
 When a slot is assigned to a specific node, its state is set to **STABLE** and workerId (from the perspective of the local configuration copy) to the corresponding offset of the owner node in workers array.
 Owners of a slot can perform read/write and migrate operations on the data associated with that specific slot.
 Replicas can serve read requests only for keys mapped to slots owned by their primary.
 
-<details>    
-    <summary>SlotState Definition</summary>
-    ```bash
-        /// <summary>
-        /// NodeRole identifier
-        /// </summary>
-        public enum SlotState : byte
-        {   
-            /// <summary>
-            /// Slot not assigned
-            /// </summary>
-            OFFLINE = 0x0,
-            /// <summary>
-            /// Slot assigned and ready to be used.
-            /// </summary>
-            STABLE,
-            /// <summary>
-            /// Slot is being moved to another node.
-            /// </summary>
-            MIGRATING,
-            /// <summary>
-            /// Reverse of migrating, preparing node to receive commands for that slot.
-            /// </summary>
-            IMPORTING,
-            /// <summary>
-            /// Slot in FAIL state.
-            /// </summary>
-            FAIL,
-            /// <summary>
-            /// 
-            /// </summary>
-            NODE,
-        }
-    ```
-</details>
+```csharp reference title="SlotState Definition"
+https://github.com/microsoft/garnet/blob/951cf82c120d4069e940e832db03bfa018c688ea/libs/cluster/Server/HashSlot.cs#L11-L37
+```
 
 ### Configuration Update Propagation
 
@@ -206,36 +74,9 @@ Slot verification involves inspecting the key or keys associated with a given co
 Garnet primary nodes can serve *read* and *read-write* requests for slots that they own, while Garnet replica nodes can only serve read requests for slots that their primary owns.
 On failure of the slot verification step, the corresponding command will not be processed and the slot verification method will write a redirection message directly to the network buffer.
 
-<details>
-        <summary>Slot Verification Methods</summary>
-        ```bash
-        /// <summary>
-        /// Single key slot verify (check only, do not write result to network)
-        /// </summary>
-        unsafe bool CheckSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking);
-
-        /// <summary>
-        /// Key array slot verify (write result to network)
-        /// </summary>
-        unsafe bool NetworkKeyArraySlotVerify(int keyCount, ref byte* ptr, byte* endPtr, bool interleavedKeys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, out bool retVal);
-
-        /// <summary>
-        /// Key array slot verify (write result to network)
-        /// </summary>
-        unsafe bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
-
-        /// <summary>
-        /// Single key slot verify (write result to network)
-        /// </summary>
-        unsafe bool NetworkSingleKeySlotVerify(byte[] key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
-
-        /// <summary>
-        /// Single key slot verify (write result to network)
-        /// </summary>
-        unsafe bool NetworkSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
-        ```
-</details>
-
+```csharp reference title="Slot Verification Methods"
+https://github.com/microsoft/garnet/blob/951cf82c120d4069e940e832db03bfa018c688ea/libs/server/Cluster/IClusterSession.cs#L47-L67
+```
 ##  Redirection Messages
 
 From the perspective of a single node, any requests for keys mapping towards an unassigned slot will result in ```-CLUSTERDOWN Hashlot not served``` message.

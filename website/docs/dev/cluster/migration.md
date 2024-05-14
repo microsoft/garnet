@@ -72,73 +72,9 @@ On success of updating the local config command, the processing thread of the pr
 This series of steps ensures that on return, the processing thread guarantees to the command issuer (or the method caller if state transition happens internally), that the state transition is visible to all threads that were active.
 Therefore, any active client session will process subsequent commands considering the new slot state.
 
-<details>
-        <summary>Spin-Wait Config Transition</summary>
-        ```bash
-        .
-        .
-        .
-        clusterSession?.AcquireCurrentEpoch();
-        .
-        .
-        .
-
-            case SlotState.MIGRATING:
-                setSlotsSucceeded = clusterProvider.clusterManager.TryPrepareSlotForMigration(slot, nodeid, out errorMessage);
-                break;            
-        
-        .
-        .
-        .
-        
-        if (setSlotsSucceeded)
-        {
-            UnsafeWaitForConfigTransition();
-
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
-        }
-
-        .
-        .
-        .
-
-        /// <summary>
-        /// Release epoch, wait for config transition and re-acquire the epoch
-        /// </summary>
-        public void UnsafeWaitForConfigTransition()
-        {
-            ReleaseCurrentEpoch();
-            clusterProvider.WaitForConfigTransition();
-            AcquireCurrentEpoch();
-        }
-
-        /// <summary>
-        /// Wait for config transition
-        /// </summary>
-        /// <returns></returns>
-        internal bool WaitForConfigTransition()
-        {
-            var server = storeWrapper.GetServer();
-            BumpCurrentEpoch();
-            while (true)
-            {
-            retry:
-                var currentEpoch = GarnetCurrentEpoch;
-                Thread.Yield();
-                var sessions = server.ActiveClusterSessions();
-                foreach (var s in sessions)
-                {
-                    var entryEpoch = s.LocalCurrentEpoch;
-                    if (entryEpoch != 0 && entryEpoch >= currentEpoch)
-                        goto retry;
-                }
-                break;
-            }
-            return true;
-        }        
-        ```
-</details>
+```csharp reference title="Wait for Config"
+https://github.com/microsoft/garnet/blob/951cf82c120d4069e940e832db03bfa018c688ea/libs/cluster/Server/ClusterProvider.cs#L271-L296
+```
 
 During migration, the change in slot state (i.e., ```MIGRATING```) is transient from the perspective of the source node.
 This means that until migration completes the slot is still owned by the source node.
@@ -147,33 +83,13 @@ Therefore, depending on the context of the operation being executed, the actual 
 For example, the ```CLUSTER NODES``` will use *workerId* property (through GetSlotRange(*workerId*)) since it has to return actual owner of the node even during migration.
 At the same, time it needs to return all nodes that are in ```MIGRATING``` or ```IMPORTING``` state and the node-id associated with that state which can be done by inspecting the *_workerId* variable (through GetSpecialStates(*workerId*)).
 
-<details>
-        <summary>HashSlot Definition</summary>
-        ```bash
-        /// <summary>
-        /// Get formatted (using CLUSTER NODES format) worker info.
-        /// </summary>
-        /// <param name="workerId">Offset of worker in the worker list.</param>
-        /// <returns>Formatted string.</returns>
-        public string GetNodeInfo(ushort workerId)
-        {
-            return $"{workers[workerId].Nodeid} " +
-                $"{workers[workerId].Address}:{workers[workerId].Port}@{workers[workerId].Port + 10000},{workers[workerId].hostname} " +
-                $"{(workerId == 1 ? "myself," : "")}{(workers[workerId].Role == NodeRole.PRIMARY ? "master" : "slave")} " +
-                $"{(workers[workerId].Role == NodeRole.REPLICA ? workers[workerId].ReplicaOfNodeId : "-")} " +
-                $"0 " +
-                $"0 " +
-                $"{workers[workerId].ConfigEpoch} " +
-                $"connected" +
-                $"{GetSlotRange(workerId)}" +
-                $"{GetSpecialStates(workerId)}\n";
-        }
-        ```
-</details>
+```csharp reference title="CLUSTER NODES Implementation"
+https://github.com/microsoft/garnet/blob/951cf82c120d4069e940e832db03bfa018c688ea/libs/cluster/Server/ClusterConfig.cs#L499-L521
+```
 
 ## Migrate KEYS Implementation Details
 
-Using the ```KEYS`` option, Garnet will iterate through the provided list of keys and migrate them in batches to the target node.
+Using the ```KEYS``` option, Garnet will iterate through the provided list of keys and migrate them in batches to the target node.
 When using this option, the issuer of the migration command will have to make sure that the slot state is set appropriately in the source, and target node.
 In addition, the issuer has to provide all keys that map to a specific slot either in one call to ```MIGRATE``` or across multiple call before the migration completes.
 When all key-value pairs have migrated to the target node, the issuer has to reset the slot state and assign ownership of the slot to the new node.
@@ -187,33 +103,9 @@ It is possible that a given key cannot be retrieved from either store, because i
 In that case, execution proceeds to the next available key and no specific error is raised.
 When data transmission completes, and depending if COPY option is enabled, ```MigrateKeys``` deletes the keys from the both stores.
 
-<details>
-        <summary>Migrate KEYS methods</summary>
-        ```bash
-        /// <summary>
-        /// Method used to migrate individual keys from main store to target node.
-        /// Used for MIGRATE KEYS option
-        /// </summary>
-        /// <param name="keysWithSize">List of pairs of address to the network receive buffer, key size </param>
-        /// <param name="objectStoreKeys">Output keys not found in main store so we can scan the object store next</param>
-        /// <returns>True on success, false otherwise</returns>
-        private bool MigrateKeysFromMainStore(ref List<(long, long)> keysWithSize, out List<(long, long)> objectStoreKeys);
-
-        /// <summary>
-        /// Method used to migrate individual keys from object store to target node.
-        /// Used for MIGRATE KEYS option
-        /// </summary>
-        /// <param name="objectStoreKeys">List of pairs of address to the network receive buffer, key size that were not found in main store</param>
-        /// <returns>True on success, false otherwise</returns>
-        private bool MigrateKeysFromObjectStore(ref List<(long, long)> objectStoreKeys);
-        
-        /// <summary>
-        /// Method used to migrate keys from main and object stores.
-        /// Used for MIGRATE KEYS option
-        /// </summary>
-        public bool MigrateKeys();
-        ```
-</details>
+```csharp reference title="MigrateKeys Main Method"
+https://github.com/microsoft/garnet/blob/951cf82c120d4069e940e832db03bfa018c688ea/libs/cluster/Server/Migration/MigrateSessionKeys.cs#L146-L169
+```
 
 ## Migrate SLOTS Details
 
@@ -234,76 +126,6 @@ The slot ownership exchange becomes visible to the whole cluster by bumping the 
 Finally, the source node will issue ```CLUSTER SETSLOT NODE``` to the target node to explicitly make it an owner of the corresponding slot collection.
 This last step is not necessary and it is used only to speed up the config propagation.
 
-<details>
-        <summary>Migrate SLOTS Task</summary>
-        ```bash
-        /// <summary>
-        /// Migrate slots session background task
-        /// </summary>
-        private void BeginAsyncMigrationTask()
-        {
-                //1. Set target node to import state
-                if (!TrySetSlotRanges(GetSourceNodeId, MigrateState.IMPORT))
-                {
-                    logger?.LogError("Failed to set remote slots {slots} to import state", string.Join(',', GetSlots));
-                    TryRecoverFromFailure();
-                    Status = MigrateState.FAIL;
-                    return;
-                }
-
-                #region transitionLocalSlotToMigratingState
-                //2. Set source node to migrating state and wait for local threads to see changed state.
-                if (!TryPrepareLocalForMigration())
-                {
-                    logger?.LogError("Failed to set local slots {slots} to migrate state", string.Join(',', GetSlots));
-                    TryRecoverFromFailure();
-                    Status = MigrateState.FAIL;
-                    return;
-                }
-
-                if (!clusterProvider.WaitForConfigTransition()) return;
-                #endregion
-
-                #region migrateData
-                //3. Migrate actual data
-                if (!MigrateSlotsDataDriver())
-                {
-                    logger?.LogError($"MigrateSlotsDriver failed");
-                    TryRecoverFromFailure();
-                    Status = MigrateState.FAIL;
-                    return;
-                }
-                #endregion
-                #region migrateData
-                //3. Migrate actual data
-                if (!MigrateSlotsDataDriver())
-                {
-                    logger?.LogError($"MigrateSlotsDriver failed");
-                    TryRecoverFromFailure();
-                    Status = MigrateState.FAIL;
-                    return;
-                }
-                #endregion
-
-                #region transferSlotOwnnershipToTargetNode
-                //5. Clear local migration set.
-                if (!RelinquishOwnership())
-                {
-                    logger?.LogError($"Failed to relinquish ownerhsip to target node");
-                    TryRecoverFromFailure();
-                    Status = MigrateState.FAIL;
-                    return;
-                }
-
-                //6. Change ownership of slots to target node.
-                if (!TrySetSlotRanges(GetTargetNodeId, MigrateState.NODE))
-                {
-                    logger?.LogError($"Failed to assign ownerhsip to target node");
-                    TryRecoverFromFailure();
-                    Status = MigrateState.FAIL;
-                    return;
-                }        
-                #endregion
-        }
-        ```
-</details>
+```csharp reference title="MigrateSlots Background Task"
+https://github.com/microsoft/garnet/blob/951cf82c120d4069e940e832db03bfa018c688ea/libs/cluster/Server/Migration/MigrationDriver.cs#L54-L126
+```
