@@ -211,25 +211,22 @@ namespace Garnet.server
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.GetResponseObject();
-
-                try
-                {
-                    ProcessMessages();
-                }
-                catch (RespParsingException ex)
-                {
-                    logger?.LogCritical($"Aborting open session due to RESP parsing error: {ex.Message}");
-                    logger?.LogDebug(ex, "RespParsingException in ProcessMessages:");
-
-                    // Forward parsing error as RESP error
-                    while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
-                        SendAndReset();
-
-                    // Send message and dispose the network sender to end the session
-                    Send(networkSender.GetResponseObjectHead());
-                    networkSender.Dispose();
-                }
+                ProcessMessages();
                 recvBufferPtr = null;
+            }
+            catch (RespParsingException ex)
+            {
+                sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
+                logger?.LogCritical($"Aborting open session due to RESP parsing error: {ex.Message}");
+                logger?.LogDebug(ex, "RespParsingException in ProcessMessages:");
+
+                // Forward parsing error as RESP error
+                while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
+                    SendAndReset();
+
+                // Send message and dispose the network sender to end the session
+                Send(networkSender.GetResponseObjectHead());
+                networkSender.Dispose();
             }
             catch (Exception ex)
             {
