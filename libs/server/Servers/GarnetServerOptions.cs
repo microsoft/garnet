@@ -43,7 +43,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of object store hash index in bytes (rounds down to power of 2).
         /// </summary>
-        public string ObjectStoreIndexSize = "1g";
+        public string ObjectStoreIndexSize = "16m";
 
         /// <summary>
         /// Max size of object store hash index in bytes (rounds down to power of 2). 
