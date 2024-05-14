@@ -211,28 +211,23 @@ namespace Garnet.server
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.GetResponseObject();
-
-                try
-                {
-                    ProcessMessages();
-                }
-                catch (RespParsingException ex)
-                {
-                    logger?.LogCritical($"Aborting open session due to RESP parsing error: {ex.Message}");
-                    logger?.LogDebug(ex, "RespParsingException in ProcessMessages:");
-
-                    // Forward parsing error as RESP error
-                    while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
-                        SendAndReset();
-
-                    // Send message and dispose the network sender to end the session
-                    Send(networkSender.GetResponseObjectHead());
-                    networkSender.Dispose();
-                }
+                ProcessMessages();
                 recvBufferPtr = null;
             }
+            catch (RespParsingException ex)
+            {
+                sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
+                logger?.LogCritical($"Aborting open session due to RESP parsing error: {ex.Message}");
+                logger?.LogDebug(ex, "RespParsingException in ProcessMessages:");
 
+                // Forward parsing error as RESP error
+                while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
+                    SendAndReset();
 
+                // Send message and dispose the network sender to end the session
+                Send(networkSender.GetResponseObjectHead());
+                networkSender.Dispose();
+            }
             catch (Exception ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
@@ -769,6 +764,13 @@ namespace Garnet.server
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
             }
+            else
+            {
+                // Reaching here means that we retried SendAndReset without the RespWriteUtils.Write*
+                // method making any progress. This should only happen when the message being written is
+                // too large to fit in the response buffer.
+                GarnetException.Throw("Failed to write to response buffer");
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -811,6 +813,35 @@ namespace Garnet.server
                 }
             }
             memory.Dispose();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteDirectLarge(ReadOnlySpan<byte> src)
+        {
+            // Repeat while we have bytes left to write
+            while (src.Length > 0)
+            {
+                // Compute space left on output buffer
+                int destSpace = (int)(dend - dcurr);
+
+                // Fast path if there is enough space 
+                if (src.Length <= destSpace)
+                {
+                    src.CopyTo(new Span<byte>(dcurr, src.Length));
+                    dcurr += src.Length;
+                    break;
+                }
+
+                // Adjust number of bytes to copy, to space left on output buffer, then copy
+                src.Slice(0, destSpace).CopyTo(new Span<byte>(dcurr, destSpace));
+                src = src.Slice(destSpace);
+
+                // Send and reset output buffer
+                Send(networkSender.GetResponseObjectHead());
+                networkSender.GetResponseObject();
+                dcurr = networkSender.GetResponseObjectHead();
+                dend = networkSender.GetResponseObjectTail();
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
