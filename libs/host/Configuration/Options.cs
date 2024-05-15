@@ -168,7 +168,7 @@ namespace Garnet
         public string AuthorizedAadApplicationIds { get; set; }
 
         [Option("aad-validate-acl-username", Required = false, Separator = ',', HelpText = "Only valid for AclWithAAD mode. Validates username -  expected to be OID ag")]
-        public bool AadValidateUsername { get; set; }
+        public bool? AadValidateUsername { get; set; }
 
         [OptionValidation]
         [Option("aof", Required = false, HelpText = "Enable write ahead logging (append-only file).")]
@@ -628,7 +628,7 @@ namespace Garnet
                 case GarnetAuthenticationMode.ACL:
                     return new AclAuthenticationPasswordSettings(AclFile, Password);
                 case GarnetAuthenticationMode.AclWithAad:
-                    var aadAuthSettings = new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger), AadValidateUsername);
+                    var aadAuthSettings = new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger), AadValidateUsername.GetValueOrDefault());
                     return new AclAuthenticationAadSettings(AclFile, Password, aadAuthSettings);
                 default:
                     logger?.LogError("Unsupported authentication mode: {mode}", AuthenticationMode);
