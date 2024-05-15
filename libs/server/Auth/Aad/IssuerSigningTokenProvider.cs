@@ -31,7 +31,7 @@ namespace Garnet.server.Auth.Aad
 
         private readonly ILogger _logger;
 
-        private IssuerSigningTokenProvider(string authority, IReadOnlyCollection<SecurityKey> signingTokens, ILogger logger, bool refreshTokens = true)
+        private IssuerSigningTokenProvider(string authority, IReadOnlyCollection<SecurityKey> signingTokens, bool refreshTokens, ILogger logger)
         {
             _authority = authority;
             if (refreshTokens)
@@ -107,7 +107,7 @@ namespace Garnet.server.Auth.Aad
             }
 
             var signingTokens = RetrieveSigningTokens(authority);
-            return new IssuerSigningTokenProvider(authority, signingTokens, logger);
+            return new IssuerSigningTokenProvider(authority, signingTokens, refreshTokens: true, logger);
         }
 
         /// <summary>
@@ -118,7 +118,7 @@ namespace Garnet.server.Auth.Aad
         /// <param name="logger">The logger</param>
         public static IssuerSigningTokenProvider Create(IReadOnlyCollection<SecurityKey> signingToken, ILogger logger)
         {
-            return new IssuerSigningTokenProvider(string.Empty, signingToken, logger, refreshTokens: false);
+            return new IssuerSigningTokenProvider(string.Empty, signingToken, refreshTokens: false, logger);
         }
     }
 }
