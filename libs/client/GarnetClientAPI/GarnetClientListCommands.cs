@@ -42,7 +42,7 @@ namespace Garnet.client
         {
             elements.Insert(0, key);
 
-            ExecuteForLongResult(callback, context, "LPUSH", elements);
+            ExecuteForLongResult(callback, context, nameof(LPUSH), elements);
 
             elements.RemoveAt(0);
         }
@@ -67,7 +67,7 @@ namespace Garnet.client
                 throw new ArgumentNullException(nameof(elements));
             }
 
-            return await ExecuteForLongResultAsync("LPUSH", [key, .. elements]);
+            return await ExecuteForLongResultAsync(nameof(LPUSH), [key, .. elements]);
         }
 
         /// <summary>
@@ -99,7 +99,7 @@ namespace Garnet.client
         {
             elements.Insert(0, key);
 
-            ExecuteForLongResult(callback, context, "RPUSH", elements);
+            ExecuteForLongResult(callback, context, nameof(RPUSH), elements);
 
             elements.RemoveAt(0);
         }
@@ -124,7 +124,7 @@ namespace Garnet.client
                 throw new ArgumentNullException(nameof(elements));
             }
 
-            return await ExecuteForLongResultAsync("RPUSH", [key, .. elements]);
+            return await ExecuteForLongResultAsync(nameof(RPUSH), [key, .. elements]);
         }
     }
 }
