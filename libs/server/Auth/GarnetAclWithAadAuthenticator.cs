@@ -13,7 +13,9 @@ namespace Garnet.server.Auth
 {
     class GarnetAclWithAadAuthenticator : GarnetACLAuthenticator
     {
-
+        /// <summary>
+        /// Authenticator to validate username and password.
+        /// </summary>
         private readonly IGarnetAuthenticator _garnetAuthenticator;
         public GarnetAclWithAadAuthenticator(AccessControlList accessControlList, IGarnetAuthenticator garnetAuthenticator, ILogger logger) : base(accessControlList, logger)
         {

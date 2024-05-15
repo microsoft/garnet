@@ -27,7 +27,7 @@ namespace Garnet.server.Auth
         /// <returns>true if authentication was successful</returns>
         protected override bool AuthenticateInternal(User user, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password)
         {
-                // Try to authenticate user
+            // Try to authenticate user
             ACLPassword passwordHash = ACLPassword.ACLPasswordFromString(Encoding.ASCII.GetString(password));
             if (user.IsEnabled && user.ValidatePassword(passwordHash))
             {
