@@ -791,72 +791,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SendAndReset(ref byte* dcurr, ref byte* dend, INetworkSender networkSender, bool throws)
-        {
-            byte* d = networkSender.GetResponseObjectHead();
-            if ((int)(dcurr - d) > 0)
-            {
-                Send(d, dcurr, networkSender);
-                networkSender.GetResponseObject();
-                dcurr = networkSender.GetResponseObjectHead();
-                dend = networkSender.GetResponseObjectTail();
-            }
-            else
-            {
-                if (throws)
-                {
-                    // Reaching here means that we retried SendAndReset without the RespWriteUtils.Write*
-                    // method making any progress. This should only happen when the message being written is
-                    // too large to fit in the response buffer.
-                    GarnetException.Throw("Failed to write to response buffer");
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SendAndReset(IMemoryOwner<byte> memory, int length)
-        {
-            // Copy allocated memory to main buffer and send
-            fixed (byte* _src = memory.Memory.Span)
-            {
-                byte* src = _src;
-                int bytesLeft = length;
-
-                // Repeat while we have bytes left to write from input Memory to output buffer
-                while (bytesLeft > 0)
-                {
-                    // Compute space left on output buffer
-                    int destSpace = (int)(dend - dcurr);
-
-                    // Adjust number of bytes to copy, to MIN(space left on output buffer, bytes left to copy)
-                    int toCopy = bytesLeft;
-                    if (toCopy > destSpace)
-                        toCopy = destSpace;
-
-                    // Copy bytes to output buffer
-                    Buffer.MemoryCopy(src, dcurr, destSpace, toCopy);
-
-                    // Move cursor on output buffer and input memory, update bytes left
-                    dcurr += toCopy;
-                    src += toCopy;
-                    bytesLeft -= toCopy;
-
-                    // If output buffer is full, send and reset output buffer. It is okay to leave the
-                    // buffer partially full, as ProcessMessage will do a final Send before returning.
-                    if (toCopy == destSpace)
-                    {
-                        Send(networkSender.GetResponseObjectHead());
-                        networkSender.GetResponseObject();
-                        dcurr = networkSender.GetResponseObjectHead();
-                        dend = networkSender.GetResponseObjectTail();
-                    }
-                }
-            }
-            memory.Dispose();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SendAndReset(IMemoryOwner<byte> memory, int length, ref byte* dcurr, ref byte* dend, INetworkSender networkSender)
         {
             // Copy allocated memory to main buffer and send
             fixed (byte* _src = memory.Memory.Span)
@@ -928,27 +863,6 @@ namespace Garnet.server
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Send(byte* d)
-        {
-            // #if DEBUG
-            // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
-            // #endif
-
-            if ((int)(dcurr - d) > 0)
-            {
-                // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
-                if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
-                {
-                    var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
-                    if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
-                }
-                int sendBytes = (int)(dcurr - d);
-                networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
-                sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void Send(byte* d, byte* dcurr, INetworkSender networkSender)
         {
             // #if DEBUG
             // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
