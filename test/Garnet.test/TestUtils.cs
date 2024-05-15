@@ -399,8 +399,8 @@ namespace Garnet.test
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
             X509CertificateCollection certificates = null,
-            ILogger logger = null,
-            AadAuthenticationSettings aadAuthenticationSettings = null)
+            AadAuthenticationSettings aadAuthenticationSettings = null,
+            ILogger logger = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
