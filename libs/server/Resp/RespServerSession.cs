@@ -224,7 +224,6 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
                     SendAndReset();
 
-                // Send message and dispose the network sender to end the session
                 Send(networkSender.GetResponseObjectHead());
                 networkSender.Dispose();
             }
@@ -239,6 +238,7 @@ namespace Garnet.server
             {
                 networkSender.ReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
+
             }
 
             if (txnManager.IsSkippingOperations())
@@ -362,7 +362,6 @@ namespace Garnet.server
             }
             return false;
         }
-
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, byte subcmd, int count, byte* ptr, ref TGarnetApi storageApi)
@@ -649,6 +648,16 @@ namespace Garnet.server
             else
             {
                 return ProcessAdminCommands(command, bufSpan, count, ref storageApi);
+            }
+            return true;
+        }
+
+        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                GetCommand(bufSpan, out bool success1);
+                if (!success1) return false;
             }
             return true;
         }
