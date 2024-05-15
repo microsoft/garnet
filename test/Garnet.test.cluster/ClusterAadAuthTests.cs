@@ -52,7 +52,6 @@ namespace Garnet.test.cluster
                 new Claim("http://schemas.microsoft.com/identity/claims/objectidentifier",objId),
             };
             var authSettings = new AadAuthenticationSettings([appId], [audience], [audience], IssuerSigningTokenProvider.Create(new List<SecurityKey> { tokenGenerator.SecurityKey }, context.logger));
-            authSettings = authSettings.WithUsernameValidation();
             var token = tokenGenerator.CreateToken(tokenClaims, DateTime.Now.AddMinutes(10));
             // Generate default ACL file
 

@@ -167,6 +167,9 @@ namespace Garnet
         [Option("aad-authorized-app-ids", Required = false, Separator = ',', HelpText = "The authorized client app Ids for AAD authentication. Should be a comma separated string.")]
         public string AuthorizedAadApplicationIds { get; set; }
 
+        [Option("aad-validate-acl-username", Required = false, Separator = ',', HelpText = "Only valid for AclWithAAD mode. Validates username -  expected to be OID ag")]
+        public bool AadValidateUsername { get; set; }
+
         [OptionValidation]
         [Option("aof", Required = false, HelpText = "Enable write ahead logging (append-only file).")]
         public bool? EnableAOF { get; set; }
@@ -623,12 +626,10 @@ namespace Garnet
                 case GarnetAuthenticationMode.Aad:
                     return new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger));
                 case GarnetAuthenticationMode.ACL:
-                    return new AclAuthenticationSettings(AclFile, Password);
+                    return new AclAuthenticationPasswordSettings(AclFile, Password);
                 case GarnetAuthenticationMode.AclWithAad:
-                    var aadAuthSettings = new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger));
-                    aadAuthSettings = aadAuthSettings.WithUsernameValidation();
-                    return new AclAuthenticationSettings(AclFile, Password, aadAuthSettings);
-
+                    var aadAuthSettings = new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger), AadValidateUsername);
+                    return new AclAuthenticationAadSettings(AclFile, Password, aadAuthSettings);
                 default:
                     logger?.LogError("Unsupported authentication mode: {mode}", AuthenticationMode);
                     throw new Exception($"Authentication mode {AuthenticationMode} is not supported.");

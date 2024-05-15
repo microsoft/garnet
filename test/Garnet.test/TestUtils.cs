@@ -190,7 +190,7 @@ namespace Garnet.test
             IAuthenticationSettings authenticationSettings = null;
             if (useAcl)
             {
-                authenticationSettings = new AclAuthenticationSettings(aclFile, defaultPassword);
+                authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, defaultPassword);
             }
             else if (defaultPassword != null)
             {
@@ -415,10 +415,13 @@ namespace Garnet.test
             if (!UseAzureStorage) _CheckpointDir = new DirectoryInfo(string.IsNullOrEmpty(_CheckpointDir) ? "." : _CheckpointDir).FullName;
 
             IAuthenticationSettings authenticationSettings = null;
-            if (useAcl)
+            if (useAcl && aadAuthenticationSettings != null)
             {
-
-                authenticationSettings = new AclAuthenticationSettings(aclFile, authPassword, aadAuthenticationSettings);
+                authenticationSettings = new AclAuthenticationAadSettings(aclFile, authPassword, aadAuthenticationSettings);
+            }
+            else if (useAcl)
+            {
+                authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, authPassword);
             }
             else if (authPassword != null)
             {

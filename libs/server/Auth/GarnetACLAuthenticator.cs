@@ -8,36 +8,32 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server.Auth
 {
-    class GarnetACLAuthenticator : IGarnetAuthenticator
+    abstract class GarnetACLAuthenticator : IGarnetAuthenticator
     {
         /// <summary>
         /// The Access Control List to authenticate users against
         /// </summary>
-        readonly AccessControlList _acl;
+        protected readonly AccessControlList _acl;
 
         /// <summary>
         /// Logger to use to output log messages to
         /// </summary>
-        readonly ILogger _logger;
+        protected readonly ILogger _logger;
 
         /// <summary>
         /// If authenticated, contains a reference to the authenticated user. Otherwise null.
         /// </summary>
-        User _user = null;
-
-
-        private IGarnetAuthenticator _authenticator;
+        protected User _user = null;
 
         /// <summary>
         /// Initializes a new ACLAuthenticator instance.
         /// </summary>
         /// <param name="accessControlList">Access control list to authenticate against</param>
         /// <param name="logger">The logger to use</param>
-        public GarnetACLAuthenticator(AccessControlList accessControlList, ILogger logger, IGarnetAuthenticator wrapperAuthenticator = null)
+        public GarnetACLAuthenticator(AccessControlList accessControlList, ILogger logger)
         {
             _acl = accessControlList;
             _logger = logger;
-            _authenticator = wrapperAuthenticator;
         }
 
         /// <summary>
@@ -69,30 +65,11 @@ namespace Garnet.server.Auth
                 // Check if user exists and set default user if username is unspecified
                 string uname = Encoding.ASCII.GetString(username);
                 User user = string.IsNullOrEmpty(uname) ? _acl.GetDefaultUser() : _acl.GetUser(uname);
-
-                // Use injected authenticator if configured.
-                if (_authenticator != null)
+                if (user == null)
                 {
-                    if (user == null || password.Length == 0)
-                    {
-                        return false;
-                    }
-
-                    if (user.IsEnabled && _authenticator.Authenticate(password, username))
-                    {
-                        _user = user;
-                        successful = true;
-                    }
-                    return successful;
+                    return false;
                 }
-
-                // Try to authenticate user
-                ACLPassword passwordHash = ACLPassword.ACLPasswordFromString(Encoding.ASCII.GetString(password));
-                if (user.IsEnabled && user.ValidatePassword(passwordHash))
-                {
-                    _user = user;
-                    successful = true;
-                }
+                successful = AuthenticateInternal(user, username, password);
             }
             catch (Exception ex)
             {
@@ -102,6 +79,8 @@ namespace Garnet.server.Auth
 
             return successful;
         }
+
+        protected abstract bool AuthenticateInternal(User user, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password);
 
         /// <summary>
         /// Returns the currently authorized user.

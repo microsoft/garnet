@@ -14,15 +14,6 @@ using Microsoft.IdentityModel.Validators;
 
 namespace Garnet.server.Auth
 {
-    internal class AadValidationConfig
-    {
-        internal IReadOnlyCollection<string> _authorizedAppIds { get; set; }
-        internal IReadOnlyCollection<string> _audiences { get; set; }
-        internal IReadOnlyCollection<string> _issuers { get; set; }
-        internal IssuerSigningTokenProvider _signingTokenProvider { get; set; }
-        internal bool ValidateUsername { get; set; }
-    }
-
     class GarnetAadAuthenticator : IGarnetAuthenticator
     {
         private static JwtSecurityTokenHandler _tokenHandler = new JwtSecurityTokenHandler();
@@ -45,7 +36,7 @@ namespace Garnet.server.Auth
         private readonly IReadOnlyCollection<string> _audiences;
         private readonly IReadOnlyCollection<string> _issuers;
         private readonly IssuerSigningTokenProvider _signingTokenProvider;
-        private readonly bool ValidateUsername;
+        private readonly bool _validateUsername;
 
         private readonly ILogger _logger;
 
@@ -54,23 +45,14 @@ namespace Garnet.server.Auth
             IReadOnlyCollection<string> audiences,
             IReadOnlyCollection<string> issuers,
             IssuerSigningTokenProvider signingTokenProvider,
+            bool validateUsername,
             ILogger logger)
         {
             _authorizedAppIds = authorizedAppIds;
             _signingTokenProvider = signingTokenProvider;
             _audiences = audiences;
             _issuers = issuers;
-            ValidateUsername = false;
-            _logger = logger;
-        }
-
-        internal GarnetAadAuthenticator(AadValidationConfig aadValidationConfig, ILogger logger)
-        {
-            _authorizedAppIds = aadValidationConfig._authorizedAppIds;
-            _signingTokenProvider = aadValidationConfig._signingTokenProvider;
-            _audiences = aadValidationConfig._audiences;
-            _issuers = aadValidationConfig._issuers;
-            ValidateUsername = aadValidationConfig.ValidateUsername;
+            _validateUsername = validateUsername;
             _logger = logger;
         }
 
@@ -113,7 +95,7 @@ namespace Garnet.server.Auth
                 .ToDictionary(group => group.Key, group => string.Join(',', group.Select(c => c.Value)), StringComparer.OrdinalIgnoreCase);
 
             bool isValid = IsApplicationPrincipal(claims) && IsApplicationAuthorized(claims);
-            return !ValidateUsername ? isValid : ValidateUsername && IsUserNameAuthorized(claims, userName);
+            return !_validateUsername ? isValid : _validateUsername && IsUserNameAuthorized(claims, userName);
         }
         private bool IsApplicationAuthorized(IDictionary<string, string> claims)
         {
