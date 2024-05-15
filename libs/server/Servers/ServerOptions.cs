@@ -41,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of hash index in bytes (rounds down to power of 2).
         /// </summary>
-        public string IndexSize = "8g";
+        public string IndexSize = "128m";
 
         /// <summary>
         /// Max size of hash index in bytes (rounds down to power of 2). If unspecified, index size doesn't grow (default behavior).

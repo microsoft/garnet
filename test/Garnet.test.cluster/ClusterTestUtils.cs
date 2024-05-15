@@ -965,20 +965,6 @@ namespace Garnet.test.cluster
             return a;
         }
 
-        public void AddSlots(IPEndPoint endPoint, ushort startSlot, ushort endSlot, ILogger logger = null)
-        {
-            try
-            {
-                var server = redis.GetServer(endPoint);
-                var resp = server.Execute("cluster", "addslotsrange", $"{startSlot}", $"{endSlot}");
-                Assert.AreEqual((string)resp, "OK");
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error has occured");
-            }
-        }
-
         public string AddSlotsRange(int nodeIndex, List<(int, int)> ranges, ILogger logger)
             => (string)AddSlotsRange((IPEndPoint)endpoints[nodeIndex], ranges, logger);
 

@@ -31,9 +31,13 @@ namespace Garnet.cluster
         /// </summary>
         FAIL,
         /// <summary>
-        /// 
+        /// Not a slot state. Used with SETSLOT
         /// </summary>
         NODE,
+        /// <summary>
+        /// Invalid slot state
+        /// </summary>
+        INVALID,
     }
 
     /// <summary>
