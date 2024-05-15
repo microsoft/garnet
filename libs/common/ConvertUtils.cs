@@ -42,5 +42,16 @@ namespace Garnet.common
             }
             return milliseconds;
         }
+
+        /// <summary>
+        /// Convert ASCII Span to upper case
+        /// </summary>
+        /// <param name="command"></param>
+        public static void MakeUpperCase(Span<byte> command)
+        {
+            foreach (ref var c in command)
+                if (c > 96 && c < 123)
+                    c -= 32;
+        }
     }
 }

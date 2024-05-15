@@ -79,7 +79,7 @@ namespace Garnet.common.Parsing
         /// </summary>
         /// <param name="message">Exception message.</param>
         [DoesNotReturn]
-        public static void Throw(string message) =>
+        public static new void Throw(string message) =>
             throw new RespParsingException(message);
     }
 }
