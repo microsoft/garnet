@@ -22,6 +22,10 @@ namespace Garnet.client
         /// <param name="context">An optional context to correlate request to callback.</param>
         public void ListLeftPush(string key, string element, Action<long, long, string> callback, long context = 0)
         {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(element);
+            ArgumentNullException.ThrowIfNull(callback);
+
             var args = new List<Memory<byte>>
             {
                 Encoding.ASCII.GetBytes(key),
@@ -40,6 +44,15 @@ namespace Garnet.client
         /// <param name="context">An optional context to correlate request to callback.</param>
         public void ListLeftPush(string key, List<string> elements, Action<long, long, string> callback, long context = 0)
         {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(elements);
+            ArgumentNullException.ThrowIfNull(callback);
+
+            if (elements.Count == 0)
+            {
+                throw new ArgumentException("The elements can't be empty.", nameof(elements));
+            }
+
             elements.Insert(0, key);
 
             ExecuteForLongResult(callback, context, nameof(LPUSH), elements);
@@ -57,14 +70,12 @@ namespace Garnet.client
         /// <exception cref="ArgumentNullException"></exception>
         public async Task<long> ListLeftPushAsync(string key, params string[] elements)
         {
-            if (string.IsNullOrEmpty(key))
-            {
-                throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
-            }
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(elements);
 
-            if (elements is null)
+            if (elements.Length == 0)
             {
-                throw new ArgumentNullException(nameof(elements));
+                throw new ArgumentException("The elements can't be empty.", nameof(elements));
             }
 
             return await ExecuteForLongResultAsync(nameof(LPUSH), [key, .. elements]);
@@ -79,6 +90,10 @@ namespace Garnet.client
         /// <param name="context">An optional context to correlate request to callback.</param>
         public void ListRightPush(string key, string element, Action<long, long, string> callback, long context = 0)
         {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(element);
+            ArgumentNullException.ThrowIfNull(callback);
+
             var args = new List<Memory<byte>>
             {
                 Encoding.ASCII.GetBytes(key),
@@ -97,6 +112,15 @@ namespace Garnet.client
         /// <param name="context">An optional context to correlate request to callback.</param>
         public void ListRightPush(string key, List<string> elements, Action<long, long, string> callback, long context = 0)
         {
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(elements);
+            ArgumentNullException.ThrowIfNull(callback);
+
+            if (elements.Count == 0)
+            {
+                throw new ArgumentException("The elements can't be empty.", nameof(elements));
+            }
+
             elements.Insert(0, key);
 
             ExecuteForLongResult(callback, context, nameof(RPUSH), elements);
@@ -114,14 +138,12 @@ namespace Garnet.client
         /// <exception cref="ArgumentNullException"></exception>
         public async Task<long> ListRightPushAsync(string key, params string[] elements)
         {
-            if (string.IsNullOrEmpty(key))
-            {
-                throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
-            }
+            ArgumentNullException.ThrowIfNull(key);
+            ArgumentNullException.ThrowIfNull(elements);
 
-            if (elements is null)
+            if (elements.Length == 0)
             {
-                throw new ArgumentNullException(nameof(elements));
+                throw new ArgumentException("The elements can't be empty.", nameof(elements));
             }
 
             return await ExecuteForLongResultAsync(nameof(RPUSH), [key, .. elements]);
