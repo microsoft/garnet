@@ -25,7 +25,7 @@ namespace Garnet.server
         {
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkGET_SG(ptr, ref storageApi);
-            
+
             if (useAsync)
                 return NetworkGETAsync(ptr, ref storageApi);
 

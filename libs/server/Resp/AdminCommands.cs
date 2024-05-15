@@ -509,12 +509,12 @@ namespace Garnet.server
                                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                             }
                         }
-                        
+
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                     }
                     else
-                            {
+                    {
                         if (!DrainCommands(bufSpan, count - 1))
                             return false;
                         errorFlag = true;
