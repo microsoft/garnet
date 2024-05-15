@@ -93,12 +93,11 @@ namespace Garnet.server
             {
                 if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
                 {
-                    using (var ms = new MemoryStream())
-                    {
-                        using var writer = new BinaryWriter(ms, new UTF8Encoding(), true);
-                        DoSerialize(writer);
-                        serialized = ms.ToArray();
-                    }
+                    using var ms = new MemoryStream();
+                    using var writer = new BinaryWriter(ms, Encoding.UTF8);
+                    DoSerialize(writer);
+                    serialized = ms.ToArray();
+
                     serializationState = (int)SerializationPhase.SERIALIZED;
                     return;
                 }
