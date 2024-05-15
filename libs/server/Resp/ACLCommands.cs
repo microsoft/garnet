@@ -27,7 +27,7 @@ namespace Garnet.server
         {
             // Only proceed if current authenticator can be used with ACL commands.
             // Currently only GarnetACLAuthenticator is supported.
-            if (!_authenticator.HasACLSupport || (_authenticator.GetType() != typeof(GarnetACLAuthenticator)))
+            if (!_authenticator.HasACLSupport || (_authenticator.GetType().BaseType != typeof(GarnetACLAuthenticator)))
             {
                 if (!DrainCommands(bufSpan, count))
                     return false;
@@ -214,7 +214,7 @@ namespace Garnet.server
 
                 // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
                 Debug.Assert(this.storeWrapper.serverOptions.AuthSettings != null);
-                Debug.Assert(this.storeWrapper.serverOptions.AuthSettings.GetType() == typeof(AclAuthenticationSettings));
+                Debug.Assert(this.storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
                 AclAuthenticationSettings aclAuthenticationSettings = (AclAuthenticationSettings)this.storeWrapper.serverOptions.AuthSettings;
 
                 // Try to reload the configured ACL configuration file
