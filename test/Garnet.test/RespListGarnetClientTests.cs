@@ -33,7 +33,7 @@ namespace Garnet.test
             // Act & Assert
             db.ListLeftPush("list1", "foo", (_, returnValue, _) =>
             {
-                Assert.IsTrue(1 == returnValue);
+                Assert.AreEqual(1, returnValue);
                 e.Set();
             });
 
@@ -42,7 +42,7 @@ namespace Garnet.test
 
             db.ListLeftPush("list1", ["bar", "baz"], (_, returnValue, _) =>
             {
-                Assert.IsTrue(3 == returnValue);
+                Assert.AreEqual(3, returnValue);
                 e.Set();
             });
 
@@ -51,7 +51,7 @@ namespace Garnet.test
 
             db.ListLeftPush("list2", ["foo", "baz"], (_, returnValue, _) =>
             {
-                Assert.IsTrue(2 == returnValue);
+                Assert.AreEqual(2, returnValue);
                 e.Set();
             });
 
@@ -87,7 +87,7 @@ namespace Garnet.test
             // Act & Assert
             db.ListRightPush("list6", "foo", (_, returnValue, _) =>
             {
-                Assert.IsTrue(1 == returnValue);
+                Assert.AreEqual(1, returnValue);
                 e.Set();
             });
 
@@ -96,7 +96,7 @@ namespace Garnet.test
 
             db.ListRightPush("list6", ["bar", "baz"], (_, returnValue, _) =>
             {
-                Assert.IsTrue(3 == returnValue);
+                Assert.AreEqual(3, returnValue);
                 e.Set();
             });
 
@@ -105,7 +105,7 @@ namespace Garnet.test
 
             db.ListRightPush("list7", ["foo", "baz"], (_, returnValue, _) =>
             {
-                Assert.IsTrue(2 == returnValue);
+                Assert.AreEqual(2, returnValue);
                 e.Set();
             });
 
