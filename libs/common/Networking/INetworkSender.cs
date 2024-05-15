@@ -22,6 +22,18 @@ namespace Garnet.networking
         string RemoteEndpointName { get; }
 
         /// <summary>
+        /// Enter exclusive use of network sender. Allocate and get response object pointers.
+        /// </summary>
+        /// <param name="head"></param>
+        /// <param name="tail"></param>
+        unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail);
+
+        /// <summary>
+        /// Exit exclusive use of network sender. Free response object.
+        /// </summary>
+        void ExitAndReturnResponseObject();
+
+        /// <summary>
         /// Allocate a new response object
         /// </summary>
         void GetResponseObject();
@@ -70,11 +82,5 @@ namespace Garnet.networking
         /// Throttle mechanism for preventing too many sends outstanding (blocking)
         /// </summary>
         void Throttle();
-
-        /// <summary>
-        /// Create a clone of the network sender for the same connection
-        /// </summary>
-        /// <returns></returns>
-        INetworkSender Clone();
     }
 }

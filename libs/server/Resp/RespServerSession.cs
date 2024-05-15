@@ -104,7 +104,8 @@ namespace Garnet.server
         /// Whether async mode is turned on for the session
         /// </summary>
         bool useAsync = false;
-        int asyncStarted = 0, asyncCompleted = 0;
+        long asyncStarted = 0, asyncCompleted = 0;
+        SingleWaiterAutoResetEvent asyncWaiter = null;
         SemaphoreSlim asyncDone = null;
 
         /// <summary>
@@ -218,7 +219,7 @@ namespace Garnet.server
                 latencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
-                networkSender.GetResponseObject();
+                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                 ProcessMessages();
                 recvBufferPtr = null;
             }
@@ -233,7 +234,8 @@ namespace Garnet.server
                     SendAndReset();
 
                 // Send message and dispose the network sender to end the session
-                Send(networkSender.GetResponseObjectHead());
+                if (dcurr > networkSender.GetResponseObjectHead())
+                    Send(networkSender.GetResponseObjectHead());
                 networkSender.Dispose();
             }
             catch (Exception ex)
@@ -245,7 +247,7 @@ namespace Garnet.server
             }
             finally
             {
-                networkSender.ReturnResponseObject();
+                networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
             }
 
@@ -278,9 +280,6 @@ namespace Garnet.server
             // #if DEBUG
             // logger?.LogTrace("RECV: [{recv}]", Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", ""));
             // #endif
-
-            dcurr = networkSender.GetResponseObjectHead();
-            dend = networkSender.GetResponseObjectTail();
 
             var _origReadHead = readHead;
 

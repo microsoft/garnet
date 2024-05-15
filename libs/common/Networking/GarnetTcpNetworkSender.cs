@@ -50,6 +50,8 @@ namespace Garnet.common
 
         readonly LimitedFixedBufferPool networkPool;
 
+        SpinLock spinLock;
+
         /// <summary>
         /// 
         /// </summary>
@@ -67,6 +69,7 @@ namespace Garnet.common
             this.saeaStack = new(2 * ThrottleMax);
             this.responseObject = null;
             this.ThrottleMax = throttleMax;
+            this.spinLock = new();
 
             var endpoint = socket.RemoteEndPoint as IPEndPoint;
             if (endpoint != null)
@@ -78,6 +81,35 @@ namespace Garnet.common
 
         /// <inheritdoc />
         public override string RemoteEndpointName => remoteEndpoint;
+
+        /// <inheritdoc />
+        public override unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail)
+        {
+            var lockTaken = false;
+            spinLock.Enter(ref lockTaken);
+            Debug.Assert(lockTaken);
+            Debug.Assert(responseObject == null);
+            if (!saeaStack.TryPop(out responseObject, out bool disposed))
+            {
+                if (disposed)
+                    ThrowDisposed();
+                responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkPool);
+            }
+            head = responseObject.buffer.entryPtr;
+            tail = responseObject.buffer.entryPtr + responseObject.buffer.entry.Length;
+        }
+
+        /// <inheritdoc />
+        public override unsafe void ExitAndReturnResponseObject()
+        {
+            spinLock.Exit();
+            if (responseObject != null)
+            {
+                ReturnBuffer(responseObject);
+                responseObject = null;
+            }
+        }
+
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -207,10 +239,6 @@ namespace Garnet.common
             if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
                 throttle.Release();
         }
-
-        /// <inheritdoc />
-        public override INetworkSender Clone()
-            => new GarnetTcpNetworkSender(socket, networkPool, ThrottleMax);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe void Send(Socket socket, GarnetSaeaBuffer sendObject, int offset, int size)

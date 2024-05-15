@@ -47,6 +47,12 @@ namespace Garnet.networking
         public abstract string RemoteEndpointName { get; }
 
         /// <inheritdoc />
+        public abstract unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail);
+
+        /// <inheritdoc />
+        public abstract void ExitAndReturnResponseObject();
+
+        /// <inheritdoc />
         public abstract void GetResponseObject();
 
         /// <inheritdoc />
@@ -75,8 +81,5 @@ namespace Garnet.networking
 
         /// <inheritdoc />
         public abstract void Throttle();
-
-        /// <inheritdoc />
-        public abstract INetworkSender Clone();
     }
 }

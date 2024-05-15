@@ -93,13 +93,7 @@ namespace Garnet.server
 
             if (pending)
             {
-                while (!RespWriteUtils.WriteError($"ASYNC {asyncStarted++}", ref dcurr, dend))
-                    SendAndReset();
-                if (asyncStarted == 1)
-                {
-                    var _storageApi = storageApi;
-                    Task.Run(() => AsyncGetProcessor(_storageApi));
-                }
+                NetworkGETPending(ref storageApi);
             }
             else
             {
@@ -119,44 +113,6 @@ namespace Garnet.server
                 }
             }
             return true;
-        }
-
-        void AsyncGetProcessor<TGarnetApi>(TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            var _networkSender = networkSender.Clone();
-            _networkSender.GetResponseObject();
-            byte* _dcurr = _networkSender.GetResponseObjectHead();
-            byte* _dend = _networkSender.GetResponseObjectTail();
-            while (asyncCompleted < asyncStarted)
-            {
-                // First complete all pending ops
-                storageApi.GET_CompletePending(out var completedOutputs, true);
-
-                // Send async replies with completed outputs
-                while (completedOutputs.Next())
-                {
-                    asyncCompleted++;
-                    var o = completedOutputs.Current.Output;
-                    RespWriteUtils.WriteArrayLength(3, ref _dcurr, _dend);
-                    RespWriteUtils.WriteBulkString("async"u8, ref _dcurr, _dend);
-                    RespWriteUtils.WriteIntegerAsBulkString((int)completedOutputs.Current.Context, ref _dcurr, _dend);
-                    if (completedOutputs.Current.Status.Found)
-                    {
-                        Debug.Assert(!o.IsSpanByte);
-                        sessionMetrics?.incr_total_found();
-                        SendAndReset(o.Memory, o.Length, ref _dcurr, ref _dend, _networkSender);
-                    }
-                    else
-                    {
-                        sessionMetrics?.incr_total_notfound();
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref _dcurr, _dend))
-                            SendAndReset(ref _dcurr, ref _dend, _networkSender, true);
-                    }
-                }
-                completedOutputs.Dispose();
-            }
-            SendAndReset(ref _dcurr, ref _dend, _networkSender, false);
         }
 
         /// <summary>

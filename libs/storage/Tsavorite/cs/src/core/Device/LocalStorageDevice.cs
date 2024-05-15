@@ -70,6 +70,7 @@ namespace Tsavorite.core
 
         void _callback(uint errorCode, uint numBytes, NativeOverlapped* pOVERLAP)
         {
+            Thread.Sleep(5000);
             Interlocked.Decrement(ref numPending);
             var result = (SimpleAsyncResult)Overlapped.Unpack(pOVERLAP).AsyncResult;
             result.callback(errorCode, numBytes, result.context);

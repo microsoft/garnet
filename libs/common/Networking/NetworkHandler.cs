@@ -531,6 +531,12 @@ namespace Garnet.networking
         }
 
         /// <inheritdoc />
+        public override unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail) => head = tail = null;
+
+        /// <inheritdoc />
+        public override void ExitAndReturnResponseObject() { }
+
+        /// <inheritdoc />
         public override void GetResponseObject() { }
 
         /// <inheritdoc />
@@ -608,9 +614,6 @@ namespace Garnet.networking
 
         /// <inheritdoc />
         public override void Throttle() { }
-
-        /// <inheritdoc />
-        public override INetworkSender Clone() { return null; }
 
         static void LogSecurityInfo(SslStream stream, string remoteEndpointName, ILogger logger = null)
         {

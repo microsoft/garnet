@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.CompilerServices;
 using Garnet.networking;
 
@@ -39,7 +38,7 @@ namespace Embedded.perftest
         {
             maxSizeSettings = new MaxSizeSettings();
             serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
-            buffer = GC.AllocateArray<byte>(serverBufferSize, true);
+            buffer = System.GC.AllocateArray<byte>(serverBufferSize, true);
             bufferPtr = (byte*)Unsafe.AsPointer(ref buffer[0]);
         }
 
@@ -56,6 +55,18 @@ namespace Embedded.perftest
 
         /// <inheritdoc />
         public void DisposeNetworkSender(bool waitForSendCompletion)
+        {
+        }
+
+        /// <inheritdoc />
+        public void EnterAndGetResponseObject(out byte* head, out byte* tail)
+        {
+            head = bufferPtr;
+            tail = bufferPtr + buffer.Length;
+        }
+
+        /// <inheritdoc />
+        public void ExitAndReturnResponseObject()
         {
         }
 
@@ -101,8 +112,5 @@ namespace Embedded.perftest
         public void Throttle()
         {
         }
-
-        /// <inheritdoc />
-        public INetworkSender Clone() { return this; }
     }
 }

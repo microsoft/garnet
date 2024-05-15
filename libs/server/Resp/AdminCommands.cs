@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.ACL;
@@ -494,10 +495,21 @@ namespace Garnet.server
                         if (asyncCompleted < asyncStarted)
                         {
                             asyncDone = new(0);
-                            while (asyncCompleted < asyncStarted) asyncDone.Wait();
-                            asyncDone.Dispose();
-                            asyncDone = null;
+                            if (dcurr > networkSender.GetResponseObjectHead())
+                                Send(networkSender.GetResponseObjectHead());
+                            try
+                            {
+                                networkSender.ExitAndReturnResponseObject();
+                                while (asyncCompleted < asyncStarted) asyncDone.Wait();
+                                asyncDone.Dispose();
+                                asyncDone = null;
+                            }
+                            finally
+                            {
+                                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                            }
                         }
+                        
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
                     }
