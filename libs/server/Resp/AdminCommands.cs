@@ -272,7 +272,7 @@ namespace Garnet.server
                     errorCmd = "ping";
                 }
             }
-            else if ((command == RespCommand.CLUSTER) || (command == RespCommand.MIGRATE) || (command == RespCommand.FAILOVER) || (command == RespCommand.REPLICAOF) || (command == RespCommand.SECONDARYOF))
+            else if (command is RespCommand.CLUSTER or RespCommand.MIGRATE or RespCommand.FAILOVER or RespCommand.REPLICAOF or RespCommand.SECONDARYOF)
             {
                 if (clusterSession == null)
                 {
@@ -543,16 +543,6 @@ namespace Garnet.server
                 var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, errorCmd);
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
-            }
-            return true;
-        }
-
-        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                GetCommand(bufSpan, out bool success1);
-                if (!success1) return false;
             }
             return true;
         }
