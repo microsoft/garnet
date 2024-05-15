@@ -69,7 +69,7 @@ namespace Garnet.test
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
-            db.Connect();
+            await db.ConnectAsync();
 
             // Act & Assert
             Assert.AreEqual(result, await db.ListLeftPushAsync(key, elements));
@@ -123,7 +123,7 @@ namespace Garnet.test
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
-            db.Connect();
+            await db.ConnectAsync();
 
             // Act & Assert
             Assert.AreEqual(result, await db.ListRightPushAsync(key, elements));
