@@ -208,6 +208,10 @@ namespace Garnet.common
                 throttle.Release();
         }
 
+        /// <inheritdoc />
+        public override INetworkSender Clone()
+            => new GarnetTcpNetworkSender(socket, networkPool, ThrottleMax);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe void Send(Socket socket, GarnetSaeaBuffer sendObject, int offset, int size)
         {

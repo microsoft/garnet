@@ -75,5 +75,8 @@ namespace Garnet.networking
 
         /// <inheritdoc />
         public abstract void Throttle();
+
+        /// <inheritdoc />
+        public abstract INetworkSender Clone();
     }
 }

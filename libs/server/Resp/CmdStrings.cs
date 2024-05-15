@@ -80,6 +80,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> type => "type"u8;
         public static ReadOnlySpan<byte> REGISTERCS => "REGISTERCS"u8;
         public static ReadOnlySpan<byte> registercs => "registercs"u8;
+        public static ReadOnlySpan<byte> ASYNC => "ASYNC"u8;
+        public static ReadOnlySpan<byte> ON => "ON"u8;
+        public static ReadOnlySpan<byte> on => "on"u8;
+        public static ReadOnlySpan<byte> OFF => "OFF"u8;
+        public static ReadOnlySpan<byte> off => "off"u8;
+        public static ReadOnlySpan<byte> BARRIER => "BARRIER"u8;
+        public static ReadOnlySpan<byte> barrier => "barrier"u8;
 
         /// <summary>
         /// Response strings
@@ -134,7 +141,8 @@ namespace Garnet.server
         /// Response string templates
         /// </summary>
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
-        public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
+        public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
+        public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";
         public const string GenericErrUnknownSubCommand = "ERR unknown subcommand '{0}'. Try {1} HELP";
 
         /// <summary>

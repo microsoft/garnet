@@ -53,6 +53,9 @@ namespace Garnet.server
         public bool GET_CompletePending((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait = false)
             => storageSession.GET_CompletePending(outputArr, wait, ref context);
 
+        public bool GET_CompletePending(out CompletedOutputIterator<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long> completedOutputs, bool wait)
+            => storageSession.GET_CompletePending(out completedOutputs, wait, ref context);
+
         /// <inheritdoc />
         public unsafe GarnetStatus GETForMemoryResult(ArgSlice key, out MemoryResult<byte> value)
             => storageSession.GET(key, out value, ref context);

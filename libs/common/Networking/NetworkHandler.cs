@@ -609,6 +609,9 @@ namespace Garnet.networking
         /// <inheritdoc />
         public override void Throttle() { }
 
+        /// <inheritdoc />
+        public override INetworkSender Clone() { return null; }
+
         static void LogSecurityInfo(SslStream stream, string remoteEndpointName, ILogger logger = null)
         {
             logger?.LogTrace("[{remoteEndpointName}] Cipher: {CipherAlgorithm} strength {CipherStrength}", remoteEndpointName, stream.CipherAlgorithm, stream.CipherStrength);

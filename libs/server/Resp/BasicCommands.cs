@@ -5,6 +5,8 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -23,6 +25,9 @@ namespace Garnet.server
         {
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkGET_SG(ptr, ref storageApi);
+            
+            if (useAsync)
+                return NetworkGETAsync(ptr, ref storageApi);
 
             byte* keyPtr = null;
             int ksize = 0;
@@ -58,6 +63,100 @@ namespace Garnet.server
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// GET - async version
+        /// </summary>
+        bool NetworkGETAsync<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            byte* keyPtr = null;
+            int ksize = 0;
+
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            readHead = (int)(ptr - recvBufferPtr);
+
+            if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
+                return true;
+
+            keyPtr -= sizeof(int); // length header
+            *(int*)keyPtr = ksize;
+
+            // FIXME: this will always cause allocation of IMemory for the Get even if operation completes synchronously
+            // We should fix ConvertToHeap to conditionally avoid this allocation
+            var o = new SpanByteAndMemory();
+            SpanByte input = default;
+            var status = storageApi.GET_WithPending(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref o, asyncStarted, out bool pending);
+
+            if (pending)
+            {
+                while (!RespWriteUtils.WriteError($"ASYNC {asyncStarted++}", ref dcurr, dend))
+                    SendAndReset();
+                if (asyncStarted == 1)
+                {
+                    var _storageApi = storageApi;
+                    Task.Run(() => AsyncGetProcessor(_storageApi));
+                }
+            }
+            else
+            {
+                switch (status)
+                {
+                    case GarnetStatus.OK:
+                        if (!o.IsSpanByte)
+                            SendAndReset(o.Memory, o.Length);
+                        else
+                            dcurr += o.Length;
+                        break;
+                    case GarnetStatus.NOTFOUND:
+                        Debug.Assert(o.IsSpanByte);
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                }
+            }
+            return true;
+        }
+
+        void AsyncGetProcessor<TGarnetApi>(TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            var _networkSender = networkSender.Clone();
+            _networkSender.GetResponseObject();
+            byte* _dcurr = _networkSender.GetResponseObjectHead();
+            byte* _dend = _networkSender.GetResponseObjectTail();
+            while (asyncCompleted < asyncStarted)
+            {
+                // First complete all pending ops
+                storageApi.GET_CompletePending(out var completedOutputs, true);
+
+                // Send async replies with completed outputs
+                while (completedOutputs.Next())
+                {
+                    asyncCompleted++;
+                    var o = completedOutputs.Current.Output;
+                    RespWriteUtils.WriteArrayLength(3, ref _dcurr, _dend);
+                    RespWriteUtils.WriteBulkString("async"u8, ref _dcurr, _dend);
+                    RespWriteUtils.WriteIntegerAsBulkString((int)completedOutputs.Current.Context, ref _dcurr, _dend);
+                    if (completedOutputs.Current.Status.Found)
+                    {
+                        Debug.Assert(!o.IsSpanByte);
+                        sessionMetrics?.incr_total_found();
+                        SendAndReset(o.Memory, o.Length, ref _dcurr, ref _dend, _networkSender);
+                    }
+                    else
+                    {
+                        sessionMetrics?.incr_total_notfound();
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref _dcurr, _dend))
+                            SendAndReset(ref _dcurr, ref _dend, _networkSender, true);
+                    }
+                }
+                completedOutputs.Dispose();
+            }
+            SendAndReset(ref _dcurr, ref _dend, _networkSender, false);
         }
 
         /// <summary>

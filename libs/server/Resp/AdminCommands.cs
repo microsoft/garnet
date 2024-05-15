@@ -467,9 +467,55 @@ namespace Garnet.server
             {
                 return ProcessACLCommands(bufSpan, count);
             }
-            else if ((command == RespCommand.REGISTERCS))
+            else if (command == RespCommand.REGISTERCS)
             {
                 return NetworkREGISTERCS(count, recvBufferPtr + readHead, storeWrapper.customCommandManager);
+            }
+            else if (command == RespCommand.ASYNC)
+            {
+                if (count == 1)
+                {
+                    var param = GetCommand(bufSpan, out bool success1);
+                    if (!success1) return false;
+                    if (param.SequenceEqual(CmdStrings.ON) || param.SequenceEqual(CmdStrings.on))
+                    {
+                        useAsync = true;
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else if (param.SequenceEqual(CmdStrings.OFF) || param.SequenceEqual(CmdStrings.off))
+                    {
+                        useAsync = false;
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else if (param.SequenceEqual(CmdStrings.BARRIER) || param.SequenceEqual(CmdStrings.barrier))
+                    {
+                        if (asyncCompleted < asyncStarted)
+                        {
+                            asyncDone = new(0);
+                            while (asyncCompleted < asyncStarted) asyncDone.Wait();
+                            asyncDone.Dispose();
+                            asyncDone = null;
+                        }
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                            {
+                        if (!DrainCommands(bufSpan, count - 1))
+                            return false;
+                        errorFlag = true;
+                        errorCmd = "ASYNC";
+                    }
+                }
+                else
+                {
+                    if (!DrainCommands(bufSpan, count))
+                        return false;
+                    errorFlag = true;
+                    errorCmd = "ASYNC";
+                }
             }
             else
             {

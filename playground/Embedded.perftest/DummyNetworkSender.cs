@@ -101,5 +101,8 @@ namespace Embedded.perftest
         public void Throttle()
         {
         }
+
+        /// <inheritdoc />
+        public INetworkSender Clone() { return this; }
     }
 }

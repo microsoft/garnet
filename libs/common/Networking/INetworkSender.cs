@@ -70,5 +70,11 @@ namespace Garnet.networking
         /// Throttle mechanism for preventing too many sends outstanding (blocking)
         /// </summary>
         void Throttle();
+
+        /// <summary>
+        /// Create a clone of the network sender for the same connection
+        /// </summary>
+        /// <returns></returns>
+        INetworkSender Clone();
     }
 }
