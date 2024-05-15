@@ -50,6 +50,9 @@ namespace Garnet.common
 
         readonly LimitedFixedBufferPool networkPool;
 
+        /// <summary>
+        /// NOTE: This variable should not be marked as readonly as it is a mutable struct
+        /// </summary>
         SpinLock spinLock;
 
         /// <summary>
