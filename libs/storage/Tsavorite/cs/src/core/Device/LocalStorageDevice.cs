@@ -54,7 +54,7 @@ namespace Tsavorite.core
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
-        /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
+        /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
         public LocalStorageDevice(string filename,
@@ -87,7 +87,7 @@ namespace Tsavorite.core
         /// <param name="preallocateFile"></param>
         /// <param name="deleteOnClose"></param>
         /// <param name="disableFileBuffering"></param>
-        /// <param name="capacity">The maximum number of bytes this storage device can accommondate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
+        /// <param name="capacity">The maximum number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit </param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
         /// <param name="initialLogFileHandles">Optional set of preloaded safe file handles, which can speed up hydration of preexisting log file handles</param>
         /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
