@@ -138,7 +138,7 @@ namespace Garnet.server.TLS
             {
                 ClientCertificateRequired = ClientCertificateRequired,
                 CertificateRevocationCheckMode = CertificateRevocationCheckMode,
-                RemoteCertificateValidationCallback = ValidateCertificateCallback(IssuerCertificatePath),
+                RemoteCertificateValidationCallback = ValidateClientCertificateCallback(IssuerCertificatePath),
                 ServerCertificateSelectionCallback = (sender, hostName) =>
                 {
                     return serverCertificateSelector.GetSslServerCertificate();
@@ -152,13 +152,42 @@ namespace Garnet.server.TLS
             {
                 TargetHost = ClusterTlsClientTargetHost,
                 AllowRenegotiation = false,
-                RemoteCertificateValidationCallback = ValidateCertificateCallback(IssuerCertificatePath),
+                RemoteCertificateValidationCallback = ValidateServerCertificateCallback(ClusterTlsClientTargetHost, IssuerCertificatePath),
                 // We use the same server certificate selector for the server's own client as well
                 LocalCertificateSelectionCallback = (object sender, string targetHost, X509CertificateCollection localCertificates, X509Certificate remoteCertificate, string[] acceptableIssuers) =>
                 {
                     return serverCertificateSelector.GetSslServerCertificate();
                 }
             };
+        }
+
+
+        /// <summary>
+        /// Callback to verify the TLS certificate
+        /// </summary>
+        /// <param name="issuerCertificatePath"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentException"></exception>
+        /// <exception cref="ArgumentNullException"></exception>
+        RemoteCertificateValidationCallback ValidateServerCertificateCallback(string targetHostName, string issuerCertificatePath)
+        {
+            var issuer = GetCertIssuer(issuerCertificatePath);
+             return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
+                => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
+                    && certificate is X509Certificate2 certificate2
+                    && ValidateCertificateName(certificate2, targetHostName)
+                    && ValidateCertificateIssuer(certificate2, issuer));
+        }
+
+        private bool ValidateCertificateName(X509Certificate2 certificate2, string targetHostName)
+        {
+            var subjectName = certificate2.GetNameInfo(X509NameType.DnsName, false);
+            if(string.IsNullOrWhiteSpace(subjectName))
+            {
+                subjectName = certificate2.GetNameInfo(X509NameType.SimpleName, false);
+            }
+
+            return subjectName.Equals(targetHostName, StringComparison.InvariantCultureIgnoreCase);
         }
 
         /// <summary>
@@ -168,7 +197,7 @@ namespace Garnet.server.TLS
         /// <returns></returns>
         /// <exception cref="ArgumentException"></exception>
         /// <exception cref="ArgumentNullException"></exception>
-        RemoteCertificateValidationCallback ValidateCertificateCallback(string issuerCertificatePath)
+        RemoteCertificateValidationCallback ValidateClientCertificateCallback(string issuerCertificatePath)
         {
             if (!ClientCertificateRequired)
             {
@@ -176,6 +205,19 @@ namespace Garnet.server.TLS
                 return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
                     => true;
             }
+            var issuer = GetCertIssuer(issuerCertificatePath);
+            return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
+                => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
+                    && certificate is X509Certificate2 certificate2
+                    && ValidateCertificateIssuer(certificate2, issuer));
+        }
+
+        /// <summary>
+        /// Returns issuer certificate in X509Certificate2 format.
+        /// </summary>
+        /// <param name="issuerCertificatePath">path to issuer cert.</param>
+        X509Certificate2 GetCertIssuer(string issuerCertificatePath)
+        {
             X509Certificate2 issuer = null;
             if (!string.IsNullOrEmpty(issuerCertificatePath))
             {
@@ -192,10 +234,7 @@ namespace Garnet.server.TLS
             else
                 logger?.LogWarning("ClientCertificateRequired is true and IssuerCertificatePath is not provided. The remote certificate chain will not be validated against issuer.");
 
-            return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
-                => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
-                    && certificate is X509Certificate2 certificate2
-                    && ValidateCertificateIssuer(certificate2, issuer));
+            return issuer;
         }
 
         /// <summary>
