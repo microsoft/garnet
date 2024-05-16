@@ -29,6 +29,11 @@ namespace Garnet.server
         private bool NetworkMGET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.MGET, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkMGET_SG(count, ptr, ref storageApi);
 
@@ -496,6 +501,11 @@ namespace Garnet.server
         private bool NetworkMSET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.MSET, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (NetworkArraySlotVerify(count / 2, ptr, interleavedKeys: true, readOnly: false, out bool retVal))
             {
                 return retVal;
@@ -545,6 +555,11 @@ namespace Garnet.server
         private bool NetworkMSETNX<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.MSET, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (NetworkArraySlotVerify(count / 2, ptr, interleavedKeys: true, readOnly: false, out bool retVal))
             {
                 return retVal;
@@ -611,10 +626,10 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkDEL<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkDEL<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.DEL, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
             {
                 return success;
             }
@@ -700,9 +715,14 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkDBSIZE<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkDBSIZE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.DBSIZE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             readHead = (int)(ptr - recvBufferPtr);
             while (!RespWriteUtils.WriteInteger(storageApi.GetDbSize(), ref dcurr, dend))
                 SendAndReset();
@@ -712,6 +732,11 @@ namespace Garnet.server
         private bool NetworkKEYS<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.KEYS, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             byte* pattern = null;
             int psize = 0;
 
@@ -750,6 +775,11 @@ namespace Garnet.server
         private bool NetworkSCAN<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.SCAN, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count < 1)
                 return AbortWithWrongNumberOfArguments("SCAN", count);
 
@@ -840,6 +870,11 @@ namespace Garnet.server
         private bool NetworkTYPE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.TYPE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count != 1)
                 return AbortWithWrongNumberOfArguments("TYPE", count);
 
@@ -870,11 +905,16 @@ namespace Garnet.server
         private bool NetworkMODULE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.MODULE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count != 1)
                 return AbortWithWrongNumberOfArguments("MODULE", count);
 
-            // MODULE nameofmodule
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var nameofmodule, ref ptr, recvBufferPtr + bytesRead))
+            // MODULE SubCommand
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var subCmd, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             // TODO: pending implementation for module support.

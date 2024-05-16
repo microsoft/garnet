@@ -246,7 +246,7 @@ namespace Garnet.server
         private bool NetworkSET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.Set, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            if (!CheckACLPermissions(RespCommand.SET, RespCommandsInfo.SubCommandIds.None, count, out bool success))
             {
                 return success;
             }
@@ -1015,9 +1015,14 @@ namespace Garnet.server
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkSTRLEN<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSTRLEN<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.STRLEN, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             byte* keyPtr = null;
             int ksize = 0;
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -33,14 +34,19 @@ namespace Garnet.server
         /// <param name="hop"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashSet<TGarnetApi>(int count, byte* ptr, HashOperation hop, ref TGarnetApi storageApi)
+        private unsafe bool HashSet<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (((hop == HashOperation.HSET || hop == HashOperation.HMSET)
-                  && (count == 1 || count % 2 != 1)) ||
-                (hop == HashOperation.HSETNX && count != 3))
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
             {
-                return AbortWithWrongNumberOfArguments(hop.ToString(), count);
+                return success;
+            }
+
+            if (((command == RespCommand.HSET || command == RespCommand.HMSET)
+                  && (count == 1 || count % 2 != 1)) ||
+                (command == RespCommand.HSETNX && count != 3))
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
             else
             {
@@ -67,6 +73,15 @@ namespace Garnet.server
 
                 var inputCount = (count - 1) / 2;
 
+                HashOperation hop = 0;
+                switch (command)
+                {
+                    case RespCommand.HSET: hop = HashOperation.HSET; break;
+                    case RespCommand.HMSET: hop = HashOperation.HMSET; break;
+                    case RespCommand.HSETNX: hop = HashOperation.HSETNX; break;
+                    default: Debug.Fail($"Unexpected command {command}"); break;
+                }
+
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
                 inputPtr->header.flags = 0;
@@ -89,7 +104,7 @@ namespace Garnet.server
                 ptr += output.bytesDone;
                 readHead = (int)(ptr - recvBufferPtr);
 
-                if (hop == HashOperation.HMSET)
+                if (command == RespCommand.HMSET)
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
@@ -117,15 +132,20 @@ namespace Garnet.server
         /// <param name="op">HGET, HGETALL, HMGET, HRANDFIELD</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashGet<TGarnetApi>(int count, byte* ptr, HashOperation op, ref TGarnetApi storageApi)
+        private unsafe bool HashGet<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if ((op == HashOperation.HGETALL && count != 1) ||
-                (op == HashOperation.HRANDFIELD && count < 1) ||
-                (op == HashOperation.HGET && count != 2) ||
-                (op == HashOperation.HMGET && count < 2))
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
             {
-                return AbortWithWrongNumberOfArguments(op.ToString(), count);
+                return success;
+            }
+
+            if ((command == RespCommand.HGETALL && count != 1) ||
+                (command == RespCommand.HRANDFIELD && count < 1) ||
+                (command == RespCommand.HGET && count != 2) ||
+                (command == RespCommand.HMGET && count < 2))
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
             else
             {
@@ -150,7 +170,17 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                int inputCount = op == HashOperation.HGETALL ? 0 : (op == HashOperation.HRANDFIELD ? count + 1 : count - 1);
+                HashOperation op = 0;
+                switch (command)
+                {
+                    case RespCommand.HGET: op = HashOperation.HGET; break;
+                    case RespCommand.HMGET: op = HashOperation.HMGET; break;
+                    case RespCommand.HGETALL: op = HashOperation.HGETALL; break;
+                    case RespCommand.HRANDFIELD: op = HashOperation.HRANDFIELD; break;
+                    default: Debug.Fail($"Unexpected command {command}"); break;
+                }
+
+                int inputCount = command == RespCommand.HGETALL ? 0 : (command == RespCommand.HRANDFIELD ? count + 1 : count - 1);
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
                 inputPtr->header.flags = 0;
@@ -164,7 +194,7 @@ namespace Garnet.server
                 var status = GarnetStatus.NOTFOUND;
 
                 var includeCountParameter = false;
-                if (op == HashOperation.HRANDFIELD)
+                if (command == RespCommand.HRANDFIELD)
                 {
                     includeCountParameter = inputPtr->count > 2; // 4 tokens are: command key count WITHVALUES
                     status = storageApi.HashRandomField(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
@@ -187,16 +217,16 @@ namespace Garnet.server
                             return false;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        if (op == HashOperation.HMGET && count - 1 >= 1)
+                        if (command == RespCommand.HMGET && count - 1 >= 1)
                         {
                             // HMGET key field [field ...]
                             // Write an empty array of count - 1 elements with null values.
                             while (!RespWriteUtils.WriteArrayWithNullElements(count - 1, ref dcurr, dend))
                                 SendAndReset();
                         }
-                        else if (op != HashOperation.HMGET)
+                        else if (command != RespCommand.HMGET)
                         {
-                            var respBytes = (includeCountParameter || op == HashOperation.HGETALL) ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
+                            var respBytes = (includeCountParameter || command == RespCommand.HGETALL) ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
                             while (!RespWriteUtils.WriteDirect(respBytes, ref dcurr, dend))
                                 SendAndReset();
                         }
@@ -221,9 +251,14 @@ namespace Garnet.server
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool HashLength<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count != 1)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
@@ -292,9 +327,13 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <returns></returns>
-        private unsafe bool HashStrLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool HashStrLength<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
 
             if (count != 2)
             {
@@ -366,9 +405,14 @@ namespace Garnet.server
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashDelete<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool HashDelete<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count < 1)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
@@ -446,9 +490,14 @@ namespace Garnet.server
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashExists<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool HashExists<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
            where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count != 2)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
@@ -520,9 +569,14 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool HashKeys<TGarnetApi>(int count, byte* ptr, HashOperation op, ref TGarnetApi storageApi)
+        private unsafe bool HashKeys<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
           where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count != 1)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
@@ -550,6 +604,14 @@ namespace Garnet.server
             // Prepare length of header in input buffer
             var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
+            HashOperation op = 0;
+            switch (command)
+            {
+                case RespCommand.HKEYS: op = HashOperation.HKEYS; break;
+                case RespCommand.HVALS: op = HashOperation.HVALS; break;
+                default: Debug.Fail($"Unexpected command {command}"); break;
+            }
+
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Hash;
             inputPtr->header.flags = 0;
@@ -562,7 +624,7 @@ namespace Garnet.server
 
             GarnetStatus status = GarnetStatus.NOTFOUND;
 
-            if (op == HashOperation.HKEYS)
+            if (command == RespCommand.HKEYS)
                 status = storageApi.HashKeys(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
             else
                 status = storageApi.HashVals(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
@@ -607,14 +669,19 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool HashIncrement<TGarnetApi>(int count, byte* ptr, HashOperation op, ref TGarnetApi storageApi)
+        private unsafe bool HashIncrement<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             // Check if parameters number is right
             if (count != 3)
             {
                 // Send error to output
-                return AbortWithWrongNumberOfArguments(op == HashOperation.HINCRBY ? "HINCRBY" : "HINCRBYFLOAT", count);
+                return AbortWithWrongNumberOfArguments(command == RespCommand.HINCRBY ? "HINCRBY" : "HINCRBYFLOAT", count);
             }
             else
             {
@@ -638,6 +705,14 @@ namespace Garnet.server
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                HashOperation op = 0;
+                switch (command)
+                {
+                    case RespCommand.HINCRBY: op = HashOperation.HINCRBY; break;
+                    case RespCommand.HINCRBYFLOAT: op = HashOperation.HINCRBYFLOAT; break;
+                    default: Debug.Fail($"Unexpected command {command}"); break;
+                }
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;

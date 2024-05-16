@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -21,6 +22,11 @@ namespace Garnet.server
         private unsafe bool GeoAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.GEOADD, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             // validate the number of parameters
             if (count < 4)
             {
@@ -96,28 +102,33 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool GeoCommands<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             int paramsRequiredInCommand = 0;
             string cmd = string.Empty;
             var responseWhenNotFound = CmdStrings.RESP_EMPTYLIST;
-            switch (op)
+            switch (command)
             {
-                case SortedSetOperation.GEODIST:
+                case RespCommand.GEODIST:
                     paramsRequiredInCommand = 3;
                     cmd = "GEODIST";
                     responseWhenNotFound = CmdStrings.RESP_ERRNOTFOUND;
                     break;
-                case SortedSetOperation.GEOHASH:
+                case RespCommand.GEOHASH:
                     paramsRequiredInCommand = 1;
                     cmd = "GEOHASH";
                     break;
-                case SortedSetOperation.GEOPOS:
+                case RespCommand.GEOPOS:
                     paramsRequiredInCommand = 1;
                     cmd = "GEOPOS";
                     break;
-                case SortedSetOperation.GEOSEARCH:
+                case RespCommand.GEOSEARCH:
                     paramsRequiredInCommand = 3;
                     cmd = "GEOSEARCH";
                     break;
@@ -152,6 +163,16 @@ namespace Garnet.server
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                SortedSetOperation op = 0;
+                switch (command)
+                {
+                    case RespCommand.GEOHASH: op = SortedSetOperation.GEOHASH; break;
+                    case RespCommand.GEODIST: op = SortedSetOperation.GEODIST; break;
+                    case RespCommand.GEOPOS: op = SortedSetOperation.GEOPOS; break;
+                    case RespCommand.GEOSEARCH: op = SortedSetOperation.GEOSEARCH; break;
+                    default: Debug.Fail($"Unexpected command {command}"); break;
+                }
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;

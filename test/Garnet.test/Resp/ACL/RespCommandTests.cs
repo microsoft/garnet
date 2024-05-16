@@ -2,8 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -29,6 +32,36 @@ namespace Garnet.test.Resp.ACL
         {
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        [Test]
+        public void AllCommandsCovered()
+        {
+            IEnumerable<MethodInfo> tests = typeof(RespCommandTests).GetMethods().Where(static mtd => mtd.GetCustomAttribute<TestAttribute>() != null);
+
+            HashSet<string> covered = new();
+
+            foreach (MethodInfo test in tests)
+            {
+                if (test.Name == nameof(AllCommandsCovered))
+                {
+                    continue;
+                }
+
+                Assert.IsTrue(test.Name.EndsWith("ACLs"), $"Expected all tests in {nameof(RespCommandTests)} except {nameof(AllCommandsCovered)} to be per-command and end with ACLs, unexpected test: {test.Name}");
+
+                string command = test.Name[..^"ALCs".Length];
+
+                covered.Add(command);
+            }
+
+            Assert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
+
+            IEnumerable<string> deSubCommanded = advertisedCommands.Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
+
+            IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase);
+
+            Assert.IsEmpty(notCovered, $"Commands not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
         }
 
         [Test]
@@ -318,7 +351,7 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void BGSave()
+        public void BGSaveACLs()
         {
             // test is a bit more verbose since it involves @admin
 
@@ -714,7 +747,7 @@ namespace Garnet.test.Resp.ACL
                 Assert.AreEqual("OK", (string)val);
             }
         }
-        
+
         // todo: cluster and subcommands are weird, do them later
 
         [Test]
@@ -879,7 +912,7 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ConfigRewrite()
+        public void ConfigRewriteACLs()
         {
             // test is a bit more verbose since it involves @admin
 
@@ -918,7 +951,6 @@ namespace Garnet.test.Resp.ACL
                 }
             }
         }
-
 
         [Test]
         public void ConfigSetACLs()
@@ -963,9 +995,9 @@ namespace Garnet.test.Resp.ACL
                             RedisResult res = db.Execute("CONFIG", "SET", "foo", "bar");
                             Assert.Fail("Should have raised unknow config error");
                         }
-                        catch(RedisException e)
+                        catch (RedisException e)
                         {
-                            if(e.Message == "ERR Unknown option or number of arguments for CONFIG SET - 'foo'")
+                            if (e.Message == "ERR Unknown option or number of arguments for CONFIG SET - 'foo'")
                             {
                                 return;
                             }
@@ -981,7 +1013,7 @@ namespace Garnet.test.Resp.ACL
                             RedisResult res = db.Execute("CONFIG", "SET", "foo", "bar", "fizz", "buzz");
                             Assert.Fail("Should have raised unknow config error");
                         }
-                        catch(RedisException e)
+                        catch (RedisException e)
                         {
                             if (e.Message == "ERR Unknown option or number of arguments for CONFIG SET - 'foo'")
                             {
@@ -994,6 +1026,3450 @@ namespace Garnet.test.Resp.ACL
                 }
             }
         }
+
+        // todo: figure out COSCAN ACL rules
+        // todo: figure out CustomCmd ACL rules
+        // todo: figure out CustomObjCmd ACL rules
+        // todo: figure out CustomTxn ACL rules
+
+        [Test]
+        public void DBSizeACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "DBSIZE",
+                server,
+                ["keyspace", "read", "fast"],
+                [DoDbSize]
+            );
+
+            void DoDbSize()
+            {
+                RedisResult val = db.Execute("DBSIZE");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void DecrACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "DECR",
+                server,
+                ["write", "string", "fast"],
+                [DoDecr]
+            );
+
+            void DoDecr()
+            {
+                RedisResult val = db.Execute("DECR", "foo");
+                Assert.AreEqual(-1, (int)val);
+            }
+        }
+
+        [Test]
+        public void DecrByACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "DECRBY",
+                server,
+                ["write", "string", "fast"],
+                [DoDecrBy]
+            );
+
+            void DoDecrBy()
+            {
+                RedisResult val = db.Execute("DECRBY", "foo", "2");
+                Assert.AreEqual(-2, (int)val);
+            }
+        }
+
+        [Test]
+        public void DelACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "DEL",
+                server,
+                ["keyspace", "write", "slow"],
+                [DoDel, DoDelMulti]
+            );
+
+            void DoDel()
+            {
+                RedisResult val = db.Execute("DEL", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoDelMulti()
+            {
+                RedisResult val = db.Execute("DEL", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void DiscardACLs()
+        {
+            // todo: discard is a little weird, so we're using exceptions for control flow here - don't love it
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "DISCARD",
+                server,
+                ["transaction", "fast"],
+                [DoDiscard]
+            );
+
+            void DoDiscard()
+            {
+                try
+                {
+                    RedisResult val = db.Execute("DISCARD");
+                    Assert.Fail("Shouldn't have reached this point, outside of a MULTI");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR DISCARD without MULTI")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void EchoACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ECHO",
+                server,
+                ["connection", "fast"],
+                [DoEcho]
+            );
+
+            void DoEcho()
+            {
+                RedisResult val = db.Execute("ECHO", "hello world");
+                Assert.AreEqual("hello world", (string)val);
+            }
+        }
+
+        [Test]
+        public void ExecACLs()
+        {
+            // todo: exec is a little weird, so we're using exceptions for control flow here - don't love it
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "EXEC",
+                server,
+                ["transaction", "slow"],
+                [DoExec]
+            );
+
+            void DoExec()
+            {
+                try
+                {
+                    RedisResult val = db.Execute("EXEC");
+                    Assert.Fail("Shouldn't have reached this point, outside of a MULTI");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR EXEC without MULTI")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ExistsACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "EXISTS",
+                server,
+                ["keyspace", "read", "fast"],
+                [DoExists, DoExistsMulti]
+            );
+
+            void DoExists()
+            {
+                RedisResult val = db.Execute("EXISTS", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoExistsMulti()
+            {
+                RedisResult val = db.Execute("EXISTS", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void ExpireACLs()
+        {
+            // todo: expire doesn't support combinations of flags (XX GT, XX LT are legal) so those will need to be tested when implemented
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "EXPIRE",
+                server,
+                ["keyspace", "write", "fast"],
+                [DoExpire, DoExpireNX, DoExpireXX, DoExpireGT, DoExpireLT]
+            );
+
+            void DoExpire()
+            {
+                RedisResult val = db.Execute("EXPIRE", "foo", "10");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoExpireNX()
+            {
+                RedisResult val = db.Execute("EXPIRE", "foo", "10", "NX");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoExpireXX()
+            {
+                RedisResult val = db.Execute("EXPIRE", "foo", "10", "XX");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoExpireGT()
+            {
+                RedisResult val = db.Execute("EXPIRE", "foo", "10", "GT");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoExpireLT()
+            {
+                RedisResult val = db.Execute("EXPIRE", "foo", "10", "LT");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        // todo: FAILOVER is tricky since it mutates the state of the server - test later
+
+        // todo: decide what to do with FORCEGC
+
+        [Test]
+        public void GetACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "GET",
+                server,
+                ["read", "string", "fast"],
+                [DoGet]
+            );
+
+            void DoGet()
+            {
+                RedisResult val = db.Execute("GET", "foo");
+                Assert.IsNull((string)val);
+            }
+        }
+
+        [Test]
+        public void GetBitACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "GETBIT",
+                server,
+                ["read", "bitmap", "fast"],
+                [DoGetBit]
+            );
+
+            void DoGetBit()
+            {
+                RedisResult val = db.Execute("GETBIT", "foo", "4");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void GetDelACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "GETDEL",
+                server,
+                ["write", "string", "fast"],
+                [DoGetDel]
+            );
+
+            void DoGetDel()
+            {
+                RedisResult val = db.Execute("GETDEL", "foo");
+                Assert.IsNull((string)val);
+            }
+        }
+
+        [Test]
+        public void GetRangeACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "GETRANGE",
+                server,
+                ["read", "string", "slow"],
+                [DoGetRange]
+            );
+
+            void DoGetRange()
+            {
+                RedisResult val = db.Execute("GETRANGE", "foo", "10", "15");
+                Assert.IsNull((string)val);
+            }
+        }
+
+        [Test]
+        public void HDelACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HDEL",
+                server,
+                ["write", "hash", "fast"],
+                [DoHDel, DoHDelMulti]
+            );
+
+            void DoHDel()
+            {
+                RedisResult val = db.Execute("HDEL", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoHDelMulti()
+            {
+                RedisResult val = db.Execute("HDEL", "foo", "bar", "fizz");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void HExistsACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HEXISTS",
+                server,
+                ["read", "hash", "fast"],
+                [DoHDel]
+            );
+
+            void DoHDel()
+            {
+                RedisResult val = db.Execute("HEXISTS", "foo", "bar");
+                Assert.IsFalse((bool)val);
+            }
+        }
+
+        [Test]
+        public void HGetACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HGET",
+                server,
+                ["read", "hash", "fast"],
+                [DoHDel]
+            );
+
+            void DoHDel()
+            {
+                RedisResult val = db.Execute("HGET", "foo", "bar");
+                Assert.IsNull((string)val);
+            }
+        }
+
+        [Test]
+        public void HGetAllACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HGETALL",
+                server,
+                ["read", "hash", "slow"],
+                [DoHDel]
+            );
+
+            void DoHDel()
+            {
+                RedisResult val = db.Execute("HGETALL", "foo");
+                RedisValue[] valArr = (RedisValue[])val;
+
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void HIncrByACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int cur = 0;
+
+            CheckCommands(
+                "HINCRBY",
+                server,
+                ["write", "hash", "fast"],
+                [DoHIncrBy]
+            );
+
+            void DoHIncrBy()
+            {
+                RedisResult val = db.Execute("HINCRBY", "foo", "bar", "2");
+                cur += 2;
+                Assert.AreEqual(cur, (int)val);
+            }
+        }
+
+        [Test]
+        public void HIncrByFloatACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            double cur = 0;
+
+            CheckCommands(
+                "HINCRBYFLOAT",
+                server,
+                ["write", "hash", "fast"],
+                [DoHIncrByFloat]
+            );
+
+            void DoHIncrByFloat()
+            {
+                RedisResult val = db.Execute("HINCRBYFLOAT", "foo", "bar", "1.0");
+                cur += 1.0;
+                Assert.AreEqual(cur, (double)val);
+            }
+        }
+
+        [Test]
+        public void HKeysACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HKEYS",
+                server,
+                ["read", "hash", "slow"],
+                [DoHKeys]
+            );
+
+            void DoHKeys()
+            {
+                RedisResult val = db.Execute("HKEYS", "foo");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void HLenACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HLEN",
+                server,
+                ["read", "hash", "fast"],
+                [DoHLen]
+            );
+
+            void DoHLen()
+            {
+                RedisResult val = db.Execute("HLEN", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void HMGetACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HMGET",
+                server,
+                ["read", "hash", "fast"],
+                [DoHMGet, DoHMGetMulti]
+            );
+
+            void DoHMGet()
+            {
+                RedisResult val = db.Execute("HMGET", "foo", "bar");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(1, valArr.Length);
+                Assert.IsNull((string)valArr[0]);
+            }
+
+            void DoHMGetMulti()
+            {
+                RedisResult val = db.Execute("HMGET", "foo", "bar", "fizz");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(2, valArr.Length);
+                Assert.IsNull((string)valArr[0]);
+                Assert.IsNull((string)valArr[1]);
+            }
+        }
+
+        [Test]
+        public void HMSetACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HMSET",
+                server,
+                ["write", "hash", "fast"],
+                [DoHMSet, DoHMSetMulti]
+            );
+
+            void DoHMSet()
+            {
+                RedisResult val = db.Execute("HMSET", "foo", "bar", "fizz");
+                Assert.AreEqual("OK", (string)val);
+            }
+
+            void DoHMSetMulti()
+            {
+                RedisResult val = db.Execute("HMSET", "foo", "bar", "fizz", "hello", "world");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        [Test]
+        public void HRandFieldACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HRANDFIELD",
+                server,
+                ["read", "hash", "slow"],
+                [DoHRandField, DoHRandFieldCount, DoHRandFieldCountWithValues]
+            );
+
+            void DoHRandField()
+            {
+                RedisResult val = db.Execute("HRANDFIELD", "foo");
+                Assert.IsNull((string)val);
+            }
+
+            void DoHRandFieldCount()
+            {
+                RedisResult val = db.Execute("HRANDFIELD", "foo", "1");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoHRandFieldCountWithValues()
+            {
+                RedisResult val = db.Execute("HRANDFIELD", "foo", "1", "WITHVALUES");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void HScanACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HSCAN",
+                server,
+                ["read", "hash", "slow"],
+                [DoHScan, DoHScanMatch, DoHScanCount, DoHScanNoValues, DoHScanMatchCount, DoHScanMatchNoValues, DoHScanCountNoValues, DoHScanMatchCountNoValues]
+            );
+
+            void DoHScan()
+            {
+                RedisResult val = db.Execute("HSCAN", "foo", "0");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoHScanMatch()
+            {
+                RedisResult val = db.Execute("HSCAN", "foo", "0", "MATCH", "*");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoHScanCount()
+            {
+                RedisResult val = db.Execute("HSCAN", "foo", "0", "COUNT", "2");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoHScanNoValues()
+            {
+                RedisResult val = db.Execute("HSCAN", "foo", "0", "NOVALUES");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoHScanMatchCount()
+            {
+                RedisResult val = db.Execute("HSCAN", "foo", "0", "MATCH", "*", "COUNT", "2");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoHScanMatchNoValues()
+            {
+                RedisResult val = db.Execute("HSCAN", "foo", "0", "MATCH", "*", "NOVALUES");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoHScanCountNoValues()
+            {
+                RedisResult val = db.Execute("HSCAN", "foo", "0", "COUNT", "0", "NOVALUES");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoHScanMatchCountNoValues()
+            {
+                RedisResult val = db.Execute("HSCAN", "foo", "0", "MATCH", "*", "COUNT", "0", "NOVALUES");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void HSetACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int keyIx = 0;
+
+            CheckCommands(
+                "HSET",
+                server,
+                ["write", "hash", "fast"],
+                [DoHSet, DoHSetMulti]
+            );
+            void DoHSet()
+            {
+                RedisResult val = db.Execute("HSET", $"foo-{keyIx}", "bar", "fizz");
+                keyIx++;
+
+                Assert.AreEqual(1, (int)val);
+            }
+
+            void DoHSetMulti()
+            {
+                RedisResult val = db.Execute("HSET", $"foo-{keyIx}", "bar", "fizz", "hello", "world");
+                keyIx++;
+
+                Assert.AreEqual(2, (int)val);
+            }
+        }
+
+        [Test]
+        public void HSetNXACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int keyIx = 0;
+
+            CheckCommands(
+                "HSETNX",
+                server,
+                ["write", "hash", "fast"],
+                [DoHSetNX]
+            );
+
+            void DoHSetNX()
+            {
+                RedisResult val = db.Execute("HSETNX", $"foo-{keyIx}", "bar", "fizz");
+                keyIx++;
+
+                Assert.AreEqual(1, (int)val);
+            }
+        }
+
+        [Test]
+        public void HStrLenACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HSTRLEN",
+                server,
+                ["read", "hash", "fast"],
+                [DoHStrLen]
+            );
+
+            void DoHStrLen()
+            {
+                RedisResult val = db.Execute("HSTRLEN", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void HValsACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "HVALS",
+                server,
+                ["read", "hash", "slow"],
+                [DoHVals]
+            );
+
+            void DoHVals()
+            {
+                RedisResult val = db.Execute("HVALS", "foo");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void IncrACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "INCR",
+                server,
+                ["write", "string", "fast"],
+                [DoIncr]
+            );
+
+            void DoIncr()
+            {
+                RedisResult val = db.Execute("INCR", "foo");
+                Assert.AreEqual(1, (int)val);
+            }
+        }
+
+        [Test]
+        public void IncrByACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "INCRBY",
+                server,
+                ["write", "string", "fast"],
+                [DoIncrBy]
+            );
+
+            void DoIncrBy()
+            {
+                RedisResult val = db.Execute("INCRBY", "foo", "2");
+                Assert.AreEqual(2, (int)val);
+            }
+        }
+
+        [Test]
+        public void InfoACLs()
+        {
+            // test is a bit more verbose since it involves @dangerous
+
+            string[] categories = ["slow", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoInfo), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(DoInfoSingle), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(DoInfoMulti), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoInfo), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(DoInfoSingle), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(DoInfoMulti), "Permitted when should have been denied");
+
+                    void DoInfo()
+                    {
+                        RedisResult val = db.Execute("INFO");
+                        Assert.IsNotEmpty((string)val);
+                    }
+
+                    void DoInfoSingle()
+                    {
+                        RedisResult val = db.Execute("INFO", "SERVER");
+                        Assert.IsNotEmpty((string)val);
+                    }
+
+                    void DoInfoMulti()
+                    {
+                        RedisResult val = db.Execute("INFO", "SERVER", "MEMORY");
+                        Assert.IsNotEmpty((string)val);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void KeysACLs()
+        {
+            // test is a bit more verbose since it involves @dangerous
+
+            string[] categories = ["keyspace", "read", "slow", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoKeys), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoKeys), "Permitted when should have been denied");
+
+                    void DoKeys()
+                    {
+                        RedisResult val = db.Execute("KEYS", "*");
+                        RedisResult[] valArr = (RedisResult[])val;
+                        Assert.AreEqual(0, valArr.Length);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void LastSaveACLs()
+        {
+            // test is a bit more verbose since it involves @admin
+
+            string[] categories = ["admin", "fast", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoLastSave), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoLastSave), "Permitted when should have been denied");
+
+                    void DoLastSave()
+                    {
+                        RedisResult val = db.Execute("LASTSAVE");
+                        Assert.AreEqual(0, (long)val);
+                    }
+                }
+            }
+        }
+
+        // todo: figure out what to do with LATENCY|HELP
+
+        [Test]
+        public void LatencyHistogramACLs()
+        {
+            // test is a bit more verbose since it involves @admin
+
+            string[] categories = ["admin", "slow", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoLatencyHistogram), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(DoLatencyHistogramSingle), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(DoLatencyHistogramMulti), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoLatencyHistogram), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(DoLatencyHistogramSingle), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(DoLatencyHistogramMulti), "Permitted when should have been denied");
+
+                    void DoLatencyHistogram()
+                    {
+                        RedisResult val = db.Execute("LATENCY", "HISTOGRAM");
+                        RedisResult[] valArr = (RedisResult[])val;
+                        Assert.AreEqual(0, valArr.Length);
+                    }
+
+                    void DoLatencyHistogramSingle()
+                    {
+                        RedisResult val = db.Execute("LATENCY", "HISTOGRAM", "NET_RS_LAT");
+                        RedisResult[] valArr = (RedisResult[])val;
+                        Assert.AreEqual(0, valArr.Length);
+                    }
+
+                    void DoLatencyHistogramMulti()
+                    {
+                        RedisResult val = db.Execute("LATENCY", "HISTOGRAM", "NET_RS_LAT", "NET_RS_LAT_ADMIN");
+                        RedisResult[] valArr = (RedisResult[])val;
+                        Assert.AreEqual(0, valArr.Length);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void LatencyResetACLs()
+        {
+            // test is a bit more verbose since it involves @admin
+
+            string[] categories = ["admin", "slow", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoLatencyReset), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(DoLatencyResetSingle), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(DoLatencyResetMulti), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoLatencyReset), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(DoLatencyResetSingle), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(DoLatencyResetMulti), "Permitted when should have been denied");
+
+                    void DoLatencyReset()
+                    {
+                        RedisResult val = db.Execute("LATENCY", "RESET");
+                        Assert.AreEqual("OK", (string)val);
+                    }
+
+                    void DoLatencyResetSingle()
+                    {
+                        RedisResult val = db.Execute("LATENCY", "RESET", "NET_RS_LAT");
+                        Assert.AreEqual("OK", (string)val);
+                    }
+
+                    void DoLatencyResetMulti()
+                    {
+                        RedisResult val = db.Execute("LATENCY", "RESET", "NET_RS_LAT", "NET_RS_LAT_ADMIN");
+                        Assert.AreEqual("OK", (string)val);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void LPopACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "LPOP",
+                server,
+                ["write", "list", "fast"],
+                [DoLPop, DoLPopCount]
+            );
+
+            void DoLPop()
+            {
+                RedisResult val = db.Execute("LPOP", "foo");
+                Assert.IsTrue(val.IsNull);
+            }
+
+            void DoLPopCount()
+            {
+                RedisResult val = db.Execute("LPOP", "foo", "4");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void LPushACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int count = 0;
+
+            CheckCommands(
+                "LPUSH",
+                server,
+                ["write", "list", "fast"],
+                [DoLPush, DoLPushMulti]
+            );
+
+            void DoLPush()
+            {
+                RedisResult val = db.Execute("LPUSH", "foo", "bar");
+                count++;
+
+                Assert.AreEqual(count, (int)val);
+            }
+
+            void DoLPushMulti()
+            {
+                RedisResult val = db.Execute("LPUSH", "foo", "bar", "buzz");
+                count += 2;
+
+                Assert.AreEqual(count, (int)val);
+            }
+        }
+
+        [Test]
+        public void LPushXACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "LPUSHX",
+                server,
+                ["write", "list", "fast"],
+                [DoLPushX, DoLPushXMulti]
+            );
+
+            void DoLPushX()
+            {
+                RedisResult val = db.Execute("LPUSHX", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoLPushXMulti()
+            {
+                RedisResult val = db.Execute("LPUSHX", "foo", "bar", "buzz");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void RPopACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "RPOP",
+                server,
+                ["write", "list", "fast"],
+                [DoRPop, DoRPopCount]
+            );
+
+            void DoRPop()
+            {
+                RedisResult val = db.Execute("RPOP", "foo");
+                Assert.IsTrue(val.IsNull);
+            }
+
+            void DoRPopCount()
+            {
+                RedisResult val = db.Execute("RPOP", "foo", "4");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void LRushACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int count = 0;
+
+            CheckCommands(
+                "RPUSH",
+                server,
+                ["write", "list", "fast"],
+                [DoRPush, DoRPushMulti]
+            );
+
+            void DoRPush()
+            {
+                RedisResult val = db.Execute("RPUSH", "foo", "bar");
+                count++;
+
+                Assert.AreEqual(count, (int)val);
+            }
+
+            void DoRPushMulti()
+            {
+                RedisResult val = db.Execute("RPUSH", "foo", "bar", "buzz");
+                count += 2;
+
+                Assert.AreEqual(count, (int)val);
+            }
+        }
+
+        [Test]
+        public void RPushXACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "RPUSHX",
+                server,
+                ["write", "list", "fast"],
+                [DoRPushX, DoRPushXMulti]
+            );
+
+            void DoRPushX()
+            {
+                RedisResult val = db.Execute("RPUSHX", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoRPushXMulti()
+            {
+                RedisResult val = db.Execute("RPUSHX", "foo", "bar", "buzz");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void LLenACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "LLEN",
+                server,
+                ["read", "list", "fast"],
+                [DoLLen]
+            );
+
+            void DoLLen()
+            {
+                RedisResult val = db.Execute("LLEN", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void LTrimACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "LLEN",
+                server,
+                ["write", "list", "slow"],
+                [DoLTrim]
+            );
+
+            void DoLTrim()
+            {
+                RedisResult val = db.Execute("LTRIM", "foo", "4", "10");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        [Test]
+        public void LRangeACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "LRANGE",
+                server,
+                ["read", "list", "slow"],
+                [DoLRange]
+            );
+
+            void DoLRange()
+            {
+                RedisResult val = db.Execute("LRANGE", "foo", "4", "10");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void LIndexACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "LINDEX",
+                server,
+                ["read", "list", "slow"],
+                [DoLIndex]
+            );
+
+            void DoLIndex()
+            {
+                RedisResult val = db.Execute("LINDEX", "foo", "4");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void LInsertACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "LINSERT",
+                server,
+                ["write", "list", "slow"],
+                [DoLInsertBefore, DoLInsertAfter]
+            );
+
+            void DoLInsertBefore()
+            {
+                RedisResult val = db.Execute("LINSERT", "foo", "BEFORE", "hello", "world");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoLInsertAfter()
+            {
+                RedisResult val = db.Execute("LINSERT", "foo", "AFTER", "hello", "world");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void LRemACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "LREM",
+                server,
+                ["write", "list", "slow"],
+                [DoLRem]
+            );
+
+            void DoLRem()
+            {
+                RedisResult val = db.Execute("LREM", "foo", "0", "hello");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void RPopLPushACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "RPOPLPUSH",
+                server,
+                ["write", "list", "slow"],
+                [DoLRem]
+            );
+
+            void DoLRem()
+            {
+                RedisResult val = db.Execute("RPOPLPUSH", "foo", "bar");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void LMoveACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "LMOVE",
+                server,
+                ["write", "list", "slow"],
+                [DoLMove]
+            );
+
+            void DoLMove()
+            {
+                RedisResult val = db.Execute("LMOVE", "foo", "bar", "LEFT", "RIGHT");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void LSetACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            db.ListLeftPush("foo", "fizz");
+
+            CheckCommands(
+                "LSET",
+                server,
+                ["write", "list", "slow"],
+                [DoLMove]
+            );
+
+            void DoLMove()
+            {
+                RedisResult val = db.Execute("LSET", "foo", "0", "bar");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        // todo: MEMORY (with no sub command) is not part of Redis protocol - decide how to handle
+
+        [Test]
+        public void MemoryUsageACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "MEMORY USAGE",
+                server,
+                ["read", "slow"],
+                [DoMemoryUsage, DoMemoryUsageSamples]
+            );
+
+            void DoMemoryUsage()
+            {
+                RedisResult val = db.Execute("MEMORY", "USAGE", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoMemoryUsageSamples()
+            {
+                RedisResult val = db.Execute("MEMORY", "USAGE", "foo", "SAMPLES", "10");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void MGetACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "MGET",
+                server,
+                ["read", "string", "fast"],
+                [DoMemorySingle, DoMemoryMulti]
+            );
+
+            void DoMemorySingle()
+            {
+                RedisResult val = db.Execute("MGET", "foo");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(1, valArr.Length);
+                Assert.IsTrue(valArr[0].IsNull);
+            }
+
+            void DoMemoryMulti()
+            {
+                RedisResult val = db.Execute("MGET", "foo", "bar");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+                Assert.IsTrue(valArr[0].IsNull);
+                Assert.IsTrue(valArr[1].IsNull);
+            }
+        }
+
+        // todo: MODULE isn't implement quite correctly, figure it out later
+
+        // todo: MONITOR isn't implemented, figure it out later
+
+        [Test]
+        public void MSetACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "MSET",
+                server,
+                ["write", "string", "slow"],
+                [DoMSetSingle, DoMSetMulti]
+            );
+
+            void DoMSetSingle()
+            {
+                RedisResult val = db.Execute("MSET", "foo", "bar");
+                Assert.AreEqual("OK", (string)val);
+            }
+
+            void DoMSetMulti()
+            {
+                RedisResult val = db.Execute("MSET", "foo", "bar", "fizz", "buzz");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        [Test]
+        public void MSetNXACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int count = 0;
+
+            CheckCommands(
+                "MSETNX",
+                server,
+                ["write", "string", "slow"],
+                [DoMSetNXSingle, DoMSetNXMulti]
+            );
+
+            void DoMSetNXSingle()
+            {
+                RedisResult val = db.Execute("MSETNX", $"foo-{count}", "bar");
+                count++;
+
+                Assert.AreEqual(1, (int)val);
+            }
+
+            void DoMSetNXMulti()
+            {
+                RedisResult val = db.Execute("MSETNX", $"foo-{count}", "bar", $"fizz-{count}", "buzz");
+                count++;
+
+                Assert.AreEqual(1, (int)val);
+            }
+        }
+
+        [Test]
+        public void MultiACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "MULTI",
+                server,
+                ["transaction", "fast"],
+                [DoMulti]
+            );
+
+            void DoMulti()
+            {
+                RedisResult val = db.Execute("MULTI");
+                Assert.AreEqual("OK", (string)val);
+
+                // if we got here, abort the transaction
+                db.Execute("DISCARD");
+            }
+        }
+
+        [Test]
+        public void PersistACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "PERSIST",
+                server,
+                ["keyspace", "write", "fast"],
+                [DoPersist]
+            );
+
+            void DoPersist()
+            {
+                RedisResult val = db.Execute("PERSIST", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void PExpireACLs()
+        {
+            // todo: pexpire doesn't support combinations of flags (XX GT, XX LT are legal) so those will need to be tested when implemented
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "PEXPIRE",
+                server,
+                ["keyspace", "write", "fast"],
+                [DoPExpire, DoPExpireNX, DoPExpireXX, DoPExpireGT, DoPExpireLT]
+            );
+
+            void DoPExpire()
+            {
+                RedisResult val = db.Execute("PEXPIRE", "foo", "10");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoPExpireNX()
+            {
+                RedisResult val = db.Execute("PEXPIRE", "foo", "10", "NX");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoPExpireXX()
+            {
+                RedisResult val = db.Execute("PEXPIRE", "foo", "10", "XX");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoPExpireGT()
+            {
+                RedisResult val = db.Execute("PEXPIRE", "foo", "10", "GT");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoPExpireLT()
+            {
+                RedisResult val = db.Execute("PEXPIRE", "foo", "10", "LT");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void PFAddACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int count = 0;
+
+            CheckCommands(
+                "PFADD",
+                server,
+                ["hyperloglog", "write", "fast"],
+                [DoPFAddSingle, DoPFAddMulti]
+            );
+
+            void DoPFAddSingle()
+            {
+                RedisResult val = db.Execute("PFADD", $"foo-{count}", "bar");
+                count++;
+
+                Assert.AreEqual(1, (int)val);
+            }
+
+            void DoPFAddMulti()
+            {
+                RedisResult val = db.Execute("PFADD", $"foo-{count}", "bar", "fizz");
+                count++;
+
+                Assert.AreEqual(1, (int)val);
+            }
+        }
+
+        [Test]
+        public void PFCountACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "PFCOUNT",
+                server,
+                ["hyperloglog", "read", "slow"],
+                [DoPFCountSingle, DoPFCountMulti]
+            );
+
+            void DoPFCountSingle()
+            {
+                RedisResult val = db.Execute("PFCOUNT", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoPFCountMulti()
+            {
+                RedisResult val = db.Execute("PFCOUNT", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void PFMergeACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "PFMERGE",
+                server,
+                ["hyperloglog", "write", "slow"],
+                [DoPFMergeSingle, DoPFMergeMulti]
+            );
+
+            void DoPFMergeSingle()
+            {
+                RedisResult val = db.Execute("PFMERGE", "foo");
+                Assert.AreEqual("OK", (string)val);
+            }
+
+            void DoPFMergeMulti()
+            {
+                RedisResult val = db.Execute("PFMERGE", "foo", "bar");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        // todo: PING is tricky, do it later
+
+        [Test]
+        public void PSetEXACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "PSETEX",
+                server,
+                ["string", "write", "slow"],
+                [DoPSetEX]
+            );
+
+            void DoPSetEX()
+            {
+                RedisResult val = db.Execute("PSETEX", "foo", "10", "bar");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        // todo: PSUBSCRIBE is weird, do it later
+
+        [Test]
+        public void PTTLACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "PTTL",
+                server,
+                ["keyspace", "read", "fast"],
+                [DoPTTL]
+            );
+
+            void DoPTTL()
+            {
+                RedisResult val = db.Execute("PTTL", "foo");
+                Assert.AreEqual(-1, (int)val);
+            }
+        }
+
+        // todo: PUBLISH is weird, do it later
+        // todo: PUNSUBSCRIBE is weird, do it later
+        // todo: QUIT is weird, do it later
+        // todo: READONLY is weird, do it later
+
+        // todo: REGISTERCS is not part of Redis, what should be done with it?
+
+        [Test]
+        public void RenameACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "RENAME",
+                server,
+                ["keyspace", "write", "slow"],
+                [DoPTTL]
+            );
+
+            void DoPTTL()
+            {
+                try
+                {
+                    RedisResult val = db.Execute("RENAME", "foo", "bar");
+                    Assert.Fail("Shouldn't succeed, key doesn't exist");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR no such key")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        // todo: REPLICAOF is weird, do it later
+        // todo: RUNTXP isn't part of redis, do it later
+
+        [Test]
+        public void SaveACLs()
+        {
+            // test is a bit more verbose since it involves @admin
+
+            string[] categories = ["admin", "slow", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoSave), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoSave), "Permitted when should have been denied");
+
+                    void DoSave()
+                    {
+                        RedisResult val = db.Execute("SAVE");
+                        Assert.AreEqual("OK", (string)val);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void ScanACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SCAN",
+                server,
+                ["keyspace", "read", "slow"],
+                [DoScan, DoScanMatch, DoScanCount, DoScanType, DoScanMatchCount, DoScanMatchType, DoScanCountType, DoScanMatchCountType]
+            );
+
+            void DoScan()
+            {
+                RedisResult val = db.Execute("SCAN", "0");
+                Assert.IsFalse(val.IsNull);
+            }
+
+            void DoScanMatch()
+            {
+                RedisResult val = db.Execute("SCAN", "0", "MATCH", "*");
+                Assert.IsFalse(val.IsNull);
+            }
+
+            void DoScanCount()
+            {
+                RedisResult val = db.Execute("SCAN", "0", "COUNT", "5");
+                Assert.IsFalse(val.IsNull);
+            }
+
+            void DoScanType()
+            {
+                RedisResult val = db.Execute("SCAN", "0", "TYPE", "zset");
+                Assert.IsFalse(val.IsNull);
+            }
+
+            void DoScanMatchCount()
+            {
+                RedisResult val = db.Execute("SCAN", "0", "MATCH", "*", "COUNT", "5");
+                Assert.IsFalse(val.IsNull);
+            }
+
+            void DoScanMatchType()
+            {
+                RedisResult val = db.Execute("SCAN", "0", "MATCH", "*", "TYPE", "zset");
+                Assert.IsFalse(val.IsNull);
+            }
+
+            void DoScanCountType()
+            {
+                RedisResult val = db.Execute("SCAN", "0", "COUNT", "5", "TYPE", "zset");
+                Assert.IsFalse(val.IsNull);
+            }
+
+            void DoScanMatchCountType()
+            {
+                RedisResult val = db.Execute("SCAN", "0", "MATCH", "*", "COUNT", "5", "TYPE", "zset");
+                Assert.IsFalse(val.IsNull);
+            }
+        }
+
+        // todo: SECONDARYOF isn't part of redis, deal with it later
+
+        // todo: SELECT is weird, and we don't really support it, deal with it later
+
+        [Test]
+        public void SetACLs()
+        {
+            // SET doesn't support most extra commands, so this is just key value
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SET",
+                server,
+                ["string", "write", "slow"],
+                [DoSet]
+            );
+
+            void DoSet()
+            {
+                RedisResult val = db.Execute("SET", "foo", "bar");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        [Test]
+        public void SetBitACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SETBIT",
+                server,
+                ["bitmap", "write", "slow"],
+                [DoSetBit]
+            );
+
+            void DoSetBit()
+            {
+                RedisResult val = db.Execute("SETBIT", "foo", "10", "1");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void SetEXACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SETEX",
+                server,
+                ["string", "write", "slow"],
+                [DoSetEX]
+            );
+
+            void DoSetEX()
+            {
+                RedisResult val = db.Execute("SETEX", "foo", "10", "bar");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        // todo: SETEXNX, SETEXXX, SETKEEPTTL, SETKEEPTTLXX - all non-standard, what are these for?
+
+        [Test]
+        public void SetRangeACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SETRANGE",
+                server,
+                ["string", "write", "slow"],
+                [DoSetRange]
+            );
+
+            void DoSetRange()
+            {
+                RedisResult val = db.Execute("SETRANGE", "foo", "10", "bar");
+                Assert.AreEqual(13, (int)val);
+            }
+        }
+
+        [Test]
+        public void StrLenACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SETRANGE",
+                server,
+                ["string", "read", "fast"],
+                [DoStrLen]
+            );
+
+            void DoStrLen()
+            {
+                RedisResult val = db.Execute("STRLEN", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void SAddACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int count = 0;
+
+            CheckCommands(
+                "SADD",
+                server,
+                ["write", "set", "fast"],
+                [DoSAdd, DoSAddMulti]
+            );
+
+            void DoSAdd()
+            {
+                RedisResult val = db.Execute("SADD", $"foo-{count}", "bar");
+                count++;
+
+                Assert.AreEqual(1, (int)val);
+            }
+
+            void DoSAddMulti()
+            {
+                RedisResult val = db.Execute("SADD", $"foo-{count}", "bar", "fizz");
+                count++;
+
+                Assert.AreEqual(2, (int)val);
+            }
+        }
+
+        [Test]
+        public void SRemACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SREM",
+                server,
+                ["write", "set", "fast"],
+                [DoSRem, DoSRemMulti]
+            );
+
+            void DoSRem()
+            {
+                RedisResult val = db.Execute("SREM", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoSRemMulti()
+            {
+                RedisResult val = db.Execute("SREM", "foo", "bar", "fizz");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void SPopACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SPOP",
+                server,
+                ["write", "set", "fast"],
+                [DoSPop, DoSPopCount]
+            );
+
+            void DoSPop()
+            {
+                RedisResult val = db.Execute("SPOP", "foo");
+                Assert.IsTrue(val.IsNull);
+            }
+
+            void DoSPopCount()
+            {
+                RedisResult val = db.Execute("SPOP", "foo", "11");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void SMembersACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SMEMBERS",
+                server,
+                ["read", "set", "slow"],
+                [DoSMembers]
+            );
+
+            void DoSMembers()
+            {
+                RedisResult val = db.Execute("SMEMBERS", "foo");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void SCardACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SCARD",
+                server,
+                ["read", "set", "fast"],
+                [DoSCard]
+            );
+
+            void DoSCard()
+            {
+                RedisResult val = db.Execute("SCARD", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        // todo: subscribe is weird, do it later
+
+        [Test]
+        public void SScanACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SSCAN",
+                server,
+                ["set", "read", "slow"],
+                [DoSScan, DoSScanMatch, DoSScanCount, DoSScanMatchCount]
+            );
+
+            void DoSScan()
+            {
+                RedisResult val = db.Execute("SSCAN", "foo", "0");
+                Assert.IsFalse(val.IsNull);
+            }
+
+            void DoSScanMatch()
+            {
+                RedisResult val = db.Execute("SSCAN", "foo", "0", "MATCH", "*");
+                Assert.IsFalse(val.IsNull);
+            }
+
+            void DoSScanCount()
+            {
+                RedisResult val = db.Execute("SSCAN", "foo", "0", "COUNT", "5");
+                Assert.IsFalse(val.IsNull);
+            }
+
+            void DoSScanMatchCount()
+            {
+                RedisResult val = db.Execute("SSCAN", "foo", "0", "MATCH", "*", "COUNT", "5");
+                Assert.IsFalse(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void SMoveACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SMOVE",
+                server,
+                ["set", "write", "fast"],
+                [DoSMove]
+            );
+
+            void DoSMove()
+            {
+                RedisResult val = db.Execute("SMOVE", "foo", "bar", "fizz");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void SRandMemberACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SRANDMEMBER",
+                server,
+                ["set", "read", "slow"],
+                [DoSRandMember, DoSRandMemberCount]
+            );
+
+            void DoSRandMember()
+            {
+                RedisResult val = db.Execute("SRANDMEMBER", "foo");
+                Assert.IsTrue(val.IsNull);
+            }
+
+            void DoSRandMemberCount()
+            {
+                RedisResult val = db.Execute("SRANDMEMBER", "foo", "5");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void SIsMemberACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SISMEMBER",
+                server,
+                ["set", "read", "fast"],
+                [DoSIsMember]
+            );
+
+            void DoSIsMember()
+            {
+                RedisResult val = db.Execute("SISMEMBER", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void SUnionACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SUNION",
+                server,
+                ["set", "read", "slow"],
+                [DoSUnion, DoSUnionMulti]
+            );
+
+            void DoSUnion()
+            {
+                RedisResult val = db.Execute("SUNION", "foo");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoSUnionMulti()
+            {
+                RedisResult val = db.Execute("SUNION", "foo", "bar");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void SUnionStoreACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SUNIONSTORE",
+                server,
+                ["set", "write", "slow"],
+                [DoSUnionStore, DoSUnionStoreMulti]
+            );
+
+            void DoSUnionStore()
+            {
+                RedisResult val = db.Execute("SUNIONSTORE", "dest", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoSUnionStoreMulti()
+            {
+                RedisResult val = db.Execute("SUNIONSTORE", "dest", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void SDiffACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SDIFF",
+                server,
+                ["set", "read", "slow"],
+                [DoSDiff, DoSDiffMulti]
+            );
+
+            void DoSDiff()
+            {
+                RedisResult val = db.Execute("SDIFF", "foo");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoSDiffMulti()
+            {
+                RedisResult val = db.Execute("SDIFF", "foo", "bar");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void SDiffStoreACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SDIFFSTORE",
+                server,
+                ["set", "write", "slow"],
+                [DoSDiffStore, DoSDiffStoreMulti]
+            );
+
+            void DoSDiffStore()
+            {
+                RedisResult val = db.Execute("SDIFFSTORE", "dest", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoSDiffStoreMulti()
+            {
+                RedisResult val = db.Execute("SDIFFSTORE", "dest", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void GeoAddACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int count = 0;
+
+            CheckCommands(
+                "GEOADD",
+                server,
+                ["geo", "write", "slow"],
+                [DoGeoAdd, DoGeoAddNX, DoGeoAddNXCH, DoGeoAddMulti, DoGeoAddNXMulti, DoGeoAddNXCHMulti]
+            );
+
+            void DoGeoAdd()
+            {
+                RedisResult val = db.Execute("GEOADD", $"foo-{count}", "90", "90", "bar");
+                count++;
+
+                Assert.AreEqual(1, (int)val);
+            }
+
+            void DoGeoAddNX()
+            {
+                RedisResult val = db.Execute("GEOADD", $"foo-{count}", "NX", "90", "90", "bar");
+                count++;
+
+                Assert.AreEqual(1, (int)val);
+            }
+
+            void DoGeoAddNXCH()
+            {
+                RedisResult val = db.Execute("GEOADD", $"foo-{count}", "NX", "CH", "90", "90", "bar");
+                count++;
+
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoGeoAddMulti()
+            {
+                RedisResult val = db.Execute("GEOADD", $"foo-{count}", "90", "90", "bar", "45", "45", "fizz");
+                count++;
+
+                Assert.AreEqual(2, (int)val);
+            }
+
+            void DoGeoAddNXMulti()
+            {
+                RedisResult val = db.Execute("GEOADD", $"foo-{count}", "NX", "90", "90", "bar", "45", "45", "fizz");
+                count++;
+
+                Assert.AreEqual(2, (int)val);
+            }
+
+            void DoGeoAddNXCHMulti()
+            {
+                RedisResult val = db.Execute("GEOADD", $"foo-{count}", "NX", "CH", "90", "90", "bar", "45", "45", "fizz");
+                count++;
+
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void GeoHashACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            // todo: GEOHASH doesn't deal with empty keys appropriately - correct when that's fixed
+            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "10", "10", "bar"));
+            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "20", "20", "fizz"));
+
+            CheckCommands(
+                "GEOHASH",
+                server,
+                ["geo", "read", "slow"],
+                [DoGeoHash, DoGeoHashSingle, DoGeoHashMulti]
+            );
+
+            void DoGeoHash()
+            {
+                RedisResult val = db.Execute("GEOHASH", "foo");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoGeoHashSingle()
+            {
+                RedisResult val = db.Execute("GEOHASH", "foo", "bar");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(1, valArr.Length);
+                Assert.IsFalse(valArr[0].IsNull);
+            }
+
+            void DoGeoHashMulti()
+            {
+                RedisResult val = db.Execute("GEOHASH", "foo", "bar", "fizz");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(2, valArr.Length);
+                Assert.IsFalse(valArr[0].IsNull);
+                Assert.IsFalse(valArr[1].IsNull);
+            }
+        }
+
+        [Test]
+        public void GeoDistACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            // todo: GEODIST fails on missing keys, which is incorrect, so putting values in to get ACL test passing
+            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "10", "10", "bar"));
+            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "20", "20", "fizz"));
+
+            CheckCommands(
+                "GEODIST",
+                server,
+                ["geo", "read", "slow"],
+                [DoGetDist, DoGetDistM]
+            );
+
+            void DoGetDist()
+            {
+                RedisResult val = db.Execute("GEODIST", "foo", "bar", "fizz");
+                Assert.IsTrue((double)val > 0);
+            }
+
+            void DoGetDistM()
+            {
+                RedisResult val = db.Execute("GEODIST", "foo", "bar", "fizz", "M");
+                Assert.IsTrue((double)val > 0);
+            }
+        }
+
+        [Test]
+        public void GeoPosACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "GEOPOS",
+                server,
+                ["geo", "read", "slow"],
+                [DoGeoPos, DoGeoPosSingle, DoGeoPosMulti]
+            );
+
+            void DoGeoPos()
+            {
+                RedisResult val = db.Execute("GEOPOS", "foo");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoGeoPosSingle()
+            {
+                RedisResult val = db.Execute("GEOPOS", "foo", "bar");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoGeoPosMulti()
+            {
+                RedisResult val = db.Execute("GEOPOS", "foo", "bar", "fizz");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void GeoSearchACLs()
+        {
+            // todo: there are a LOT of GeoSearch variants, come back and cover all the lengths appropriately
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "GEOSEARCH",
+                server,
+                ["geo", "read", "slow"],
+                [DoGeoSearch]
+            );
+
+            void DoGeoSearch()
+            {
+                RedisResult val = db.Execute("GEOSEARCH", "foo", "FROMMEMBER", "bar", "BYRADIUS", "2");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void ZAddACLs()
+        {
+            // todo: ZADD doesn't implement NX XX GT LT CH INCR; expand to cover all lengths when implemented
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int count = 0;
+
+            CheckCommands(
+                "ZADD",
+                server,
+                ["sortedset", "write", "fast"],
+                [DoZAdd, DoZAddMulti]
+            );
+
+            void DoZAdd()
+            {
+                RedisResult val = db.Execute("ZADD", $"foo-{count}", "10", "bar");
+                count++;
+                Assert.AreEqual(1, (int)val);
+            }
+
+            void DoZAddMulti()
+            {
+                RedisResult val = db.Execute("ZADD", $"foo-{count}", "10", "bar", "20", "fizz");
+                count++;
+                Assert.AreEqual(2, (int)val);
+            }
+        }
+
+        [Test]
+        public void ZCardACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZCARD",
+                server,
+                ["sortedset", "read", "fast"],
+                [DoZCard]
+            );
+
+            void DoZCard()
+            {
+                RedisResult val = db.Execute("ZCARD", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void ZPopMaxACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZPOPMAX",
+                server,
+                ["sortedset", "write", "fast"],
+                [DoZPopMax, DoZPopMaxCount]
+            );
+
+            void DoZPopMax()
+            {
+                RedisResult val = db.Execute("ZPOPMAX", "foo");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoZPopMaxCount()
+            {
+                RedisResult val = db.Execute("ZPOPMAX", "foo", "10");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void ZScoreACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZSCORE",
+                server,
+                ["sortedset", "read", "fast"],
+                [DoZScore]
+            );
+
+            void DoZScore()
+            {
+                RedisResult val = db.Execute("ZSCORE", "foo", "bar");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void ZRemACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZREM",
+                server,
+                ["sortedset", "write", "fast"],
+                [DoZRem, DoZRemMulti]
+            );
+
+            void DoZRem()
+            {
+                RedisResult val = db.Execute("ZREM", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoZRemMulti()
+            {
+                RedisResult val = db.Execute("ZREM", "foo", "bar", "fizz");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void ZCountACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZCOUNT",
+                server,
+                ["sortedset", "read", "fast"],
+                [DoZCount]
+            );
+
+            void DoZCount()
+            {
+                RedisResult val = db.Execute("ZCOUNT", "foo", "10", "20");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void ZIncrByACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            int count = 0;
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZINCRBY",
+                server,
+                ["sortedset", "write", "fast"],
+                [DoZIncrBy]
+            );
+
+            void DoZIncrBy()
+            {
+                RedisResult val = db.Execute("ZINCRBY", $"foo-{count}", "10", "bar");
+                count++;
+                Assert.AreEqual(10, (double)val);
+            }
+        }
+
+        [Test]
+        public void ZRankACLs()
+        {
+            // todo: ZRANK doesn't implement WITHSCORE (removed code that half did) - come back and add when fixed
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            // todo: ZRANK errors if key does not exist, which is incorrect - creating key for this test
+            Assert.AreEqual(1, (int)db.Execute("ZADD", "foo", "10", "bar"));
+
+            CheckCommands(
+                "ZRANK",
+                server,
+                ["sortedset", "read", "fast"],
+                [DoZRank]
+            );
+
+            void DoZRank()
+            {
+                RedisResult val = db.Execute("ZRANK", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void ZRangeACLs()
+        {
+            // todo: ZRange has loads of options, come back and test all the different lengths
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZRANGE",
+                server,
+                ["sortedset", "read", "slow"],
+                [DoZRange]
+            );
+
+            void DoZRange()
+            {
+                RedisResult val = db.Execute("ZRANGE", "key", "10", "20");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void ZRangeByScoreACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZRANGEBYSCORE",
+                server,
+                ["sortedset", "read", "slow"],
+                [DoZRangeByScore, DoZRangeByScoreWithScores, DoZRangeByScoreLimit, DoZRangeByScoreWithScoresLimit]
+            );
+
+            void DoZRangeByScore()
+            {
+                RedisResult val = db.Execute("ZRANGEBYSCORE", "key", "10", "20");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoZRangeByScoreWithScores()
+            {
+                RedisResult val = db.Execute("ZRANGEBYSCORE", "key", "10", "20", "WITHSCORES");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoZRangeByScoreLimit()
+            {
+                RedisResult val = db.Execute("ZRANGEBYSCORE", "key", "10", "20", "LIMIT", "2", "3");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoZRangeByScoreWithScoresLimit()
+            {
+                RedisResult val = db.Execute("ZRANGEBYSCORE", "key", "10", "20", "WITHSCORES", "LIMIT", "2", "3");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void ZRevRangeACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZREVRANGE",
+                server,
+                ["sortedset", "read", "slow"],
+                [DoZRevRange, DoZRevRangeWithScores]
+            );
+
+            void DoZRevRange()
+            {
+                RedisResult val = db.Execute("ZREVRANGE", "key", "10", "20");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoZRevRangeWithScores()
+            {
+                RedisResult val = db.Execute("ZREVRANGE", "key", "10", "20", "WITHSCORES");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void ZRevRankACLs()
+        {
+            // todo: ZREVRANK doesn't implement WITHSCORE (removed code that half did) - come back and add when fixed
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            // todo: ZREVRANK errors if key does not exist, which is incorrect - creating key for this test
+            Assert.AreEqual(1, (int)db.Execute("ZADD", "foo", "10", "bar"));
+
+            CheckCommands(
+                "ZREVRANK",
+                server,
+                ["sortedset", "read", "fast"],
+                [DoZRevRank]
+            );
+
+            void DoZRevRank()
+            {
+                RedisResult val = db.Execute("ZREVRANK", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void ZRemRangeByLexACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZREMRANGEBYLEX",
+                server,
+                ["sortedset", "write", "slow"],
+                [DoZRemRangeByLex]
+            );
+
+            void DoZRemRangeByLex()
+            {
+                RedisResult val = db.Execute("ZREMRANGEBYLEX", "foo", "abc", "def");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void ZRemRangeByRankACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZREMRANGEBYRANK",
+                server,
+                ["sortedset", "write", "slow"],
+                [DoZRemRangeByRank]
+            );
+
+            void DoZRemRangeByRank()
+            {
+                RedisResult val = db.Execute("ZREMRANGEBYRANK", "foo", "10", "20");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void ZRemRangeByScoreACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZREMRANGEBYSCORE",
+                server,
+                ["sortedset", "write", "slow"],
+                [DoZRemRangeByRank]
+            );
+
+            void DoZRemRangeByRank()
+            {
+                RedisResult val = db.Execute("ZREMRANGEBYSCORE", "foo", "10", "20");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void ZLexCountACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZLEXCOUNT",
+                server,
+                ["sortedset", "read", "fast"],
+                [DoZLexCount]
+            );
+
+            void DoZLexCount()
+            {
+                RedisResult val = db.Execute("ZLEXCOUNT", "foo", "abc", "def");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void ZPopMinACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZPOPMIN",
+                server,
+                ["sortedset", "write", "fast"],
+                [DoZPopMin, DoZPopMinCount]
+            );
+
+            void DoZPopMin()
+            {
+                RedisResult val = db.Execute("ZPOPMIN", "foo");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoZPopMinCount()
+            {
+                RedisResult val = db.Execute("ZPOPMIN", "foo", "10");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void ZRandMemberACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZRANDMEMBER",
+                server,
+                ["sortedset", "read", "slow"],
+                [DoZRandMember, DoZRandMemberCount, DoZRandMemberCountWithScores]
+            );
+
+            void DoZRandMember()
+            {
+                RedisResult val = db.Execute("ZRANDMEMBER", "foo");
+                Assert.IsTrue(val.IsNull);
+            }
+
+            void DoZRandMemberCount()
+            {
+                RedisResult val = db.Execute("ZRANDMEMBER", "foo", "10");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoZRandMemberCountWithScores()
+            {
+                RedisResult val = db.Execute("ZRANDMEMBER", "foo", "10", "WITHSCORES");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void ZDiffACLs()
+        {
+            // todo: ZDIFF doesn't implement WITHSCORES correctly right now - come back and cover when fixed
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZDIFF",
+                server,
+                ["sortedset", "read", "slow"],
+                [DoZDiff, DoZDiffMulti]
+            );
+
+            void DoZDiff()
+            {
+                RedisResult val = db.Execute("ZDIFF", "1", "foo");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoZDiffMulti()
+            {
+                RedisResult val = db.Execute("ZDIFF", "2", "foo", "bar");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void ZScanACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZSCAN",
+                server,
+                ["read", "sortedset", "slow"],
+                [DoZScan, DoZScanMatch, DoZScanCount, DoZScanNoValues, DoZScanMatchCount, DoZScanMatchNoValues, DoZScanCountNoValues, DoZScanMatchCountNoValues]
+            );
+
+            void DoZScan()
+            {
+                RedisResult val = db.Execute("ZSCAN", "foo", "0");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoZScanMatch()
+            {
+                RedisResult val = db.Execute("ZSCAN", "foo", "0", "MATCH", "*");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoZScanCount()
+            {
+                RedisResult val = db.Execute("ZSCAN", "foo", "0", "COUNT", "2");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoZScanNoValues()
+            {
+                RedisResult val = db.Execute("ZSCAN", "foo", "0", "NOVALUES");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoZScanMatchCount()
+            {
+                RedisResult val = db.Execute("ZSCAN", "foo", "0", "MATCH", "*", "COUNT", "2");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoZScanMatchNoValues()
+            {
+                RedisResult val = db.Execute("ZSCAN", "foo", "0", "MATCH", "*", "NOVALUES");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoZScanCountNoValues()
+            {
+                RedisResult val = db.Execute("ZSCAN", "foo", "0", "COUNT", "0", "NOVALUES");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+
+            void DoZScanMatchCountNoValues()
+            {
+                RedisResult val = db.Execute("ZSCAN", "foo", "0", "MATCH", "*", "COUNT", "0", "NOVALUES");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void ZMScoreACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ZMSCORE",
+                server,
+                ["sortedset", "read", "fast"],
+                [DoZDiff, DoZDiffMulti]
+            );
+
+            void DoZDiff()
+            {
+                RedisResult val = db.Execute("ZMSCORE", "foo", "bar");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(1, valArr.Length);
+                Assert.IsTrue(valArr[0].IsNull);
+            }
+
+            void DoZDiffMulti()
+            {
+                RedisResult val = db.Execute("ZMSCORE", "foo", "bar", "fizz");
+                RedisValue[] valArr = (RedisValue[])val;
+                Assert.AreEqual(2, valArr.Length);
+                Assert.IsTrue(valArr[0].IsNull);
+                Assert.IsTrue(valArr[1].IsNull);
+            }
+        }
+
+        [Test]
+        public void TimeACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "TIME",
+                server,
+                ["fast"],
+                [DoTime]
+            );
+
+            void DoTime()
+            {
+                RedisResult val = db.Execute("TIME");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+                Assert.IsTrue((long)valArr[0] > 0);
+                Assert.IsTrue((long)valArr[1] >= 0);
+            }
+        }
+
+        [Test]
+        public void TTLACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "TTL",
+                server,
+                ["keyspace", "read", "fast"],
+                [DoPTTL]
+            );
+
+            void DoPTTL()
+            {
+                RedisResult val = db.Execute("TTL", "foo");
+                Assert.AreEqual(-1, (int)val);
+            }
+        }
+
+        [Test]
+        public void TypeACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "TTL",
+                server,
+                ["keyspace", "read", "fast"],
+                [DoType]
+            );
+
+            void DoType()
+            {
+                RedisResult val = db.Execute("TYPE", "foo");
+                Assert.AreEqual("none", (string)val);
+            }
+        }
+
+        [Test]
+        public void UnlinkACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "UNLINK",
+                server,
+                ["keyspace", "write", "fast"],
+                [DoUnlink, DoUnlinkMulti]
+            );
+
+            void DoUnlink()
+            {
+                RedisResult val = db.Execute("UNLINK", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoUnlinkMulti()
+            {
+                RedisResult val = db.Execute("UNLINK", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        // todo: unsubscribe is weird, do it later
+        // todo: watch is weird, do it later
+        // todo: unwatch is weird, do it later
+
+        // todo: WATCHMS isn't part of Redis, what do we do with it?
+        // todo: WATCHOS isn't part of Redis, what do we do with it?
 
         /// <summary>
         /// Check permissions are denied if individual categories are removed from a +@all user.

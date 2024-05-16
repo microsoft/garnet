@@ -216,11 +216,6 @@ namespace Garnet.server
         public RespCommand Command { get; init; }
 
         /// <summary>
-        /// Garnet's sub-command enum value representation
-        /// </summary>
-        public byte? ArrayCommand { get; init; }
-
-        /// <summary>
         /// The command's name
         /// </summary>
         public string Name { get; init; }
@@ -312,7 +307,6 @@ namespace Garnet.server
         private static IReadOnlyDictionary<string, RespCommandsInfo> AllRespCommandsInfo = null;
         private static IReadOnlyDictionary<string, RespCommandsInfo> ExternalRespCommandsInfo = null;
         private static IReadOnlyDictionary<RespCommand, RespCommandsInfo> BasicRespCommandsInfo = null;
-        private static IReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>> ArrayRespCommandsInfo = null;
         private static IReadOnlySet<string> AllRespCommandNames = null;
         private static IReadOnlySet<string> ExternalRespCommandNames = null;
         private static IReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>> AclCommandInfo = null;
@@ -400,22 +394,11 @@ namespace Garnet.server
                 );
 
             var tmpBasicRespCommandsInfo = new Dictionary<RespCommand, RespCommandsInfo>();
-            var tmpArrayRespCommandsInfo = new Dictionary<RespCommand, Dictionary<byte, RespCommandsInfo>>();
             foreach (var respCommandInfo in tmpAllRespCommandsInfo.Values)
             {
                 if (respCommandInfo.Command == RespCommand.NONE) continue;
 
-                if (respCommandInfo.ArrayCommand.HasValue)
-                {
-                    if (!tmpArrayRespCommandsInfo.ContainsKey(respCommandInfo.Command))
-                        tmpArrayRespCommandsInfo.Add(respCommandInfo.Command, new Dictionary<byte, RespCommandsInfo>());
-                    tmpArrayRespCommandsInfo[respCommandInfo.Command]
-                        .Add(respCommandInfo.ArrayCommand.Value, respCommandInfo);
-                }
-                else
-                {
-                    tmpBasicRespCommandsInfo.Add(respCommandInfo.Command, respCommandInfo);
-                }
+                tmpBasicRespCommandsInfo.Add(respCommandInfo.Command, respCommandInfo);
             }
 
             AllRespCommandsInfo = tmpAllRespCommandsInfo;
@@ -425,12 +408,6 @@ namespace Garnet.server
             AllRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, AllRespCommandsInfo.Keys.ToArray());
             ExternalRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, ExternalRespCommandsInfo.Keys.ToArray());
             BasicRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpBasicRespCommandsInfo);
-            ArrayRespCommandsInfo = new ReadOnlyDictionary<RespCommand, IReadOnlyDictionary<byte, RespCommandsInfo>>(
-                tmpArrayRespCommandsInfo
-                    .ToDictionary(kvp => kvp.Key,
-                        kvp =>
-                            (IReadOnlyDictionary<byte, RespCommandsInfo>)new ReadOnlyDictionary<byte, RespCommandsInfo>(
-                                kvp.Value)));
 
             AclCommandInfo =
                 new ReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>>(
@@ -557,9 +534,7 @@ namespace Garnet.server
             if (!IsInitialized && !TryInitialize(logger)) return false;
 
             RespCommandsInfo tmpRespCommandInfo = default;
-            if (ArrayRespCommandsInfo.ContainsKey(cmd) && ArrayRespCommandsInfo[cmd].ContainsKey(subCmd))
-                tmpRespCommandInfo = ArrayRespCommandsInfo[cmd][subCmd];
-            else if (BasicRespCommandsInfo.ContainsKey(cmd))
+            if (BasicRespCommandsInfo.ContainsKey(cmd))
                 tmpRespCommandInfo = BasicRespCommandsInfo[cmd];
 
             if (tmpRespCommandInfo == default ||

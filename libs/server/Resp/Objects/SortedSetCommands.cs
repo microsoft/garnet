@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using Garnet.common;
 using Tsavorite.core;
@@ -37,6 +38,10 @@ namespace Garnet.server
         private unsafe bool SortedSetAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.ZADD, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
 
             if (count < 3)
             {
@@ -113,6 +118,11 @@ namespace Garnet.server
         private unsafe bool SortedSetRemove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.ZREM, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count < 2)
             {
                 zaddDoneCount = zaddAddCount = 0;
@@ -199,6 +209,11 @@ namespace Garnet.server
         private unsafe bool SortedSetLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.ZCARD, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count != 1)
             {
                 zaddDoneCount = zaddAddCount = 0;
@@ -268,9 +283,14 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRange<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRange<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
 
             // Get the key for the Sorted Set
@@ -313,6 +333,15 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
+                SortedSetOperation op = 0;
+                switch (command)
+                {
+                    case RespCommand.ZRANGE: op = SortedSetOperation.ZRANGE; break;
+                    case RespCommand.ZREVRANGE: op = SortedSetOperation.ZREVRANGE; break;
+                    case RespCommand.ZRANGEBYSCORE: op = SortedSetOperation.ZRANGEBYSCORE; break;
+                    default: Debug.Fail($"Unexpected command {command}"); break;
+                }
+
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.flags = 0;
@@ -353,22 +382,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Returns the specified range of elements in the sorted set stored at key.
-        /// The ordering is reversed.
-        /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
-        /// <param name="storageApi"></param>
-        /// <returns></returns>
-        private unsafe bool SortedSetReverseRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-           where TGarnetApi : IGarnetApi
-        {
-            //ZREVRANGE key start stop [WITHSCORES]
-            return SortedSetRange(count, ptr, SortedSetOperation.ZREVRANGE, ref storageApi);
-        }
-
-        /// <summary>
         /// Returns the score of member in the sorted set at key.
         /// If member does not exist in the sorted set, or key does not exist, nil is returned.
         /// </summary>
@@ -380,6 +393,11 @@ namespace Garnet.server
         private unsafe bool SortedSetScore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.ZSCORE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             //validation if minimum args
             if (count != 2)
             {
@@ -459,6 +477,11 @@ namespace Garnet.server
         private unsafe bool SortedSetScores<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.ZMSCORE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             //validation if minimum args
             if (count < 2)
             {
@@ -538,12 +561,17 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetPop<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetPop<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count < 1 || count > 2)
             {
-                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZPOPMAX ? "ZPOPMAX" : "ZPOPMIN", count);
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
             else
             {
@@ -575,6 +603,14 @@ namespace Garnet.server
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                SortedSetOperation op = 0;
+                switch (command)
+                {
+                    case RespCommand.ZPOPMIN: op = SortedSetOperation.ZPOPMIN; break;
+                    case RespCommand.ZPOPMAX: op = SortedSetOperation.ZPOPMAX; break;
+                    default: Debug.Fail($"Unexpected command {command}"); break;
+                }
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -628,6 +664,11 @@ namespace Garnet.server
         private unsafe bool SortedSetCount<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.ZCOUNT, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("ZCOUNT", count);
@@ -713,13 +754,18 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetLengthByValue<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetLengthByValue<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count != 3)
             {
                 zaddDoneCount = zaddAddCount = 0;
-                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZLEXCOUNT ? "ZLEXCOUNT" : "ZREMRANGEBYLEX", count);
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
             else
             {
@@ -727,7 +773,7 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                bool checkCluster = NetworkSingleKeySlotVerify(key, op != SortedSetOperation.ZREMRANGEBYLEX);
+                bool checkCluster = NetworkSingleKeySlotVerify(key, command != RespCommand.ZREMRANGEBYLEX);
 
                 if (checkCluster)
                 {
@@ -744,6 +790,14 @@ namespace Garnet.server
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                SortedSetOperation op = 0;
+                switch (command)
+                {
+                    case RespCommand.ZREMRANGEBYLEX: op = SortedSetOperation.ZREMRANGEBYLEX; break;
+                    case RespCommand.ZLEXCOUNT: op = SortedSetOperation.ZLEXCOUNT; break;
+                    default: Debug.Fail($"Unexpected command {command}"); break;
+                }
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -804,6 +858,11 @@ namespace Garnet.server
         private unsafe bool SortedSetIncrement<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.ZINCRBY, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             //validation of required args
             if (count != 3)
             {
@@ -896,13 +955,19 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRank<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRank<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            //validation of required args
-            if (count < 2 || count > 3)
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
             {
-                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZRANK ? "ZRANK" : "ZREVRANK", count);
+                return success;
+            }
+
+            //validation of required args
+            // todo: WITHSCORE
+            if (count < 2)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
             else
             {
@@ -932,6 +997,14 @@ namespace Garnet.server
 
                 // Prepare length of header in input buffer
                 var inputLength = memberSize + sizeof(ObjectInputHeader);
+
+                SortedSetOperation op = 0;
+                switch (command)
+                {
+                    case RespCommand.ZRANK: op = SortedSetOperation.ZRANK; break;
+                    case RespCommand.ZREVRANK: op = SortedSetOperation.ZREVRANK; break;
+                    default: Debug.Fail($"Unexpected command {command}"); break;
+                }
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -977,12 +1050,17 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRemoveRange<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRemoveRange<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count != 3)
             {
-                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZREMRANGEBYRANK ? "ZREMRANGEBYRANK" : "ZREMRANGEBYSCORE", count);
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
             else
             {
@@ -1006,6 +1084,14 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
+                SortedSetOperation op = 0;
+                switch (command)
+                {
+                    case RespCommand.ZREMRANGEBYRANK: op = SortedSetOperation.ZREMRANGEBYRANK; break;
+                    case RespCommand.ZREMRANGEBYSCORE: op = SortedSetOperation.ZREMRANGEBYSCORE; break;
+                    default: Debug.Fail($"Unexpected command {command}"); break;
+                }
+
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.flags = 0;
@@ -1023,7 +1109,7 @@ namespace Garnet.server
                     case GarnetStatus.OK:
                         if (output.countDone == int.MaxValue)
                         {
-                            var errorMessage = op == SortedSetOperation.ZREMRANGEBYRANK ?
+                            var errorMessage = command == RespCommand.ZREMRANGEBYRANK ?
                                 "ERR start or stop value is not in an integer or out of range."u8 :
                                 "ERR max or min value is not a float value."u8;
 
@@ -1063,6 +1149,11 @@ namespace Garnet.server
         private unsafe bool SortedSetRandomMember<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.ZRANDMEMBER, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count < 1 || count > 3)
             {
                 return AbortWithWrongNumberOfArguments("ZRANDMEMBER", count);
@@ -1164,6 +1255,11 @@ namespace Garnet.server
         private unsafe bool SortedSetDifference<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            if (!CheckACLPermissions(RespCommand.ZDIFF, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("ZDIFF", count);

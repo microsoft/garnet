@@ -14,7 +14,7 @@
     "SubCommands": null
   },
   {
-    "Command": "All",
+    "Command": "COSCAN",
     "ArrayCommand": 39,
     "Name": "COSCAN",
     "Arity": -3,

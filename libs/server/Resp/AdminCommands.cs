@@ -603,7 +603,7 @@ namespace Garnet.server
 
             if (memoryOption.Equals("USAGE", StringComparison.OrdinalIgnoreCase))
             {
-                if (!CheckACLPermissions(RespCommand.MEMORY, RespCommandsInfo.SubCommandIds.MemoryUsage, count - 1, out bool success))
+                if (!CheckACLPermissions(RespCommand.MEMORY, RespCommandsInfo.SubCommandIds.MemoryUsage, count, out bool success))
                 {
                     return success;
                 }

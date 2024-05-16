@@ -150,7 +150,7 @@ namespace Garnet.server
             }
 
             // Get and add keys to txn key list
-            int skipped = txnManager.GetKeys(cmd, count, out ReadOnlySpan<byte> error, subCommand);
+            int skipped = txnManager.GetKeys(cmd, count, out ReadOnlySpan<byte> error);
 
             if (skipped < 0)
             {

@@ -47,13 +47,11 @@ namespace Garnet.test
         public void CommandsInfoCoverageTest()
         {
             // Get all command-subcommand combinations that have RespCommandInfo objects defined
-            var existingCombinations = new Dictionary<RespCommand, HashSet<byte>>();
+            var existingCombinations = new HashSet<RespCommand>();
             foreach (var commandInfo in respCommandsInfo.Values)
             {
-                if (!existingCombinations.ContainsKey(commandInfo.Command))
-                    existingCombinations.Add(commandInfo.Command, new HashSet<byte>());
-                if (commandInfo.ArrayCommand.HasValue)
-                    existingCombinations[commandInfo.Command].Add(commandInfo.ArrayCommand.Value);
+                if (!existingCombinations.Contains(commandInfo.Command))
+                    existingCombinations.Add(commandInfo.Command);
             }
 
             // RespCommands that can be ignored
@@ -72,39 +70,8 @@ namespace Garnet.test
             {
                 if (ignoreCommands.Contains(respCommand)) continue;
 
-                var arrayCommandEnumType = (respCommand) switch
-                {
-                    RespCommand.Set => typeof(SetOperation),
-                    RespCommand.Hash => typeof(HashOperation),
-                    RespCommand.List => typeof(ListOperation),
-                    RespCommand.SortedSet => typeof(SortedSetOperation),
-                    _ => default
-                };
-
-                if (arrayCommandEnumType != default)
-                {
-                    foreach (var arrayCommand in Enum.GetValues(arrayCommandEnumType))
-                    {
-                        if (!existingCombinations.ContainsKey(respCommand) ||
-                            !existingCombinations[respCommand].Contains((byte)arrayCommand))
-                        {
-                            missingCombinations.Add((respCommand, (byte)arrayCommand));
-                        }
-                    }
-                }
-                else if (respCommand == RespCommand.All)
-                {
-                    if (!existingCombinations.ContainsKey(respCommand) ||
-                        !existingCombinations[respCommand].Contains((byte)RespCommand.COSCAN))
-                    {
-                        missingCombinations.Add((respCommand, (byte)RespCommand.COSCAN));
-                    }
-                }
-                else
-                {
-                    if (!existingCombinations.ContainsKey(respCommand))
-                        missingCombinations.Add((respCommand, 0));
-                }
+                if (!existingCombinations.Contains(respCommand))
+                    missingCombinations.Add((respCommand, 0));
             }
 
             // Verify that there are no missing combinations

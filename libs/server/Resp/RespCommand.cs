@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
-using Garnet.server.ACL;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -16,121 +15,219 @@ namespace Garnet.server
     /// </summary>
     public enum RespCommand : byte
     {
-        NONE = 0x0,
+        NONE = 0x00,
 
         // Read-only commands
-        GET = (0x40 | 0x0),
-        GETRANGE = (0x40 | 0x1),
-        MGET = (0x40 | 0x2),
-        GETBIT = (0x40 | 0x3),
-        BITCOUNT = (0x40 | 0x4),
-        BITPOS = (0x40 | 0x5),
-        BITFIELD_RO = (0x40 | 0x6),
-        PFCOUNT = (0x40 | 0x7),
-        EXISTS = (0x40 | 0x8),
-        TTL = (0x40 | 0x9),
-        PTTL = (0x40 | 0x10),
-        STRLEN = 0x26,
-        COSCAN = 0x27,
+        GET,
+        GETRANGE,
+        MGET,
+        GETBIT,
+        BITCOUNT,
+        BITPOS,
+        BITFIELD_RO,
+        PFCOUNT,
+        EXISTS,
+        TTL,
+        PTTL,
+        STRLEN,
+        COSCAN,
 
         // Upsert or RMW commands
-        SET = (0x80 | 0x0),
-        MSET = (0x80 | 0x1),
-        PSETEX = (0x80 | 0x2),
-        SETEX = (0x80 | 0x3),
-        SETEXNX = (0x80 | 0x4),
-        SETEXXX = (0x80 | 0x5),
-        SETKEEPTTL = (0x80 | 0x6),
-        SETKEEPTTLXX = (0x80 | 0x7),
-        SETBIT = (0x80 | 0x8),
-        BITOP = (0x80 | 0x9),
-        BITFIELD = (0x80 | 0xA),
-        PFADD = (0x80 | 0xB),
-        PFMERGE = (0x80 | 0xC),
-        INCR = (0x80 | 0xD),
-        INCRBY = (0x80 | 0xE),
-        DECR = (0x80 | 0xF),
-        DECRBY = (0x80 | 0x10),
-        RENAME = (0x80 | 0x11),
-        PERSIST = (0x80 | 0x12),
-        EXPIRE = (0x80 | 0x13),
-        DEL = (0x80 | 0x14),
-        PEXPIRE = (0x80 | 0x15),
-        SETRANGE = (0x80 | 0x16),
-        GETDEL = (0x80 | 0x17),
-        MSETNX = (0x80 | 0x18),
-        APPEND = (0x80 | 0x19),
+        SET,
+        MSET,
+        PSETEX,
+        SETEX,
+        SETEXNX,
+        SETEXXX,
+        SETKEEPTTL,
+        SETKEEPTTLXX,
+        SETBIT,
+        BITOP,
+        BITFIELD,
+        PFADD,
+        PFMERGE,
+        INCR,
+        INCRBY,
+        DECR,
+        DECRBY,
+        RENAME,
+        PERSIST,
+        EXPIRE,
+        DEL,
+        PEXPIRE,
+        SETRANGE,
+        GETDEL,
+        MSETNX,
+        APPEND,
 
-        // Object store commands
-        SortedSet = (0xC0 | 0x0),
-        List = (0xC0 | 0x1),
-        Hash = (0xC0 | 0x2),
-        Set = (0xC0 | 0x3),
-        All = (0xC0 | 0x26),
+        // List commands
+        LPOP,
+        LPUSH,
+        LPUSHX,
+        RPOP,
+        RPUSH,
+        RPUSHX,
+        LLEN,
+        LTRIM,
+        LRANGE,
+        LINDEX,
+        LINSERT,
+        LREM,
+        RPOPLPUSH,
+        LMOVE,
+        LSET,
+
+        // Hash commands
+        HDEL,
+        HEXISTS,
+        HGET,
+        HGETALL,
+        HINCRBY,
+        HINCRBYFLOAT,
+        HKEYS,
+        HLEN,
+        HMGET,
+        HMSET,
+        HRANDFIELD,
+        HSCAN,
+        HSET,
+        HSETNX,
+        HSTRLEN,
+        HVALS,
+
+        // Set commands
+        SADD,
+        SREM,
+        SPOP,
+        SMEMBERS,
+        SCARD,
+        SSCAN,
+        SMOVE,
+        SRANDMEMBER,
+        SISMEMBER,
+        SUNION,
+        SUNIONSTORE,
+        SDIFF,
+        SDIFFSTORE,
+
+        // GeoHash (implemented as SortedSet) commands
+        GEOADD,
+        GEOHASH,
+        GEODIST,
+        GEOPOS,
+        GEOSEARCH,
+
+        // SortedSet commands
+        ZADD,
+        ZCARD,
+        ZPOPMAX,
+        ZSCORE,
+        ZREM,
+        ZCOUNT,
+        ZINCRBY,
+        ZRANK,
+        ZRANGE,
+        ZRANGEBYSCORE,
+        ZREVRANGE,
+        ZREVRANK,
+        ZREMRANGEBYLEX,
+        ZREMRANGEBYRANK,
+        ZREMRANGEBYSCORE,
+        ZLEXCOUNT,
+        ZPOPMIN,
+        ZRANDMEMBER,
+        ZDIFF,
+        ZSCAN,
+        ZMSCORE,
 
         // Admin commands
-        PING = 0x1,
-        QUIT = 0x2,
-        AUTH = 0x3,
-        COMMAND = 0x4,
-        DBSIZE = 0x5,
-        KEYS = 0x6,
-        PUBLISH = 0x7,
-        SUBSCRIBE = 0x8,
-        PSUBSCRIBE = 0x9,
-        UNSUBSCRIBE = 0xA,
-        PUNSUBSCRIBE = 0xB,
-        ASKING = 0xD,
-        MIGRATE = 0xE,
-        SELECT = 0xF,
-        ECHO = 0x10,
-        CONFIG = 0x11,
-        CLIENT = 0x12,
-        UNLINK = 0x13,
-        TYPE = 0x20,
-        SCAN = 0x21,
-        MEMORY = 0x23,
-        MONITOR = 0x24,
-        MODULE = 0x25,
-        REGISTERCS = 0x28,
+        PING,
+        QUIT,
+        AUTH,
+        COMMAND,
+        DBSIZE,
+        KEYS,
+        PUBLISH,
+        SUBSCRIBE,
+        PSUBSCRIBE,
+        UNSUBSCRIBE,
+        PUNSUBSCRIBE,
+        ASKING,
+        MIGRATE,
+        SELECT,
+        ECHO,
+        CONFIG,
+        CLIENT,
+        UNLINK,
+        TYPE,
+        SCAN,
+        MEMORY,
+        MONITOR,
+        MODULE,
+        REGISTERCS,
 
         // Transaction commands
-        MULTI = 0x14,
-        EXEC = 0x15,
-        DISCARD = 0x16,
-        WATCH = 0x17,
-        WATCHMS = 0x18,
-        WATCHOS = 0x19,
-        UNWATCH = 0x1A,
-        RUNTXP = 0x1B,
+        MULTI,
+        EXEC,
+        DISCARD,
+        WATCH,
+        WATCHMS,
+        WATCHOS,
+        UNWATCH,
+        RUNTXP,
 
         // Cluster commands
-        READONLY = 0x1C,
-        READWRITE = 0x1D,
-        REPLICAOF = 0x1E,
-        SECONDARYOF = 0x1F,
+        READONLY,
+        READWRITE,
+        REPLICAOF,
+        SECONDARYOF,
 
         // Misc. commands
-        INFO = 0x31,
-        CLUSTER = 0x32,
-        LATENCY = 0x33,
-        TIME = 0x34,
-        RESET = 0x35,
-        SAVE = 0x36,
-        LASTSAVE = 0x37,
-        BGSAVE = 0x38,
-        COMMITAOF = 0x39,
-        FLUSHDB = 0x3A,
-        FORCEGC = 0x3B,
-        FAILOVER = 0x3C,
-        ACL = 0x3D,
+        INFO,
+        CLUSTER,
+        LATENCY,
+        TIME,
+        SAVE,
+        LASTSAVE,
+        BGSAVE,
+        COMMITAOF,
+        FLUSHDB,
+        FORCEGC,
+        FAILOVER,
+        ACL,
 
         // Custom commands
-        CustomTxn = 0x29,
-        CustomCmd = 0x2A,
-        CustomObjCmd = 0x2B,
+        CustomTxn,
+        CustomCmd,
+        CustomObjCmd,
 
-        INVALID = 0xFF
+        INVALID = 0xFF,
+    }
+
+    /// <summary>
+    /// Extension methods for <see cref="RespCommand"/>.
+    /// </summary>
+    public static class RespCommandExtensions
+    {
+        /// <summary>
+        /// Returns 1 if <paramref name="cmd"/> is a write command.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ulong OneIfWrite(this RespCommand cmd)
+        {
+            // todo: this was a mask and shift before hand, speed it up
+            return (cmd >= RespCommand.SET && cmd <= RespCommand.ZMSCORE) ? 1UL : 0;
+        }
+
+        /// <summary>
+        /// Returns 1 if <paramref name="cmd"/> is a read command.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static ulong OneIfRead(this RespCommand cmd)
+        {
+            // todo: this was a mask and shift before hand, speed it up
+            return (cmd >= RespCommand.GET && cmd <= RespCommand.COSCAN) ? 1UL : 0;
+        }
     }
 
     /// <summary>
@@ -355,19 +452,19 @@ namespace Garnet.server
                                     case 'H':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHSET\r\n"u8))
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HSET);
+                                            return (RespCommand.HSET, 0);
                                         }
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHGET\r\n"u8))
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HGET);
+                                            return (RespCommand.HGET, 0);
                                         }
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHDEL\r\n"u8))
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HDEL);
+                                            return (RespCommand.HDEL, 0);
                                         }
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nHLEN\r\n"u8))
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HLEN);
+                                            return (RespCommand.HLEN, 0);
                                         }
                                         break;
 
@@ -381,19 +478,19 @@ namespace Garnet.server
                                     case 'L':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLPOP\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LPOP);
+                                            return (RespCommand.LPOP, 0);
                                         }
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLLEN\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LLEN);
+                                            return (RespCommand.LLEN, 0);
                                         }
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLREM\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LREM);
+                                            return (RespCommand.LREM, 0);
                                         }
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nLSET\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LSET);
+                                            return (RespCommand.LSET, 0);
                                         }
                                         break;
 
@@ -411,7 +508,7 @@ namespace Garnet.server
                                     case 'R':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nRPOP\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.RPOP);
+                                            return (RespCommand.RPOP, 0);
                                         }
                                         break;
 
@@ -422,15 +519,15 @@ namespace Garnet.server
                                         }
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSADD\r\n"u8))
                                         {
-                                            return (RespCommand.Set, (byte)SetOperation.SADD);
+                                            return (RespCommand.SADD, 0);
                                         }
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSREM\r\n"u8))
                                         {
-                                            return (RespCommand.Set, (byte)SetOperation.SREM);
+                                            return (RespCommand.SREM, 0);
                                         }
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nSPOP\r\n"u8))
                                         {
-                                            return (RespCommand.Set, (byte)SetOperation.SPOP);
+                                            return (RespCommand.SPOP, 0);
                                         }
                                         break;
 
@@ -444,11 +541,11 @@ namespace Garnet.server
                                     case 'Z':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZADD\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZADD);
+                                            return (RespCommand.ZADD, 0);
                                         }
                                         else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZREM\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREM);
+                                            return (RespCommand.ZREM, 0);
                                         }
                                         break;
                                 }
@@ -507,38 +604,38 @@ namespace Garnet.server
                                     case 'H':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHMSET\r\n"u8))
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HMSET);
+                                            return (RespCommand.HMSET, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHMGET\r\n"u8))
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HMGET);
+                                            return (RespCommand.HMGET, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHKEYS\r\n"u8))
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HKEYS);
+                                            return (RespCommand.HKEYS, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHVALS\r\n"u8))
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HVALS);
+                                            return (RespCommand.HVALS, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nHSCAN\r\n"u8))
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HSCAN);
+                                            return (RespCommand.HSCAN, 0);
                                         }
                                         break;
 
                                     case 'L':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nLPUSH\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LPUSH);
+                                            return (RespCommand.LPUSH, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nLTRIM\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LTRIM);
+                                            return (RespCommand.LTRIM, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nLMOVE\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LMOVE);
+                                            return (RespCommand.LMOVE, 0);
                                         }
                                         break;
 
@@ -552,26 +649,26 @@ namespace Garnet.server
                                     case 'R':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nRPUSH\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.RPUSH);
+                                            return (RespCommand.RPUSH, 0);
                                         }
                                         break;
 
                                     case 'S':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSCARD\r\n"u8))
                                         {
-                                            return (RespCommand.Set, (byte)SetOperation.SCARD);
+                                            return (RespCommand.SCARD, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSSCAN\r\n"u8))
                                         {
-                                            return (RespCommand.Set, (byte)SetOperation.SSCAN);
+                                            return (RespCommand.SSCAN, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSMOVE\r\n"u8))
                                         {
-                                            return (RespCommand.Set, (byte)SetOperation.SMOVE);
+                                            return (RespCommand.SMOVE, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSDIFF\r\n"u8))
                                         {
-                                            return (RespCommand.Set, (byte)SetOperation.SDIFF);
+                                            return (RespCommand.SDIFF, 0);
                                         }
                                         break;
 
@@ -606,19 +703,19 @@ namespace Garnet.server
                                     case 'Z':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZCARD\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZCARD);
+                                            return (RespCommand.ZCARD, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZRANK\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANK);
+                                            return (RespCommand.ZRANK, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZDIFF\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZDIFF);
+                                            return (RespCommand.ZDIFF, 0);
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nZSCAN\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZSCAN);
+                                            return (RespCommand.ZSCAN, 0);
                                         }
                                         break;
                                 }
@@ -644,33 +741,33 @@ namespace Garnet.server
                                     case 'G':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEOADD\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOADD);
+                                            return (RespCommand.GEOADD, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEOPOS\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOPOS);
+                                            return (RespCommand.GEOPOS, 0);
                                         }
                                         break;
 
                                     case 'H':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HSETNX\r\n"u8))
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HSETNX);
+                                            return (RespCommand.HSETNX, 0);
                                         }
                                         break;
 
                                     case 'L':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("LPUSHX\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LPUSHX);
+                                            return (RespCommand.LPUSHX, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("LRANGE\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LRANGE);
+                                            return (RespCommand.LRANGE, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("LINDEX\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LINDEX);
+                                            return (RespCommand.LINDEX, 0);
                                         }
                                         break;
 
@@ -692,7 +789,7 @@ namespace Garnet.server
                                     case 'R':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPUSHX\r\n"u8))
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.RPUSHX);
+                                            return (RespCommand.RPUSHX, 0);
                                         }
                                         break;
 
@@ -707,7 +804,7 @@ namespace Garnet.server
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUNION\r\n"u8))
                                         {
-                                            return (RespCommand.Set, (byte)SetOperation.SUNION);
+                                            return (RespCommand.SUNION, 0);
                                         }
                                         break;
 
@@ -721,15 +818,15 @@ namespace Garnet.server
                                     case 'Z':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZCOUNT\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZCOUNT);
+                                            return (RespCommand.ZCOUNT, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZRANGE\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANGE);
+                                            return (RespCommand.ZRANGE, 0);
                                         }
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZSCORE\r\n"u8))
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZSCORE);
+                                            return (RespCommand.ZSCORE, 0);
                                         }
                                         break;
                                 }
@@ -741,37 +838,37 @@ namespace Garnet.server
                                     case 'G':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEOHASH\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOHASH);
+                                            return (RespCommand.GEOHASH, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEODIST\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.GEODIST);
+                                            return (RespCommand.GEODIST, 0);
                                         }
                                         break;
 
                                     case 'H':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HGETALL\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HGETALL);
+                                            return (RespCommand.HGETALL, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HEXISTS\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HEXISTS);
+                                            return (RespCommand.HEXISTS, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HINCRBY\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HINCRBY);
+                                            return (RespCommand.HINCRBY, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("HSTRLEN\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.Hash, (byte)HashOperation.HSTRLEN);
+                                            return (RespCommand.HSTRLEN, 0);
                                         }
                                         break;
 
                                     case 'L':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("LINSERT\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.List, (byte)ListOperation.LINSERT);
+                                            return (RespCommand.LINSERT, 0);
                                         }
                                         break;
 
@@ -796,19 +893,19 @@ namespace Garnet.server
                                     case 'Z':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPOPMIN\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZPOPMIN);
+                                            return (RespCommand.ZPOPMIN, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZPOPMAX\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZPOPMAX);
+                                            return (RespCommand.ZPOPMAX, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZINCRBY\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZINCRBY);
+                                            return (RespCommand.ZINCRBY, 0);
                                         }
                                         else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZMSCORE\r"u8) && *(byte*)(ptr + 12) == '\n')
                                         {
-                                            return (RespCommand.SortedSet, (byte)SortedSetOperation.ZMSCORE);
+                                            return (RespCommand.ZMSCORE, 0);
                                         }
                                         break;
                                 }
@@ -816,11 +913,11 @@ namespace Garnet.server
                             case 8:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZREVRANK"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
-                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREVRANK);
+                                    return (RespCommand.ZREVRANK, 0);
                                 }
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SMEMBERS"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
-                                    return (RespCommand.Set, (byte)SetOperation.SMEMBERS);
+                                    return (RespCommand.SMEMBERS, 0);
                                 }
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BITFIELD"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
@@ -834,23 +931,23 @@ namespace Garnet.server
                                 }
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SISMEMBE"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("ER\r\n"u8))
                                 {
-                                    return (RespCommand.Set, (byte)SetOperation.SISMEMBER);
+                                    return (RespCommand.SISMEMBER, 0);
                                 }
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZLEXCOUN"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("NT\r\n"u8))
                                 {
-                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZLEXCOUNT);
+                                    return (RespCommand.ZLEXCOUNT, 0);
                                 }
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("GEOSEARC"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("CH\r\n"u8))
                                 {
-                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.GEOSEARCH);
+                                    return (RespCommand.GEOSEARCH, 0);
                                 }
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZREVRANG"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("GE\r\n"u8))
                                 {
-                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREVRANGE);
+                                    return (RespCommand.ZREVRANGE, 0);
                                 }
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("RPOPLPUS"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("SH\r\n"u8))
                                 {
-                                    return (RespCommand.List, (byte)ListOperation.RPOPLPUSH);
+                                    return (RespCommand.RPOPLPUSH, 0);
                                 }
                                 break;
                         }
@@ -887,11 +984,11 @@ namespace Garnet.server
                                 }
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nHRAN"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("DFIELD\r\n"u8))
                                 {
-                                    return (RespCommand.Hash, (byte)HashOperation.HRANDFIELD);
+                                    return (RespCommand.HRANDFIELD, 0);
                                 }
                                 else if (*(ulong*)(ptr + 1) == MemoryMarshal.Read<ulong>("10\r\nSDIF"u8) && *(ulong*)(ptr + 9) == MemoryMarshal.Read<ulong>("FSTORE\r\n"u8))
                                 {
-                                    return (RespCommand.Set, (byte)SetOperation.SDIFFSTORE);
+                                    return (RespCommand.SDIFFSTORE, 0);
                                 }
                                 break;
 
@@ -902,7 +999,7 @@ namespace Garnet.server
                                 }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZRAND"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("MEMBER\r\n"u8))
                                 {
-                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANDMEMBER);
+                                    return (RespCommand.ZRANDMEMBER, 0);
                                 }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nBITFI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("ELD_RO\r\n"u8))
                                 {
@@ -910,11 +1007,11 @@ namespace Garnet.server
                                 }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSRAND"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("MEMBER\r\n"u8))
                                 {
-                                    return (RespCommand.Set, (byte)SetOperation.SRANDMEMBER);
+                                    return (RespCommand.SRANDMEMBER, 0);
                                 }
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSUNIO"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("NSTORE\r\n"u8))
                                 {
-                                    return (RespCommand.Set, (byte)SetOperation.SUNIONSTORE);
+                                    return (RespCommand.SUNIONSTORE, 0);
                                 }
                                 break;
 
@@ -925,39 +1022,39 @@ namespace Garnet.server
                                 }
                                 else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nHINCRB"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("YFLOAT\r\n"u8))
                                 {
-                                    return (RespCommand.Hash, (byte)HashOperation.HINCRBYFLOAT);
+                                    return (RespCommand.HINCRBYFLOAT, 0);
                                 }
                                 break;
 
                             case 13:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZRANGEB"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("YSCORE\r\n"u8))
                                 {
-                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZRANGEBYSCORE);
+                                    return (RespCommand.ZRANGEBYSCORE, 0);
                                 }
                                 break;
 
                             case 14:
                                 if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
-                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYLEX);
+                                    return (RespCommand.ZREMRANGEBYLEX, 0);
                                 }
                                 break;
 
                             case 15:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZREMRAN"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("GEBYRANK"u8) && *(ushort*)(ptr + 20) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
-                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYRANK);
+                                    return (RespCommand.ZREMRANGEBYRANK, 0);
                                 }
                                 break;
 
                             case 16:
                                 if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nCUSTOM"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("OBJECTSC"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("AN\r\n"u8))
                                 {
-                                    return (RespCommand.All, (byte)RespCommand.COSCAN);
+                                    return (RespCommand.COSCAN, 0);
                                 }
                                 else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREMRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYSCO"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("RE\r\n"u8))
                                 {
-                                    return (RespCommand.SortedSet, (byte)SortedSetOperation.ZREMRANGEBYSCORE);
+                                    return (RespCommand.ZREMRANGEBYSCORE, 0);
                                 }
                                 break;
                         }
