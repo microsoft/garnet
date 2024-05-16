@@ -3,6 +3,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -14,7 +16,7 @@ namespace Garnet
     /// </summary>
     class Program
     {
-        private static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
+        private static readonly string CustomRespCommandInfoJsonFileName = "CustomRespCommandsInfo.json";
 
         static void Main(string[] args)
         {
@@ -23,7 +25,11 @@ namespace Garnet
                 using var server = new GarnetServer(args);
 
                 // Optional: register custom extensions
-                RegisterExtensions(server);
+                if (!TryRegisterExtensions(server))
+                {
+                    Console.WriteLine("Unable to register server extensions.");
+                    return;
+                }
 
                 // Start the server
                 server.Start();
@@ -41,9 +47,12 @@ namespace Garnet
         /// commands such as db.Execute in StackExchange.Redis. Example:
         ///   db.Execute("SETIFPM", key, value, prefix);
         /// </summary>
-        static void RegisterExtensions(GarnetServer server)
+        static bool TryRegisterExtensions(GarnetServer server)
         {
-            var customCommandsInfo = GetRespCommandsInfo(CustomRespCommandInfoJsonPath);
+            var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+
+            if (!TryGetRespCommandsInfo(Path.Combine(binPath!, CustomRespCommandInfoJsonFileName), out var customCommandsInfo))
+                return false;
 
             // Register custom command on raw strings (SETIFPM = "set if prefix match")
             server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), customCommandsInfo["SETIFPM"]);
@@ -74,14 +83,15 @@ namespace Garnet
             // Register sample transactional procedures
             server.Register.NewTransactionProc("SAMPLEUPDATETX", 8, () => new SampleUpdateTxn());
             server.Register.NewTransactionProc("SAMPLEDELETETX", 5, () => new SampleDeleteTxn());
+
+            return true;
         }
 
-        private static IReadOnlyDictionary<string, RespCommandsInfo> GetRespCommandsInfo(string path)
+        private static bool TryGetRespCommandsInfo(string path, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
         {
             var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
             var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
-            commandsInfoProvider.TryImportRespCommandsInfo(path, streamProvider, out var commandsInfo);
-            return commandsInfo;
+            return commandsInfoProvider.TryImportRespCommandsInfo(path, streamProvider, out commandsInfo);
         }
     }
 }
