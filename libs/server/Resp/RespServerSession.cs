@@ -7,7 +7,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
 using Garnet.common;
 using Garnet.common.Parsing;
 using Garnet.networking;
@@ -99,14 +98,6 @@ namespace Garnet.server
         /// Current custom command to be executed in the session.
         /// </summary>
         CustomCommand currentCustomCommand = null;
-
-        /// <summary>
-        /// Whether async mode is turned on for the session
-        /// </summary>
-        bool useAsync = false;
-        long asyncStarted = 0, asyncCompleted = 0;
-        SingleWaiterAutoResetEvent asyncWaiter = null;
-        SemaphoreSlim asyncDone = null;
 
         /// <summary>
         /// Current custom object command to be executed in the session.

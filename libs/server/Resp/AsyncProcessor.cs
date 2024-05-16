@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -12,6 +14,32 @@ namespace Garnet.server
     /// </summary>
     internal sealed partial class RespServerSession : ServerSessionBase
     {
+        /// <summary>
+        /// Whether async mode is turned on for the session
+        /// </summary>
+        bool useAsync = false;
+
+        /// <summary>
+        /// How many async operations are started and completed
+        /// </summary>
+        long asyncStarted = 0, asyncCompleted = 0;
+
+        /// <summary>
+        /// Async waiter for async operations
+        /// </summary>
+        SingleWaiterAutoResetEvent asyncWaiter = null;
+
+        /// <summary>
+        /// Semaphore for barrier command to wait for async operations to complete
+        /// </summary>
+        SemaphoreSlim asyncDone = null;
+
+
+        /// <summary>
+        /// Handle a async network GET command that goes pending
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="storageApi"></param>
         void NetworkGETPending<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -20,7 +48,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteError($"ASYNC {asyncStarted++}", ref dcurr, dend))
                     SendAndReset();
             }
-            if (asyncStarted == 1)
+            if (asyncStarted == 1) // first async operation on the session, create the IO continuation processor
             {
                 asyncWaiter = new()
                 {
@@ -36,6 +64,11 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Background processor for async IO continuations. This is created only when async is turned on for the session.
+        /// It handles all the IO completions and takes over the network sender to send async responses when ready.
+        /// Note that async responses are not guaranteed to be in the same order that they are issued.
+        /// </summary>
         async Task AsyncGetProcessor<TGarnetApi>(TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -50,13 +83,20 @@ namespace Garnet.server
                     {
                         unsafe
                         {
+                            // We are ready to send responses so we take over the network sender from the main ProcessMessage thread
+                            // Note that we cannot take over while ProcessMessage is in progress because partial responses may have been
+                            // sent at that point. For sync responses that span multiple ProcessMessage calls (e.g., MGET), we need the
+                            // main thread to hold the sender lock until the response is done.
                             networkSender.EnterAndGetResponseObject(out dcurr, out dend);
 
                             // Send async replies with completed outputs
                             while (completedOutputs.Next())
                             {
+                                // This is the only thread that updates asyncCompleted so we do not need atomics here
                                 asyncCompleted++;
                                 var o = completedOutputs.Current.Output;
+
+                                // We write async response as an array: [ "async", "<token_id>", "<result_string>" ]
                                 RespWriteUtils.WriteArrayLength(3, ref dcurr, dend);
                                 RespWriteUtils.WriteBulkString("async"u8, ref dcurr, dend);
                                 RespWriteUtils.WriteIntegerAsBulkString((int)completedOutputs.Current.Context, ref dcurr, dend);
@@ -84,7 +124,12 @@ namespace Garnet.server
                         networkSender.ExitAndReturnResponseObject();
                     }
                 }
+
+                // Let ongoing barrier command know that all async operations are done
                 asyncDone?.Release();
+
+                // Wait for next async operation
+                // We do not need to cancel the wait - it should get garbage collected when the session ends
                 await asyncWaiter.WaitAsync();
             }
         }
