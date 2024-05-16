@@ -117,7 +117,7 @@ namespace Garnet.server
                         var key = GetCommand(bufSpan, out bool success2);
                         if (!success2) return false;
 
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.GetConfig(key), ref dcurr, dend))
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.GetConfig(key, cluster: storeWrapper.serverOptions.EnableCluster), ref dcurr, dend))
                             SendAndReset();
                     }
                 }
