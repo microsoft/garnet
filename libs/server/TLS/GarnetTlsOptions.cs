@@ -179,6 +179,12 @@ namespace Garnet.server.TLS
                    && ValidateCertificateIssuer(certificate2, issuer));
         }
 
+        /// <summary>
+        /// Validates certificate subject name by looking into DNS name property (preferred), if missing it falls back to
+        /// legacy SimpleName. The input certificate subject should match the expected host name provided in server config.
+        /// </summary>
+        /// <param name="certificate2"> remote certificate to validate.</param>
+        /// <param name="targetHostName"> target host name configured. </param>
         private bool ValidateCertificateName(X509Certificate2 certificate2, string targetHostName)
         {
             var subjectName = certificate2.GetNameInfo(X509NameType.DnsName, false);
