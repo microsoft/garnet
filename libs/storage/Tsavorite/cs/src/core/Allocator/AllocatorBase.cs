@@ -2268,12 +2268,15 @@ namespace Tsavorite.core
 
                     if (result.fromAddress > startAddress)
                         startAddress = result.fromAddress;
+                    if (result.untilAddress < endAddress)
+                        endAddress = result.untilAddress;
+
                     var _readOnlyAddress = SafeReadOnlyAddress;
                     if (_readOnlyAddress > startAddress)
                         startAddress = _readOnlyAddress;
+                    if (_readOnlyAddress > endAddress)
+                        endAddress = _readOnlyAddress;
 
-                    if (result.untilAddress < endAddress)
-                        endAddress = result.untilAddress;
                     int flushWidth = (int)(endAddress - startAddress);
 
                     if (flushWidth > 0)
