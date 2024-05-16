@@ -172,17 +172,17 @@ namespace Garnet.server.TLS
         RemoteCertificateValidationCallback ValidateServerCertificateCallback(string targetHostName, string issuerCertificatePath)
         {
             var issuer = GetCertIssuer(issuerCertificatePath);
-             return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
+            return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
                 => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
-                    && certificate is X509Certificate2 certificate2
-                    && ValidateCertificateName(certificate2, targetHostName)
-                    && ValidateCertificateIssuer(certificate2, issuer));
+                   && certificate is X509Certificate2 certificate2
+                   && ValidateCertificateName(certificate2, targetHostName)
+                   && ValidateCertificateIssuer(certificate2, issuer));
         }
 
         private bool ValidateCertificateName(X509Certificate2 certificate2, string targetHostName)
         {
             var subjectName = certificate2.GetNameInfo(X509NameType.DnsName, false);
-            if(string.IsNullOrWhiteSpace(subjectName))
+            if (string.IsNullOrWhiteSpace(subjectName))
             {
                 subjectName = certificate2.GetNameInfo(X509NameType.SimpleName, false);
             }
