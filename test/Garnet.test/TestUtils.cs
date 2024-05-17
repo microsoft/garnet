@@ -15,7 +15,7 @@ using System.Threading;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
