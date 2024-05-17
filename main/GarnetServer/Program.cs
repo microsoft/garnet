@@ -16,14 +16,10 @@ namespace Garnet
         {
             var builder = Host.CreateEmptyApplicationBuilder(null);
             builder.Services.AddHostedService(sp => new GarnetService(args));
-
-            if (OperatingSystem.IsWindows())
+            builder.Services.AddWindowsService(options =>
             {
-                builder.Services.AddWindowsService(options =>
-                {
-                    options.ServiceName = "Microsoft Garnet Server";
-                });
-            }
+                options.ServiceName = "Microsoft Garnet Server";
+            });
 
             var host = builder.Build();
             host.Run();
