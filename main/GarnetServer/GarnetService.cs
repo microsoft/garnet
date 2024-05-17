@@ -16,12 +16,21 @@ namespace Garnet
     /// <summary>
     /// Garnet service entrypoint
     /// </summary>
-    /// <param name="args">Server arguments</param>
-    class GarnetService(string[] args) : BackgroundService
+    class GarnetService : BackgroundService
     {
         private static readonly string CustomRespCommandInfoJsonFileName = "CustomRespCommandsInfo.json";
 
         private readonly ManualResetEventSlim stopEvent = new();
+        private readonly string[] args;
+
+        /// <summary>
+        /// Instantiate the garnet service
+        /// </summary>
+        /// <param name="args">Arguments for the server</param>
+        public GarnetService(string[] args)
+        {
+            this.args = args;
+        }
 
         protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
