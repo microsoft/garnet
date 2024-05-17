@@ -3,8 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Reflection;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -16,8 +14,6 @@ namespace Garnet
     /// </summary>
     class Program
     {
-        private static readonly string CustomRespCommandInfoJsonFileName = "CustomRespCommandsInfo.json";
-
         static void Main(string[] args)
         {
             try
