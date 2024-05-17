@@ -87,7 +87,7 @@ namespace Garnet.cluster
             var replaceOption = false;
             string username = null;
             string passwd = null;
-            List<(long, long)> keysWithSize = null;
+            List<ArgSlice> keys = null;
             HashSet<int> slots = [];
 
             ClusterConfig current = null;
@@ -107,8 +107,8 @@ namespace Garnet.cluster
             // Add single key if specified
             if (sksize > 0)
             {
-                keysWithSize = [];
-                keysWithSize.Add(new(((IntPtr)singleKeyPtr).ToInt64(), sksize));
+                keys = [];
+                keys.Add(new ArgSlice(singleKeyPtr, sksize));
             }
 
             while (args > 0)
@@ -137,7 +137,7 @@ namespace Garnet.cluster
                 }
                 else if (option.Equals("KEYS", StringComparison.OrdinalIgnoreCase))
                 {
-                    keysWithSize ??= [];
+                    keys ??= [];
                     while (args > 0)
                     {
                         byte* keyPtr = null;
@@ -173,7 +173,7 @@ namespace Garnet.cluster
                         }
 
                         // Add pointer of current parsed key
-                        keysWithSize.Add(new(((IntPtr)keyPtr).ToInt64(), ksize));
+                        keys.Add(new ArgSlice(keyPtr, ksize));
                     }
                 }
                 else if (option.Equals("SLOTS", StringComparison.OrdinalIgnoreCase))
@@ -280,7 +280,7 @@ namespace Garnet.cluster
 
             #endregion
 
-            logger?.LogDebug("MIGRATE COPY:{copyOption} REPLACE:{replaceOption} OpType:{opType}", copyOption, replaceOption, (keysWithSize != null ? "KEYS" : "SLOTS"));
+            logger?.LogDebug("MIGRATE COPY:{copyOption} REPLACE:{replaceOption} OpType:{opType}", copyOption, replaceOption, (keys != null ? "KEYS" : "SLOTS"));
 
             #region scheduleMigration
             if (!clusterProvider.migrationManager.TryAddMigrationTask(
@@ -294,7 +294,7 @@ namespace Garnet.cluster
                 replaceOption,
                 timeout,
                 slots,
-                keysWithSize,
+                keys,
                 out var mSession))
             {
                 // Migration task could not be added due to possible conflicting migration tasks

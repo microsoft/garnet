@@ -17,7 +17,7 @@ namespace Garnet.cluster
         public bool TryStartMigrationTask(out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
-            if (_keysWithSize != null)
+            if (_keys != null)
             {
                 try
                 {
@@ -31,7 +31,7 @@ namespace Garnet.cluster
 
                     // Delete keys locally if  _copyOption is set to false.
                     if (!_copyOption)
-                        DeleteKeys(_keysWithSize);
+                        DeleteKeys(_keys);
                     Status = MigrateState.SUCCESS;
                 }
                 finally

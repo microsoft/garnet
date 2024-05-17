@@ -4,25 +4,19 @@
 using System;
 using System.Collections.Generic;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal sealed class MigrateSessionTaskStore
+    internal sealed class MigrateSessionTaskStore(ILogger logger = null)
     {
-        MigrateSession[] sessions;
-        int numSessions;
+        MigrateSession[] sessions = new MigrateSession[1];
+        int numSessions = 0;
         SingleWriterMultiReaderLock _lock;
-        readonly ILogger logger;
+        readonly ILogger logger = logger;
 
         private bool _disposed;
-
-        public MigrateSessionTaskStore(ILogger logger = null)
-        {
-            sessions = new MigrateSession[1];
-            numSessions = 0;
-            this.logger = logger;
-        }
 
         public void Dispose()
         {
@@ -30,7 +24,7 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 _disposed = true;
-                for (int i = 0; i < numSessions; i++)
+                for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
                     s.Dispose();
@@ -81,10 +75,10 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            List<(long, long)> keysWithSize,
+            List<ArgSlice> keysWithSize,
             out MigrateSession mSession)
         {
-            bool success = true;
+            var success = true;
             mSession = new MigrateSession(
                 clusterProvider,
                 targetAddress,
@@ -106,7 +100,7 @@ namespace Garnet.cluster
                 if (_disposed) return false;
 
                 // Check if an existing migration session is migrating slots that are already scheduled for migration from another task
-                for (int i = 0; i < numSessions; i++)
+                for (var i = 0; i < numSessions; i++)
                 {
                     if (sessions[i].Overlap(mSession))
                     {

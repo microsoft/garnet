@@ -41,7 +41,7 @@ namespace Garnet.cluster
         readonly bool _replaceOption;
         readonly TimeSpan _timeout;
         readonly List<(int, int)> _slotRanges;
-        readonly List<(long, long)> _keysWithSize;
+        readonly List<ArgSlice> _keys;
 
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
@@ -87,7 +87,7 @@ namespace Garnet.cluster
         /// <param name="_replaceOption"></param>
         /// <param name="_timeout"></param>
         /// <param name="_slots"></param>
-        /// <param name="keysWithSize"></param>
+        /// <param name="keys"></param>
         /// <param name="logger"></param>
         internal MigrateSession(
             ClusterProvider clusterProvider,
@@ -101,7 +101,7 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            List<(long, long)> keysWithSize,
+            List<ArgSlice> keys,
             ILogger logger = null)
         {
             this.logger = logger;
@@ -117,7 +117,7 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keysWithSize = keysWithSize;
+            this._keys = keys;
 
             if (clusterProvider != null)
                 localServerSession = new LocalServerSession(clusterProvider.storeWrapper);

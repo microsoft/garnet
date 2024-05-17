@@ -5,7 +5,6 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -18,10 +17,10 @@ namespace Garnet.cluster
         /// Method used to migrate individual keys from main store to target node.
         /// Used for MIGRATE KEYS option
         /// </summary>
-        /// <param name="keysWithSize">List of pairs of address to the network receive buffer, key size </param>
+        /// <param name="keys">List of pairs of address to the network receive buffer, key size </param>
         /// <param name="objectStoreKeys">Output keys not found in main store so we can scan the object store next</param>
         /// <returns>True on success, false otherwise</returns>
-        private bool MigrateKeysFromMainStore(ref List<(long, long)> keysWithSize, out List<(long, long)> objectStoreKeys)
+        private bool MigrateKeysFromMainStore(ref List<ArgSlice> keys, out List<ArgSlice> objectStoreKeys)
         {
             var bufferSize = 1 << 10;
             SectorAlignedMemory buffer = new(bufferSize, 1);
@@ -46,30 +45,23 @@ namespace Garnet.cluster
 
                 var bufPtr = buffer.GetValidPointer();
                 var bufPtrEnd = bufPtr + bufferSize;
-                for (var i = 0; i < keysWithSize.Count; i++)
+                for (var i = 0; i < keys.Count; i++)
                 {
-                    // 1. Prepare key pointers
-                    var tuple = keysWithSize[i];
-                    var keyPtr = (byte*)((IntPtr)tuple.Item1).ToPointer();
-                    var ksize = (int)tuple.Item2;
-                    keyPtr -= sizeof(int);
-                    *(int*)keyPtr = ksize;
+                    var key = keys[i].SpanByte;
 
-                    // 2. Read value for key
+                    // Read value for key
                     var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
-                    var status = localServerSession.BasicGarnetApi.Read_MainStore(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+                    var status = localServerSession.BasicGarnetApi.Read_MainStore(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
-                    // 3. Check if found
+                    // Check if found
                     if (status == GarnetStatus.NOTFOUND) // All keys must exist
                     {
                         // Add to different list to check object store
-                        objectStoreKeys.Add(keysWithSize[i]);
+                        objectStoreKeys.Add(keys[i]);
                         continue;
                     }
 
-                    //4. Make value SpanByte
-                    keyPtr = (byte*)((IntPtr)tuple.Item1).ToPointer();
-                    var key = SpanByte.FromPinnedPointer(keyPtr, ksize);
+                    // Make value SpanByte
                     SpanByte value;
                     MemoryHandle memoryHandle = default;
                     if (!o.IsSpanByte)
@@ -107,16 +99,11 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="objectStoreKeys">List of pairs of address to the network receive buffer, key size that were not found in main store</param>
         /// <returns>True on success, false otherwise</returns>
-        private bool MigrateKeysFromObjectStore(ref List<(long, long)> objectStoreKeys)
+        private bool MigrateKeysFromObjectStore(ref List<ArgSlice> objectStoreKeys)
         {
             for (var i = 0; i < objectStoreKeys.Count; i++)
             {
-                var tuple = objectStoreKeys[i];
-                var keyPtr = (byte*)((IntPtr)tuple.Item1).ToPointer();
-                var ksize = (int)tuple.Item2;
-
-                var key = new byte[ksize];
-                Marshal.Copy((IntPtr)keyPtr, key, 0, ksize);
+                var key = objectStoreKeys[i].ToArray();
 
                 SpanByte input = default;
                 GarnetObjectStoreOutput value = default;
@@ -145,13 +132,13 @@ namespace Garnet.cluster
         /// </summary>
         public bool MigrateKeys()
         {
-            var keysWithSize = _keysWithSize;
+            var keys = _keys;
             try
             {
                 if (!CheckConnection())
                     return false;
                 _gcs.InitMigrateBuffer();
-                if (!MigrateKeysFromMainStore(ref keysWithSize, out var objectStoreKeys))
+                if (!MigrateKeysFromMainStore(ref keys, out var objectStoreKeys))
                     return false;
 
                 if (!clusterProvider.serverOptions.DisableObjects && objectStoreKeys.Count > 0)
@@ -171,19 +158,15 @@ namespace Garnet.cluster
         /// <summary>
         /// Delete local copy of keys if _copyOption is set to false.
         /// </summary>                
-        public void DeleteKeys(List<(long, long)> keysWithSize)
+        public void DeleteKeys(List<ArgSlice> keys)
         {
             if (_copyOption)
                 return;
 
-            for (var i = 0; i < keysWithSize.Count; i++)
+            for (var i = 0; i < keys.Count; i++)
             {
-                var tuple = keysWithSize[i];
-                var keyPtr = (byte*)((IntPtr)tuple.Item1).ToPointer();
-                var ksize = (int)tuple.Item2;
-                keyPtr -= sizeof(int);
-                *(int*)keyPtr = ksize;
-                localServerSession.BasicGarnetApi.DELETE(ref Unsafe.AsRef<SpanByte>(keyPtr));
+                var key = keys[i].SpanByte;
+                localServerSession.BasicGarnetApi.DELETE(ref key);
             }
         }
     }
