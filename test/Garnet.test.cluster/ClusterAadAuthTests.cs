@@ -37,7 +37,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(1)]
         [Category("CLUSTER-AUTH"), Timeout(60000)]
-        public void ValidateClusterAuth()
+        public void ValidateClusterAuthWithObjectId()
         {
             var nodes = 2;
             var audience = Guid.NewGuid().ToString();
@@ -51,25 +51,53 @@ namespace Garnet.test.cluster
                 new Claim("appid", appId),
                 new Claim("http://schemas.microsoft.com/identity/claims/objectidentifier",objId),
             };
-            var authSettings = new AadAuthenticationSettings([appId], [audience], [audience], IssuerSigningTokenProvider.Create(new List<SecurityKey> { tokenGenerator.SecurityKey }, context.logger));
-            var token = tokenGenerator.CreateToken(tokenClaims, DateTime.Now.AddMinutes(10));
-            // Generate default ACL file
+            var authSettings = new AadAuthenticationSettings([appId], [audience], [audience], IssuerSigningTokenProvider.Create(new List<SecurityKey> { tokenGenerator.SecurityKey }, context.logger), true);
 
-            var userCredential = new ServerCredential { user = objId, IsAdmin = true, IsClearText = true };
-            var clientCredentials = new ServerCredential { user = objId, password = token };
+            var token = tokenGenerator.CreateToken(tokenClaims, DateTime.Now.AddMinutes(10));
+            ValidateConnectionsWithToken(objId, token, nodes, authSettings);
+        }
+
+        [Test, Order(2)]
+        [Category("CLUSTER-AUTH"), Timeout(60000)]
+        public void ValidateClusterAuthWithGroupOid()
+        {
+            var nodes = 2;
+            var audience = Guid.NewGuid().ToString();
+            JwtTokenGenerator tokenGenerator = new JwtTokenGenerator(audience);
+
+            var appId = Guid.NewGuid().ToString();
+            var objId = Guid.NewGuid().ToString();
+            var groupIds = new List<string> { Guid.NewGuid().ToString(), Guid.NewGuid().ToString() };
+            var tokenClaims = new List<Claim>
+            {
+                new Claim("appidacr","1"),
+                new Claim("appid", appId),
+                new Claim("http://schemas.microsoft.com/identity/claims/objectidentifier", objId),
+                new Claim("groups", string.Join(',', groupIds)),
+            };
+            var authSettings = new AadAuthenticationSettings([appId], [audience], [audience], IssuerSigningTokenProvider.Create(new List<SecurityKey> { tokenGenerator.SecurityKey }, context.logger), true);
+            var token = tokenGenerator.CreateToken(tokenClaims, DateTime.Now.AddMinutes(10));
+            ValidateConnectionsWithToken(groupIds.First(), token, nodes, authSettings);
+        }
+
+        private void ValidateConnectionsWithToken(string aclUsername, string token, int nodeCount, AadAuthenticationSettings authenticationSettings)
+        {
+            var userCredential = new ServerCredential { user = aclUsername, IsAdmin = true, IsClearText = true };
+            var clientCredentials = new ServerCredential { user = aclUsername, password = token };
             context.GenerateCredentials([userCredential]);
-            context.CreateInstances(nodes, useAcl: true, clusterCreds: clientCredentials, authenticationSettings: authSettings);
+            context.CreateInstances(nodeCount, useAcl: true, clusterCreds: clientCredentials, authenticationSettings: authenticationSettings);
 
 
             context.CreateConnection(useTLS: false, clientCreds: clientCredentials);
 
-            for (int i = 0; i < nodes; i++)
+            for (int i = 0; i < nodeCount; i++)
             {
                 context.clusterTestUtils.Authenticate(i, clientCredentials.user, clientCredentials.password, context.logger);
-                context.clusterTestUtils.Meet(i, (i + 1) % nodes, context.logger);
+                context.clusterTestUtils.Meet(i, (i + 1) % nodeCount, context.logger);
                 var ex = Assert.Throws<AssertionException>(() => context.clusterTestUtils.Authenticate(i, "randomUserId", clientCredentials.password, context.logger));
                 Assert.AreEqual("WRONGPASS Invalid username/password combination", ex.Message);
             }
+
         }
     }
 }

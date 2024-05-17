@@ -33,7 +33,7 @@ namespace Garnet.server.Auth
         /// </summary>
         ACL,
         /// <summary>
-        /// ACL mode using Aad token instead of password. Here username is expected to be ObjectId and token will be validated for claims.
+        /// ACL mode using Aad token instead of password. Here username is expected to be ObjectId or a valid Group's Object Id and token will be validated for claims.
         /// </summary>
         AclWithAad
     }
