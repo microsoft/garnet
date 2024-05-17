@@ -654,7 +654,7 @@ namespace Garnet.server
 
         bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
         {
-            for (int i = 0; i < count; i++)
+            for (var i = 0; i < count; i++)
             {
                 GetCommand(bufSpan, out bool success1);
                 if (!success1) return false;
@@ -662,7 +662,7 @@ namespace Garnet.server
             return true;
         }
 
-        ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
+        Span<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
         {
             var ptr = recvBufferPtr + readHead;
             var end = recvBufferPtr + bytesRead;
@@ -689,7 +689,7 @@ namespace Garnet.server
                 RespParsingException.ThrowUnexpectedToken(*ptr);
             }
 
-            var result = bufSpan.Slice(readHead, length);
+            var result = new Span<byte>(recvBufferPtr + readHead, length);
             readHead += length + 2;
             success = true;
 
