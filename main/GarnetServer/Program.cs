@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -49,7 +48,7 @@ namespace Garnet
         /// </summary>
         static bool TryRegisterExtensions(GarnetServer server)
         {
-            var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            var binPath = AppContext.BaseDirectory;
 
             if (!TryGetRespCommandsInfo(Path.Combine(binPath!, CustomRespCommandInfoJsonFileName), out var customCommandsInfo))
                 return false;
