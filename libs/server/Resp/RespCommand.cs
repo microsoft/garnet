@@ -123,6 +123,7 @@ namespace Garnet.server
         FORCEGC = 0x3B,
         FAILOVER = 0x3C,
         ACL = 0x3D,
+        HELLO = 0x3E,
 
         // Custom commands
         CustomTxn = 0x29,
@@ -1039,6 +1040,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.PING))
             {
                 return (RespCommand.PING, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.HELLO))
+            {
+                return (RespCommand.HELLO, 0);
             }
             else if (command.SequenceEqual(CmdStrings.CLUSTER))
             {

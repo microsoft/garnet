@@ -47,6 +47,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> HELP => "HELP"u8;
         public static ReadOnlySpan<byte> help => "help"u8;
         public static ReadOnlySpan<byte> PING => "PING"u8;
+        public static ReadOnlySpan<byte> HELLO => "HELLO"u8;
         public static ReadOnlySpan<byte> TIME => "TIME"u8;
         public static ReadOnlySpan<byte> RESET => "RESET"u8;
         public static ReadOnlySpan<byte> reset => "reset"u8;
