@@ -617,7 +617,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteMapLength(helloResult.Length + 1, ref dcurr, dend))
                     SendAndReset();
             }
-            for (int i = 0; i< helloResult.Length; i++)
+            for (int i = 0; i < helloResult.Length; i++)
             {
                 while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item1, ref dcurr, dend))
                     SendAndReset();
