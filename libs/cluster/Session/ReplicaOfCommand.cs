@@ -12,7 +12,7 @@ namespace Garnet.cluster
     {
         private bool TryREPLICAOF(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.REPLICAOF, RespCommandsInfo.SubCommandIds.None, new ReadOnlySpan<byte>(ptr, count), count, out var success))
+            if (!CheckACLPermissions(RespCommand.REPLICAOF, RespCommandsInfo.SubCommandIds.None, count, out var success))
             {
                 return success;
             }

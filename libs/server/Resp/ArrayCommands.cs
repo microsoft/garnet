@@ -684,8 +684,13 @@ namespace Garnet.server
         /// </summary>
         /// <param name="ptr"></param>
         /// <returns></returns>
-        private bool NetworkSELECT(byte* ptr)
+        private bool NetworkSELECT(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.SELECT, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             // Read index
             if (!RespReadUtils.ReadStringWithLengthHeader(out var result, ref ptr, recvBufferPtr + bytesRead))
                 return false;

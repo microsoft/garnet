@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Threading;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -55,9 +54,14 @@ namespace Garnet.test.Resp.ACL
                 covered.Add(command);
             }
 
+            Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> allInfo), "Couldn't load all command details");
+
+            // exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
+            IEnumerable<string> withOnlySubCommands = allInfo.Where(static x => (x.Value.SubCommands?.Length ?? 0) != 0 && x.Value.Flags == RespCommandFlags.None).Select(static x => x.Key);
+
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
-            IEnumerable<string> deSubCommanded = advertisedCommands.Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
+            IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
 
             IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase);
 
@@ -347,6 +351,80 @@ namespace Garnet.test.Resp.ACL
                 RedisValue val = db.StringAppend("key", "foo");
 
                 Assert.AreEqual(3, (int)val);
+            }
+        }
+
+        [Test]
+        public void AskingACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "ASKING",
+                server,
+                ["connection", "fast"],
+                [DoAsking]
+            );
+
+            void DoAsking()
+            {
+                RedisResult val = db.Execute("ASKING");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        [Test]
+        public void AuthACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "AUTH",
+                server,
+                ["connection", "fast"],
+                [DoAuthPassword, DoAuthUsernamePassword]
+            );
+
+            void DoAuthPassword()
+            {
+                try
+                {
+                    db.Execute("AUTH", "foo", "bar");
+                    Assert.Fail("Shouldn't happen, password is bad");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "WRONGPASS Invalid username/password combination")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            void DoAuthUsernamePassword()
+            {
+                try
+                {
+                    db.Execute("AUTH", "foo", "bar");
+                    Assert.Fail("Shouldn't happen, u/p is bad");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "WRONGPASS Invalid username/password combination")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
             }
         }
 
@@ -1296,7 +1374,225 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: FAILOVER is tricky since it mutates the state of the server - test later
+        [Test]
+        public void FailoverACLs()
+        {
+            // failover is strange, so this more complicated that typical
+
+            Action<IServer>[] cmds = [
+                DoFailover,
+                DoFailoverTo,
+                DoFailoverAbort,
+                DoFailoverToForce,
+                DoFailoverToAbort,
+                DoFailoverToForceAbort,
+                DoFailoverToForceAbortTimeout,
+            ];
+
+            string[] acls = ["admin", "slow", "dangerous"];
+
+            foreach (Action<IServer> cmd in cmds)
+            {
+                // check works with +@all
+                Run(true, server => { }, cmd);
+
+                // check denied with -@whatever
+                foreach (string acl in acls)
+                {
+                    Run(false, server => SetUser(server, "default", $"-@{acl}"), cmd);
+                }
+            }
+
+            void Run(bool expectSuccess, Action<IServer> before, Action<IServer> cmd)
+            {
+                // refresh Garnet instance
+                TearDown();
+                Setup();
+
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+
+                before(server);
+
+                Assert.AreEqual(expectSuccess, CheckAuthFailure(() => cmd(server)));
+            }
+
+            static void DoFailover(IServer server)
+            {
+                try
+                {
+                    RedisResult val = server.Execute("FAILOVER");
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoFailoverTo(IServer server)
+            {
+                try
+                {
+                    RedisResult val = server.Execute("FAILOVER", "TO", "127.0.0.1", "9999");
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoFailoverAbort(IServer server)
+            {
+                try
+                {
+                    RedisResult val = server.Execute("FAILOVER", "ABORT");
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoFailoverToForce(IServer server)
+            {
+                try
+                {
+                    RedisResult val = server.Execute("FAILOVER", "TO", "127.0.0.1", "9999", "FORCE");
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoFailoverToAbort(IServer server)
+            {
+                try
+                {
+                    RedisResult val = server.Execute("FAILOVER", "TO", "127.0.0.1", "9999", "ABORT");
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoFailoverToForceAbort(IServer server)
+            {
+                try
+                {
+                    RedisResult val = server.Execute("FAILOVER", "TO", "127.0.0.1", "9999", "FORCE", "ABORT");
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoFailoverToForceAbortTimeout(IServer server)
+            {
+                try
+                {
+                    RedisResult val = server.Execute("FAILOVER", "TO", "127.0.0.1", "9999", "FORCE", "ABORT", "TIMEOUT", "1");
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void FlushDBACLs()
+        {
+            // test is a bit more verbose since it involves @dangerous
+
+            string[] categories = ["keyspace", "write", "dangerous", "slow"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoFlushDB), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(DoFlushDBAsync), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoFlushDB), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(DoFlushDBAsync), "Permitted when should have been denied");
+
+                    void DoFlushDB()
+                    {
+                        RedisResult val = db.Execute("FLUSHDB");
+                        Assert.AreEqual("OK", (string)val);
+                    }
+
+                    void DoFlushDBAsync()
+                    {
+                        RedisResult val = db.Execute("FLUSHDB", "ASYNC");
+                        Assert.AreEqual("OK", (string)val);
+                    }
+                }
+            }
+        }
 
         // todo: decide what to do with FORCEGC
 
@@ -2308,6 +2604,38 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public void RPushACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            int count = 0;
+
+            CheckCommands(
+                "RPUSHX",
+                server,
+                ["write", "list", "fast"],
+                [DoRPushX, DoRPushXMulti]
+            );
+
+            void DoRPushX()
+            {
+                RedisResult val = db.Execute("RPUSH", $"foo-{count}", "bar");
+                count++;
+                Assert.AreEqual(1, (int)val);
+            }
+
+            void DoRPushXMulti()
+            {
+                RedisResult val = db.Execute("RPUSH", $"foo-{count}", "bar", "buzz");
+                count++;
+                Assert.AreEqual(2, (int)val);
+            }
+        }
+
+        [Test]
         public void RPushXACLs()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
@@ -2542,8 +2870,6 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: MEMORY (with no sub command) is not part of Redis protocol - decide how to handle
-
         [Test]
         public void MemoryUsageACLs()
         {
@@ -2605,9 +2931,146 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: MODULE isn't implement quite correctly, figure it out later
+        [Test]
+        public void MigrateACLs()
+        {
+            // uses exceptions for control flow, as we're not setting up replicas here
 
-        // todo: MONITOR isn't implemented, figure it out later
+            // todo: migrate has a ton of options, test other variants
+
+            // test is a bit more verbose since it involves @dangerous
+
+            string[] categories = ["keyspace", "write", "dangerous", "slow"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoMigrate), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoMigrate), "Permitted when should have been denied");
+
+                    void DoMigrate()
+                    {
+                        try
+                        {
+                            db.Execute("MIGRATE", "127.0.0.1", "9999", "KEY", "0", "1000");
+                            Assert.Fail("Shouldn't succeed, no replicas are attached");
+                        }
+                        catch (RedisException e)
+                        {
+                            if (e.Message == "ERR This instance has cluster support disabled")
+                            {
+                                return;
+                            }
+
+                            throw;
+                        }
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void ModuleACLs()
+        {
+            // todo: MODULE isn't a proper redis command, but this is the placeholder today... so validate it for completeness
+
+            // test is a bit more verbose since it involves @admin
+
+            string[] categories = ["admin", "slow", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoModuleList), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoModuleList), "Permitted when should have been denied");
+
+                    void DoModuleList()
+                    {
+                        RedisResult val = db.Execute("MODULE", "LIST");
+                        RedisResult[] valArr = (RedisResult[])val;
+                        Assert.AreEqual(0, valArr.Length);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void MonitorACLs()
+        {
+            // MONITOR isn't actually implemented, and doesn't fit nicely into SE.Redis anyway, so we only check the DENY cases here
+
+            // test is a bit more involved since @admin is present
+            string[] categories = ["admin", "slow", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoMonitor), "Permitted when should have been denied");
+
+                    void DoMonitor()
+                    {
+                        db.Execute("MONITOR");
+                        Assert.Fail("Should never reach this point");
+                    }
+                }
+            }
+        }
 
         [Test]
         public void MSetACLs()
@@ -2856,7 +3319,33 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: PING is tricky, do it later
+        [Test]
+        public void PingACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "PING",
+                server,
+                ["connection", "fast"],
+                [DoPing, DoPingMessage]
+            );
+
+            void DoPing()
+            {
+                RedisResult val = db.Execute("PING");
+                Assert.AreEqual("PONG", (string)val);
+            }
+
+            void DoPingMessage()
+            {
+                RedisResult val = db.Execute("PING", "hello");
+                Assert.AreEqual("hello", (string)val);
+            }
+        }
 
         [Test]
         public void PSetEXACLs()
@@ -2880,7 +3369,79 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: PSUBSCRIBE is weird, do it later
+        [Test]
+        public void PSubscribeACLs()
+        {
+            // this is a strange test, because we have to contort ourselves to get SE.Redis to actually issue the expected command
+
+            // todo: not testing the multiple pattern version
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword, disablePubSub: false));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+            ISubscriber sub = redis.GetSubscriber();
+
+            int count = 0;
+
+            CheckCommands(
+                "PSUBSCRIBE",
+                server,
+                ["pubsub", "slow"],
+                [DoPSubscribePattern]
+            );
+
+            void DoPSubscribePattern()
+            {
+                // have to do the (bad) async version to make sure we actually get the error
+                sub.SubscribeAsync(new RedisChannel($"channel-{count}", RedisChannel.PatternMode.Pattern)).GetAwaiter().GetResult();
+                count++;
+            }
+        }
+
+        [Test]
+        public void PUnsubscribeACLs()
+        {
+            // this is a strange test, because we have to contort ourselves to get SE.Redis to actually issue the expected command
+
+            // todo: not testing the 0 argument version of PUNSUBSCRIBE, as it's a pain
+
+            const int ChannelCount = 10;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword, disablePubSub: false));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+            ISubscriber sub = redis.GetSubscriber();
+
+            // gotta subscribe or SE.Redis won't issue the commands
+            HashSet<string> openChannels = new();
+            for (var i = 0; i < ChannelCount; i++)
+            {
+                string ch = $"channel-{i}";
+                sub.Subscribe(new(ch, RedisChannel.PatternMode.Pattern));
+
+                openChannels.Add(ch);
+            }
+
+            CheckCommands(
+                "PUNSUBSCRIBE",
+                server,
+                ["pubsub", "slow"],
+                [DoPUnsubscribePattern]
+            );
+
+            void DoPUnsubscribePattern()
+            {
+                string toUnSub = openChannels.First();
+
+                // we remove before trying, because SE.Redis will toss the subscription from it's internal state ANYWAY
+                openChannels.Remove(toUnSub);
+
+                // gotta use the async version (incorrectly) so we actually wait for the response
+                redis.GetSubscriber().UnsubscribeAsync(new(toUnSub, RedisChannel.PatternMode.Pattern)).GetAwaiter().GetResult();
+            }
+        }
 
         [Test]
         public void PTTLACLs()
@@ -2904,10 +3465,141 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: PUBLISH is weird, do it later
-        // todo: PUNSUBSCRIBE is weird, do it later
-        // todo: QUIT is weird, do it later
-        // todo: READONLY is weird, do it later
+        [Test]
+        public void PublishACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+            ISubscriber sub = redis.GetSubscriber();
+
+            CheckCommands(
+                "PTTL",
+                server,
+                ["pubsub", "fast"],
+                [DoPublish]
+            );
+
+            void DoPublish()
+            {
+                long count = sub.Publish("foo", "bar");
+                Assert.AreEqual(0, count);
+            }
+        }
+
+        [Test]
+        public void QuitACLs()
+        {
+            // uses exception for control flow, not really a better way to do that unfortunately
+
+            // this one's a bit weird because killing the connection also causes weird failures in the "success" case
+            // ... so we just don't cover the success case
+            //
+            // QUIT is weird that we don't really care to test the success case anyway
+
+            string[] categories = ["connection", "fast"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    // spin up a fresh connection
+                    ConnectionMultiplexer redis = null;
+
+                    try
+                    {
+                        redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                        IServer server = redis.GetServers().Single();
+                        IDatabase db = redis.GetDatabase();
+
+                        SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                        Assert.False(CheckAuthFailure(() => DoQuit(db)), "Permitted when should have been denied");
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            redis?.Dispose();
+                        }
+                        catch
+                        {
+                            // do nothing
+                        }
+                    }
+                }
+
+                static void DoQuit(IDatabase db)
+                {
+                    try
+                    {
+                        RedisResult res = db.Execute("QUIT");
+                        Assert.Fail("Shouldn't be reachable, because we don't test success case");
+                    }
+                    catch (RedisTimeoutException e)
+                    {
+                        // timeout is equivalent, since the socket is dying
+                        throw new RedisException("NOAUTH Authentication required.", e);
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void ReadOnlyACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "READONLY",
+                server,
+                ["connection", "fast"],
+                [DoReadOnly]
+            );
+
+            void DoReadOnly()
+            {
+                RedisResult val = db.Execute("READONLY");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        [Test]
+        public void ReadWriteACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "READONLY",
+                server,
+                ["connection", "fast"],
+                [DoReadWrite]
+            );
+
+            void DoReadWrite()
+            {
+                RedisResult val = db.Execute("READWRITE");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
 
         // todo: REGISTERCS is not part of Redis, what should be done with it?
 
@@ -2945,7 +3637,81 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: REPLICAOF is weird, do it later
+        [Test]
+        public void ReplicaOfACLs()
+        {
+            // uses exceptions as control flow, since clustering is disabled in these tests
+
+            // test is a bit more verbose since it involves @admin
+
+            string[] categories = ["admin", "slow", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoReplicaOf), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(DoReplicaOfNoOne), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoReplicaOf), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(DoReplicaOfNoOne), "Permitted when should have been denied");
+
+                    void DoReplicaOf()
+                    {
+                        try
+                        {
+                            db.Execute("REPLICAOF", "127.0.0.1", "9999");
+                            Assert.Fail("Should be unreachable, cluster is disabled");
+                        }
+                        catch (RedisException e)
+                        {
+                            if (e.Message == "ERR This instance has cluster support disabled")
+                            {
+                                return;
+                            }
+
+                            throw;
+                        }
+                    }
+
+                    void DoReplicaOfNoOne()
+                    {
+                        try
+                        {
+                            db.Execute("REPLICAOF", "NO", "ONE");
+                            Assert.Fail("Should be unreachable, cluster is disabled");
+                        }
+                        catch (RedisException e)
+                        {
+                            if (e.Message == "ERR This instance has cluster support disabled")
+                            {
+                                return;
+                            }
+
+                            throw;
+                        }
+                    }
+                }
+            }
+        }
+
         // todo: RUNTXP isn't part of redis, do it later
 
         [Test]
@@ -3055,7 +3821,27 @@ namespace Garnet.test.Resp.ACL
 
         // todo: SECONDARYOF isn't part of redis, deal with it later
 
-        // todo: SELECT is weird, and we don't really support it, deal with it later
+        [Test]
+        public void SelectACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SELECT",
+                server,
+                ["connection", "fast"],
+                [DoSelect]
+            );
+
+            void DoSelect()
+            {
+                RedisResult val = db.Execute("SELECT", "0");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
 
         [Test]
         public void SetACLs()
@@ -3306,8 +4092,6 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: subscribe is weird, do it later
-
         [Test]
         public void SScanACLs()
         {
@@ -3345,6 +4129,81 @@ namespace Garnet.test.Resp.ACL
             {
                 RedisResult val = db.Execute("SSCAN", "foo", "0", "MATCH", "*", "COUNT", "5");
                 Assert.IsFalse(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void SlaveOfACLs()
+        {
+            // uses exceptions as control flow, since clustering is disabled in these tests
+
+            // test is a bit more verbose since it involves @admin
+
+            string[] categories = ["admin", "slow", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoSlaveOf), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(DoSlaveOfNoOne), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoSlaveOf), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(DoSlaveOfNoOne), "Permitted when should have been denied");
+
+                    void DoSlaveOf()
+                    {
+                        try
+                        {
+                            db.Execute("SLAVEOF", "127.0.0.1", "9999");
+                            Assert.Fail("Should be unreachable, cluster is disabled");
+                        }
+                        catch (RedisException e)
+                        {
+                            if (e.Message == "ERR This instance has cluster support disabled")
+                            {
+                                return;
+                            }
+
+                            throw;
+                        }
+                    }
+
+                    void DoSlaveOfNoOne()
+                    {
+                        try
+                        {
+                            db.Execute("SLAVEOF", "NO", "ONE");
+                            Assert.Fail("Should be unreachable, cluster is disabled");
+                        }
+                        catch (RedisException e)
+                        {
+                            if (e.Message == "ERR This instance has cluster support disabled")
+                            {
+                                return;
+                            }
+
+                            throw;
+                        }
+                    }
+                }
             }
         }
 
@@ -3417,6 +4276,36 @@ namespace Garnet.test.Resp.ACL
             {
                 RedisResult val = db.Execute("SISMEMBER", "foo", "bar");
                 Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
+        public void SubscribeACLs()
+        {
+            // this is a strange test, because we have to contort ourselves to get SE.Redis to actually issue the expected command
+
+            // todo: not testing the multiple pattern version
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword, disablePubSub: false));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+            ISubscriber sub = redis.GetSubscriber();
+
+            int count = 0;
+
+            CheckCommands(
+                "SUBSCRIBE",
+                server,
+                ["pubsub", "slow"],
+                [DoSubscribe]
+            );
+
+            void DoSubscribe()
+            {
+                // have to do the (bad) async version to make sure we actually get the error
+                sub.SubscribeAsync(new RedisChannel($"channel-{count}", RedisChannel.PatternMode.Literal)).GetAwaiter().GetResult();
+                count++;
             }
         }
 
@@ -3681,62 +4570,87 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public void GeoPosACLs()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IServer server = redis.GetServers().Single();
-            IDatabase db = redis.GetDatabase();
-
-            CheckCommands(
-                "GEOPOS",
-                server,
-                ["geo", "read", "slow"],
-                [DoGeoPos, DoGeoPosSingle, DoGeoPosMulti]
-            );
-
-            void DoGeoPos()
+            lock (this)
             {
-                RedisResult val = db.Execute("GEOPOS", "foo");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
-            }
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
 
-            void DoGeoPosSingle()
-            {
-                RedisResult val = db.Execute("GEOPOS", "foo", "bar");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
-            }
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
 
-            void DoGeoPosMulti()
-            {
-                RedisResult val = db.Execute("GEOPOS", "foo", "bar", "fizz");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                // todo: GEOPOS gets desynced if key doesn't exist, remove after that's fixed
+                Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "10", "10", "bar"));
+                Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "20", "20", "fizz"));
+
+                CheckCommands(
+                    "GEOPOS",
+                    server,
+                    ["geo", "read", "slow"],
+                    [DoGeoPos, DoGeoPosMulti]
+                );
+
+                void DoGeoPos()
+                {
+                    RedisResult val = db.Execute("GEOPOS", "foo");
+                    RedisResult[] valArr = (RedisResult[])val;
+                    Assert.AreEqual(0, valArr.Length);
+                }
+
+                void DoGeoPosMulti()
+                {
+                    RedisResult val = db.Execute("GEOPOS", "foo", "bar");
+                    RedisResult[] valArr = (RedisResult[])val;
+                    Assert.AreEqual(1, valArr.Length);
+                }
             }
         }
 
         [Test]
         public void GeoSearchACLs()
         {
-            // todo: there are a LOT of GeoSearch variants, come back and cover all the lengths appropriately
+            // todo: there are a LOT of GeoSearch variants (not all of them implemented), come back and cover all the lengths appropriately
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+            // todo: GEOSEARCH appears to be very broken, so this structured oddly - can be simplified once fixed
 
-            IServer server = redis.GetServers().Single();
-            IDatabase db = redis.GetDatabase();
+            string[] categories = ["geo", "read", "slow"];
 
-            CheckCommands(
-                "GEOSEARCH",
-                server,
-                ["geo", "read", "slow"],
-                [DoGeoSearch]
-            );
-
-            void DoGeoSearch()
+            foreach (string category in categories)
             {
-                RedisResult val = db.Execute("GEOSEARCH", "foo", "FROMMEMBER", "bar", "BYRADIUS", "2");
-                RedisValue[] valArr = (RedisValue[])val;
-                Assert.AreEqual(0, valArr.Length);
+                // fresh Garnet for the allow version
+                TearDown();
+                Setup();
+
+                {
+                    // fresh connection, as GEOSEARCH seems to break connections pretty easily
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(() => DoGeoSearch(db)), "Denied when should have been permitted");
+                }
+
+                // fresh Garnet for the reject version
+                TearDown();
+                Setup();
+
+                {
+                    // fresh connection, as GEOSEARCH seems to break connections pretty easily
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    SetUser(server, "default", $"-@{category}");
+
+                    Assert.False(CheckAuthFailure(() => DoGeoSearch(db)), "Permitted when should have been denied");
+                }
+
+                static void DoGeoSearch(IDatabase db)
+                {
+                    RedisResult val = db.Execute("GEOSEARCH", "foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M");
+                    RedisValue[] valArr = (RedisValue[])val;
+                    Assert.AreEqual(0, valArr.Length);
+                }
             }
         }
 
@@ -4464,9 +5378,98 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: unsubscribe is weird, do it later
-        // todo: watch is weird, do it later
-        // todo: unwatch is weird, do it later
+        [Test]
+        public void UnsubscribeACLs()
+        {
+            // this is a strange test, because we have to contort ourselves to get SE.Redis to actually issue the expected command
+
+            // todo: not testing the 0 argument version of UNSUBSCRIBE, as it's a pain
+
+            const int ChannelCount = 10;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword, disablePubSub: false));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+            ISubscriber sub = redis.GetSubscriber();
+
+            // gotta subscribe or SE.Redis won't issue the commands
+            HashSet<string> openChannels = new();
+            for (var i = 0; i < ChannelCount; i++)
+            {
+                string ch = $"channel-{i}";
+                sub.Subscribe(new(ch, RedisChannel.PatternMode.Literal));
+
+                openChannels.Add(ch);
+            }
+
+            CheckCommands(
+                "UNSUBSCRIBE",
+                server,
+                ["pubsub", "slow"],
+                [DoUnsubscribePattern]
+            );
+
+            void DoUnsubscribePattern()
+            {
+                string toUnSub = openChannels.First();
+
+                // we remove before trying, because SE.Redis will toss the subscription from it's internal state ANYWAY
+                openChannels.Remove(toUnSub);
+
+                // gotta use the async version (incorrectly) so we actually wait for the response
+                redis.GetSubscriber().UnsubscribeAsync(new(toUnSub, RedisChannel.PatternMode.Literal)).GetAwaiter().GetResult();
+            }
+        }
+
+        [Test]
+        public void WatchACLs()
+        {
+            // todo: should watch fail outside of a transaction?
+            // todo: multi key WATCH isn't implemented correctly, add once fixed
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword, disablePubSub: false));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "WATCH",
+                server,
+                ["transaction", "fast"],
+                [DoWatch]
+            );
+
+            void DoWatch()
+            {
+                RedisResult val = db.Execute("WATCH", "foo");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        [Test]
+        public void UnwatchACLs()
+        {
+            // todo: should watch fail outside of a transaction?
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword, disablePubSub: false));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "UNWATCH",
+                server,
+                ["transaction", "fast"],
+                [DoUnwatch]
+            );
+
+            void DoUnwatch()
+            {
+                RedisResult val = db.Execute("UNWATCH");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
 
         // todo: WATCHMS isn't part of Redis, what do we do with it?
         // todo: WATCHOS isn't part of Redis, what do we do with it?
@@ -4534,6 +5537,15 @@ namespace Garnet.test.Resp.ACL
             {
                 act();
                 return true;
+            }
+            catch (RedisConnectionException e)
+            {
+                if (e.FailureType != ConnectionFailureType.AuthenticationFailure)
+                {
+                    throw;
+                }
+
+                return false;
             }
             catch (RedisException e)
             {

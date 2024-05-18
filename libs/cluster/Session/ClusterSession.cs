@@ -178,13 +178,15 @@ namespace Garnet.cluster
         /// <param name="count">Number of parameters left in the command specification.</param>
         /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLPermissions(RespCommand cmd, byte subCommand, ReadOnlySpan<byte> bufSpan, int count, out bool processingCompleted)
+        bool CheckACLPermissions(RespCommand cmd, byte subCommand, int count, out bool processingCompleted)
         {
             Debug.Assert(!authenticator.IsAuthenticated || (user != null));
 
             if (!authenticator.IsAuthenticated || !user.CanAccessCommand(cmd, subCommand))
             {
-                if (!DrainCommands(bufSpan, count))
+                ReadOnlySpan<byte> toDrain = new(recvBufferPtr, bytesRead);
+
+                if (!DrainCommands(toDrain, count))
                 {
                     processingCompleted = false;
                 }

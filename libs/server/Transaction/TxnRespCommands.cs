@@ -214,6 +214,11 @@ namespace Garnet.server
         {
             bool success;
 
+            if (!CheckACLPermissions(RespCommand.WATCH, RespCommandsInfo.SubCommandIds.None, count, out success))
+            {
+                return success;
+            }
+
             if (count > 1)
             {
                 List<ArgSlice> keys = new();

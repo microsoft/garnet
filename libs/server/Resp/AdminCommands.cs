@@ -27,6 +27,11 @@ namespace Garnet.server
 
             if (command == RespCommand.AUTH)
             {
+                if (!CheckACLPermissions(RespCommand.AUTH, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
                 // AUTH [<username>] <password>
                 if (count < 1 || count > 2)
                 {
@@ -300,6 +305,11 @@ namespace Garnet.server
             }
             else if ((command == RespCommand.CLUSTER) || (command == RespCommand.MIGRATE) || (command == RespCommand.FAILOVER) || (command == RespCommand.REPLICAOF) || (command == RespCommand.SECONDARYOF))
             {
+                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
                 if (clusterSession == null)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -351,6 +361,7 @@ namespace Garnet.server
                     return false;
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
+
                 toDispose = true;
             }
             else if (command == RespCommand.SAVE)

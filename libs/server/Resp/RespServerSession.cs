@@ -431,7 +431,7 @@ namespace Garnet.server
                 (RespCommand.MSET, 0) => NetworkMSET(count, ptr, ref storageApi),
                 (RespCommand.MSETNX, 0) => NetworkMSETNX(count, ptr, ref storageApi),
                 (RespCommand.UNLINK, 0) => NetworkDEL(cmd, count, ptr, ref storageApi),
-                (RespCommand.SELECT, 0) => NetworkSELECT(ptr),
+                (RespCommand.SELECT, 0) => NetworkSELECT(count, ptr),
                 (RespCommand.WATCH, 0) => NetworkWATCH(count),
                 (RespCommand.WATCHMS, 0) => NetworkWATCH(count, StoreType.Main),
                 (RespCommand.WATCHOS, 0) => NetworkWATCH(count, StoreType.Object),
