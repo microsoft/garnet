@@ -1897,6 +1897,30 @@ namespace Garnet.test.cluster
             }
         }
 
+        public int ClusterKeySlot(int nodeIndex, string key, ILogger logger = null)
+            => ClusterKeySlot((IPEndPoint)endpoints[nodeIndex], key, logger);
+
+        public int ClusterKeySlot(IPEndPoint endPoint, string key, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                var args = new List<object>() {
+                    "keyslot",
+                    Encoding.ASCII.GetBytes(key)
+                };
+
+                var result = (string)server.Execute("cluster", args);
+                return int.Parse(result);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occured; ClusterKeySlot");
+                Assert.Fail();
+                return -1;
+            }
+        }
+
         public ClusterConfiguration ClusterNodes(int nodeIndex, ILogger logger = null)
             => ClusterNodes((IPEndPoint)endpoints[nodeIndex], logger);
 

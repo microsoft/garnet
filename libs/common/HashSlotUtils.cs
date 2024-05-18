@@ -115,7 +115,7 @@ namespace Garnet.common
             if (endPtr == end || endPtr == startPtr + 1) return (ushort)(Hash(keyPtr, ksize) & 16383);
 
             // Return hash for byte sequence between brackets
-            return (ushort)(Hash(startPtr + 1, (int)(endPtr - keyPtr - 1)) & 16383);
+            return (ushort)(Hash(startPtr + 1, (int)(endPtr - startPtr - 1)) & 16383);
         }
     }
 }
