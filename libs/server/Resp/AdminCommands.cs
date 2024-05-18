@@ -607,8 +607,16 @@ namespace Garnet.server
                     ("role", storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() ? "replica" : "master"),
                 ];
 
-            while (!RespWriteUtils.WriteArrayLength(helloResult.Length * 2 + 2, ref dcurr, dend))
-                SendAndReset();
+            if (this.protocolVersion == 2)
+            {
+                while (!RespWriteUtils.WriteArrayLength(helloResult.Length * 2 + 2, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteMapLength(helloResult.Length + 1, ref dcurr, dend))
+                    SendAndReset();
+            }
             for (int i = 0; i< helloResult.Length; i++)
             {
                 while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item1, ref dcurr, dend))
