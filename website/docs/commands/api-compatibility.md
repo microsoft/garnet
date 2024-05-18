@@ -84,6 +84,7 @@ Note that this list is subject to change as we continue to expand our API comman
 | <span id="connection">**CONNECTION**</span> | [AUTH](generic-commands.md#auth) | ➕ |  |
 |  | CLIENT CACHING | ➖ |  |
 |  | [ECHO](generic-commands.md#echo) | ➕ |  |
+|  | [HELLO](generic-commands.md#hello) | ➕ |  |
 |  | [PING](generic-commands.md#ping) | ➕ |  |
 |  | [QUIT](generic-commands.md#quit) | ➕ |  |
 |  | SELECT | ➕ |  |
