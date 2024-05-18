@@ -202,15 +202,41 @@ namespace Garnet.test.cluster
             context.CreateInstances(node_count);
             context.CreateConnection();
 
-            (string, int)[] testCases = [
-                    ("6e6bzswz8}",7038), ("8}jb94e7tf",4828), ("{}2xc5pbb7",11672), ("vr{a07}pdt",12154), ("cx{ldv}wdl",14261),
-                    ("erv805by}u",15389), ("{ey1pqbij}",8341), ("2tbjjyn}n8",5152), ("t}jehlyo06",1232), ("{u08t}xjal",2490),
-                    ("5g{mkb95a}",3345), ("x{v}x70nka",7761), ("g67ikt}q8q",7694), ("ovi8}mn7t7",14473), ("p5ljmg{}8s",11196),
-                    ("3wov{fd}8m",3502), ("bxmcjzi3{}",10246), ("{b1rrm7rn}",14105), ("e0{4ylm}78",5069), ("rkptge5}sx",3468),
-                    ("o6{uyxsy}j",3278), ("ykd6q{ma8}",5754), ("w{j5pz3iy}",6520), ("mhsr{dm}x0",15077), ("0}dtokfryr",5134),
-                    ("h7}0cj9mwm",8187), ("w{jhqd}frk",5369), ("5yzd{6}hzw",5781), ("w6b4vgtzr}",6045), ("4{b17h85}l",5923),
-                    ("Hm{W\x13\x1c", 7517), ("zyy8yt1chw",3081), ("7858tqv03y",773), ("fdhhuk8yqv",5763), ("8bfgeino4s",6257)
-                ];
+            (string, int)[] testCases = [("6e6bzswz8}", 7038),
+                ("8}jb94e7tf", 4828),
+                ("{}2xc5pbb7", 11672),
+                ("vr{a07}pdt", 12154),
+                ("cx{ldv}wdl", 14261),
+                ("erv805by}u", 15389),
+                ("{ey1pqbij}", 8341),
+                ("2tbjjyn}n8", 5152),
+                ("t}jehlyo06", 1232),
+                ("{u08t}xjal", 2490),
+                ("5g{mkb95a}", 3345),
+                ("x{v}x70nka", 7761),
+                ("g67ikt}q8q", 7694),
+                ("ovi8}mn7t7", 14473),
+                ("p5ljmg{}8s", 11196),
+                ("3wov{fd}8m", 3502),
+                ("bxmcjzi3{}", 10246),
+                ("{b1rrm7rn}", 14105),
+                ("e0{4ylm}78", 5069),
+                ("rkptge5}sx", 3468),
+                ("o6{uyxsy}j", 3278),
+                ("ykd6q{ma8}", 5754),
+                ("w{j5pz3iy}", 6520),
+                ("mhsr{dm}x0", 15077),
+                ("0}dtokfryr", 5134),
+                ("h7}0cj9mwm", 8187),
+                ("w{jhqd}frk", 5369),
+                ("5yzd{6}hzw", 5781),
+                ("w6b4vgtzr}", 6045),
+                ("4{b17h85}l", 5923),
+                ("Hm{W\x13\x1c", 7517),
+                ("zyy8yt1chw", 3081),
+                ("7858tqv03y", 773),
+                ("fdhhuk8yqv", 5763),
+                ("8bfgeino4s", 6257)];
 
             foreach (var testCase in testCases)
             {
