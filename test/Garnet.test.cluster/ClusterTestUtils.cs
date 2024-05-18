@@ -741,7 +741,7 @@ namespace Garnet.test.cluster
             fixed (byte* ptr = key)
             {
                 byte* keyPtr = ptr;
-                return NumUtils.HashSlot(keyPtr, key.Length);
+                return HashSlotUtils.HashSlot(keyPtr, key.Length);
             }
         }
 
