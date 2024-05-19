@@ -188,6 +188,15 @@ namespace Garnet.server
             public const byte MemoryUsage = 1;
 
             /// <summary>
+            /// Watch|MS
+            /// </summary>
+            public const byte WatchMS = 1;
+            /// <summary>
+            /// Watch|OS
+            /// </summary>
+            public const byte WatchOS = 2;
+
+            /// <summary>
             /// Returns the sub command id.
             /// 
             /// This is very very slow, so should only be used to initialize faster lookups.

@@ -106,5 +106,7 @@ namespace Garnet.server
         Transaction = 1 << 19,
         [Description("write")]
         Write = 1 << 20,
+        [Description("garnet")]
+        Garnet = 1 << 21,
     }
 }

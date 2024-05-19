@@ -757,7 +757,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Admin",
+    "AclCategories": "Admin, Garnet",
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null
@@ -834,7 +834,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Read, Slow",
+    "AclCategories": "Read, Slow, Garnet",
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null
@@ -1089,7 +1089,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Admin",
+    "AclCategories": "Admin, Garnet",
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null
@@ -2451,7 +2451,7 @@
     "FirstKey": 0,
     "LastKey": 0,
     "Step": 0,
-    "AclCategories": "Admin, Slow, Dangerous",
+    "AclCategories": "Admin, Dangerous, Slow",
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null
@@ -2874,7 +2874,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Admin, Dangerous",
+    "AclCategories": "Admin, Dangerous, Garnet",
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null
@@ -3075,7 +3075,7 @@
     "FirstKey": 1,
     "LastKey": 1,
     "Step": 1,
-    "AclCategories": "Transaction",
+    "AclCategories": "Transaction, Garnet",
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null
@@ -3343,62 +3343,6 @@
         "Flags": "OW, Update"
       }
     ],
-    "SubCommands": null
-  },
-  {
-    "Command": "SETEXNX",
-    "Name": "SETEXNX",
-    "IsInternal": false,
-    "Arity": -3,
-    "Flags": "DenyOom, Write",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
-  },
-  {
-    "Command": "SETEXXX",
-    "Name": "SETEXXX",
-    "IsInternal": false,
-    "Arity": -3,
-    "Flags": "DenyOom, Write",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
-  },
-  {
-    "Command": "SETKEEPTTL",
-    "Name": "SETKEEPTTL",
-    "IsInternal": false,
-    "Arity": -3,
-    "Flags": "DenyOom, Write",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
-  },
-  {
-    "Command": "SETKEEPTTLXX",
-    "Name": "SETKEEPTTLXX",
-    "IsInternal": false,
-    "Arity": -3,
-    "Flags": "DenyOom, Write",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "Tips": null,
-    "KeySpecifications": null,
     "SubCommands": null
   },
   {
@@ -3949,35 +3893,36 @@
         "Flags": "RO"
       }
     ],
-    "SubCommands": null
-  },
-  {
-    "Command": "WATCHMS",
-    "Name": "WATCHMS",
-    "IsInternal": false,
-    "Arity": -3,
-    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
-    "FirstKey": 1,
-    "LastKey": -1,
-    "Step": 1,
-    "AclCategories": "Fast, Transaction",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
-  },
-  {
-    "Command": "WATCHOS",
-    "Name": "WATCHOS",
-    "IsInternal": false,
-    "Arity": -3,
-    "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
-    "FirstKey": 1,
-    "LastKey": -1,
-    "Step": 1,
-    "AclCategories": "Fast, Transaction",
-    "Tips": null,
-    "KeySpecifications": null,
-    "SubCommands": null
+    "SubCommands": [
+      {
+        "Command": "WATCH",
+        "Name": "WATCH|MS",
+        "IsInternal": false,
+        "Arity": -3,
+        "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+        "FirstKey": 2,
+        "LastKey": -2,
+        "Step": 1,
+        "AclCategories": "Fast, Transaction, Garnet",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "WATCH",
+        "Name": "WATCH|OS",
+        "IsInternal": false,
+        "Arity": -3,
+        "Flags": "Fast, Loading, NoScript, Stale, AllowBusy",
+        "FirstKey": 2,
+        "LastKey": -2,
+        "Step": 1,
+        "AclCategories": "Fast, Transaction, Garnet",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      }
+    ]
   },
   {
     "Command": "ZADD",

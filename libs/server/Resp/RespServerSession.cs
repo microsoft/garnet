@@ -433,8 +433,6 @@ namespace Garnet.server
                 (RespCommand.UNLINK, 0) => NetworkDEL(cmd, count, ptr, ref storageApi),
                 (RespCommand.SELECT, 0) => NetworkSELECT(count, ptr),
                 (RespCommand.WATCH, 0) => NetworkWATCH(count),
-                (RespCommand.WATCHMS, 0) => NetworkWATCH(count, StoreType.Main),
-                (RespCommand.WATCHOS, 0) => NetworkWATCH(count, StoreType.Object),
                 (RespCommand.STRLEN, 0) => NetworkSTRLEN(count, ptr, ref storageApi),
                 (RespCommand.MODULE, 0) => NetworkMODULE(count, ptr, ref storageApi),
                 //General key commands

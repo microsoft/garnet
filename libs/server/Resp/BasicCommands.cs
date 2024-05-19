@@ -458,7 +458,7 @@ namespace Garnet.server
         private bool NetworkSETEXNX<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SETEXNX, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            if (!CheckACLPermissions(RespCommand.SET, RespCommandsInfo.SubCommandIds.None, count, out bool success))
             {
                 return success;
             }

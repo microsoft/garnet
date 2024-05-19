@@ -940,7 +940,46 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: COMMITAOF is strange, handle in later change
+        [Test]
+        public void CommitAOFACLs()
+        {
+            // test is a bit more verbose since it involves @admin
+
+            string[] categories = ["admin", "garnet"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoCommitAOF), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoCommitAOF), "Permitted when should have been denied");
+
+                    void DoCommitAOF()
+                    {
+                        RedisResult val = db.Execute("COMMITAOF");
+                        Assert.AreEqual("AOF file committed", (string)val);
+                    }
+                }
+            }
+        }
 
         [Test]
         public void ConfigGetACLs()
@@ -1105,7 +1144,31 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: figure out COSCAN ACL rules
+        [Test]
+        public void COScanACLs()
+        {
+            // todo: COSCAN parameters are unclear... add more cases later
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "COSCAN",
+                server,
+                ["read", "garnet", "slow"],
+                [DoCOScan]
+            );
+
+            void DoCOScan()
+            {
+                RedisResult val = db.Execute("CUSTOMOBJECTSCAN", "foo", "0");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(2, valArr.Length);
+            }
+        }
+
         // todo: figure out CustomCmd ACL rules
         // todo: figure out CustomObjCmd ACL rules
         // todo: figure out CustomTxn ACL rules
@@ -1594,7 +1657,54 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: decide what to do with FORCEGC
+        [Test]
+        public void ForceGCACLs()
+        {
+            // test is a bit more verbose since it involves @admin
+
+            string[] categories = ["admin", "garnet"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoForceGC), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(DoForceGCGen), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoForceGC), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(DoForceGCGen), "Permitted when should have been denied");
+
+                    void DoForceGC()
+                    {
+                        RedisResult val = db.Execute("FORCEGC");
+                        Assert.AreEqual("GC completed", (string)val);
+                    }
+
+                    void DoForceGCGen()
+                    {
+                        RedisResult val = db.Execute("FORCEGC", "1");
+                        Assert.AreEqual("GC completed", (string)val);
+                    }
+                }
+            }
+        }
 
         [Test]
         public void GetACLs()
@@ -3601,7 +3711,60 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: REGISTERCS is not part of Redis, what should be done with it?
+        [Test]
+        public void RegisterCSACLs()
+        {
+            // todo: REGISTERCS has a complicated syntax, test proper commands later
+
+            // test is a bit more verbose since it involves @admin
+
+            string[] categories = ["admin", "garnet", "dangerous"];
+
+            foreach (string category in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(DoRegisterCS), "Denied when should have been permitted");
+
+                    SetUser(server, "temp-admin", [$"-@{category}"]);
+
+                    Assert.False(CheckAuthFailure(DoRegisterCS), "Permitted when should have been denied");
+
+                    void DoRegisterCS()
+                    {
+                        try
+                        {
+                            db.Execute("REGISTERCS");
+                            Assert.Fail("Should be unreachable, command is malfoemd");
+                        }
+                        catch (RedisException e)
+                        {
+                            if (e.Message == "ERR malformed REGISTERCS command.")
+                            {
+                                return;
+                            }
+
+                            throw;
+                        }
+                    }
+                }
+            }
+        }
 
         [Test]
         public void RenameACLs()
@@ -3712,7 +3875,69 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: RUNTXP isn't part of redis, do it later
+        [Test]
+        public void RunTxpACLs()
+        {
+            // todo: RUNTXP semantics are a bit unclear... expand test later
+            
+            // todo: RUNTXP breaks the stream when command is malformed
+
+            string[] categories = ["transaction", "garnet"];
+
+            foreach (string cat in categories)
+            {
+                // spin up a temp admin
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
+                    Assert.AreEqual("OK", (string)setupAdmin);
+                }
+
+                // works
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    Assert.True(CheckAuthFailure(() => DoRunTxp(db)), "Denied when should have been permitted");
+                }
+
+                // denied
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    SetUser(server, "temp-admin", $"-@{cat}");
+
+                    Assert.False(CheckAuthFailure(() => DoRunTxp(db)), "Permitted when should have been denied");
+                }
+            }
+
+            static void DoRunTxp(IDatabase db)
+            {
+                try
+                {
+                    db.Execute("RUNTXP", "foo");
+                    Assert.Fail("Should be reachable, command is malformed");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR Protocol Error: Unable to parse number: foo")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
 
         [Test]
         public void SaveACLs()
@@ -3819,8 +4044,6 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: SECONDARYOF isn't part of redis, deal with it later
-
         [Test]
         public void SelectACLs()
         {
@@ -3857,12 +4080,36 @@ namespace Garnet.test.Resp.ACL
                 "SET",
                 server,
                 ["string", "write", "slow"],
-                [DoSet]
+                [DoSet, DoSetExNx, DoSetXxNx, DoSetKeepTtl, DoSetKeepTtlXx]
             );
 
             void DoSet()
             {
                 RedisResult val = db.Execute("SET", "foo", "bar");
+                Assert.AreEqual("OK", (string)val);
+            }
+
+            void DoSetExNx()
+            {
+                RedisResult val = db.Execute("SET", "foo", "bar", "NX", "EX", "100");
+                Assert.IsTrue(val.IsNull);
+            }
+
+            void DoSetXxNx()
+            {
+                RedisResult val = db.Execute("SET", "foo", "bar", "XX", "EX", "100");
+                Assert.AreEqual("OK", (string)val);
+            }
+
+            void DoSetKeepTtl()
+            {
+                RedisResult val = db.Execute("SET", "foo", "bar", "KEEPTTL");
+                Assert.AreEqual("OK", (string)val);
+            }
+
+            void DoSetKeepTtlXx()
+            {
+                RedisResult val = db.Execute("SET", "foo", "bar", "XX", "KEEPTTL");
                 Assert.AreEqual("OK", (string)val);
             }
         }
@@ -3911,7 +4158,7 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: SETEXNX, SETEXXX, SETKEEPTTL, SETKEEPTTLXX - all non-standard, what are these for?
+        // todo: SETKEEPTTL, SETKEEPTTLXX - all non-standard, what are these for?
 
         [Test]
         public void SetRangeACLs()
@@ -5448,6 +5695,54 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public void WatchMSACLs()
+        {
+            // todo: should watch fail outside of a transaction?
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword, disablePubSub: false));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "WATCH MS",
+                server,
+                ["transaction", "fast", "garnet"],
+                [DoWatchMS]
+            );
+
+            void DoWatchMS()
+            {
+                RedisResult val = db.Execute("WATCH", "MS", "foo");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        [Test]
+        public void WatchOSACLs()
+        {
+            // todo: should watch fail outside of a transaction?
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword, disablePubSub: false));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "WATCH OS",
+                server,
+                ["transaction", "fast", "garnet"],
+                [DoWatchOS]
+            );
+
+            void DoWatchOS()
+            {
+                RedisResult val = db.Execute("WATCH", "OS", "foo");
+                Assert.AreEqual("OK", (string)val);
+            }
+        }
+
+        [Test]
         public void UnwatchACLs()
         {
             // todo: should watch fail outside of a transaction?
@@ -5470,9 +5765,6 @@ namespace Garnet.test.Resp.ACL
                 Assert.AreEqual("OK", (string)val);
             }
         }
-
-        // todo: WATCHMS isn't part of Redis, what do we do with it?
-        // todo: WATCHOS isn't part of Redis, what do we do with it?
 
         /// <summary>
         /// Check permissions are denied if individual categories are removed from a +@all user.

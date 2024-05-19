@@ -130,9 +130,14 @@ namespace Garnet.server.ACL
             Write = 1 << 20,
 
             /// <summary>
+            /// Command unique to Garnet.
+            /// </summary>
+            Garnet = 1 << 21,
+
+            /// <summary>
             /// All command categories
             /// </summary>
-            All = (Write << 1) - 1
+            All = (Garnet << 1) - 1
         };
 
         /// <summary>
@@ -161,6 +166,7 @@ namespace Garnet.server.ACL
             ["string"] = Flag.String,
             ["transaction"] = Flag.Transaction,
             ["write"] = Flag.Write,
+            ["garnet"] = Flag.Garnet,
             ["all"] = Flag.All,
         };
 
@@ -228,6 +234,7 @@ namespace Garnet.server.ACL
                 case Flag.Stream: return RespAclCategories.Stream;
                 case Flag.String: return RespAclCategories.String;
                 case Flag.Transaction: return RespAclCategories.Transaction;
+                case Flag.Garnet: return RespAclCategories.Garnet;
                 case Flag.Write: return RespAclCategories.Write;
                 default:
                     Debug.Fail($"Shouldn't be possible, unknown Flag: {flag}");
@@ -260,6 +267,7 @@ namespace Garnet.server.ACL
                 case RespAclCategories.String: return Flag.String;
                 case RespAclCategories.Transaction: return Flag.Transaction;
                 case RespAclCategories.Write: return Flag.Write;
+                case RespAclCategories.Garnet: return Flag.Garnet;
                 default:
                     Debug.Fail($"Shouldn't be possible, unknown RespAclCategory: {cat}");
                     return Flag.None;

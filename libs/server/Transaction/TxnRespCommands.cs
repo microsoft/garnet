@@ -126,7 +126,7 @@ namespace Garnet.server
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
-            bool isWatch = (commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCHMS || commandInfo.Command == RespCommand.WATCHOS);
+            bool isWatch = commandInfo.Command == RespCommand.WATCH;
 
             if (invalidNumArgs || isWatch)
             {
@@ -208,38 +208,94 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Watch
+        /// Watch (MS|OS) key [key key]
         /// </summary>
-        private bool NetworkWATCH(int count, StoreType type = StoreType.All)
+        private bool NetworkWATCH(int count)
         {
             bool success;
 
-            if (!CheckACLPermissions(RespCommand.WATCH, RespCommandsInfo.SubCommandIds.None, count, out success))
+            if(count == 0)
             {
-                return success;
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
             }
 
-            if (count > 1)
+            if(count == 1)
             {
-                List<ArgSlice> keys = new();
+                var key = GetCommandAsArgSlice(out success);
+                if (!success) return false;
 
-                for (int c = 0; c < count - 1; c++)
+                count--;
+
+                // subcommand, but no actual commands
+                if (key.Span.SequenceEqual("MS"u8) || key.Span.SequenceEqual("ms"u8) || key.Span.SequenceEqual("OS"u8) || key.Span.SequenceEqual("os"u8))
                 {
-                    var key = GetCommandAsArgSlice(out success);
-                    if (!success) return false;
-                    keys.Add(key);
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                        SendAndReset();
+
+                    return true;
                 }
 
-                foreach (var key in keys)
-                    txnManager.Watch(key, type);
+                if (!CheckACLPermissions(RespCommand.WATCH, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+
+                txnManager.Watch(key, StoreType.All);
             }
             else
             {
+                var key = GetCommandAsArgSlice(out success);
+                if (!success) return false;
+
+                // first key or first subcommand
+                count--;
+
+                List<ArgSlice> keys = new();
+
+                StoreType type;
+                if (key.Span.SequenceEqual("MS"u8) || key.Span.SequenceEqual("ms"u8))
+                {
+                    type = StoreType.Main;
+
+                    if (!CheckACLPermissions(RespCommand.WATCH, RespCommandsInfo.SubCommandIds.WatchMS, count, out success))
+                    {
+                        return success;
+                    }
+                }
+                else if (key.Span.SequenceEqual("OS"u8) || key.Span.SequenceEqual("os"u8))
+                {
+                    type = StoreType.Object;
+
+                    if (!CheckACLPermissions(RespCommand.WATCH, RespCommandsInfo.SubCommandIds.WatchOS, count, out success))
+                    {
+                        return success;
+                    }
+                }
+                else
+                {
+                    type = StoreType.All;
+
+                    if (!CheckACLPermissions(RespCommand.WATCH, RespCommandsInfo.SubCommandIds.None, count, out success))
+                    {
+                        return success;
+                    }
+
+                    keys.Add(key);
+                }
+
                 for (int c = 0; c < count; c++)
                 {
-                    var key = GetCommandAsArgSlice(out success);
+                    var nextKey = GetCommandAsArgSlice(out success);
                     if (!success) return false;
-                    txnManager.Watch(key, type);
+                    keys.Add(nextKey);
+                }
+
+                foreach (var toWatch in keys)
+                {
+                    txnManager.Watch(toWatch, type);
                 }
             }
 
@@ -275,6 +331,11 @@ namespace Garnet.server
 
         private bool NetworkRUNTXP(int count, byte* ptr)
         {
+            if (!CheckACLPermissions(RespCommand.RUNTXP, RespCommandsInfo.SubCommandIds.None, count, out bool success))
+            {
+                return success;
+            }
+
             if (!RespReadUtils.ReadIntWithLengthHeader(out int txid, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 

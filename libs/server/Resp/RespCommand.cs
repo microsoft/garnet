@@ -171,8 +171,6 @@ namespace Garnet.server
         EXEC,
         DISCARD,
         WATCH,
-        WATCHMS,
-        WATCHOS,
         UNWATCH,
         RUNTXP,
 
@@ -675,27 +673,6 @@ namespace Garnet.server
                                     case 'W':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nWATCH\r\n"u8))
                                         {
-                                            // Check for invocations with subcommand
-                                            if (remainingBytes > length + 6 + 4)
-                                            {
-                                                if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nOS\r\n"u8) || *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nos\r\n"u8))
-                                                {
-                                                    // Account for parsed subcommand
-                                                    readHead += 4;
-                                                    count -= 1;
-
-                                                    return (RespCommand.WATCHOS, 0);
-                                                }
-                                                else if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nMS\r\n"u8) || *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nms\r\n"u8))
-                                                {
-                                                    // Account for parsed subcommand
-                                                    readHead += 4;
-                                                    count -= 1;
-
-                                                    return (RespCommand.WATCHMS, 0);
-                                                }
-                                            }
-
                                             return (RespCommand.WATCH, 0);
                                         }
                                         break;
