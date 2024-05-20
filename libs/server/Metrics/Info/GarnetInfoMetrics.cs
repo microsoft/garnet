@@ -46,7 +46,6 @@ namespace Garnet.server
             serverInfo =
             [
                 new("garnet_version", storeWrapper.version),
-                new("garnet_mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
                 new("os", Environment.OSVersion.ToString()),
                 new("processor_count", Environment.ProcessorCount.ToString()),
                 new("arch_bits", Environment.Is64BitProcess ? "64" : "32"),
@@ -56,7 +55,8 @@ namespace Garnet.server
                 new("monitor_freq", storeWrapper.serverOptions.MetricsSamplingFrequency.ToString()),
                 new("latency_monitor", storeWrapper.serverOptions.LatencyMonitor ? "enabled" : "disabled"),
                 new("run_id", storeWrapper.run_id),
-                new("redis_version", storeWrapper.redisProtocolVersion)
+                new("redis_version", storeWrapper.redisProtocolVersion),
+                new("redis_mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
             ];
         }
 
