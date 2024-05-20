@@ -158,7 +158,7 @@ namespace Garnet.cluster
             status = FailoverStatus.TAKING_OVER_AS_PRIMARY;
 
             // Make replica syncing unavailable by setting recovery flag
-            clusterProvider.replicationManager.recovering = true;
+            clusterProvider.replicationManager.StartRecovery();
             _ = clusterProvider.WaitForConfigTransition();
 
             // Update replicationIds and replicationOffset2
@@ -170,7 +170,7 @@ namespace Garnet.cluster
             _ = clusterProvider.WaitForConfigTransition();
 
             // Disable recovering as now we have become a primary
-            clusterProvider.replicationManager.recovering = false;
+            clusterProvider.replicationManager.SuspendRecovery();
         }
 
         /// <summary>

@@ -138,10 +138,9 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeid"></param>
         /// <param name="force">Check if node is clean (i.e. is PRIMARY without any assigned nodes)</param>
-        /// <param name="recovering"></param>
         /// <param name="errorMessage">The ASCII encoded error response if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <param name="logger"></param>
-        public bool TryAddReplica(string nodeid, bool force, ref bool recovering, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
+        public bool TryAddReplica(string nodeid, bool force, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
         {
             errorMessage = default;
             while (true)
@@ -183,7 +182,9 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                recovering = true;
+                // Transition to recovering state
+                clusterProvider.replicationManager.StartRecovery();
+
                 var newConfig = currentConfig.MakeReplicaOf(nodeid);
                 newConfig = newConfig.BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)

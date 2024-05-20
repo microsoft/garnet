@@ -26,11 +26,13 @@ namespace Garnet.cluster
 
         private long primary_sync_last_time;
 
-        internal long LastPrimarySyncSeconds => recovering ? (DateTime.UtcNow.Ticks - primary_sync_last_time) / TimeSpan.TicksPerSecond : 0;
+        internal long LastPrimarySyncSeconds => Recovering ? (DateTime.UtcNow.Ticks - primary_sync_last_time) / TimeSpan.TicksPerSecond : 0;
 
         internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_time = DateTime.UtcNow.Ticks;
 
-        public bool recovering;
+        private bool recovering = false;
+        public bool Recovering => recovering;
+
         private long replicationOffset;
         public long ReplicationOffset
         {
@@ -100,7 +102,7 @@ namespace Garnet.cluster
 
             // If starts as replica, it cannot serve until it is connected to primary
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
-                recovering = true;
+                StartRecovery();
 
             this.logger = logger;
 
@@ -134,10 +136,9 @@ namespace Garnet.cluster
             storeWrapper.EnqueueCommit(isMainStore, newVersion);
         }
 
-        public void Reset()
-        {
-            recovering = false;
-        }
+        public void StartRecovery() => recovering = true;
+
+        public void SuspendRecovery() => recovering = false;
 
         public void Dispose()
         {
@@ -232,8 +233,7 @@ namespace Garnet.cluster
             var replicaOfNodeId = current.LocalNodePrimaryId;
             if (localNodeRole == NodeRole.REPLICA && replicaOfNodeId != null)
             {
-                clusterProvider.replicationManager.recovering = true;
-                clusterProvider.WaitForConfigTransition();
+                // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!TryReplicateFromPrimary(out var errorMessage))
                     logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage));
             }
