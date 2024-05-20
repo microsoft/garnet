@@ -264,13 +264,17 @@ namespace Garnet.cluster
         public List<int> GetLocalPrimarySlots()
         {
             var primaryId = LocalNodePrimaryId;
-            List<int> result = new();
-            for (int i = 0; i < MAX_HASH_SLOT_VALUE; i++)
+            List<int> slots = [];
+
+            if (primaryId != null)
             {
-                if (workers[slotMap[i].workerId].Nodeid.Equals(primaryId, StringComparison.OrdinalIgnoreCase))
-                    result.Add(i);
+                for (var i = 0; i < MAX_HASH_SLOT_VALUE; i++)
+                {
+                    if (slotMap[i].workerId > 0 && workers[slotMap[i].workerId].Nodeid.Equals(primaryId, StringComparison.OrdinalIgnoreCase))
+                        slots.Add(i);
+                }
             }
-            return result;
+            return slots;
         }
 
         /// <summary>

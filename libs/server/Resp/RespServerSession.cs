@@ -254,7 +254,6 @@ namespace Garnet.server
             {
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
-
             }
 
             if (txnManager.IsSkippingOperations())
