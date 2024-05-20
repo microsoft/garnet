@@ -14,6 +14,11 @@ namespace Garnet.cluster
     internal sealed partial class FailoverSession : IDisposable
     {
         /// <summary>
+        /// Connection to primary if reachable
+        /// </summary>
+        GarnetClient primaryClient = null;
+
+        /// <summary>
         /// Set to true to re-use established gossip connections for failover.
         /// Note connection might abruptly close due to timeout.
         /// Increase gossip-delay to avoid shutting down connections prematurely during a failover.
@@ -117,6 +122,9 @@ namespace Garnet.cluster
                     return false;
                 }
 
+                // Cachec connection for use with next operations
+                primaryClient = client;
+
                 // Issue stop writes to the primary
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
                 var localIdBytes = Encoding.ASCII.GetBytes(currentConfig.LocalNodeId);
@@ -142,23 +150,22 @@ namespace Garnet.cluster
                 logger?.LogError(ex, "PauseWritesAndWaitForSync Error");
                 return false;
             }
-            finally
-            {
-                if (!useGossipConnections)
-                    client?.Dispose();
-            }
         }
 
         /// <summary>
         /// Perform series of steps to update local config and take ownership of primary slots.
         /// </summary>
-        private void TakeOverAsPrimary()
+        private bool TakeOverAsPrimary()
         {
             // Take over as primary and inform old primary
             status = FailoverStatus.TAKING_OVER_AS_PRIMARY;
 
             // Make replica syncing unavailable by setting recovery flag
-            clusterProvider.replicationManager.StartRecovery();
+            if (!clusterProvider.replicationManager.StartRecovery())
+            {
+                logger?.LogError($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                return false;
+            }
             _ = clusterProvider.WaitForConfigTransition();
 
             // Update replicationIds and replicationOffset2
@@ -171,6 +178,8 @@ namespace Garnet.cluster
 
             // Disable recovering as now we have become a primary
             clusterProvider.replicationManager.SuspendRecovery();
+
+            return true;
         }
 
         /// <summary>
@@ -181,14 +190,15 @@ namespace Garnet.cluster
         /// <returns></returns>
         private async Task BroadcastConfigAndRequestAttach(string replicaId, byte[] configByteArray)
         {
+            var oldPrimaryId = currentConfig.LocalNodePrimaryId;
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
-            var client = GetConnection(replicaId);
+            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : GetConnection(replicaId);
 
             try
             {
                 if (client == null)
                 {
-                    logger?.LogError("Failed to initialize connection to replica {primaryId}", replicaId);
+                    logger?.LogError("Failed to initialize connection to replica {replicaId}", replicaId);
                     return;
                 }
 
@@ -257,7 +267,6 @@ namespace Garnet.cluster
             // If DEFAULT failover try to make old primary replica of this new primary
             if (option is FailoverOption.DEFAULT)
             {
-                // TODO: enable primary to replica failover
                 replicaIds.Add(oldPrimaryId);
             }
 
@@ -312,7 +321,12 @@ namespace Garnet.cluster
                 }
 
                 // Transition to primary role
-                TakeOverAsPrimary();
+                if (!TakeOverAsPrimary())
+                {
+                    // Request primary to be reset to original state only if DEFAULT option was used
+                    _ = await primaryClient?.failstopwrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
+                    return false;
+                }
 
                 // Attach to old replicas, and old primary if DEFAULT option
                 await IssueAttachReplicas();
@@ -326,6 +340,7 @@ namespace Garnet.cluster
             }
             finally
             {
+                primaryClient?.Dispose();
                 status = FailoverStatus.NO_FAILOVER;
             }
         }

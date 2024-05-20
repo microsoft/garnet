@@ -125,7 +125,16 @@ namespace Garnet.cluster
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var nodeIdBytes, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
-            clusterProvider.clusterManager.TryStopWrites(Encoding.ASCII.GetString(nodeIdBytes));
+
+            if (nodeIdBytes.Length > 0)
+            {// Make this node a primary after receiving a request from a replica that is trying to takeover
+                var nodeId = Encoding.ASCII.GetString(nodeIdBytes);
+                clusterProvider.clusterManager.TryStopWrites(nodeId);
+            }
+            else
+            {// Reset this node back to its original state
+                clusterProvider.clusterManager.TryResetReplica();
+            }
             UnsafeWaitForConfigTransition();
             while (!RespWriteUtils.WriteInteger(clusterProvider.replicationManager.ReplicationOffset, ref dcurr, dend))
                 SendAndReset();

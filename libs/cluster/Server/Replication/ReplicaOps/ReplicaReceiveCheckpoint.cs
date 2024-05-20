@@ -160,6 +160,7 @@ namespace Garnet.cluster
             {
                 logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
                 clusterProvider.clusterManager.TryResetReplica();
+                clusterProvider.replicationManager.SuspendRecovery();
                 return ex.Message;
             }
             finally
