@@ -21,11 +21,6 @@ namespace Garnet.server
         bool NetworkGET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.GET, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkGET_SG(ptr, ref storageApi);
 
@@ -246,11 +241,6 @@ namespace Garnet.server
         private bool NetworkSET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SET, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -283,11 +273,6 @@ namespace Garnet.server
         private bool NetworkSetRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SETRANGE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -335,11 +320,6 @@ namespace Garnet.server
         private bool NetworkGetRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.GETRANGE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -395,11 +375,6 @@ namespace Garnet.server
         private bool NetworkSETEX<TGarnetApi>(RespCommand cmd, int count, byte* ptr, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(cmd, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -458,11 +433,6 @@ namespace Garnet.server
         private bool NetworkSETEXNX<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SET, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             var _ptr = ptr;
 
             byte* keyPtr = null, valPtr = null;
@@ -801,11 +771,6 @@ namespace Garnet.server
             Debug.Assert(cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || cmd == RespCommand.INCR ||
                          cmd == RespCommand.DECR);
 
-            if (!CheckACLPermissions(cmd, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             // Parse key argument
             byte* keyPtr = null;
             int ksize = 0;
@@ -887,11 +852,6 @@ namespace Garnet.server
         private bool NetworkAppend<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.APPEND, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null, valPtr = null;
             int ksize = 0, vsize = 0;
 
@@ -928,11 +888,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkPING(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.PING, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
                 SendAndReset();
             return true;
@@ -943,11 +898,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkASKING(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.ASKING, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             //*1\r\n$6\r\n ASKING\r\n = 16
             if (storeWrapper.serverOptions.EnableCluster)
                 SessionAsking = 2;
@@ -973,11 +923,6 @@ namespace Garnet.server
         /// <returns></returns>
         private bool NetworkREADONLY(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.READONLY, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             //*1\r\n$8\r\nREADONLY\r\n
             clusterSession?.SetReadOnlySession();
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -991,11 +936,6 @@ namespace Garnet.server
         /// <returns></returns>
         private bool NetworkREADWRITE(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.READWRITE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             //*1\r\n$9\r\nREADWRITE\r\n
             clusterSession?.SetReadWriteSession();
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -1013,11 +953,6 @@ namespace Garnet.server
         private bool NetworkSTRLEN<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.STRLEN, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null;
             int ksize = 0;
 

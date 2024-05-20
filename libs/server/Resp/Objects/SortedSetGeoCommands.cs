@@ -22,11 +22,6 @@ namespace Garnet.server
         private unsafe bool GeoAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.GEOADD, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             // validate the number of parameters
             if (count < 4)
             {
@@ -105,11 +100,6 @@ namespace Garnet.server
         private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             int paramsRequiredInCommand = 0;
             string cmd = string.Empty;
             var responseWhenNotFound = CmdStrings.RESP_EMPTYLIST;

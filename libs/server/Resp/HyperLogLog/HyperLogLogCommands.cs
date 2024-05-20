@@ -22,11 +22,6 @@ namespace Garnet.server
         private bool HyperLogLogAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.PFADD, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             ArgSlice[] argSlices = new ArgSlice[count];
 
             //Read pfadd dstKey and input values
@@ -109,11 +104,6 @@ namespace Garnet.server
         private bool HyperLogLogLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.PFCOUNT, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             ArgSlice[] keys = new ArgSlice[count];
 
             //Read pfmerge dstKey and srckeys
@@ -165,11 +155,6 @@ namespace Garnet.server
         private bool HyperLogLogMerge<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.PFMERGE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             ArgSlice[] keys = new ArgSlice[count];
 
             //Read pfmerge dstKey and srckeys

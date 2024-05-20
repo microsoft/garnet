@@ -18,11 +18,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkMULTI(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.MULTI, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (txnManager.state != TxnState.None)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NESTED_MULTI, ref dcurr, dend))
@@ -43,11 +38,6 @@ namespace Garnet.server
 
         private bool NetworkEXEC(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.EXEC, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             // pass over the EXEC in buffer during execution
             if (txnManager.state == TxnState.Running)
             {
@@ -190,11 +180,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkDISCARD(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.DISCARD, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (txnManager.state == TxnState.None)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_DISCARD_WO_MULTI, ref dcurr, dend))
@@ -278,11 +263,6 @@ namespace Garnet.server
                 {
                     type = StoreType.All;
 
-                    if (!CheckACLPermissions(RespCommand.WATCH, RespCommandsInfo.SubCommandIds.None, count, out success))
-                    {
-                        return success;
-                    }
-
                     keys.Add(key);
                 }
 
@@ -309,11 +289,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkUNWATCH(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.UNWATCH, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (txnManager.state == TxnState.None)
             {
                 txnManager.watchContainer.Reset();
@@ -331,11 +306,6 @@ namespace Garnet.server
 
         private bool NetworkRUNTXP(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.RUNTXP, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (!RespReadUtils.ReadIntWithLengthHeader(out int txid, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 

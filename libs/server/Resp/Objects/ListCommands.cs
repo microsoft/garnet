@@ -33,11 +33,6 @@ namespace Garnet.server
         private unsafe bool ListPush<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -135,11 +130,6 @@ namespace Garnet.server
         private unsafe bool ListPop<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
@@ -232,11 +222,6 @@ namespace Garnet.server
         private unsafe bool ListLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.LLEN, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 1)
             {
                 return AbortWithWrongNumberOfArguments("LLEN", count);
@@ -307,11 +292,6 @@ namespace Garnet.server
         private unsafe bool ListTrim<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.LTRIM, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("LTRIM", count);
@@ -381,10 +361,6 @@ namespace Garnet.server
         private unsafe bool ListRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.LRANGE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
 
             if (count != 3)
             {
@@ -463,11 +439,6 @@ namespace Garnet.server
         private unsafe bool ListIndex<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.LINDEX, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 2)
             {
                 return AbortWithWrongNumberOfArguments("LINDEX", count);
@@ -550,11 +521,6 @@ namespace Garnet.server
         private unsafe bool ListInsert<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.LINSERT, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 4)
             {
                 return AbortWithWrongNumberOfArguments("LINSERT", count);
@@ -637,11 +603,6 @@ namespace Garnet.server
         private unsafe bool ListRemove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.LREM, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             // if params are missing return error
             if (count != 3)
             {
@@ -722,11 +683,6 @@ namespace Garnet.server
         private unsafe bool ListMove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.LMOVE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             bool result = false;
 
             if (count != 4)
@@ -784,11 +740,6 @@ namespace Garnet.server
         private unsafe bool ListRightPopLeftPush<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.RPOPLPUSH, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             bool result = false;
 
             if (count != 2)
@@ -867,11 +818,6 @@ namespace Garnet.server
         public unsafe bool ListSet<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.LSET, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("LSET", count);

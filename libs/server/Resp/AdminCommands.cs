@@ -238,11 +238,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.ECHO)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 if (count != 1)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -261,20 +256,10 @@ namespace Garnet.server
             }
             else if (command == RespCommand.INFO)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 return ProcessInfoCommand(count);
             }
             else if (command == RespCommand.PING)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 if (count == 0)
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
@@ -299,11 +284,6 @@ namespace Garnet.server
             }
             else if (command is RespCommand.CLUSTER or RespCommand.MIGRATE or RespCommand.FAILOVER or RespCommand.REPLICAOF or RespCommand.SECONDARYOF)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 if (clusterSession == null)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -322,11 +302,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.TIME)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 if (count != 0)
                 {
                     if (!DrainCommands(bufSpan, count))
@@ -346,11 +321,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.QUIT)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 if (!DrainCommands(bufSpan, count))
                     return false;
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -360,11 +330,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.SAVE)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
@@ -381,11 +346,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.LASTSAVE)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 if (!DrainCommands(bufSpan, count))
                     return false;
                 var seconds = storeWrapper.lastSaveTime.ToUnixTimeSeconds();
@@ -394,11 +354,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.BGSAVE)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
@@ -416,11 +371,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.COMMITAOF)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
@@ -430,11 +380,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.FLUSHDB)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 bool unsafeTruncateLog = false;
                 bool async = false;
                 if (count > 0)
@@ -467,11 +412,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.FORCEGC)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 var generation = GC.MaxGeneration;
                 if (count == 1)
                 {
@@ -551,8 +491,25 @@ namespace Garnet.server
         bool CheckACLPermissions(RespCommand cmd, byte subCommand, int count, out bool processingCompleted)
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
+            
+            // todo: SETEXNX is parsed separately from SET and then turned into these other commands
+            //       we _could_ refactor SET to handle these options, but perf is tricky enough there
+            //       that it should be a different command
+            RespCommand effectiveCommand =
+                subCommand != RespCommandsInfo.SubCommandIds.None ?
+                    cmd : 
+                    cmd switch
+                    {
+                        RespCommand.SETEXNX => RespCommand.SET,
+                        RespCommand.SETEXXX => RespCommand.SET,
+                        RespCommand.SETKEEPTTL => RespCommand.SET,
+                        RespCommand.SETKEEPTTLXX => RespCommand.SET,
+                        _ => cmd
+                    };
 
-            if (!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd, subCommand))
+            Debug.Assert(subCommand == RespCommandsInfo.SubCommandIds.None || effectiveCommand.HasSubCommands(), $"Subcommand provided for unexpected command: {cmd}");
+
+            if (!effectiveCommand.IsNoAuth() && (!_authenticator.IsAuthenticated || !_user.CanAccessCommand(effectiveCommand, subCommand)))
             {
                 ReadOnlySpan<byte> toDrain = new(recvBufferPtr, bytesRead);
                 toDrain = toDrain[readHead..];
@@ -641,11 +598,6 @@ namespace Garnet.server
 
         private bool NetworkMONITOR(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.MONITOR, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             //todo:Not supported yet.
             return true;
         }

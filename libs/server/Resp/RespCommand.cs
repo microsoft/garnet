@@ -226,6 +226,42 @@ namespace Garnet.server
             // todo: this was a mask and shift before hand, speed it up
             return (cmd >= RespCommand.GET && cmd <= RespCommand.COSCAN) ? 1UL : 0;
         }
+
+        /// <summary>
+        /// Returns true if <paramref name="cmd"/> has sub-commands.
+        /// 
+        /// This matters because we can't validate the command until we've done further parsing.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool HasSubCommands(this RespCommand cmd)
+        {
+            // todo: this needs to be fast
+            return 
+                cmd switch
+                {
+                    RespCommand.ACL => true,
+                    RespCommand.CLUSTER => true,
+                    RespCommand.COMMAND => true,
+                    RespCommand.CONFIG => true,
+                    RespCommand.LATENCY => true,
+                    RespCommand.MEMORY => true,
+                    RespCommand.WATCH => true,
+                    _ => false,
+                };
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsNoAuth(this RespCommand cmd)
+        {
+            // todo: this needs to be fast
+            return
+                cmd switch
+                {
+                    RespCommand.AUTH => true,
+                    RespCommand.QUIT => true,
+                    _ => false,
+                };
+        }
     }
 
     /// <summary>

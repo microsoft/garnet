@@ -111,11 +111,6 @@ namespace Garnet.server
         private bool StringSetBit<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SETBIT, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -189,11 +184,6 @@ namespace Garnet.server
         private bool StringGetBit<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.GETBIT, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -253,11 +243,6 @@ namespace Garnet.server
         private bool StringBitCount<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.BITCOUNT, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             //<[Get Key]>
             byte* keyPtr = null;
             int ksize = 0;
@@ -345,11 +330,6 @@ namespace Garnet.server
         private bool StringBitPosition<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.BITPOS, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             //<[Get Key]>
             byte* keyPtr = null;
             int ksize = 0;
@@ -454,11 +434,6 @@ namespace Garnet.server
         private bool StringBitOperation<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.BITOP, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             // <AND | OR | XOR | NOT> destkey key
             if (count < 3)
             {
@@ -559,11 +534,6 @@ namespace Garnet.server
         private bool StringBitField<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.BITFIELD, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             //BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
             //Extract Key//
             byte* keyPtr = null;
@@ -743,11 +713,6 @@ namespace Garnet.server
         private bool StringBitFieldReadOnly<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.BITFIELD_RO, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             //BITFIELD key [GET encoding offset] [SET encoding offset value] [INCRBY encoding offset increment] [OVERFLOW WRAP| SAT | FAIL]
             //Extract Key//
             byte* keyPtr = null;

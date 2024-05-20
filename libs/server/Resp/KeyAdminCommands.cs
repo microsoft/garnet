@@ -18,11 +18,6 @@ namespace Garnet.server
         private bool NetworkRENAME<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.RENAME, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* key1Ptr = null, key2Ptr = null;
             int ksize1 = 0, ksize2 = 0;
 
@@ -102,11 +97,6 @@ namespace Garnet.server
         private bool NetworkGETDEL<TGarnetApi>(int count, byte* ptr, ref TGarnetApi garnetApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.GETDEL, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -151,11 +141,6 @@ namespace Garnet.server
         private bool NetworkEXISTS<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.EXISTS, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             int exists = 0;
 
             if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: true, out bool retVal))
@@ -232,11 +217,6 @@ namespace Garnet.server
         private bool NetworkEXPIRE<TGarnetApi>(int count, byte* ptr, RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -303,11 +283,6 @@ namespace Garnet.server
         private bool NetworkPERSIST<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.PERSIST, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -345,11 +320,6 @@ namespace Garnet.server
         private bool NetworkTTL<TGarnetApi>(int count, byte* ptr, RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             byte* keyPtr = null;
             int ksize = 0;
 

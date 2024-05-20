@@ -37,11 +37,6 @@ namespace Garnet.server
         private unsafe bool HashSet<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (((command == RespCommand.HSET || command == RespCommand.HMSET)
                   && (count == 1 || count % 2 != 1)) ||
                 (command == RespCommand.HSETNX && count != 3))
@@ -135,11 +130,6 @@ namespace Garnet.server
         private unsafe bool HashGet<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if ((command == RespCommand.HGETALL && count != 1) ||
                 (command == RespCommand.HRANDFIELD && count < 1) ||
                 (command == RespCommand.HGET && count != 2) ||
@@ -251,14 +241,9 @@ namespace Garnet.server
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashLength<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool HashLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 1)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
@@ -327,14 +312,9 @@ namespace Garnet.server
         /// <param name="storageApi"></param>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <returns></returns>
-        private unsafe bool HashStrLength<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool HashStrLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 2)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
@@ -405,14 +385,9 @@ namespace Garnet.server
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashDelete<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool HashDelete<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 1)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
@@ -490,14 +465,9 @@ namespace Garnet.server
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashExists<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool HashExists<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
            where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 2)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
@@ -572,15 +542,10 @@ namespace Garnet.server
         private unsafe bool HashKeys<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
           where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 1)
             {
                 hashItemsDoneCount = hashOpsCount = 0;
-                return AbortWithWrongNumberOfArguments("HKEYS", count);
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
 
             // Get the key for Hash
@@ -672,11 +637,6 @@ namespace Garnet.server
         private unsafe bool HashIncrement<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             // Check if parameters number is right
             if (count != 3)
             {

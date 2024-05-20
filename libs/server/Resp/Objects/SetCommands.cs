@@ -37,11 +37,6 @@ namespace Garnet.server
         private unsafe bool SetAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SADD, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
@@ -113,11 +108,6 @@ namespace Garnet.server
         private bool SetUnion<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SUNION, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments("SUNION", count);
@@ -170,11 +160,6 @@ namespace Garnet.server
         private bool SetUnionStore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SUNIONSTORE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("SUNIONSTORE", count);
@@ -234,11 +219,6 @@ namespace Garnet.server
         private unsafe bool SetRemove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SREM, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
@@ -320,11 +300,6 @@ namespace Garnet.server
         private unsafe bool SetLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SCARD, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 1)
             {
                 setItemsDoneCount = setOpsCount = 0;
@@ -394,11 +369,6 @@ namespace Garnet.server
         private unsafe bool SetMembers<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SMEMBERS, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 1)
             {
                 setItemsDoneCount = setOpsCount = 0;
@@ -471,11 +441,6 @@ namespace Garnet.server
         private unsafe bool SetIsMember<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SISMEMBER, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
@@ -554,11 +519,6 @@ namespace Garnet.server
         private unsafe bool SetPop<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SPOP, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 1 || count > 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
@@ -676,11 +636,6 @@ namespace Garnet.server
         private unsafe bool SetMove<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SMOVE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count != 3)
             {
                 setItemsDoneCount = setOpsCount = 0;
@@ -748,11 +703,6 @@ namespace Garnet.server
         private unsafe bool SetRandomMember<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SRANDMEMBER, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 1 || count > 2)
             {
                 setItemsDoneCount = setOpsCount = 0;
@@ -868,11 +818,6 @@ namespace Garnet.server
         private bool SetDiff<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SDIFF, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 1)
             {
                 return AbortWithWrongNumberOfArguments("SDIFF", count);
@@ -923,11 +868,6 @@ namespace Garnet.server
         private bool SetDiffStore<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!CheckACLPermissions(RespCommand.SDIFFSTORE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             if (count < 2)
             {
                 return AbortWithWrongNumberOfArguments("SDIFFSTORE", count);

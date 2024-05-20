@@ -57,12 +57,6 @@ namespace Garnet.cluster
 
         private bool TryMIGRATE(int count, byte* ptr)
         {
-            // Check if session is authorized to perform migration.
-            if (!CheckACLPermissions(RespCommand.MIGRATE, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             // Migrate command format
             // migrate host port <KEY | ""> destination-db timeout [COPY] [REPLACE] [AUTH password] [AUTH2 username password] [[KEYS keys] | [SLOTSRANGE start-slot end-slot [start-slot end-slot]]]]
             #region parseMigrationArguments

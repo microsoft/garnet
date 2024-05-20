@@ -364,16 +364,30 @@ namespace Garnet.server
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            bool success;
+
+            // do ACL validation up front if we don't have to do any additional parsing
+            // to do so
+            //
+            // all commands with sub-commands have to do validation post-parsing
+            if (!cmd.HasSubCommands())
+            {
+                if (!CheckACLPermissions(cmd, RespCommandsInfo.SubCommandIds.None, count, out success))
+                {
+                    return success;
+                }
+            }
+
             if (!_authenticator.IsAuthenticated) return ProcessArrayCommands(cmd, count, ref storageApi);
 
-            bool success = cmd switch
+            success = cmd switch
             {
                 RespCommand.GET => NetworkGET(count, ptr, ref storageApi),
                 RespCommand.SET => NetworkSET(count, ptr, ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(cmd, count, ptr, false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(cmd, count, ptr, true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(count, ptr, ref storageApi),
-                RespCommand.DEL => NetworkDEL(cmd, count, ptr, ref storageApi),
+                RespCommand.DEL => NetworkDEL(count, ptr, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(count, ptr, ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(count, ptr, ref storageApi),
                 RespCommand.EXPIRE => NetworkEXPIRE(count, ptr, RespCommand.EXPIRE, ref storageApi),
@@ -424,7 +438,7 @@ namespace Garnet.server
                 RespCommand.MGET => NetworkMGET(count, ptr, ref storageApi),
                 RespCommand.MSET => NetworkMSET(count, ptr, ref storageApi),
                 RespCommand.MSETNX => NetworkMSETNX(count, ptr, ref storageApi),
-                RespCommand.UNLINK => NetworkDEL(cmd, count, ptr, ref storageApi),
+                RespCommand.UNLINK => NetworkDEL(count, ptr, ref storageApi),
                 RespCommand.SELECT => NetworkSELECT(count, ptr),
                 RespCommand.WATCH => NetworkWATCH(count),
                 RespCommand.STRLEN => NetworkSTRLEN(count, ptr, ref storageApi),
@@ -440,7 +454,7 @@ namespace Garnet.server
                 RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(count, ptr, dend),
                 RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(count, ptr, dend),
                 // Custom Object Commands
-                RespCommand.COSCAN => ObjectScan(cmd, count, ptr, GarnetObjectType.All, ref storageApi),
+                RespCommand.COSCAN => ObjectScan(count, ptr, GarnetObjectType.All, ref storageApi),
                 // Sorted Set commands
                 RespCommand.ZADD => SortedSetAdd(count, ptr, ref storageApi),
                 RespCommand.ZREM => SortedSetRemove(count, ptr, ref storageApi),
@@ -462,7 +476,7 @@ namespace Garnet.server
                 RespCommand.ZRANDMEMBER => SortedSetRandomMember(count, ptr, ref storageApi),
                 RespCommand.ZDIFF => SortedSetDifference(count, ptr, ref storageApi),
                 RespCommand.ZREVRANGE => SortedSetRange(cmd, count, ptr, ref storageApi),
-                RespCommand.ZSCAN => ObjectScan(cmd, count, ptr, GarnetObjectType.SortedSet, ref storageApi),
+                RespCommand.ZSCAN => ObjectScan(count, ptr, GarnetObjectType.SortedSet, ref storageApi),
                 //SortedSet for Geo Commands
                 RespCommand.GEOADD => GeoAdd(count, ptr, ref storageApi),
                 RespCommand.GEOHASH => GeoCommands(cmd, count, ptr, ref storageApi),
@@ -499,17 +513,17 @@ namespace Garnet.server
                 RespCommand.HGET => HashGet(cmd, count, ptr, ref storageApi),
                 RespCommand.HMGET => HashGet(cmd, count, ptr, ref storageApi),
                 RespCommand.HGETALL => HashGet(cmd, count, ptr, ref storageApi),
-                RespCommand.HDEL => HashDelete(cmd, count, ptr, ref storageApi),
-                RespCommand.HLEN => HashLength(cmd, count, ptr, ref storageApi),
-                RespCommand.HSTRLEN => HashStrLength(cmd, count, ptr, ref storageApi),
-                RespCommand.HEXISTS => HashExists(cmd, count, ptr, ref storageApi),
+                RespCommand.HDEL => HashDelete(count, ptr, ref storageApi),
+                RespCommand.HLEN => HashLength(count, ptr, ref storageApi),
+                RespCommand.HSTRLEN => HashStrLength(count, ptr, ref storageApi),
+                RespCommand.HEXISTS => HashExists(count, ptr, ref storageApi),
                 RespCommand.HKEYS => HashKeys(cmd, count, ptr, ref storageApi),
                 RespCommand.HVALS => HashKeys(cmd, count, ptr, ref storageApi),
                 RespCommand.HINCRBY => HashIncrement(cmd, count, ptr, ref storageApi),
                 RespCommand.HINCRBYFLOAT => HashIncrement(cmd, count, ptr, ref storageApi),
                 RespCommand.HSETNX => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HRANDFIELD => HashGet(cmd, count, ptr, ref storageApi),
-                RespCommand.HSCAN => ObjectScan(cmd, count, ptr, GarnetObjectType.Hash, ref storageApi),
+                RespCommand.HSCAN => ObjectScan(count, ptr, GarnetObjectType.Hash, ref storageApi),
                 // Set Commands
                 RespCommand.SADD => SetAdd(count, ptr, ref storageApi),
                 RespCommand.SMEMBERS => SetMembers(count, ptr, ref storageApi),
@@ -518,7 +532,7 @@ namespace Garnet.server
                 RespCommand.SCARD => SetLength(count, ptr, ref storageApi),
                 RespCommand.SPOP => SetPop(count, ptr, ref storageApi),
                 RespCommand.SRANDMEMBER => SetRandomMember(count, ptr, ref storageApi),
-                RespCommand.SSCAN => ObjectScan(cmd, count, ptr, GarnetObjectType.Set, ref storageApi),
+                RespCommand.SSCAN => ObjectScan(count, ptr, GarnetObjectType.Set, ref storageApi),
                 RespCommand.SMOVE => SetMove(count, ptr, ref storageApi),
                 RespCommand.SUNION => SetUnion(count, ptr, ref storageApi),
                 RespCommand.SUNIONSTORE => SetUnionStore(count, ptr, ref storageApi),
@@ -538,11 +552,6 @@ namespace Garnet.server
 
             if (command == RespCommand.CLIENT)
             {
-                if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-                {
-                    return success;
-                }
-
                 for (int i = 0; i < count; i++)
                 {
                     GetCommand(bufSpan, out bool success1);

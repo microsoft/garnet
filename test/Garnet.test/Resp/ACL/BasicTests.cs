@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Internal;
 
@@ -119,6 +120,52 @@ namespace Garnet.test.Resp.ACL
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("ACL subcommand");
             Assert.IsTrue(response.AsSpan().StartsWith("-ERR"u8));
+        }
+
+        /// <summary>
+        /// Test that our check for "has subcommands" matches reality.
+        /// </summary>
+        [Test]
+        public void SubCommandValidation()
+        {
+            foreach (var cmd in Enum.GetValues<RespCommand>())
+            {
+                if (cmd == RespCommand.NONE || cmd == RespCommand.INVALID)
+                {
+                    continue;
+                }
+
+                if (RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
+                {
+                    var infoHasSubCommands = (info.SubCommands?.Length ?? 0) != 0;
+                    var cmdHasSubCommands = cmd.HasSubCommands();
+
+                    Assert.AreEqual(infoHasSubCommands, cmdHasSubCommands, $"Mismatch for command {cmd}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Test that our check for "has subcommands" matches reality.
+        /// </summary>
+        [Test]
+        public void NoAuthValidation()
+        {
+            foreach (var cmd in Enum.GetValues<RespCommand>())
+            {
+                if (cmd == RespCommand.NONE || cmd == RespCommand.INVALID)
+                {
+                    continue;
+                }
+
+                if (RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
+                {
+                    var infoIsNoAuth = info.Flags.HasFlag(RespCommandFlags.NoAuth);
+                    var cmdIsNoAuth = cmd.IsNoAuth();
+
+                    Assert.AreEqual(infoIsNoAuth, cmdIsNoAuth, $"Mismatch for command {cmd}");
+                }
+            }
         }
     }
 }
