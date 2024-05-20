@@ -96,30 +96,29 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CONFIG)
             {
-                if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
+                if (!CheckACLAdminPermissions(bufSpan, count, out var success))
                 {
                     return success;
                 }
 
-                var param = GetCommand(bufSpan, out bool success1);
+                // Terminate early if command arguments are less than expected
+                if (count < 1)
+                {
+                    while (!RespWriteUtils.WriteBulkString("ERR wrong number of arguments for 'config' command"u8, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                var param = GetCommand(bufSpan, out var success1);
                 if (!success1) return false;
+
                 if (param.SequenceEqual(CmdStrings.GET) || param.SequenceEqual(CmdStrings.get))
                 {
-                    if (count > 2)
-                    {
-                        if (!DrainCommands(bufSpan, count - 1))
-                            return false;
-                        errorFlag = true;
-                        errorCmd = Encoding.ASCII.GetString(param);
-                    }
-                    else
-                    {
-                        var key = GetCommand(bufSpan, out bool success2);
-                        if (!success2) return false;
+                    if (!NetworkConfigGet(bufSpan, count, out errorFlag))
+                        return false;
 
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.GetConfig(key), ref dcurr, dend))
-                            SendAndReset();
-                    }
+                    if (errorFlag)
+                        errorCmd = Encoding.ASCII.GetString(CmdStrings.CONFIG) + "|" + Encoding.ASCII.GetString(param);
                 }
                 else if (param.SequenceEqual(CmdStrings.REWRITE) || param.SequenceEqual(CmdStrings.rewrite))
                 {

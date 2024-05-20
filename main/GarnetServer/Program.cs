@@ -3,8 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Reflection;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -16,8 +14,6 @@ namespace Garnet
     /// </summary>
     class Program
     {
-        private static readonly string CustomRespCommandInfoJsonFileName = "CustomRespCommandsInfo.json";
-
         static void Main(string[] args)
         {
             try
@@ -49,24 +45,19 @@ namespace Garnet
         /// </summary>
         static bool TryRegisterExtensions(GarnetServer server)
         {
-            var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-
-            if (!TryGetRespCommandsInfo(Path.Combine(binPath!, CustomRespCommandInfoJsonFileName), out var customCommandsInfo))
-                return false;
-
             // Register custom command on raw strings (SETIFPM = "set if prefix match")
-            server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), customCommandsInfo["SETIFPM"]);
+            server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand());
 
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), customCommandsInfo["SETWPIFPGT"]);
+            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             // Register custom command on raw strings (DELIFM = "delete if value matches")
-            server.Register.NewCommand("DELIFM", 1, CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand(), customCommandsInfo["DELIFM"]);
+            server.Register.NewCommand("DELIFM", 1, CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
 
             // Register custom commands on objects
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, customCommandsInfo["MYDICTSET"]);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, customCommandsInfo["MYDICTGET"]);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
 
             // Register stored procedure to run a transactional command
             server.Register.NewTransactionProc("READWRITETX", 3, () => new ReadWriteTxn());

@@ -629,8 +629,6 @@ namespace Garnet
                     throw new Exception($"Authentication mode {AuthenticationMode} is not supported.");
             }
         }
-
-
     }
 
     /// <summary>
