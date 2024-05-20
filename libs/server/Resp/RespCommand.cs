@@ -18,155 +18,147 @@ namespace Garnet.server
         NONE = 0x00,
 
         // Read-only commands
-        GET,
-        GETRANGE,
-        MGET,
-        GETBIT,
         BITCOUNT,
-        BITPOS,
         BITFIELD_RO,
-        PFCOUNT,
-        EXISTS,
-        TTL,
-        PTTL,
-        STRLEN,
+        BITPOS,
         COSCAN,
+        DBSIZE,
+        EXISTS,
+        GEODIST,
+        GEOHASH,
+        GEOPOS,
+        GEOSEARCH,
+        GET,
+        GETBIT,
+        GETRANGE,
+        HEXISTS,
+        HGET,
+        HGETALL,
+        HKEYS,
+        HLEN,
+        HMGET,
+        HRANDFIELD,
+        HSCAN,
+        HSTRLEN,
+        HVALS,
+        KEYS,
+        LINDEX,
+        LLEN,
+        LRANGE,
+        MGET,
+        PFCOUNT,
+        PTTL,
+        SCAN,
+        SCARD,
+        SDIFF,
+        SISMEMBER,
+        SMEMBERS,
+        SRANDMEMBER,
+        SSCAN,
+        STRLEN,
+        SUNION,
+        TTL,
+        TYPE,
+        ZCARD,
+        ZCOUNT,
+        ZDIFF,
+        ZLEXCOUNT,
+        ZMSCORE,
+        ZRANDMEMBER,
+        ZRANGE,
+        ZRANGEBYSCORE,
+        ZRANK,
+        ZREVRANGE,
+        ZREVRANK,
+        ZSCAN,
+        ZSCORE,
 
-        // Upsert or RMW commands
-        SET,
+        // Write commands
+        APPEND,
+        BITFIELD,
+        BITOP,
+        DECR,
+        DECRBY,
+        DEL,
+        EXPIRE,
+        FLUSHDB,
+        GEOADD,
+        GETDEL,
+        HDEL,
+        HINCRBY,
+        HINCRBYFLOAT,
+        HMSET,
+        HSET,
+        HSETNX,
+        INCR,
+        INCRBY,
+        LINSERT,
+        LMOVE,
+        LPOP,
+        LPUSH,
+        LPUSHX,
+        LREM,
+        LSET,
+        LTRIM,
+        MIGRATE,
         MSET,
+        MSETNX,
+        PERSIST,
+        PEXPIRE,
+        PFADD,
+        PFMERGE,
         PSETEX,
+        RENAME,
+        RPOP,
+        RPOPLPUSH,
+        RPUSH,
+        RPUSHX,
+        SADD,
+        SDIFFSTORE,
+        SET,
+        SETBIT,
         SETEX,
         SETEXNX,
         SETEXXX,
         SETKEEPTTL,
         SETKEEPTTLXX,
-        SETBIT,
-        BITOP,
-        BITFIELD,
-        PFADD,
-        PFMERGE,
-        INCR,
-        INCRBY,
-        DECR,
-        DECRBY,
-        RENAME,
-        PERSIST,
-        EXPIRE,
-        DEL,
-        PEXPIRE,
         SETRANGE,
-        GETDEL,
-        MSETNX,
-        APPEND,
-
-        // List commands
-        LPOP,
-        LPUSH,
-        LPUSHX,
-        RPOP,
-        RPUSH,
-        RPUSHX,
-        LLEN,
-        LTRIM,
-        LRANGE,
-        LINDEX,
-        LINSERT,
-        LREM,
-        RPOPLPUSH,
-        LMOVE,
-        LSET,
-
-        // Hash commands
-        HDEL,
-        HEXISTS,
-        HGET,
-        HGETALL,
-        HINCRBY,
-        HINCRBYFLOAT,
-        HKEYS,
-        HLEN,
-        HMGET,
-        HMSET,
-        HRANDFIELD,
-        HSCAN,
-        HSET,
-        HSETNX,
-        HSTRLEN,
-        HVALS,
-
-        // Set commands
-        SADD,
-        SREM,
-        SPOP,
-        SMEMBERS,
-        SCARD,
-        SSCAN,
         SMOVE,
-        SRANDMEMBER,
-        SISMEMBER,
-        SUNION,
+        SPOP,
+        SREM,
         SUNIONSTORE,
-        SDIFF,
-        SDIFFSTORE,
-
-        // GeoHash (implemented as SortedSet) commands
-        GEOADD,
-        GEOHASH,
-        GEODIST,
-        GEOPOS,
-        GEOSEARCH,
-
-        // SortedSet commands
+        UNLINK,
         ZADD,
-        ZCARD,
-        ZPOPMAX,
-        ZSCORE,
-        ZREM,
-        ZCOUNT,
         ZINCRBY,
-        ZRANK,
-        ZRANGE,
-        ZRANGEBYSCORE,
-        ZREVRANGE,
-        ZREVRANK,
+        ZPOPMAX,
+        ZPOPMIN,
+        ZREM,
         ZREMRANGEBYLEX,
         ZREMRANGEBYRANK,
         ZREMRANGEBYSCORE,
-        ZLEXCOUNT,
-        ZPOPMIN,
-        ZRANDMEMBER,
-        ZDIFF,
-        ZSCAN,
-        ZMSCORE,
 
-        // Admin commands
+        // Neither read nor write commands
         PING,
         QUIT,
         AUTH,
         COMMAND,
-        DBSIZE,
-        KEYS,
+
         PUBLISH,
         SUBSCRIBE,
         PSUBSCRIBE,
         UNSUBSCRIBE,
         PUNSUBSCRIBE,
         ASKING,
-        MIGRATE,
         SELECT,
         ECHO,
         CONFIG,
         CLIENT,
-        UNLINK,
-        TYPE,
-        SCAN,
+
         MEMORY,
         MONITOR,
         MODULE,
         REGISTERCS,
 
-        // Transaction commands
         MULTI,
         EXEC,
         DISCARD,
@@ -174,13 +166,11 @@ namespace Garnet.server
         UNWATCH,
         RUNTXP,
 
-        // Cluster commands
         READONLY,
         READWRITE,
         REPLICAOF,
         SECONDARYOF,
 
-        // Misc. commands
         INFO,
         CLUSTER,
         LATENCY,
@@ -189,7 +179,6 @@ namespace Garnet.server
         LASTSAVE,
         BGSAVE,
         COMMITAOF,
-        FLUSHDB,
         FORCEGC,
         FAILOVER,
         ACL,
@@ -213,8 +202,12 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong OneIfWrite(this RespCommand cmd)
         {
-            // todo: this was a mask and shift before hand, speed it up
-            return (cmd >= RespCommand.SET && cmd <= RespCommand.ZMSCORE) ? 1UL : 0;
+            // if cmd < RespCommand.Append - underflows, setting high bits
+            uint test = (uint)((int)cmd - (int)RespCommand.APPEND);
+
+            // force to be branchless for same reasons as OneIfRead
+            bool inRange = test <= (RespCommand.ZREMRANGEBYSCORE - RespCommand.APPEND);
+            return Unsafe.As<bool, byte>(ref inRange);
         }
 
         /// <summary>
@@ -223,8 +216,10 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong OneIfRead(this RespCommand cmd)
         {
-            // todo: this was a mask and shift before hand, speed it up
-            return (cmd >= RespCommand.GET && cmd <= RespCommand.COSCAN) ? 1UL : 0;
+            // force this to be branchless (as predictability is poor)
+            // and we're in the hot path
+            bool inRange = cmd <= RespCommand.ZSCORE;
+            return Unsafe.As<bool, byte>(ref inRange);
         }
 
         /// <summary>
@@ -236,7 +231,7 @@ namespace Garnet.server
         public static bool HasSubCommands(this RespCommand cmd)
         {
             // todo: this needs to be fast
-            return 
+            return
                 cmd switch
                 {
                     RespCommand.ACL => true,

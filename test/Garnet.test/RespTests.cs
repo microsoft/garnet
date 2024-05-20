@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -49,6 +51,69 @@ namespace Garnet.test
             Assert.IsEmpty(duplicateIds, "Found ambiguous command IDs");
         }
 
+        /// <summary>
+        /// Test that we recognize "write" ops correctly for metric purposes.
+        /// </summary>
+        [Test]
+        public void OneIfWrite()
+        {
+            var wrong = new List<RespCommand>();
+
+            foreach (var cmd in Enum.GetValues<RespCommand>())
+            {
+                if (cmd == RespCommand.NONE || cmd == RespCommand.INVALID)
+                {
+                    continue;
+                }
+
+                if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
+                {
+                    continue;
+                }
+
+                var isWrite = info.AclCategories.HasFlag(RespAclCategories.Write);
+                var expected = isWrite ? 1UL : 0;
+
+                if (expected != cmd.OneIfWrite())
+                {
+                    wrong.Add(cmd);
+                }
+            }
+
+            Assert.IsEmpty(wrong, "These commands are incorrectly classified w.r.t. OneIfRead");
+        }
+
+        /// <summary>
+        /// Test that we recognize "read" ops correctly for metric purposes.
+        /// </summary>
+        [Test]
+        public void OneIfRead()
+        {
+            var wrong = new List<RespCommand>();
+
+            foreach (var cmd in Enum.GetValues<RespCommand>())
+            {
+                if (cmd == RespCommand.NONE || cmd == RespCommand.INVALID)
+                {
+                    continue;
+                }
+
+                if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
+                {
+                    continue;
+                }
+
+                var isRead = info.AclCategories.HasFlag(RespAclCategories.Read);
+                var expected = isRead ? 1UL : 0;
+
+                if (expected != cmd.OneIfRead())
+                {
+                    wrong.Add(cmd);
+                }
+            }
+
+            Assert.IsEmpty(wrong, "These commands are incorrectly classified w.r.t. OneIfRead");
+        }
 
         [Test]
         public void SingleSetGet()
