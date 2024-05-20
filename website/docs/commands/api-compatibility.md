@@ -235,9 +235,9 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [SCARD](data-structures.md#scard) | ➕ |  |
 |  | [SDIFF](data-structures.md#sdiff) | ➕ |  |
 |  | [SDIFFSTORE](data-structures.md#sdiffstore) | ➕ |  |
-|  | SINTER | ➖ |  |
+|  | [SINTER](data-structures.md#sinter) | ➕ |  |
+|  | [SINTERSTORE](data-structures.md#sinterstore) | ➕ |  |
 |  | SINTERCARD | ➖ |  |
-|  | SINTERSTORE | ➖ |  |
 |  | SISMEMBER | ➕ |  |
 |  | [SMEMBERS](data-structures.md#smembers) | ➕ |  |
 |  | SMISMEMBER | ➖ |  |
