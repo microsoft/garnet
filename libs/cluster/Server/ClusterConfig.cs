@@ -169,6 +169,16 @@ namespace Garnet.cluster
             return false;
         }
 
+        /// <summary>
+        /// Check if local node is a PRIMARY node
+        /// </summary>
+        public bool IsPrimary => LocalNodeRole == NodeRole.PRIMARY;
+
+        /// <summary>
+        /// Check if local node is a REPLICA node
+        /// </summary>
+        public bool IsReplica => LocalNodeRole == NodeRole.REPLICA;
+
         #region GetLocalNodeInfo
         /// <summary>
         /// Get local node ip
