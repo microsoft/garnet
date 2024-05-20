@@ -1898,7 +1898,6 @@ namespace Garnet.test
             Assert.AreEqual(2, (int)resultDict["proto"]);
             Assert.AreEqual("master", (string)resultDict["role"]);
 
-            /*
             // Test "HELLO 3"
             result = db.Execute("HELLO", "3");
 
@@ -1909,7 +1908,6 @@ namespace Garnet.test
             Assert.IsNotNull(resultDict);
             Assert.AreEqual(3, (int)resultDict["proto"]);
             Assert.AreEqual("master", (string)resultDict["role"]);
-            */
         }
     }
 }
