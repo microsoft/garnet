@@ -64,7 +64,7 @@ namespace Garnet.test
             Assert.AreEqual(2, members.Length);
 
             var response = db.Execute("MEMORY", "USAGE", "user1:set");
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = 272;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -121,7 +121,7 @@ namespace Garnet.test
             _ = db.SetMembers(new RedisKey("myset"));
 
             var response = db.Execute("MEMORY", "USAGE", "myset");
-            var actualValue = ResultType.Integer == response.Type ? int.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? int.Parse(response.ToString()) : -1;
             var expectedResponse = -1;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -156,7 +156,7 @@ namespace Garnet.test
             Assert.IsTrue(existingMemberExists, "Existing member 'ItemOne' does not exist in the set.");
 
             var memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            var actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             var expectedResponse = 424;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -164,7 +164,7 @@ namespace Garnet.test
             Assert.AreEqual(true, response);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -172,7 +172,7 @@ namespace Garnet.test
             Assert.AreEqual(false, response);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -180,7 +180,7 @@ namespace Garnet.test
             Assert.AreEqual(2, longResponse);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             expectedResponse = 200;
             Assert.AreEqual(expectedResponse, actualValue);
 
