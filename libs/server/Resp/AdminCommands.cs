@@ -299,7 +299,7 @@ namespace Garnet.server
                         var param = GetCommand(bufSpan, out bool success1);
                         if (!success1) return false;
                         count--;
-                        if (EqualsIgnoreCase(param, CmdStrings.AUTH))
+                        if (param.EqualsIgnoreCase(CmdStrings.AUTH))
                         {
                             if (count < 2)
                             {
@@ -317,7 +317,7 @@ namespace Garnet.server
                             if (!success1) return false;
                             count--;
                         }
-                        else if (EqualsIgnoreCase(param, CmdStrings.SETNAME))
+                        else if (param.EqualsIgnoreCase(CmdStrings.SETNAME))
                         {
                             if (count < 1)
                             {
@@ -560,33 +560,6 @@ namespace Garnet.server
                 var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, errorCmd);
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
-            }
-            return true;
-        }
-
-        bool EqualsIgnoreCase(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
-        {
-            if (left.SequenceEqual(right))
-                return true;
-            if (left.Length != right.Length)
-                return false;
-            for (int i = 0; i < left.Length; i++)
-            {
-                byte b1 = left[i];
-                byte b2 = right[i];
-                if (b1 == b2)
-                    continue;
-                if (b1 >= 65 && b1 <= 90)
-                {
-                    if (b1 + 32 == b2)
-                        continue;
-                }
-                else if (b1 >= 97 && b1 <= 122)
-                {
-                    if (b1 - 32 == b2)
-                        continue;
-                }
-                return false;
             }
             return true;
         }
