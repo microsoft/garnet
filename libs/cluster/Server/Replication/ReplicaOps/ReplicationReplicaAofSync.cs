@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -26,18 +27,18 @@ namespace Garnet.cluster
                 if (clusterProvider.replicationManager.Recovering)
                 {
                     logger?.LogWarning("Replica is recovering cannot sync AOF");
-                    throw new Exception("Replica is recovering cannot sync AOF");
+                    throw new GarnetException("Replica is recovering cannot sync AOF", LogLevel.Warning);
                 }
 
                 if (currentConfig.LocalNodeRole != NodeRole.REPLICA)
                 {
                     logger?.LogWarning("This node {nodeId} is not a replica", currentConfig.LocalNodeId);
-                    throw new Exception($"This node {currentConfig.LocalNodeId} is not a replica");
+                    throw new GarnetException($"This node {currentConfig.LocalNodeId} is not a replica", LogLevel.Warning);
                 }
 
                 if (clusterProvider.serverOptions.MainMemoryReplication)
                 {
-                    int firstRecordLength = GetFirstAofEntryLength(record);
+                    var firstRecordLength = GetFirstAofEntryLength(record);
                     if (previousAddress > ReplicationOffset ||
                         currentAddress > previousAddress + firstRecordLength)
                     {
@@ -52,20 +53,20 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
                     logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", ReplicationOffset, storeWrapper.appendOnlyFile.TailAddress);
-                    throw new Exception($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}");
+                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}", LogLevel.Warning);
                 }
 
                 // Enqueue to AOF
-                clusterProvider.storeWrapper.appendOnlyFile?.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
+                _ = clusterProvider.storeWrapper.appendOnlyFile?.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
 
                 // TODO: rest of the processing can be moved off the critical path
 
                 ReplicationOffset = currentAddress;
-                byte* ptr = record;
+                var ptr = record;
                 while (ptr < record + recordLength)
                 {
-                    int entryLength = storeWrapper.appendOnlyFile.HeaderSize;
-                    int payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
+                    var entryLength = storeWrapper.appendOnlyFile.HeaderSize;
+                    var payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
                     if (payloadLength > 0)
                     {
                         aofProcessor.ProcessAofRecordInternal(null, ptr + entryLength, payloadLength, true);
@@ -88,20 +89,20 @@ namespace Garnet.cluster
 
                 if (ReplicationOffset != nextAddress)
                 {
-                    logger?.LogError("Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, nextAddress {nextAddress}", ReplicationOffset, nextAddress);
-                    throw new Exception($"Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, nextAddress {nextAddress}");
+                    logger?.LogWarning("Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, nextAddress {nextAddress}", ReplicationOffset, nextAddress);
+                    throw new GarnetException($"Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, nextAddress {nextAddress}", LogLevel.Warning);
                 }
 
                 if (ReplicationOffset != storeWrapper.appendOnlyFile.TailAddress)
                 {
-                    logger?.LogError("After ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", ReplicationOffset, storeWrapper.appendOnlyFile.TailAddress);
-                    throw new Exception($"After ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}");
+                    logger?.LogWarning("After ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", ReplicationOffset, storeWrapper.appendOnlyFile.TailAddress);
+                    throw new GarnetException($"After ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.TailAddress}", LogLevel.Warning);
                 }
             }
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ProcessPrimaryStream");
-                throw;
+                throw new GarnetException(ex.Message, ex, LogLevel.Warning);
             }
         }
 
