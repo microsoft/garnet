@@ -131,7 +131,7 @@ namespace Garnet.server.ACL
             {
                 // Default user always has full access
                 defaultUser = new User(DefaultUserName);
-                defaultUser.AddCategory(CommandCategory.Flag.All);
+                defaultUser.AddCategory(RespAclCategories.All);
 
                 // Automatically created default users are always enabled
                 defaultUser.IsEnabled = true;

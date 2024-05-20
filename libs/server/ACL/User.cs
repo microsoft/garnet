@@ -3,10 +3,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Reflection.Metadata.Ecma335;
-using System.Security;
 using System.Text;
 using System.Threading;
 
@@ -198,8 +195,7 @@ namespace Garnet.server.ACL
                         continue;
                     }
 
-                    // todo: probably just remove CommandCategory?
-                    string categoryName = CommandCategory.GetNameByFlag(CommandCategory.FromRespAclCategories(cat));
+                    string categoryName = ACLParser.GetNameByACLCategory(cat);
 
                     if (allAllowed)
                     {
@@ -308,16 +304,12 @@ namespace Garnet.server.ACL
         /// Adds the given category to the user.
         /// </summary>
         /// <param name="category">Bit flag of the category to add.</param>
-        public void AddCategory(CommandCategory.Flag category)
+        public void AddCategory(RespAclCategories category)
         {
-            // todo: probably just remove CommandCategory.Flag?
-
             IReadOnlyList<RespCommandsInfo> commandInfos;
-            if (category != CommandCategory.Flag.All)
+            if (category != RespAclCategories.All)
             {
-                RespAclCategories trueCat = CommandCategory.ToRespAclCategory(category);
-
-                if (!RespCommandsInfo.TryGetCommandsforAclCategory(trueCat, out commandInfos))
+                if (!RespCommandsInfo.TryGetCommandsforAclCategory(category, out commandInfos))
                 {
                     throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
                 }
@@ -334,7 +326,7 @@ namespace Garnet.server.ACL
             {
                 oldPerms = prev;
 
-                if (category == CommandCategory.Flag.All)
+                if (category == RespAclCategories.All)
                 {
                     updated = CommandPermissionSet.All;
                 }
@@ -354,15 +346,12 @@ namespace Garnet.server.ACL
         /// Removes the given category from the user.
         /// </summary>
         /// <param name="category">Bit flag of the category to remove.</param>
-        public void RemoveCategory(CommandCategory.Flag category)
+        public void RemoveCategory(RespAclCategories category)
         {
-            // todo: probably just remove CommandCategory.Flag?
             IReadOnlyList<RespCommandsInfo> commandInfos;
-            if (category != CommandCategory.Flag.All)
+            if (category != RespAclCategories.All)
             {
-                RespAclCategories trueCat = CommandCategory.ToRespAclCategory(category);
-
-                if (!RespCommandsInfo.TryGetCommandsforAclCategory(trueCat, out commandInfos))
+                if (!RespCommandsInfo.TryGetCommandsforAclCategory(category, out commandInfos))
                 {
                     throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
                 }
@@ -379,7 +368,7 @@ namespace Garnet.server.ACL
             {
                 oldPerms = prev;
 
-                if (category == CommandCategory.Flag.All)
+                if (category == RespAclCategories.All)
                 {
                     updated = CommandPermissionSet.None;
                 }

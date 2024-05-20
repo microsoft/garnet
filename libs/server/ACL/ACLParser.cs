@@ -3,12 +3,42 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Garnet.server.ACL
 {
     class ACLParser
     {
         private static readonly char[] WhitespaceChars = [' ', '\t', '\r', '\n'];
+
+        private static readonly Dictionary<string, RespAclCategories> categoryNames = new Dictionary<string, RespAclCategories>()
+        {
+            ["admin"] = RespAclCategories.Admin,
+            ["bitmap"] = RespAclCategories.Bitmap,
+            ["blocking"] = RespAclCategories.Blocking,
+            ["connection"] = RespAclCategories.Connection,
+            ["dangerous"] = RespAclCategories.Dangerous,
+            ["geo"] = RespAclCategories.Geo,
+            ["hash"] = RespAclCategories.Hash,
+            ["hyperloglog"] = RespAclCategories.HyperLogLog,
+            ["fast"] = RespAclCategories.Fast,
+            ["keyspace"] = RespAclCategories.KeySpace,
+            ["list"] = RespAclCategories.List,
+            ["pubsub"] = RespAclCategories.PubSub,
+            ["read"] = RespAclCategories.Read,
+            ["scripting"] = RespAclCategories.Scripting,
+            ["set"] = RespAclCategories.Set,
+            ["sortedset"] = RespAclCategories.SortedSet,
+            ["slow"] = RespAclCategories.Slow,
+            ["stream"] = RespAclCategories.Stream,
+            ["string"] = RespAclCategories.String,
+            ["transaction"] = RespAclCategories.Transaction,
+            ["write"] = RespAclCategories.Write,
+            ["garnet"] = RespAclCategories.Garnet,
+            ["all"] = RespAclCategories.All,
+        };
+
+        private static readonly Dictionary<RespAclCategories, string> categoryNamesReversed = categoryNames.ToDictionary(static kv => kv.Value, static kv => kv.Key);
 
         /// <summary>
         /// Parses a single-line ACL rule and returns a new user according to that rule.
@@ -159,10 +189,11 @@ namespace Garnet.server.ACL
                 // Parse category name
                 string categoryName = op.Substring(2);
 
-                CommandCategory.Flag category;
+
+                RespAclCategories category;
                 try
                 {
-                    category = CommandCategory.GetFlagByName(categoryName);
+                    category = ACLParser.GetACLCategoryByName(categoryName);
                 }
                 catch (KeyNotFoundException)
                 {
@@ -192,5 +223,24 @@ namespace Garnet.server.ACL
                 throw new ACLUnknownOperationException(op);
             }
         }
+
+        /// <summary>
+        /// Lookup the <see cref="RespAclCategories"/> by equivalent string.
+        /// </summary>
+        public static RespAclCategories GetACLCategoryByName(string categoryName)
+        => ACLParser.categoryNames[categoryName];
+
+        /// <summary>
+        /// Lookup the string equivalent to <paramref name="category"/>.
+        /// </summary>
+        public static string GetNameByACLCategory(RespAclCategories category)
+        => ACLParser.categoryNamesReversed[category];
+
+        /// <summary>
+        /// Returns a collection of all valid category names.
+        /// </summary>
+        /// <returns>Collection of valid category names.</returns>
+        public static IReadOnlyCollection<string> ListCategories()
+        => ACLParser.categoryNames.Keys;
     }
 }

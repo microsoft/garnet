@@ -99,7 +99,7 @@ namespace Garnet.server
                     return success;
                 }
 
-                var categories = CommandCategory.ListCategories();
+                var categories = ACLParser.ListCategories();
                 RespWriteUtils.WriteArrayLength(categories.Count, ref dcurr, dend);
 
                 foreach (var category in categories)
