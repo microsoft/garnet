@@ -299,7 +299,7 @@ namespace Garnet.server
                                     return false;
                                 count = 0;
                                 errorFlag = true;
-                                errorCmd = "hello";
+                                errorCmd = nameof(RespCommand.HELLO);
                                 break;
                             }
                             authUsername = GetCommand(bufSpan, out success1);
@@ -317,7 +317,7 @@ namespace Garnet.server
                                     return false;
                                 count = 0;
                                 errorFlag = true;
-                                errorCmd = "hello";
+                                errorCmd = nameof(RespCommand.HELLO);
                                 break;
                             }
 
@@ -332,7 +332,7 @@ namespace Garnet.server
                                 return false;
                             count = 0;
                             errorFlag = true;
-                            errorCmd = "hello";
+                            errorCmd = nameof(RespCommand.HELLO);
                         }
                     }
                 }
