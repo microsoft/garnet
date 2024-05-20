@@ -71,12 +71,12 @@ namespace Garnet.server
                         {
                             if (username.IsEmpty)
                             {
-                                while (!RespWriteUtils.WriteError("WRONGPASS Invalid password"u8, ref dcurr, dend))
+                                while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD, ref dcurr, dend))
                                     SendAndReset();
                             }
                             else
                             {
-                                while (!RespWriteUtils.WriteError("WRONGPASS Invalid username/password combination"u8, ref dcurr, dend))
+                                while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD, ref dcurr, dend))
                                     SendAndReset();
                             }
                         }
@@ -589,7 +589,7 @@ namespace Garnet.server
             {
                 if (respProtocolVersion.Value is < 2 or > 3)
                 {
-                    while (!RespWriteUtils.WriteError("ERR Unsupported protocol version"u8, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION, ref dcurr, dend))
                         SendAndReset();
                     return;
                 }
@@ -603,16 +603,15 @@ namespace Garnet.server
                 {
                     if (username.IsEmpty)
                     {
-                        while (!RespWriteUtils.WriteError("WRONGPASS Invalid password"u8, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD, ref dcurr, dend))
                             SendAndReset();
-                        return;
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteError("WRONGPASS Invalid username/password combination"u8, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD, ref dcurr, dend))
                             SendAndReset();
-                        return;
                     }
+                    return;
                 }
             }
 
