@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 
 namespace Garnet.common
 {
@@ -55,12 +56,12 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Check if two byte spans are equal, ignoring case if there are ASCII bytes.
+        /// Check if two byte spans are equal, where right is an all-upper-case span, ignoring case if there are ASCII bytes.
         /// </summary>
         /// <param name="left"></param>
         /// <param name="right"></param>
         /// <returns></returns>
-        public static bool EqualsIgnoreCase(this ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
+        public static bool EqualsUpperCaseSpanIgnoringCase(this ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
         {
             if (left.SequenceEqual(right))
                 return true;
@@ -68,29 +69,23 @@ namespace Garnet.common
                 return false;
             for (int i = 0; i < left.Length; i++)
             {
-                byte b1 = left[i];
-                byte b2 = right[i];
-                if (b1 == b2)
+                var b1 = left[i];
+                var b2 = right[i];
+
+                // Debug assert that b2 is an upper case letter 'A'-'Z'
+                Debug.Assert(b2 is >= 65 and <= 90);
+                
+                if (b1 == b2 || b1 - 32 == b2)
                     continue;
-                if (b1 >= 65 && b1 <= 90)
-                {
-                    if (b1 + 32 == b2)
-                        continue;
-                }
-                else if (b1 >= 97 && b1 <= 122)
-                {
-                    if (b1 - 32 == b2)
-                        continue;
-                }
                 return false;
             }
             return true;
         }
 
         /// <summary>
-        /// Check if two byte spans are equal, ignoring case if there are ASCII bytes.
+        /// Check if two byte spans are equal, where right is an all-upper-case span, ignoring case if there are ASCII bytes.
         /// </summary>
-        public static bool EqualsIgnoreCase(this Span<byte> left, ReadOnlySpan<byte> right)
-            => EqualsIgnoreCase((ReadOnlySpan<byte>)left, right);
+        public static bool EqualsUpperCaseSpanIgnoringCase(this Span<byte> left, ReadOnlySpan<byte> right)
+            => EqualsUpperCaseSpanIgnoringCase((ReadOnlySpan<byte>)left, right);
     }
 }
