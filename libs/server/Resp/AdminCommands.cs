@@ -595,7 +595,7 @@ namespace Garnet.server
         {
             if (respProtocolVersion != null)
             {
-                if (respProtocolVersion.Value is < 2 or > 3)
+                if (respProtocolVersion.Value != 2)
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION, ref dcurr, dend))
                         SendAndReset();
