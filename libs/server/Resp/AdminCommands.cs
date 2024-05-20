@@ -250,8 +250,16 @@ namespace Garnet.server
             {
                 if (count == 0)
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
-                        SendAndReset();
+                    if (isSubscriptionSession && respProtocolVersion == 2)
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.SUSCRIBE_PONG, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
                 else if (count == 1)
                 {
