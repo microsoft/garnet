@@ -104,6 +104,10 @@ namespace Garnet.server
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
 
+
+        int respProtocolVersion = 2;
+        string clientName = null;
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,

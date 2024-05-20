@@ -143,6 +143,7 @@ namespace CommandInfoUpdater
             new("PFCOUNT", RespCommand.PFCOUNT),
             new("PFMERGE", RespCommand.PFMERGE),
             new("PING", RespCommand.PING),
+            new("HELLO", RespCommand.HELLO),
             new("PSETEX", RespCommand.PSETEX),
             new("PSUBSCRIBE", RespCommand.PSUBSCRIBE),
             new("PTTL", RespCommand.PTTL),

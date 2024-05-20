@@ -19,7 +19,7 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
     <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="7.5.1" />
     <PackageVersion Include="Microsoft.IdentityModel.Validators" Version="7.5.1" />
-    <PackageVersion Include="StackExchange.Redis" Version="2.6.80" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.7.33" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="7.5.1" />
     <PackageVersion Include="System.Interactive.Async" Version="6.0.1" />
   </ItemGroup>
