@@ -24,8 +24,16 @@ namespace Garnet.server
             networkSender.EnterAndGetResponseObject(out dcurr, out dend);
             try
             {
-                while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
-                    SendAndReset();
+                if (respProtocolVersion == 2)
+                {
+                    while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WritePushLength(3, ref dcurr, dend))
+                        SendAndReset();
+                }
                 while (!RespWriteUtils.WriteBulkString("message"u8, ref dcurr, dend))
                     SendAndReset();
                 while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)), ref dcurr, dend))
@@ -48,8 +56,16 @@ namespace Garnet.server
             networkSender.EnterAndGetResponseObject(out dcurr, out dend);
             try
             {
-                while (!RespWriteUtils.WriteArrayLength(4, ref dcurr, dend))
-                    SendAndReset();
+                if (respProtocolVersion == 2)
+                {
+                    while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WritePushLength(3, ref dcurr, dend))
+                        SendAndReset();
+                }
                 while (!RespWriteUtils.WriteBulkString("pmessage"u8, ref dcurr, dend))
                     SendAndReset();
                 while (!RespWriteUtils.WriteBulkString(new Span<byte>(patternPtr + sizeof(int), patternLength - sizeof(int)), ref dcurr, dend))
