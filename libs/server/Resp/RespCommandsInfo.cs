@@ -155,6 +155,26 @@ namespace Garnet.server
             /// Cluster|Replicate
             /// </summary>
             public const byte ClusterReplicate = 21;
+            /// <summary>
+            /// Cluster|DelKeysInSlot
+            /// </summary>
+            public const byte ClusterDelKeysInSlot = 22;
+            /// <summary>
+            /// Cluster|DelKeysInSlotRange
+            /// </summary>
+            public const byte ClusterDelKeysInSlotRange = 23;
+            /// <summary>
+            /// Cluster|SetSlotsRange
+            /// </summary>
+            public const byte ClusterSetSlotsRange = 24;
+            /// <summary>
+            /// Cluster|SlotState
+            /// </summary>
+            public const byte ClusterSlotState = 25;
+            /// <summary>
+            /// Cluster|Migrate
+            /// </summary>
+            public const byte ClusterMigrate = 26;
 
             /// <summary>
             /// Config|Get

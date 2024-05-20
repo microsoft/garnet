@@ -97,30 +97,30 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CONFIG)
             {
-                var param = GetCommand(bufSpan, out bool success1);
+
+                // Terminate early if command arguments are less than expected
+                if (count < 1)
+                {
+                    while (!RespWriteUtils.WriteBulkString("ERR wrong number of arguments for 'config' command"u8, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                var param = GetCommand(bufSpan, out var success1);
                 if (!success1) return false;
+
                 if (param.SequenceEqual(CmdStrings.GET) || param.SequenceEqual(CmdStrings.get))
                 {
-                    if (count > 2)
+                    if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.ConfigGet, count - 1, out success))
                     {
-                        if (!DrainCommands(bufSpan, count - 1))
-                            return false;
-                        errorFlag = true;
-                        errorCmd = Encoding.ASCII.GetString(param);
+                        return success;
                     }
-                    else
-                    {
-                        if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.ConfigGet, count - 1, out success))
-                        {
-                            return success;
-                        }
 
-                        var key = GetCommand(bufSpan, out bool success2);
-                        if (!success2) return false;
+                    if (!NetworkConfigGet(bufSpan, count, out errorFlag))
+                        return false;
 
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.GetConfig(key), ref dcurr, dend))
-                            SendAndReset();
-                    }
+                    if (errorFlag)
+                        errorCmd = Encoding.ASCII.GetString(CmdStrings.CONFIG) + "|" + Encoding.ASCII.GetString(param);
                 }
                 else if (param.SequenceEqual(CmdStrings.REWRITE) || param.SequenceEqual(CmdStrings.rewrite))
                 {
@@ -256,8 +256,7 @@ namespace Garnet.server
                     GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
                     var length = readHead - oldReadHead;
-                    while (!RespWriteUtils.WriteDirect(bufSpan.Slice(oldReadHead, length), ref dcurr, dend))
-                        SendAndReset();
+                    WriteDirectLarge(bufSpan.Slice(oldReadHead, length));
                 }
             }
             else if (command == RespCommand.INFO)
@@ -298,7 +297,7 @@ namespace Garnet.server
                     errorCmd = "ping";
                 }
             }
-            else if ((command == RespCommand.CLUSTER) || (command == RespCommand.MIGRATE) || (command == RespCommand.FAILOVER) || (command == RespCommand.REPLICAOF) || (command == RespCommand.SECONDARYOF))
+            else if (command is RespCommand.CLUSTER or RespCommand.MIGRATE or RespCommand.FAILOVER or RespCommand.REPLICAOF or RespCommand.SECONDARYOF)
             {
                 if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.None, count, out success))
                 {
@@ -536,16 +535,6 @@ namespace Garnet.server
                 var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, errorCmd);
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
-            }
-            return true;
-        }
-
-        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                GetCommand(bufSpan, out bool success1);
-                if (!success1) return false;
             }
             return true;
         }
