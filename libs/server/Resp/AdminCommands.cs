@@ -27,11 +27,6 @@ namespace Garnet.server
 
             if (command == RespCommand.AUTH)
             {
-                if (!CheckACLPermissions(RespCommand.AUTH, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
                 // AUTH [<username>] <password>
                 if (count < 1 || count > 2)
                 {

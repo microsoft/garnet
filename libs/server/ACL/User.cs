@@ -154,6 +154,68 @@ namespace Garnet.server.ACL
             }
 
             /// <summary>
+            /// Build the equivalent "+@all -@foo +set -acl|setuser" string for this permission set.
+            /// </summary>
+            public string GetDescription()
+            {
+                if (this == CommandPermissionSet.All)
+                {
+                    return "+@all";
+                }
+                else if (this == CommandPermissionSet.None)
+                {
+                    return "";
+                }
+
+                StringBuilder sb = new();
+                RespAclCategories permittedCategories = 0;
+
+                // handle individual categories
+                foreach (RespAclCategories cat in Enum.GetValues<RespAclCategories>())
+                {
+                    if (cat == RespAclCategories.None)
+                    {
+                        continue;
+                    }
+
+                    bool allAllowed = true;
+                    if (RespCommandsInfo.TryGetCommandsforAclCategory(cat, out IReadOnlyList<RespCommandsInfo> commands))
+                    {
+                        foreach ((RespCommand cmd, byte subCmd) in DetermineCommandDetails(commands))
+                        {
+                            bool canRun = this.CanRunCommand(cmd, subCmd);
+                            allAllowed &= canRun;
+                        }
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    if (!allAllowed)
+                    {
+                        // empty category
+                        continue;
+                    }
+
+                    // todo: probably just remove CommandCategory?
+                    string categoryName = CommandCategory.GetNameByFlag(CommandCategory.FromRespAclCategories(cat));
+
+                    if (allAllowed)
+                    {
+                        sb.Append($" +@{categoryName}");
+                        permittedCategories |= cat;
+                    }
+                }
+
+                // todo: individual commands
+
+                // todo: subcommands
+
+                return sb.ToString();
+            }
+
+            /// <summary>
             /// Figure out the maximum actual number of sub commands we have configured.
             /// </summary>
             private static byte GetMaxSubCommands()
@@ -447,67 +509,12 @@ namespace Garnet.server.ACL
 
             // ACLs
             CommandPermissionSet perms = _enabledCommands;
-
-            // Categories
-            RespAclCategories completelyCoveredCategories = 0;
-            if (perms == CommandPermissionSet.All)
+            string permsStr = perms.GetDescription();
+            if (!string.IsNullOrWhiteSpace(permsStr))
             {
-                stringBuilder.Append(" +@all");
-            }
-            else if (perms == CommandPermissionSet.None)
-            {
-                stringBuilder.Append(" -@all");
-            }
-            else
-            {
-                foreach (RespAclCategories cat in Enum.GetValues<RespAclCategories>())
-                {
-                    if (cat == RespAclCategories.None)
-                    {
-                        continue;
-                    }
-
-                    var allAllowed = true;
-                    var allDenied = true;
-                    if (RespCommandsInfo.TryGetCommandsforAclCategory(cat, out IReadOnlyList<RespCommandsInfo> commands))
-                    {
-                        for (int i = 0; i < commands.Count; i++)
-                        {
-                            RespCommandsInfo info = commands[i];
-                            var canRun = perms.CanRunCommand(info.Command, 0);
-
-                            allAllowed &= canRun;
-                            allDenied &= !canRun;
-                        }
-                    }
-                    else
-                    {
-                        continue;
-                    }
-
-                    if (allAllowed && allDenied)
-                    {
-                        // empty category
-                        continue;
-                    }
-
-                    // todo: probably just remove CommandCategory?
-                    string categoryName = CommandCategory.GetNameByFlag(CommandCategory.FromRespAclCategories(cat));
-
-                    if (allAllowed)
-                    {
-                        stringBuilder.Append($" +@{categoryName}");
-                        completelyCoveredCategories |= cat;
-                    }
-                    else if (allDenied)
-                    {
-                        stringBuilder.Append($" -@{categoryName}");
-                        completelyCoveredCategories |= cat;
-                    }
-                }
+                stringBuilder.Append($" {permsStr}");
             }
 
-            // todo: individual commands
 
             return stringBuilder.ToString();
         }

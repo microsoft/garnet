@@ -63,6 +63,10 @@ namespace Garnet.test
                 RespCommand.CustomObjCmd,
                 RespCommand.CustomTxn,
                 RespCommand.INVALID,
+                RespCommand.SETEXNX,
+                RespCommand.SETEXXX,
+                RespCommand.SETKEEPTTL,
+                RespCommand.SETKEEPTTLXX,
             };
 
             var missingCombinations = new List<(RespCommand, byte)>();

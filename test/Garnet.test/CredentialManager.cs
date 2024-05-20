@@ -62,7 +62,7 @@ namespace Garnet.test
 
                     if (!cred.IsAdmin)
                     {
-                        aclConfig += "-@admin";
+                        aclConfig += " -@admin";
                     }
                 }
             }

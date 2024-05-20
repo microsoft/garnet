@@ -61,7 +61,7 @@ namespace Garnet.test.Resp.ACL
         public async Task BasicListTest()
         {
             const string ExpectedDefaultRule = "user default on nopass +@all";
-            const string ExpectedTestUserRule = $"user {TestUserA} off -@all";
+            const string ExpectedTestUserRule = $"user {TestUserA} off";
 
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();

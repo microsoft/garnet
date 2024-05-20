@@ -45,6 +45,19 @@ namespace Garnet.server
             error = CmdStrings.RESP_ERR_GENERIC_UNK_CMD;
             return command switch
             {
+                RespCommand.SADD => SetObjectKeys(SetOperation.SADD, inputCount),
+                RespCommand.SREM => SetObjectKeys(SetOperation.SREM, inputCount),
+                RespCommand.SPOP => SetObjectKeys(SetOperation.SPOP, inputCount),
+                RespCommand.SMEMBERS => SetObjectKeys(SetOperation.SMEMBERS, inputCount),
+                RespCommand.SCARD => SetObjectKeys(SetOperation.SCARD, inputCount),
+                RespCommand.SSCAN => SetObjectKeys(SetOperation.SSCAN, inputCount),
+                RespCommand.SMOVE => SetObjectKeys(SetOperation.SMOVE, inputCount),
+                RespCommand.SRANDMEMBER => SetObjectKeys(SetOperation.SRANDMEMBER, inputCount),
+                RespCommand.SISMEMBER => SetObjectKeys(SetOperation.SISMEMBER, inputCount),
+                RespCommand.SUNION => SetObjectKeys(SetOperation.SUNION, inputCount),
+                RespCommand.SUNIONSTORE => SetObjectKeys(SetOperation.SUNIONSTORE, inputCount),
+                RespCommand.SDIFF => SetObjectKeys(SetOperation.SDIFF, inputCount),
+                RespCommand.SDIFFSTORE => SetObjectKeys(SetOperation.SDIFFSTORE, inputCount),
                 RespCommand.ZADD => SortedSetObjectKeys(SortedSetOperation.ZADD, inputCount),
                 RespCommand.ZREM => SortedSetObjectKeys(SortedSetOperation.ZREM, inputCount),
                 RespCommand.ZCARD => SortedSetObjectKeys(SortedSetOperation.ZCARD, inputCount),
@@ -224,22 +237,22 @@ namespace Garnet.server
             };
         }
 
-        private int SetObjectKeys(byte subCommand, int inputCount)
+        private int SetObjectKeys(SetOperation subCommand, int inputCount)
         {
             return subCommand switch
             {
-                (byte)SetOperation.SADD => SingleKey(1, true, LockType.Exclusive),
-                (byte)SetOperation.SMEMBERS => SingleKey(1, true, LockType.Shared),
-                (byte)SetOperation.SREM => SingleKey(1, true, LockType.Exclusive),
-                (byte)SetOperation.SCARD => SingleKey(1, true, LockType.Exclusive),
-                (byte)SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Shared),
-                (byte)SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
-                (byte)SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
-                (byte)SetOperation.SUNION => ListKeys(inputCount, true, LockType.Shared),
-                (byte)SetOperation.SUNIONSTORE => XSTOREKeys(inputCount, true),
-                (byte)SetOperation.SDIFF => ListKeys(inputCount, true, LockType.Shared),
-                (byte)SetOperation.SDIFFSTORE => XSTOREKeys(inputCount, true),
-                (byte)SetOperation.SMOVE => ListKeys(inputCount, true, LockType.Exclusive),
+                SetOperation.SADD => SingleKey(1, true, LockType.Exclusive),
+                SetOperation.SMEMBERS => SingleKey(1, true, LockType.Shared),
+                SetOperation.SREM => SingleKey(1, true, LockType.Exclusive),
+                SetOperation.SCARD => SingleKey(1, true, LockType.Exclusive),
+                SetOperation.SRANDMEMBER => SingleKey(1, true, LockType.Shared),
+                SetOperation.SPOP => SingleKey(1, true, LockType.Exclusive),
+                SetOperation.SISMEMBER => SingleKey(1, true, LockType.Shared),
+                SetOperation.SUNION => ListKeys(inputCount, true, LockType.Shared),
+                SetOperation.SUNIONSTORE => XSTOREKeys(inputCount, true),
+                SetOperation.SDIFF => ListKeys(inputCount, true, LockType.Shared),
+                SetOperation.SDIFFSTORE => XSTOREKeys(inputCount, true),
+                SetOperation.SMOVE => ListKeys(inputCount, true, LockType.Exclusive),
                 _ => -1
             };
         }

@@ -59,11 +59,13 @@ namespace Garnet.test.Resp.ACL
             // exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
             IEnumerable<string> withOnlySubCommands = allInfo.Where(static x => (x.Value.SubCommands?.Length ?? 0) != 0 && x.Value.Flags == RespCommandFlags.None).Select(static x => x.Key);
 
+            IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
+
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
             IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
 
-            IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase);
+            IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase).Except(notCoveredByACLs, StringComparer.OrdinalIgnoreCase);
 
             Assert.IsEmpty(notCovered, $"Commands not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
         }
@@ -373,58 +375,6 @@ namespace Garnet.test.Resp.ACL
             {
                 RedisResult val = db.Execute("ASKING");
                 Assert.AreEqual("OK", (string)val);
-            }
-        }
-
-        [Test]
-        public void AuthACLs()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IServer server = redis.GetServers().Single();
-            IDatabase db = redis.GetDatabase();
-
-            CheckCommands(
-                "AUTH",
-                server,
-                ["connection", "fast"],
-                [DoAuthPassword, DoAuthUsernamePassword]
-            );
-
-            void DoAuthPassword()
-            {
-                try
-                {
-                    db.Execute("AUTH", "foo", "bar");
-                    Assert.Fail("Shouldn't happen, password is bad");
-                }
-                catch (RedisException e)
-                {
-                    if (e.Message == "WRONGPASS Invalid username/password combination")
-                    {
-                        return;
-                    }
-
-                    throw;
-                }
-            }
-
-            void DoAuthUsernamePassword()
-            {
-                try
-                {
-                    db.Execute("AUTH", "foo", "bar");
-                    Assert.Fail("Shouldn't happen, u/p is bad");
-                }
-                catch (RedisException e)
-                {
-                    if (e.Message == "WRONGPASS Invalid username/password combination")
-                    {
-                        return;
-                    }
-
-                    throw;
-                }
             }
         }
 
@@ -3599,75 +3549,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void QuitACLs()
-        {
-            // uses exception for control flow, not really a better way to do that unfortunately
-
-            // this one's a bit weird because killing the connection also causes weird failures in the "success" case
-            // ... so we just don't cover the success case
-            //
-            // QUIT is weird that we don't really care to test the success case anyway
-
-            string[] categories = ["connection", "fast"];
-
-            foreach (string category in categories)
-            {
-                // spin up a temp admin
-                {
-                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-                    IServer server = redis.GetServers().Single();
-                    IDatabase db = redis.GetDatabase();
-
-                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
-                    Assert.AreEqual("OK", (string)setupAdmin);
-                }
-
-                {
-                    // spin up a fresh connection
-                    ConnectionMultiplexer redis = null;
-
-                    try
-                    {
-                        redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
-
-                        IServer server = redis.GetServers().Single();
-                        IDatabase db = redis.GetDatabase();
-
-                        SetUser(server, "temp-admin", [$"-@{category}"]);
-
-                        Assert.False(CheckAuthFailure(() => DoQuit(db)), "Permitted when should have been denied");
-                    }
-                    finally
-                    {
-                        try
-                        {
-                            redis?.Dispose();
-                        }
-                        catch
-                        {
-                            // do nothing
-                        }
-                    }
-                }
-
-                static void DoQuit(IDatabase db)
-                {
-                    try
-                    {
-                        RedisResult res = db.Execute("QUIT");
-                        Assert.Fail("Shouldn't be reachable, because we don't test success case");
-                    }
-                    catch (RedisTimeoutException e)
-                    {
-                        // timeout is equivalent, since the socket is dying
-                        throw new RedisException("NOAUTH Authentication required.", e);
-                    }
-                }
-            }
-        }
-
-        [Test]
         public void ReadOnlyACLs()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
@@ -3879,7 +3760,7 @@ namespace Garnet.test.Resp.ACL
         public void RunTxpACLs()
         {
             // todo: RUNTXP semantics are a bit unclear... expand test later
-            
+
             // todo: RUNTXP breaks the stream when command is malformed
 
             string[] categories = ["transaction", "garnet"];

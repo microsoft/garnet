@@ -961,11 +961,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkQUIT(int count, byte* ptr)
         {
-            if (!CheckACLPermissions(RespCommand.QUIT, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-            {
-                return success;
-            }
-
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             toDispose = true;
