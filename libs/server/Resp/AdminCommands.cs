@@ -555,6 +555,7 @@ namespace Garnet.server
             if (!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd, subCommand))
             {
                 ReadOnlySpan<byte> toDrain = new(recvBufferPtr, bytesRead);
+                toDrain = toDrain[readHead..];
 
                 if (!DrainCommands(toDrain, count))
                 {

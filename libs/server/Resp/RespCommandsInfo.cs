@@ -557,7 +557,7 @@ namespace Garnet.server
         /// <param name="txnOnly">Return only commands that are allowed in a transaction context (False by default)</param>
         /// <returns>True if initialization was successful and command info was found</returns>
         internal static bool TryGetRespCommandInfo(RespCommand cmd,
-            out RespCommandsInfo respCommandsInfo, byte subCmd = 0, bool txnOnly = false, ILogger logger = null)
+            out RespCommandsInfo respCommandsInfo, bool txnOnly = false, ILogger logger = null)
         {
             respCommandsInfo = default;
             if (!IsInitialized && !TryInitialize(logger)) return false;

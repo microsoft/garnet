@@ -105,12 +105,12 @@ namespace Garnet.server
         /// <summary>
         /// Skip the commands, first phase of the transactions processing.
         /// </summary>
-        private bool NetworkSKIP(RespCommand cmd, byte subCommand, int count)
+        private bool NetworkSKIP(RespCommand cmd, int count)
         {
             ReadOnlySpan<byte> bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
 
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
-            if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, subCommand, true, logger))
+            if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, txnOnly: true, logger))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();

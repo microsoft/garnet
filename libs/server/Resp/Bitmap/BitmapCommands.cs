@@ -451,7 +451,7 @@ namespace Garnet.server
         /// <summary>
         /// Performs bitwise operations on multiple strings and store the result.
         /// </summary>
-        private bool StringBitOperation<TGarnetApi>(int count, byte* ptr, BitmapOperation bitop, ref TGarnetApi storageApi)
+        private bool StringBitOperation<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (!CheckACLPermissions(RespCommand.BITOP, RespCommandsInfo.SubCommandIds.None, count, out bool success))
@@ -459,7 +459,70 @@ namespace Garnet.server
                 return success;
             }
 
+            // <AND | OR | XOR | NOT> destkey key
+            if (count < 3)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            Span<byte> op = default;
+            if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref op, ref ptr, recvBufferPtr + bytesRead))
+            {
+                return false;
+            }
+
+            readHead = (int)(ptr - recvBufferPtr);
+
+            count--;
+
+            BitmapOperation bitop;
+            if (op.SequenceEqual(CmdStrings.AND) || op.SequenceEqual(CmdStrings.and))
+            {
+                bitop = BitmapOperation.AND;
+            }
+            else if (op.SequenceEqual(CmdStrings.OR) || op.SequenceEqual(CmdStrings.or))
+            {
+                bitop = BitmapOperation.OR;
+            }
+            else if (op.SequenceEqual(CmdStrings.XOR) || op.SequenceEqual(CmdStrings.xor))
+            {
+                bitop = BitmapOperation.XOR;
+            }
+            else if (op.SequenceEqual(CmdStrings.NOT) || op.SequenceEqual(CmdStrings.not))
+            {
+                bitop = BitmapOperation.NOT;
+            }
+            else
+            {
+                // unexpected command, write error and bail
+
+                if (!DrainCommands(new ReadOnlySpan<byte>(recvBufferPtr, bytesRead)[readHead..], count))
+                {
+                    return false;
+                }
+
+                while (!RespWriteUtils.WriteError(CmdStrings.GenericErrUnknownOption, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
             var keyCount = count;
+
+            if (keyCount < 2)
+            {
+                if (!DrainCommands(new ReadOnlySpan<byte>(recvBufferPtr, bytesRead)[readHead..], count))
+                {
+                    return false;
+                }
+
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_WRONG_ARGUMENTS, ref dcurr, dend))
+                    SendAndReset();
+            }
+
             ArgSlice[] keys = new ArgSlice[keyCount];
 
             //Read keys

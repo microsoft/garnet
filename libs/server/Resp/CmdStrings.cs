@@ -154,5 +154,15 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> txn => "txn"u8;
         public static ReadOnlySpan<byte> SRC => "SRC"u8;
         public static ReadOnlySpan<byte> src => "src"u8;
+
+        public static ReadOnlySpan<byte> AND => "AND"u8;
+        public static ReadOnlySpan<byte> and => "and"u8;
+        public static ReadOnlySpan<byte> OR => "OR"u8;
+        public static ReadOnlySpan<byte> or => "or"u8;
+        public static ReadOnlySpan<byte> XOR => "XOR"u8;
+        public static ReadOnlySpan<byte> xor => "xor"u8;
+        public static ReadOnlySpan<byte> NOT => "NOT"u8;
+        public static ReadOnlySpan<byte> not => "not"u8;
+
     }
 }
