@@ -272,27 +272,26 @@ namespace Garnet.server
             }
             else if (command == RespCommand.HELLO)
             {
-                int? protocolVersion = null;
+                int? respProtocolVersion = null;
                 ReadOnlySpan<byte> authUsername = default, authPassword = default;
                 string clientName = null;
 
                 if (count > 0)
                 {
                     var ptr = recvBufferPtr + readHead;
-                    int _protocolVersion;
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out _protocolVersion, ref ptr, recvBufferPtr + bytesRead))
+                    int localRespProtocolVersion;
+                    if (!RespReadUtils.ReadIntWithLengthHeader(out localRespProtocolVersion, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    protocolVersion = _protocolVersion;
+                    respProtocolVersion = localRespProtocolVersion;
                     count--;
                     while (count > 0)
                     {
                         var param = GetCommand(bufSpan, out bool success1);
                         if (!success1) return false;
-                        var paramStr = Encoding.ASCII.GetString(param);
                         count--;
-                        if (paramStr.Equals("AUTH", StringComparison.OrdinalIgnoreCase))
+                        if (EqualsIgnoreCase(param, CmdStrings.AUTH))
                         {
                             if (count < 2)
                             {
@@ -310,7 +309,7 @@ namespace Garnet.server
                             if (!success1) return false;
                             count--;
                         }
-                        else if (paramStr.Equals("SETNAME", StringComparison.OrdinalIgnoreCase))
+                        else if (EqualsIgnoreCase(param, CmdStrings.SETNAME))
                         {
                             if (count < 1)
                             {
@@ -337,7 +336,7 @@ namespace Garnet.server
                         }
                     }
                 }
-                if (!errorFlag) ProcessHelloCommand(protocolVersion, authUsername, authPassword, clientName);
+                if (!errorFlag) ProcessHelloCommand(respProtocolVersion, authUsername, authPassword, clientName);
             }
             else if (command is RespCommand.CLUSTER or RespCommand.MIGRATE or RespCommand.FAILOVER or RespCommand.REPLICAOF or RespCommand.SECONDARYOF)
             {
@@ -557,19 +556,45 @@ namespace Garnet.server
             return true;
         }
 
-
-        void ProcessHelloCommand(int? protocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
+        bool EqualsIgnoreCase(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
         {
-            if (protocolVersion != null)
+            if (left.SequenceEqual(right))
+                return true;
+            if (left.Length != right.Length)
+                return false;
+            for (int i = 0; i < left.Length; i++)
             {
-                if (protocolVersion.Value is < 2 or > 3)
+                byte b1 = left[i];
+                byte b2 = right[i];
+                if (b1 == b2)
+                    continue;
+                if (b1 >= 65 && b1 <= 90)
+                {
+                    if (b1 + 32 == b2)
+                        continue;
+                }
+                else if (b1 >= 97 && b1 <= 122)
+                {
+                    if (b1 - 32 == b2)
+                        continue;
+                }
+                return false;
+            }
+            return true;
+        }
+
+        void ProcessHelloCommand(int? respProtocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
+        {
+            if (respProtocolVersion != null)
+            {
+                if (respProtocolVersion.Value is < 2 or > 3)
                 {
                     while (!RespWriteUtils.WriteError("ERR Unsupported protocol version"u8, ref dcurr, dend))
                         SendAndReset();
                     return;
                 }
 
-                this.protocolVersion = protocolVersion.Value;
+                this.respProtocolVersion = respProtocolVersion.Value;
             }
 
             if (username != default)
@@ -601,13 +626,13 @@ namespace Garnet.server
                     ("server", "redis"),
                     ("version", storeWrapper.redisProtocolVersion),
                     ("garnet_version", storeWrapper.version),
-                    ("proto", $"{this.protocolVersion}"),
+                    ("proto", $"{this.respProtocolVersion}"),
                     ("id", "63"),
                     ("mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
                     ("role", storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() ? "replica" : "master"),
                 ];
 
-            if (this.protocolVersion == 2)
+            if (this.respProtocolVersion == 2)
             {
                 while (!RespWriteUtils.WriteArrayLength(helloResult.Length * 2 + 2, ref dcurr, dend))
                     SendAndReset();

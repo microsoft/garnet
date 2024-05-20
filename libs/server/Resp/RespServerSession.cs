@@ -105,7 +105,7 @@ namespace Garnet.server
         CustomObjectCommand currentCustomObjectCommand = null;
 
 
-        int protocolVersion = 2;
+        int respProtocolVersion = 2;
         string clientName = null;
 
         public RespServerSession(

@@ -31,6 +31,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> ACL => "ACL"u8;
         public static ReadOnlySpan<byte> AUTH => "AUTH"u8;
         public static ReadOnlySpan<byte> auth => "auth"u8;
+        public static ReadOnlySpan<byte> SETNAME => "SETNAME"u8;
         public static ReadOnlySpan<byte> INFO => "INFO"u8;
         public static ReadOnlySpan<byte> info => "info"u8;
         public static ReadOnlySpan<byte> DOCS => "DOCS"u8;
