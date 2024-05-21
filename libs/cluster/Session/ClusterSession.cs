@@ -166,7 +166,6 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="cmd">Command be processed</param>
         /// <param name="subCommand">Id (w.r.t. <see cref="RespCommandsInfo"/>) of any sub command - will be 0 if no sub command is being processed</param>
-        /// <param name="bufSpan">Buffer containing the current command in RESP3 style.</param>
         /// <param name="count">Number of parameters left in the command specification.</param>
         /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>

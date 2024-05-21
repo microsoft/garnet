@@ -31,7 +31,6 @@ namespace Garnet.server
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
         /// <param name="ptr"></param>
-        /// <param name="hop"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool HashSet<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
@@ -124,7 +123,6 @@ namespace Garnet.server
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
         /// <param name="ptr"></param>
-        /// <param name="op">HGET, HGETALL, HMGET, HRANDFIELD</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool HashGet<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
@@ -537,7 +535,6 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
-        /// <param name="op"></param>
         /// <returns></returns>
         private unsafe bool HashKeys<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
           where TGarnetApi : IGarnetApi
@@ -632,7 +629,6 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
-        /// <param name="op"></param>
         /// <returns></returns>
         private unsafe bool HashIncrement<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi

@@ -88,7 +88,7 @@ namespace Garnet.test.Resp.ACL
             void DoAclCat()
             {
                 RedisResult val = db.Execute("ACL", "CAT");
-                Assert.AreEqual(ResultType.MultiBulk, val.Type);
+                Assert.AreEqual(ResultType.Array, val.Resp2Type);
             }
         }
 
@@ -176,7 +176,7 @@ namespace Garnet.test.Resp.ACL
                     void DoAclList()
                     {
                         RedisResult val = db.Execute("ACL", "LIST");
-                        Assert.AreEqual(ResultType.MultiBulk, val.Type);
+                        Assert.AreEqual(ResultType.Array, val.Resp2Type);
                     }
                 }
             }
@@ -326,8 +326,8 @@ namespace Garnet.test.Resp.ACL
 
                     void DoAclUsers()
                     {
-                        RedisResult res = db.Execute("ACL", "USERS");
-                        Assert.AreEqual(ResultType.MultiBulk, res.Type);
+                        RedisResult val = db.Execute("ACL", "USERS");
+                        Assert.AreEqual(ResultType.Array, val.Resp2Type);
                     }
                 }
             }
@@ -830,7 +830,7 @@ namespace Garnet.test.Resp.ACL
             void DoCommand()
             {
                 RedisResult val = db.Execute("COMMAND");
-                Assert.AreEqual(ResultType.MultiBulk, val.Type);
+                Assert.AreEqual(ResultType.Array, val.Resp2Type);
             }
         }
 
@@ -874,19 +874,19 @@ namespace Garnet.test.Resp.ACL
             void DoCommandDocs()
             {
                 RedisResult val = db.Execute("COMMAND", "DOCS");
-                Assert.AreEqual(ResultType.MultiBulk, val.Type);
+                Assert.AreEqual(ResultType.Array, val.Resp2Type);
             }
 
             void DoCommandDocsOne()
             {
                 RedisResult val = db.Execute("COMMAND", "DOCS", "GET");
-                Assert.AreEqual(ResultType.MultiBulk, val.Type);
+                Assert.AreEqual(ResultType.Array, val.Resp2Type);
             }
 
             void DoCommandDocsMulti()
             {
                 RedisResult val = db.Execute("COMMAND", "DOCS", "GET", "SET", "APPEND");
-                Assert.AreEqual(ResultType.MultiBulk, val.Type);
+                Assert.AreEqual(ResultType.Array, val.Resp2Type);
             }
         }
 
@@ -908,19 +908,19 @@ namespace Garnet.test.Resp.ACL
             void DoCommandInfo()
             {
                 RedisResult val = db.Execute("COMMAND", "INFO");
-                Assert.AreEqual(ResultType.MultiBulk, val.Type);
+                Assert.AreEqual(ResultType.Array, val.Resp2Type);
             }
 
             void DoCommandInfoOne()
             {
                 RedisResult val = db.Execute("COMMAND", "INFO", "GET");
-                Assert.AreEqual(ResultType.MultiBulk, val.Type);
+                Assert.AreEqual(ResultType.Array, val.Resp2Type);
             }
 
             void DoCommandInfoMulti()
             {
                 RedisResult val = db.Execute("COMMAND", "INFO", "GET", "SET", "APPEND");
-                Assert.AreEqual(ResultType.MultiBulk, val.Type);
+                Assert.AreEqual(ResultType.Array, val.Resp2Type);
             }
         }
 
@@ -3709,7 +3709,7 @@ namespace Garnet.test.Resp.ACL
 
             void DoPublish()
             {
-                long count = sub.Publish("foo", "bar");
+                long count = sub.Publish(new RedisChannel("foo", RedisChannel.PatternMode.Literal), "bar");
                 Assert.AreEqual(0, count);
             }
         }

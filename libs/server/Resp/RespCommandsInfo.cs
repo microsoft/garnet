@@ -553,7 +553,6 @@ namespace Garnet.server
         /// <param name="cmd">The RespCommand enum</param>
         /// <param name="logger">Logger</param>
         /// <param name="respCommandsInfo">The commands info</param>
-        /// <param name="subCmd">The sub-command byte, if applicable</param>
         /// <param name="txnOnly">Return only commands that are allowed in a transaction context (False by default)</param>
         /// <returns>True if initialization was successful and command info was found</returns>
         internal static bool TryGetRespCommandInfo(RespCommand cmd,

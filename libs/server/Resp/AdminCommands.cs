@@ -638,13 +638,13 @@ namespace Garnet.server
         bool CheckACLPermissions(RespCommand cmd, byte subCommand, int count, out bool processingCompleted)
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
-            
+
             // todo: SETEXNX is parsed separately from SET and then turned into these other commands
             //       we _could_ refactor SET to handle these options, but perf is tricky enough there
             //       that it should be a different command
             RespCommand effectiveCommand =
                 subCommand != RespCommandsInfo.SubCommandIds.None ?
-                    cmd : 
+                    cmd :
                     cmd switch
                     {
                         RespCommand.SETEXNX => RespCommand.SET,

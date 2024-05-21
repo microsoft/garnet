@@ -199,7 +199,7 @@ namespace Garnet.server
         {
             bool success;
 
-            if(count == 0)
+            if (count == 0)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
@@ -207,7 +207,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if(count == 1)
+            if (count == 1)
             {
                 var key = GetCommandAsArgSlice(out success);
                 if (!success) return false;

@@ -27,7 +27,6 @@ namespace Garnet.server
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
         /// <param name="ptr"></param>
-        /// <param name="lop"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool ListPush<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
@@ -124,7 +123,6 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count"></param>
         /// <param name="ptr"></param>
-        /// <param name="lop"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         private unsafe bool ListPop<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)

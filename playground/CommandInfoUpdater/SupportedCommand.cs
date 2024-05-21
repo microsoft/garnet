@@ -261,7 +261,7 @@ namespace CommandInfoUpdater
         /// <param name="command">Supported command name</param>
         /// <param name="respCommand">RESP Command enum</param>
         /// <param name="subCommands">List of supported sub-command names (optional)</param>
-        public SupportedCommand(string command, RespCommand respCommand = RespCommand.NONE,IEnumerable<string> subCommands = null) : this()
+        public SupportedCommand(string command, RespCommand respCommand = RespCommand.NONE, IEnumerable<string> subCommands = null) : this()
         {
             Command = command;
             SubCommands = subCommands == null ? null : new HashSet<string>(subCommands);
