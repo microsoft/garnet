@@ -139,9 +139,6 @@ namespace Garnet.server
 
         // Neither read nor write commands
         PING,
-        QUIT,
-        AUTH,
-        COMMAND,
 
         PUBLISH,
         SUBSCRIBE,
@@ -151,10 +148,8 @@ namespace Garnet.server
         ASKING,
         SELECT,
         ECHO,
-        CONFIG,
         CLIENT,
 
-        MEMORY,
         MONITOR,
         MODULE,
         REGISTERCS,
@@ -162,7 +157,6 @@ namespace Garnet.server
         MULTI,
         EXEC,
         DISCARD,
-        WATCH,
         UNWATCH,
         RUNTXP,
 
@@ -172,8 +166,6 @@ namespace Garnet.server
         SECONDARYOF,
 
         INFO,
-        CLUSTER,
-        LATENCY,
         TIME,
         SAVE,
         LASTSAVE,
@@ -181,12 +173,24 @@ namespace Garnet.server
         COMMITAOF,
         FORCEGC,
         FAILOVER,
-        ACL,
 
         // Custom commands
         CustomTxn,
         CustomCmd,
         CustomObjCmd,
+
+        // Don't require AUTH (if auth is enabled)
+        AUTH,
+        QUIT,
+
+        // Have subcommands
+        ACL,
+        CLUSTER,
+        COMMAND,
+        CONFIG,
+        LATENCY,
+        MEMORY,
+        WATCH,
 
         INVALID = 0xFF,
     }
@@ -229,33 +233,18 @@ namespace Garnet.server
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool HasSubCommands(this RespCommand cmd)
-        {
-            // todo: this needs to be fast
-            return
-                cmd switch
-                {
-                    RespCommand.ACL => true,
-                    RespCommand.CLUSTER => true,
-                    RespCommand.COMMAND => true,
-                    RespCommand.CONFIG => true,
-                    RespCommand.LATENCY => true,
-                    RespCommand.MEMORY => true,
-                    RespCommand.WATCH => true,
-                    _ => false,
-                };
-        }
+        => cmd >= RespCommand.ACL;
 
+        /// <summary>
+        /// Returns true if <paramref name="cmd"/> can be run even if the user is not authenticated.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsNoAuth(this RespCommand cmd)
         {
-            // todo: this needs to be fast
-            return
-                cmd switch
-                {
-                    RespCommand.AUTH => true,
-                    RespCommand.QUIT => true,
-                    _ => false,
-                };
+            // if cmd < RespCommand.Auth - underflows, setting high bits
+            uint test = (uint)((int)cmd - (int)RespCommand.AUTH);
+            bool inRange = test <= 1;
+            return inRange;
         }
     }
 
