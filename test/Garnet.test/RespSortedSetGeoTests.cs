@@ -156,7 +156,7 @@ namespace Garnet.test
             Assert.AreEqual(23, response);
 
             var memresponse = db.Execute("MEMORY", "USAGE", "cities");
-            var actualValue = ResultType.Integer == memresponse.Type ? int.Parse(memresponse.ToString()) : -1;
+            var actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
             var expectedResponse = 3944;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -200,7 +200,7 @@ namespace Garnet.test
             Assert.AreEqual(default(GeoPosition), response[1]);
 
             var memresponse = db.Execute("MEMORY", "USAGE", "Sicily");
-            var actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             var expectedResponse = 344;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -210,7 +210,7 @@ namespace Garnet.test
             Assert.IsNotNull(response[0]);
 
             memresponse = db.Execute("MEMORY", "USAGE", "SecondKey");
-            actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -219,7 +219,7 @@ namespace Garnet.test
             Assert.AreEqual("sqc8b49rnyt", responseHash[0]);
 
             memresponse = db.Execute("MEMORY", "USAGE", "SecondKey");
-            actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
         }

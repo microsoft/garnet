@@ -104,6 +104,10 @@ namespace Garnet.server
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
 
+
+        int respProtocolVersion = 2;
+        string clientName = null;
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
@@ -224,7 +228,6 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
                     SendAndReset();
 
-                // Send message and dispose the network sender to end the session
                 Send(networkSender.GetResponseObjectHead());
                 networkSender.Dispose();
             }
@@ -239,6 +242,7 @@ namespace Garnet.server
             {
                 networkSender.ReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
+
             }
 
             if (txnManager.IsSkippingOperations())
@@ -362,7 +366,6 @@ namespace Garnet.server
             }
             return false;
         }
-
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, byte subcmd, int count, byte* ptr, ref TGarnetApi storageApi)
@@ -530,6 +533,8 @@ namespace Garnet.server
                 (RespCommand.Set, (byte)SetOperation.SUNIONSTORE) => SetUnionStore(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SDIFF) => SetDiff(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SDIFFSTORE) => SetDiffStore(count, ptr, ref storageApi),
+                (RespCommand.Set, (byte)SetOperation.SINTER) => SetIntersect(count, ptr, ref storageApi),
+                (RespCommand.Set, (byte)SetOperation.SINTERSTORE) => SetIntersectStore(count, ptr, ref storageApi),
                 _ => ProcessOtherCommands(cmd, subcmd, count, ref storageApi),
             };
             return success;
@@ -653,7 +658,17 @@ namespace Garnet.server
             return true;
         }
 
-        ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
+        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                GetCommand(bufSpan, out bool success1);
+                if (!success1) return false;
+            }
+            return true;
+        }
+
+        Span<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
         {
             var ptr = recvBufferPtr + readHead;
             var end = recvBufferPtr + bytesRead;
@@ -680,7 +695,7 @@ namespace Garnet.server
                 RespParsingException.ThrowUnexpectedToken(*ptr);
             }
 
-            var result = bufSpan.Slice(readHead, length);
+            var result = new Span<byte>(recvBufferPtr + readHead, length);
             readHead += length + 2;
             success = true;
 

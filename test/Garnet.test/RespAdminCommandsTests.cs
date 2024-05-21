@@ -487,6 +487,57 @@ namespace Garnet.test
             Assert.IsTrue(_value.IsNull);
         }
 
+        [Test]
+        [TestCase("timeout", "0")]
+        [TestCase("save", "")]
+        [TestCase("appendonly", "no")]
+        [TestCase("slave-read-only", "no")]
+        [TestCase("databases", "16")]
+        [TestCase("cluster-node-timeout", "60")]
+        public void SimpleConfigGet(string parameter, string parameterValue)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = (string[])db.Execute("CONFIG", "GET", parameter);
+
+            Assert.AreEqual(parameter, result[0]);
+            Assert.AreEqual(parameterValue, result[1]);
+        }
+
+        #endregion
+
+        #region NegativeTests
+
+        [Test]
+        public void ConfigWrongNumberOfArguments()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            try
+            {
+                db.Execute("CONFIG");
+            }
+            catch (Exception ex)
+            {
+                Assert.AreEqual("ERR wrong number of arguments for 'CONFIG' command", ex.Message);
+            }
+        }
+
+        [Test]
+        public void ConfigGetWrongNumberOfArguments()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            try
+            {
+                db.Execute("CONFIG", "GET");
+            }
+            catch (Exception ex)
+            {
+                Assert.AreEqual("ERR wrong number of arguments for 'CONFIG|GET' command", ex.Message);
+            }
+        }
         #endregion
     }
 }
