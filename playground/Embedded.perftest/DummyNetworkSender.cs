@@ -59,11 +59,17 @@ namespace Embedded.perftest
         }
 
         /// <inheritdoc />
+        public void Enter() { }
+
+        /// <inheritdoc />
         public void EnterAndGetResponseObject(out byte* head, out byte* tail)
         {
             head = bufferPtr;
             tail = bufferPtr + buffer.Length;
         }
+
+        /// <inheritdoc />
+        public void Exit() { }
 
         /// <inheritdoc />
         public void ExitAndReturnResponseObject()

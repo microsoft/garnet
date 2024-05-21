@@ -86,6 +86,14 @@ namespace Garnet.common
         public override string RemoteEndpointName => remoteEndpoint;
 
         /// <inheritdoc />
+        public override void Enter()
+        {
+            var lockTaken = false;
+            spinLock.Enter(ref lockTaken);
+            Debug.Assert(lockTaken);
+        }
+
+        /// <inheritdoc />
         public override unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail)
         {
             var lockTaken = false;
@@ -103,14 +111,20 @@ namespace Garnet.common
         }
 
         /// <inheritdoc />
-        public override unsafe void ExitAndReturnResponseObject()
+        public override void Exit()
         {
             spinLock.Exit();
+        }
+
+        /// <inheritdoc />
+        public override unsafe void ExitAndReturnResponseObject()
+        {
             if (responseObject != null)
             {
                 ReturnBuffer(responseObject);
                 responseObject = null;
             }
+            spinLock.Exit();
         }
 
 

@@ -58,12 +58,12 @@ namespace Garnet.server
             {
                 if (respProtocolVersion == 2)
                 {
-                    while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteArrayLength(4, ref dcurr, dend))
                         SendAndReset();
                 }
                 else
                 {
-                    while (!RespWriteUtils.WritePushLength(3, ref dcurr, dend))
+                    while (!RespWriteUtils.WritePushLength(4, ref dcurr, dend))
                         SendAndReset();
                 }
                 while (!RespWriteUtils.WriteBulkString("pmessage"u8, ref dcurr, dend))
