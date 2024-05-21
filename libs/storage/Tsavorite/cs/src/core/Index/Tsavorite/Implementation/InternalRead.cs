@@ -265,7 +265,6 @@ namespace Tsavorite.core
             // See if we are doing Transient-only locking (LockTable with a non-LockableContext).
             bool doTransientLocking = DoTransientLocking && !tsavoriteSession.IsManualLocking;
 
-        Retry:
             Key defaultKey = default;
             if (readOptions.KeyHash.HasValue)
                 pendingContext.keyHash = readOptions.KeyHash.Value;

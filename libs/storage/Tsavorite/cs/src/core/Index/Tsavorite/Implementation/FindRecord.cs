@@ -145,10 +145,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryFindRecordForUpdate(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out OperationStatus internalStatus)
         {
-            // This routine returns true if we should proceed with the InternalXxx operation, else false. If it returns true, caller must set srcRecordInfo.
-            internalStatus = OperationStatus.SUCCESS;
+            // This routine returns true if we should proceed with the InternalXxx operation (whether the record was found or not),
+            // else false (including false if we need a RETRY). If it returns true with recSrc.HasInMemorySrc, caller must set srcRecordInfo.
 
-            // Did not completely process the traceback (e.g. had an inelidable first record, are doing bucket locking, etc.) Do normal traceback here.
+            // We are not here from Read() so have not processed readcache; search that as well as the in-memory log.
             if (TryFindRecordInMemory(ref key, ref stackCtx, minAddress))
             {
                 if (stackCtx.recSrc.GetInfo().IsClosed)
@@ -157,6 +157,7 @@ namespace Tsavorite.core
                     return false;
                 }
             }
+            internalStatus = OperationStatus.SUCCESS;
             return true;
         }
 
@@ -164,10 +165,9 @@ namespace Tsavorite.core
         private bool TryFindRecordForRead(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out OperationStatus internalStatus)
         {
             // This routine returns true if we should proceed with the InternalXxx operation (whether the record was found or not),
-            // else false (including false if we have determined that we need a RETRY). If it returns true, caller must set srcRecordInfo.
-            internalStatus = OperationStatus.SUCCESS;
+            // else false (including false if we need a RETRY). If it returns true with recSrc.HasInMemorySrc, caller must set srcRecordInfo.
 
-            // We are here for read so we have already processed readcache and are just here for the traceback in the main log.
+            // We are here for Read() so we have already processed readcache and are just here for the traceback in the main log.
             if (TryFindRecordInMainLog(ref key, ref stackCtx, minAddress))
             {
                 if (stackCtx.recSrc.GetInfo().IsClosed)
@@ -176,6 +176,7 @@ namespace Tsavorite.core
                     return false;
                 }
             }
+            internalStatus = OperationStatus.SUCCESS;
             return true;
         }
 

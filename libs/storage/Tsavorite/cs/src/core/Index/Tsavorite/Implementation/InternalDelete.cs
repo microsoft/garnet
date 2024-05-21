@@ -178,7 +178,7 @@ namespace Tsavorite.core
                     // Could not delete in place for some reason - create new record.
                     goto CreateNewRecord;
                 }
-                if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
                 {
                     // If we already have a deleted record, there's nothing to do.
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
@@ -224,6 +224,7 @@ namespace Tsavorite.core
             return status;
         }
 
+        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalDelete if the compiler decides not to inline this.
         private void CreatePendingDeleteContext<Input, Output, Context, TsavoriteSession>(ref Key key, Context userContext,
                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long lsn, ref OperationStackContext<Key, Value> stackCtx)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>

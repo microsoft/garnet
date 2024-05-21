@@ -13,9 +13,11 @@ namespace Tsavorite.core
                                     out OperationStatus status)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
-            status = OperationStatus.SUCCESS;
-            if (!LockTable.IsEnabled || tsavoriteSession.TryLockTransientExclusive(ref key, ref stackCtx))
+            if (tsavoriteSession.TryLockTransientExclusive(ref key, ref stackCtx))
+            {
+                status = OperationStatus.SUCCESS;
                 return true;
+            }
             status = OperationStatus.RETRY_LATER;
             return false;
         }
@@ -33,9 +35,11 @@ namespace Tsavorite.core
                                     out OperationStatus status)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
-            status = OperationStatus.SUCCESS;
-            if (!LockTable.IsEnabled || tsavoriteSession.TryLockTransientShared(ref key, ref stackCtx))
+            if (tsavoriteSession.TryLockTransientShared(ref key, ref stackCtx))
+            {
+                status = OperationStatus.SUCCESS;
                 return true;
+            }
             status = OperationStatus.RETRY_LATER;
             return false;
         }
