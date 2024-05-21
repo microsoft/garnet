@@ -8,22 +8,22 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server.Auth
 {
-    class GarnetACLAuthenticator : IGarnetAuthenticator
+    abstract class GarnetACLAuthenticator : IGarnetAuthenticator
     {
         /// <summary>
         /// The Access Control List to authenticate users against
         /// </summary>
-        readonly AccessControlList _acl;
+        protected readonly AccessControlList _acl;
 
         /// <summary>
         /// Logger to use to output log messages to
         /// </summary>
-        readonly ILogger _logger;
+        protected readonly ILogger _logger;
 
         /// <summary>
         /// If authenticated, contains a reference to the authenticated user. Otherwise null.
         /// </summary>
-        User _user = null;
+        protected User _user = null;
 
         /// <summary>
         /// Initializes a new ACLAuthenticator instance.
@@ -65,14 +65,11 @@ namespace Garnet.server.Auth
                 // Check if user exists and set default user if username is unspecified
                 string uname = Encoding.ASCII.GetString(username);
                 User user = string.IsNullOrEmpty(uname) ? _acl.GetDefaultUser() : _acl.GetUser(uname);
-
-                // Try to authenticate user
-                ACLPassword passwordHash = ACLPassword.ACLPasswordFromString(Encoding.ASCII.GetString(password));
-                if (user.IsEnabled && user.ValidatePassword(passwordHash))
+                if (user == null)
                 {
-                    _user = user;
-                    successful = true;
+                    return false;
                 }
+                successful = AuthenticateInternal(user, username, password);
             }
             catch (Exception ex)
             {
@@ -82,6 +79,8 @@ namespace Garnet.server.Auth
 
             return successful;
         }
+
+        protected abstract bool AuthenticateInternal(User user, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password);
 
         /// <summary>
         /// Returns the currently authorized user.

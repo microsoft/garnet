@@ -3,27 +3,23 @@
 
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Columns;
-using BenchmarkDotNet.Configs;
 using Embedded.perftest;
 using Garnet.server;
 
 namespace BDN.benchmark
 {
-    public class CustomConfig : ManualConfig
-    {
-        public CustomConfig()
-        {
-            AddColumn(StatisticColumn.Mean);
-            AddColumn(StatisticColumn.StdDev);
-            AddColumn(StatisticColumn.Median);
-            AddColumn(StatisticColumn.P90);
-            AddColumn(StatisticColumn.P95);
-        }
-    }
-
-    [Config(typeof(CustomConfig))]
+    [Config(typeof(Config))]
     public class RecoveryBenchmark
     {
+        private class Config : BaseConfig
+        {
+            public Config()
+            {
+                AddColumn(StatisticColumn.P90);
+                AddColumn(StatisticColumn.P95);
+            }
+        }
+
         [ParamsSource(nameof(CommandLineArgsProvider))]
         public string LogDir { get; set; }
 
