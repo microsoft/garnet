@@ -38,7 +38,7 @@ namespace Garnet.test
 
             ManualResetEvent evt = new(false);
 
-            sub.Subscribe("messages", (channel, message) =>
+            sub.Subscribe(RedisChannel.Pattern("messages"), (channel, message) =>
             {
                 Assert.AreEqual("messages", (string)channel);
                 Assert.AreEqual("published message", (string)message);
@@ -50,13 +50,13 @@ namespace Garnet.test
             int repeat = 5;
             while (true)
             {
-                db.Publish("messages", "published message");
+                db.Publish(RedisChannel.Pattern("messages"), "published message");
                 var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
                 if (ret) break;
                 repeat--;
                 Assert.IsTrue(repeat != 0, "Timeout waiting for subsciption receive");
             }
-            sub.Unsubscribe("messages");
+            sub.Unsubscribe(RedisChannel.Pattern("messages"));
         }
 
         [Test]
@@ -88,7 +88,7 @@ namespace Garnet.test
             int repeat = 5;
             while (true)
             {
-                db.Publish(actual, value);
+                db.Publish(RedisChannel.Pattern(actual), value);
                 var ret = evt.WaitOne(TimeSpan.FromSeconds(1));
                 if (ret) break;
                 repeat--;

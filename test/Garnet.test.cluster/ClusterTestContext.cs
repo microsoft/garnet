@@ -9,6 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -102,7 +103,8 @@ namespace Garnet.test.cluster
             bool useTLS = false,
             bool useAcl = false,
             X509CertificateCollection certificates = null,
-            ServerCredential clusterCreds = new ServerCredential())
+            ServerCredential clusterCreds = new ServerCredential(),
+            AadAuthenticationSettings authenticationSettings = null)
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
@@ -131,7 +133,8 @@ namespace Garnet.test.cluster
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
-                certificates: certificates);
+                certificates: certificates,
+                authenticationSettings: authenticationSettings);
 
             foreach (var node in nodes)
                 node.Start();
