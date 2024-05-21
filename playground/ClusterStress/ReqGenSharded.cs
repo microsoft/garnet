@@ -14,7 +14,7 @@ namespace Resp.benchmark
             for (int i = 0; i < DbSize; i++)
             {
                 int key = Start + keyRandomGen.Next(DbSize);
-                int slot = Garnet.common.NumUtils.HashSlot(System.Text.Encoding.ASCII.GetBytes(key.ToString()));
+                int slot = Garnet.common.HashSlotUtils.HashSlot(System.Text.Encoding.ASCII.GetBytes(key.ToString()));
                 databaseKeys[slot].Add(key);
             }
         }
@@ -37,7 +37,7 @@ namespace Resp.benchmark
             {
             retry:
                 int key = Start + keyRandomGen.Next();
-                int slot = Garnet.common.NumUtils.HashSlot(System.Text.Encoding.ASCII.GetBytes(key.ToString()));
+                int slot = Garnet.common.HashSlotUtils.HashSlot(System.Text.Encoding.ASCII.GetBytes(key.ToString()));
 
                 if (databaseKeys[slot].Count < keysPerSlot)
                     databaseKeys[slot].Add(key);

@@ -42,7 +42,7 @@ namespace Garnet.test
             _cancellationToken = cancellationToken;
 
             //create a channel for sending the event messages
-            connMultiplexer.GetSubscriber().Subscribe(_subChannel, (channel, value) => { Debug.Print(value); });
+            connMultiplexer.GetSubscriber().Subscribe(RedisChannel.Pattern(_subChannel), (channel, value) => { Debug.Print(value); });
         }
 
         /// <summary>
@@ -64,7 +64,7 @@ namespace Garnet.test
 
             db.HashDelete(key, "active");
             db.ListRightPush(_jobQueue, key);
-            connMultiplexer.GetSubscriber().Publish(_subChannel, $"Finishing {key}");
+            connMultiplexer.GetSubscriber().Publish(RedisChannel.Pattern(_subChannel), $"Finishing {key}");
         }
 
         /// <summary>
@@ -165,7 +165,7 @@ namespace Garnet.test
             await db.ListLeftPushAsync(_jobQueue, key);
 
             //send the event message
-            connMultiplexer.GetSubscriber().Publish(_subChannel, $"Job {key} was added");
+            connMultiplexer.GetSubscriber().Publish(RedisChannel.Pattern(_subChannel), $"Job {key} was added");
         }
     }
 

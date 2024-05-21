@@ -27,7 +27,7 @@ namespace Garnet.cluster
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    var s = NumUtils.HashSlot(key.ToPointer(), key.Length);
+                    var s = HashSlotUtils.HashSlot(key.ToPointer(), key.Length);
 
                     if (slots.Contains(s) && !ClusterSession.Expired(ref value) && !session.WriteOrSendMainStoreKeyValuePair(ref key, ref value))
                         return false;
@@ -54,7 +54,7 @@ namespace Garnet.cluster
                 public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    var slot = NumUtils.HashSlot(key);
+                    var slot = HashSlotUtils.HashSlot(key);
 
                     if (slots.Contains(slot) && !ClusterSession.Expired(ref value))
                     {
@@ -85,7 +85,7 @@ namespace Garnet.cluster
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    var s = NumUtils.HashSlot(key.ToPointer(), key.Length);
+                    var s = HashSlotUtils.HashSlot(key.ToPointer(), key.Length);
                     if (slots.Contains(s))
                         session.Delete(key);
                     return true;
