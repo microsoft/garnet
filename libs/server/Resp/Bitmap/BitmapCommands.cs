@@ -436,10 +436,10 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var keyCount = count;
-            ArgSlice[] keys = new ArgSlice[keyCount];
+            var keys = new ArgSlice[keyCount];
 
-            //Read keys
-            for (int i = 0; i < keys.Length; i++)
+            // Read keys
+            for (var i = 0; i < keys.Length; i++)
             {
                 keys[i] = new();
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
@@ -455,13 +455,9 @@ namespace Garnet.server
                 throw new Exception("Bitop source key limit (64) exceeded");
             }
 
-            var status = storageApi.StringBitOperation(keys, bitop, out long result);
-
-            if (status != GarnetStatus.NOTFOUND)
-            {
-                while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
-                    SendAndReset();
-            }
+            _ = storageApi.StringBitOperation(keys, bitop, out var result);
+            while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }
