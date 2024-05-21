@@ -423,6 +423,20 @@ namespace Garnet.server
             // Continue reading from the current read head.
             byte* ptr = recvBufferPtr + readHead;
 
+            // If async mode, we want to make sure all arguments are received up front
+            // Otherwise, there might be interleaving of network output between sync
+            // ProcessMessages and AsyncProcessor. We protect this with useAsync for now, but
+            // this should be the standard approach in future after changing the subsequent
+            // logic to avoid re-parsing overheads, and verifying perf impact
+            if (useAsync)
+            {
+                byte* endPtr = ptr;
+                for (int i = 0; i < count; i++)
+                {
+                    if (!RespReadUtils.SkipByteArrayWithLengthHeader(ref endPtr, recvBufferPtr + bytesRead))
+                        return false;
+                }
+            }
             if (!_authenticator.IsAuthenticated) return ProcessOtherCommands(cmd, subcmd, count, ref storageApi);
 
             var success = (cmd, subcmd) switch
