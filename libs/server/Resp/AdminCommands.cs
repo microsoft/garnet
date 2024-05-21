@@ -281,7 +281,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.HELLO)
             {
-                int? respProtocolVersion = null;
+                byte? respProtocolVersion = null;
                 ReadOnlySpan<byte> authUsername = default, authPassword = default;
                 string clientName = null;
 
@@ -293,7 +293,7 @@ namespace Garnet.server
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    respProtocolVersion = localRespProtocolVersion;
+                    respProtocolVersion = (byte)localRespProtocolVersion;
                     count--;
                     while (count > 0)
                     {
@@ -629,7 +629,7 @@ namespace Garnet.server
             return true;
         }
 
-        void ProcessHelloCommand(int? respProtocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
+        void ProcessHelloCommand(byte? respProtocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
         {
             if (respProtocolVersion != null)
             {
