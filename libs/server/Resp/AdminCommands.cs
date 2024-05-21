@@ -549,7 +549,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.ASYNC)
             {
-                if (count == 1)
+                if (respProtocolVersion > 2 && count == 1)
                 {
                     var param = GetCommand(bufSpan, out bool success1);
                     if (!success1) return false;
@@ -600,13 +600,20 @@ namespace Garnet.server
                 {
                     if (!DrainCommands(bufSpan, count))
                         return false;
-                    errorFlag = true;
-                    errorCmd = "ASYNC";
+                    if (respProtocolVersion <= 2)
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_SUPPORTED_RESP2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        errorFlag = true;
+                        errorCmd = "ASYNC";
+                    }
                 }
             }
             else
             {
-                // Unknown RESP Command
                 if (!DrainCommands(bufSpan, count))
                     return false;
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
