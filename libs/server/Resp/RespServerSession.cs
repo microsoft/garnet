@@ -104,8 +104,14 @@ namespace Garnet.server
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
 
-
+        /// <summary>
+        /// RESP protocol version (RESP2 is the default)
+        /// </summary>
         byte respProtocolVersion = 2;
+
+        /// <summary>
+        /// Client name for the session
+        /// </summary>
         string clientName = null;
 
         public RespServerSession(
