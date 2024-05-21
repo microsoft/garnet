@@ -19,6 +19,10 @@ namespace Garnet.server
     public enum BitmapOperation : byte
     {
         /// <summary>
+        /// NONE
+        /// </summary>
+        NONE,
+        /// <summary>
         /// AND
         /// </summary>
         AND,
@@ -432,11 +436,16 @@ namespace Garnet.server
         /// <summary>
         /// Performs bitwise operations on multiple strings and store the result.
         /// </summary>
-        private bool StringBitOperation<TGarnetApi>(int count, byte* ptr, BitmapOperation bitop, ref TGarnetApi storageApi)
+        private bool StringBitOperation<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var keyCount = count;
+            var keyCount = count - 1;
             var keys = new ArgSlice[keyCount];
+
+            // Extract bitmap operation option
+            Span<byte> optionSeq = default;
+            if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref optionSeq, ref ptr, recvBufferPtr + bytesRead))
+                return false;
 
             // Read keys
             for (var i = 0; i < keys.Length; i++)
@@ -449,6 +458,25 @@ namespace Garnet.server
             readHead = (int)(ptr - recvBufferPtr);
             if (NetworkKeyArraySlotVerify(ref keys, false))
                 return true;
+
+            // Match bitmap operation option
+            ConvertUtils.MakeUpperCase(optionSeq);
+            var bitop = optionSeq switch
+            {
+                _ when optionSeq.SequenceEqual("OR"u8) => BitmapOperation.OR,
+                _ when optionSeq.SequenceEqual("AND"u8) => BitmapOperation.AND,
+                _ when optionSeq.SequenceEqual("XOR"u8) => BitmapOperation.XOR,
+                _ when optionSeq.SequenceEqual("NOT"u8) => BitmapOperation.NOT,
+                _ => BitmapOperation.NONE
+            };
+
+            // Check if option provided is valid
+            if (bitop == BitmapOperation.NONE)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             if (sizeof(byte*) * (keyCount - 1) > 512)
             {
