@@ -12,7 +12,7 @@ namespace Tsavorite.core
 {
     // RecordInfo layout (64 bits total):
     // [Unused1][Modified][InNewVersion][Filler][Dirty][Unused2][Sealed][Valid][Tombstone][LLLLLLL] [RAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA]
-    //     where L = unused, R = readcache, A = address
+    //     where L = leftover, R = readcache, A = address
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
     {
@@ -23,8 +23,11 @@ namespace Tsavorite.core
         internal const int kPreviousAddressBits = 48;
         internal const long kPreviousAddressMaskInWord = (1L << kPreviousAddressBits) - 1;
 
+        // Leftover bits (that were reclaimed from locking)
+        const int kLeftoverBitCount = 7;
+
         // Other marker bits. Unused* means bits not yet assigned; use the highest number when assigning
-        const int kTombstoneBitOffset = kPreviousAddressBits + 1;
+        const int kTombstoneBitOffset = kPreviousAddressBits + kLeftoverBitCount;
         const int kValidBitOffset = kTombstoneBitOffset + 1;
         const int kSealedBitOffset = kValidBitOffset + 1;
         const int kUnused2BitOffset = kSealedBitOffset + 1;
@@ -32,7 +35,7 @@ namespace Tsavorite.core
         const int kFillerBitOffset = kDirtyBitOffset + 1;
         const int kInNewVersionBitOffset = kFillerBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
-        internal const int kUnused1BitOffset = kModifiedBitOffset + 1;
+        const int kUnused1BitOffset = kModifiedBitOffset + 1;
 
         const long kTombstoneBitMask = 1L << kTombstoneBitOffset;
         const long kValidBitMask = 1L << kValidBitOffset;

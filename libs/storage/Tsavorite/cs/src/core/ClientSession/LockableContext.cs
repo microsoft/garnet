@@ -1109,6 +1109,7 @@ namespace Tsavorite.core
             #endregion IFunctions - Checkpointing
 
             #region Transient locking
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(Store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
@@ -1118,6 +1119,7 @@ namespace Tsavorite.core
                 return true;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(Store.LockTable.IsLocked(ref key, ref stackCtx.hei),
@@ -1127,6 +1129,7 @@ namespace Tsavorite.core
                 return true;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(Store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
@@ -1135,6 +1138,7 @@ namespace Tsavorite.core
                             + $" Slocked {_clientSession.store.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(Store.LockTable.IsLockedShared(ref key, ref stackCtx.hei),
