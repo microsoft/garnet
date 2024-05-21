@@ -189,7 +189,6 @@ namespace Garnet.server.ACL
                 // Parse category name
                 string categoryName = op.Substring(2);
 
-
                 RespAclCategories category;
                 try
                 {
@@ -221,7 +220,7 @@ namespace Garnet.server.ACL
                     throw new ACLUnknownOperationException(op);
                 }
 
-                if (!Enum.TryParse(commandName, ignoreCase: true, out RespCommand command) || IsInvalidCommandToAcl(command))
+                if (!TryParseCommandForAcl(commandName, out RespCommand command))
                 {
                     throw new AclCommandDoesNotExistException(commandName);
                 }
@@ -246,6 +245,24 @@ namespace Garnet.server.ACL
             else
             {
                 throw new ACLUnknownOperationException(op);
+            }
+
+            // there's some fixup that has to be done when parsing a command
+            static bool TryParseCommandForAcl(string commandName, out RespCommand command)
+            {
+                if (!Enum.TryParse(commandName, ignoreCase: true, out command))
+                {
+                    if (commandName.Equals("SLAVEOF", StringComparison.OrdinalIgnoreCase))
+                    {
+                        command = RespCommand.SECONDARYOF;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+
+                return !IsInvalidCommandToAcl(command);
             }
 
             // some commands aren't really commands, so ACLs shouldn't accept their names

@@ -386,6 +386,22 @@ namespace Garnet.test.Resp.ACL
         {
             // test is a bit more verbose since it involves @admin
 
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoBGSave(db)), "Denied when should have been permitted");
+                Assert.True(CheckAuthFailure(() => DoBGSaveSchedule(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-bgsave"]);
+
+                Assert.False(CheckAuthFailure(() => DoBGSave(db)), "Permitted when should have been denied");
+                Assert.False(CheckAuthFailure(() => DoBGSaveSchedule(db)), "Permitted when should have been denied");
+            }
+
             string[] categories = ["admin", "slow", "dangerous"];
 
             foreach (string category in categories)
@@ -407,45 +423,45 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoBGSave), "Denied when should have been permitted");
-                    Assert.True(CheckAuthFailure(DoBGSaveSchedule), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoBGSave(db)), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoBGSaveSchedule(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoBGSave), "Permitted when should have been denied");
-                    Assert.False(CheckAuthFailure(DoBGSaveSchedule), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoBGSave(db)), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoBGSaveSchedule(db)), "Permitted when should have been denied");
+                }
+            }
 
-                    void DoBGSave()
+            static void DoBGSave(IDatabase db)
+            {
+                try
+                {
+                    RedisResult res = db.Execute("BGSAVE");
+
+                    Assert.IsTrue("Background saving started" == (string)res || "Background saving scheduled" == (string)res);
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message != "ERR checkpoint already in progress")
                     {
-                        try
-                        {
-                            RedisResult res = db.Execute("BGSAVE");
-
-                            Assert.IsTrue("Background saving started" == (string)res || "Background saving scheduled" == (string)res);
-                        }
-                        catch (RedisException e)
-                        {
-                            if (e.Message != "ERR checkpoint already in progress")
-                            {
-                                throw;
-                            }
-                        }
+                        throw;
                     }
+                }
+            }
 
-                    void DoBGSaveSchedule()
+            static void DoBGSaveSchedule(IDatabase db)
+            {
+                try
+                {
+                    RedisResult res = db.Execute("BGSAVE", "SCHEDULE");
+                    Assert.IsTrue("Background saving started" == (string)res || "Background saving scheduled" == (string)res);
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message != "ERR checkpoint already in progress")
                     {
-                        try
-                        {
-                            RedisResult res = db.Execute("BGSAVE", "SCHEDULE");
-                            Assert.IsTrue("Background saving started" == (string)res || "Background saving scheduled" == (string)res);
-                        }
-                        catch (RedisException e)
-                        {
-                            if (e.Message != "ERR checkpoint already in progress")
-                            {
-                                throw;
-                            }
-                        }
+                        throw;
                     }
                 }
             }
@@ -913,6 +929,20 @@ namespace Garnet.test.Resp.ACL
         {
             // test is a bit more verbose since it involves @admin
 
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoCommitAOF(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-commitaof"]);
+
+                Assert.False(CheckAuthFailure(() => DoCommitAOF(db)), "Permitted when should have been denied");
+            }
+
             string[] categories = ["admin", "garnet"];
 
             foreach (string category in categories)
@@ -934,18 +964,18 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoCommitAOF), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoCommitAOF(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoCommitAOF), "Permitted when should have been denied");
-
-                    void DoCommitAOF()
-                    {
-                        RedisResult val = db.Execute("COMMITAOF");
-                        Assert.AreEqual("AOF file committed", (string)val);
-                    }
+                    Assert.False(CheckAuthFailure(() => DoCommitAOF(db)), "Permitted when should have been denied");
                 }
+            }
+
+            static void DoCommitAOF(IDatabase db)
+            {
+                RedisResult val = db.Execute("COMMITAOF");
+                Assert.AreEqual("AOF file committed", (string)val);
             }
         }
 
@@ -1424,6 +1454,12 @@ namespace Garnet.test.Resp.ACL
                 DoFailoverToForceAbortTimeout,
             ];
 
+            // check denied with -failover
+            foreach (Action<IServer> cmd in cmds)
+            {
+                Run(false, server => SetUser(server, "default", $"-failover"), cmd);
+            }
+
             string[] acls = ["admin", "slow", "dangerous"];
 
             foreach (Action<IServer> cmd in cmds)
@@ -1585,6 +1621,22 @@ namespace Garnet.test.Resp.ACL
         {
             // test is a bit more verbose since it involves @dangerous
 
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoFlushDB(db)), "Denied when should have been permitted");
+                Assert.True(CheckAuthFailure(() => DoFlushDBAsync(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-flushdb"]);
+
+                Assert.False(CheckAuthFailure(() => DoFlushDB(db)), "Permitted when should have been denied");
+                Assert.False(CheckAuthFailure(() => DoFlushDBAsync(db)), "Permitted when should have been denied");
+            }
+
             string[] categories = ["keyspace", "write", "dangerous", "slow"];
 
             foreach (string category in categories)
@@ -1606,26 +1658,26 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoFlushDB), "Denied when should have been permitted");
-                    Assert.True(CheckAuthFailure(DoFlushDBAsync), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoFlushDB(db)), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoFlushDBAsync(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoFlushDB), "Permitted when should have been denied");
-                    Assert.False(CheckAuthFailure(DoFlushDBAsync), "Permitted when should have been denied");
-
-                    void DoFlushDB()
-                    {
-                        RedisResult val = db.Execute("FLUSHDB");
-                        Assert.AreEqual("OK", (string)val);
-                    }
-
-                    void DoFlushDBAsync()
-                    {
-                        RedisResult val = db.Execute("FLUSHDB", "ASYNC");
-                        Assert.AreEqual("OK", (string)val);
-                    }
+                    Assert.False(CheckAuthFailure(() => DoFlushDB(db)), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoFlushDBAsync(db)), "Permitted when should have been denied");
                 }
+            }
+
+            static void DoFlushDB(IDatabase db)
+            {
+                RedisResult val = db.Execute("FLUSHDB");
+                Assert.AreEqual("OK", (string)val);
+            }
+
+            static void DoFlushDBAsync(IDatabase db)
+            {
+                RedisResult val = db.Execute("FLUSHDB", "ASYNC");
+                Assert.AreEqual("OK", (string)val);
             }
         }
 
@@ -1633,6 +1685,22 @@ namespace Garnet.test.Resp.ACL
         public void ForceGCACLs()
         {
             // test is a bit more verbose since it involves @admin
+
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoForceGC(db)), "Denied when should have been permitted");
+                Assert.True(CheckAuthFailure(() => DoForceGCGen(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-forcegc"]);
+
+                Assert.False(CheckAuthFailure(() => DoForceGC(db)), "Permitted when should have been denied");
+                Assert.False(CheckAuthFailure(() => DoForceGCGen(db)), "Permitted when should have been denied");
+            }
 
             string[] categories = ["admin", "garnet"];
 
@@ -1655,26 +1723,26 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoForceGC), "Denied when should have been permitted");
-                    Assert.True(CheckAuthFailure(DoForceGCGen), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoForceGC(db)), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoForceGCGen(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoForceGC), "Permitted when should have been denied");
-                    Assert.False(CheckAuthFailure(DoForceGCGen), "Permitted when should have been denied");
-
-                    void DoForceGC()
-                    {
-                        RedisResult val = db.Execute("FORCEGC");
-                        Assert.AreEqual("GC completed", (string)val);
-                    }
-
-                    void DoForceGCGen()
-                    {
-                        RedisResult val = db.Execute("FORCEGC", "1");
-                        Assert.AreEqual("GC completed", (string)val);
-                    }
+                    Assert.False(CheckAuthFailure(() => DoForceGC(db)), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoForceGCGen(db)), "Permitted when should have been denied");
                 }
+            }
+
+            static void DoForceGC(IDatabase db)
+            {
+                RedisResult val = db.Execute("FORCEGC");
+                Assert.AreEqual("GC completed", (string)val);
+            }
+
+            static void DoForceGCGen(IDatabase db)
+            {
+                RedisResult val = db.Execute("FORCEGC", "1");
+                Assert.AreEqual("GC completed", (string)val);
             }
         }
 
@@ -2283,6 +2351,24 @@ namespace Garnet.test.Resp.ACL
         {
             // test is a bit more verbose since it involves @dangerous
 
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoInfo(db)), "Denied when should have been permitted");
+                Assert.True(CheckAuthFailure(() => DoInfoSingle(db)), "Denied when should have been permitted");
+                Assert.True(CheckAuthFailure(() => DoInfoMulti(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-info"]);
+
+                Assert.False(CheckAuthFailure(() => DoInfo(db)), "Permitted when should have been denied");
+                Assert.False(CheckAuthFailure(() => DoInfoSingle(db)), "Permitted when should have been denied");
+                Assert.False(CheckAuthFailure(() => DoInfoMulti(db)), "Permitted when should have been denied");
+            }
+
             string[] categories = ["slow", "dangerous"];
 
             foreach (string category in categories)
@@ -2304,34 +2390,34 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoInfo), "Denied when should have been permitted");
-                    Assert.True(CheckAuthFailure(DoInfoSingle), "Denied when should have been permitted");
-                    Assert.True(CheckAuthFailure(DoInfoMulti), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoInfo(db)), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoInfoSingle(db)), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoInfoMulti(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoInfo), "Permitted when should have been denied");
-                    Assert.False(CheckAuthFailure(DoInfoSingle), "Permitted when should have been denied");
-                    Assert.False(CheckAuthFailure(DoInfoMulti), "Permitted when should have been denied");
-
-                    void DoInfo()
-                    {
-                        RedisResult val = db.Execute("INFO");
-                        Assert.IsNotEmpty((string)val);
-                    }
-
-                    void DoInfoSingle()
-                    {
-                        RedisResult val = db.Execute("INFO", "SERVER");
-                        Assert.IsNotEmpty((string)val);
-                    }
-
-                    void DoInfoMulti()
-                    {
-                        RedisResult val = db.Execute("INFO", "SERVER", "MEMORY");
-                        Assert.IsNotEmpty((string)val);
-                    }
+                    Assert.False(CheckAuthFailure(() => DoInfo(db)), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoInfoSingle(db)), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoInfoMulti(db)), "Permitted when should have been denied");
                 }
+            }
+
+            static void DoInfo(IDatabase db)
+            {
+                RedisResult val = db.Execute("INFO");
+                Assert.IsNotEmpty((string)val);
+            }
+
+            static void DoInfoSingle(IDatabase db)
+            {
+                RedisResult val = db.Execute("INFO", "SERVER");
+                Assert.IsNotEmpty((string)val);
+            }
+
+            static void DoInfoMulti(IDatabase db)
+            {
+                RedisResult val = db.Execute("INFO", "SERVER", "MEMORY");
+                Assert.IsNotEmpty((string)val);
             }
         }
 
@@ -2339,6 +2425,20 @@ namespace Garnet.test.Resp.ACL
         public void KeysACLs()
         {
             // test is a bit more verbose since it involves @dangerous
+
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoKeys(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-keys"]);
+
+                Assert.False(CheckAuthFailure(() => DoKeys(db)), "Permitted when should have been denied");
+            }
 
             string[] categories = ["keyspace", "read", "slow", "dangerous"];
 
@@ -2361,19 +2461,19 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoKeys), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoKeys(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoKeys), "Permitted when should have been denied");
-
-                    void DoKeys()
-                    {
-                        RedisResult val = db.Execute("KEYS", "*");
-                        RedisResult[] valArr = (RedisResult[])val;
-                        Assert.AreEqual(0, valArr.Length);
-                    }
+                    Assert.False(CheckAuthFailure(() => DoKeys(db)), "Permitted when should have been denied");
                 }
+            }
+
+            static void DoKeys(IDatabase db)
+            {
+                RedisResult val = db.Execute("KEYS", "*");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
             }
         }
 
@@ -2381,6 +2481,20 @@ namespace Garnet.test.Resp.ACL
         public void LastSaveACLs()
         {
             // test is a bit more verbose since it involves @admin
+
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoLastSave(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-lastsave"]);
+
+                Assert.False(CheckAuthFailure(() => DoLastSave(db)), "Permitted when should have been denied");
+            }
 
             string[] categories = ["admin", "fast", "dangerous"];
 
@@ -2403,18 +2517,18 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoLastSave), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoLastSave(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoLastSave), "Permitted when should have been denied");
-
-                    void DoLastSave()
-                    {
-                        RedisResult val = db.Execute("LASTSAVE");
-                        Assert.AreEqual(0, (long)val);
-                    }
+                    Assert.False(CheckAuthFailure(() => DoLastSave(db)), "Permitted when should have been denied");
                 }
+            }
+
+            static void DoLastSave(IDatabase db)
+            {
+                RedisResult val = db.Execute("LASTSAVE");
+                Assert.AreEqual(0, (long)val);
             }
         }
 
@@ -3022,6 +3136,20 @@ namespace Garnet.test.Resp.ACL
         {
             // uses exceptions for control flow, as we're not setting up replicas here
 
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoMigrate(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-migrate"]);
+
+                Assert.False(CheckAuthFailure(() => DoMigrate(db)), "Permitted when should have been denied");
+            }
+
             // todo: migrate has a ton of options, test other variants
 
             // test is a bit more verbose since it involves @dangerous
@@ -3047,29 +3175,29 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoMigrate), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoMigrate(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoMigrate), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoMigrate(db)), "Permitted when should have been denied");
+                }
+            }
 
-                    void DoMigrate()
+            static void DoMigrate(IDatabase db)
+            {
+                try
+                {
+                    db.Execute("MIGRATE", "127.0.0.1", "9999", "KEY", "0", "1000");
+                    Assert.Fail("Shouldn't succeed, no replicas are attached");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
                     {
-                        try
-                        {
-                            db.Execute("MIGRATE", "127.0.0.1", "9999", "KEY", "0", "1000");
-                            Assert.Fail("Shouldn't succeed, no replicas are attached");
-                        }
-                        catch (RedisException e)
-                        {
-                            if (e.Message == "ERR This instance has cluster support disabled")
-                            {
-                                return;
-                            }
-
-                            throw;
-                        }
+                        return;
                     }
+
+                    throw;
                 }
             }
         }
@@ -3123,6 +3251,18 @@ namespace Garnet.test.Resp.ACL
         {
             // MONITOR isn't actually implemented, and doesn't fit nicely into SE.Redis anyway, so we only check the DENY cases here
 
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                SetUser(server, "default", [$"-monitor"]);
+
+                Assert.False(CheckAuthFailure(() => DoMonitor(db)), "Permitted when should have been denied");
+            }
+
             // test is a bit more involved since @admin is present
             string[] categories = ["admin", "slow", "dangerous"];
 
@@ -3147,14 +3287,14 @@ namespace Garnet.test.Resp.ACL
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoMonitor), "Permitted when should have been denied");
-
-                    void DoMonitor()
-                    {
-                        db.Execute("MONITOR");
-                        Assert.Fail("Should never reach this point");
-                    }
+                    Assert.False(CheckAuthFailure(() => DoMonitor(db)), "Permitted when should have been denied");
                 }
+            }
+
+            static void DoMonitor(IDatabase db)
+            {
+                db.Execute("MONITOR");
+                Assert.Fail("Should never reach this point");
             }
         }
 
@@ -3623,6 +3763,20 @@ namespace Garnet.test.Resp.ACL
         {
             // todo: REGISTERCS has a complicated syntax, test proper commands later
 
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoRegisterCS(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-registercs"]);
+
+                Assert.False(CheckAuthFailure(() => DoRegisterCS(db)), "Permitted when should have been denied");
+            }
+
             // test is a bit more verbose since it involves @admin
 
             string[] categories = ["admin", "garnet", "dangerous"];
@@ -3646,29 +3800,29 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoRegisterCS), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoRegisterCS(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoRegisterCS), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoRegisterCS(db)), "Permitted when should have been denied");
+                }
+            }
 
-                    void DoRegisterCS()
+            static void DoRegisterCS(IDatabase db)
+            {
+                try
+                {
+                    db.Execute("REGISTERCS");
+                    Assert.Fail("Should be unreachable, command is malfoemd");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR malformed REGISTERCS command.")
                     {
-                        try
-                        {
-                            db.Execute("REGISTERCS");
-                            Assert.Fail("Should be unreachable, command is malfoemd");
-                        }
-                        catch (RedisException e)
-                        {
-                            if (e.Message == "ERR malformed REGISTERCS command.")
-                            {
-                                return;
-                            }
-
-                            throw;
-                        }
+                        return;
                     }
+
+                    throw;
                 }
             }
         }
@@ -3712,6 +3866,22 @@ namespace Garnet.test.Resp.ACL
         {
             // uses exceptions as control flow, since clustering is disabled in these tests
 
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoReplicaOf(db)), "Denied when should have been permitted");
+                Assert.True(CheckAuthFailure(() => DoReplicaOfNoOne(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-replicaof"]);
+
+                Assert.False(CheckAuthFailure(() => DoReplicaOf(db)), "Permitted when should have been denied");
+                Assert.False(CheckAuthFailure(() => DoReplicaOf(db)), "Permitted when should have been denied");
+            }
+
             // test is a bit more verbose since it involves @admin
 
             string[] categories = ["admin", "slow", "dangerous"];
@@ -3735,49 +3905,49 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoReplicaOf), "Denied when should have been permitted");
-                    Assert.True(CheckAuthFailure(DoReplicaOfNoOne), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoReplicaOf(db)), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoReplicaOfNoOne(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoReplicaOf), "Permitted when should have been denied");
-                    Assert.False(CheckAuthFailure(DoReplicaOfNoOne), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoReplicaOf(db)), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoReplicaOfNoOne(db)), "Permitted when should have been denied");
+                }
+            }
 
-                    void DoReplicaOf()
+            static void DoReplicaOf(IDatabase db)
+            {
+                try
+                {
+                    db.Execute("REPLICAOF", "127.0.0.1", "9999");
+                    Assert.Fail("Should be unreachable, cluster is disabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
                     {
-                        try
-                        {
-                            db.Execute("REPLICAOF", "127.0.0.1", "9999");
-                            Assert.Fail("Should be unreachable, cluster is disabled");
-                        }
-                        catch (RedisException e)
-                        {
-                            if (e.Message == "ERR This instance has cluster support disabled")
-                            {
-                                return;
-                            }
-
-                            throw;
-                        }
+                        return;
                     }
 
-                    void DoReplicaOfNoOne()
-                    {
-                        try
-                        {
-                            db.Execute("REPLICAOF", "NO", "ONE");
-                            Assert.Fail("Should be unreachable, cluster is disabled");
-                        }
-                        catch (RedisException e)
-                        {
-                            if (e.Message == "ERR This instance has cluster support disabled")
-                            {
-                                return;
-                            }
+                    throw;
+                }
+            }
 
-                            throw;
-                        }
+            static void DoReplicaOfNoOne(IDatabase db)
+            {
+                try
+                {
+                    db.Execute("REPLICAOF", "NO", "ONE");
+                    Assert.Fail("Should be unreachable, cluster is disabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
                     }
+
+                    throw;
                 }
             }
         }
@@ -3788,6 +3958,19 @@ namespace Garnet.test.Resp.ACL
             // todo: RUNTXP semantics are a bit unclear... expand test later
 
             // todo: RUNTXP breaks the stream when command is malformed
+
+            // test denying just the command
+            {
+                {
+                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                    IServer server = redis.GetServers().Single();
+                    IDatabase db = redis.GetDatabase();
+
+                    SetUser(server, "default", ["-runtxp"]);
+                    Assert.False(CheckAuthFailure(() => DoRunTxp(db)), "Permitted when should have been denied");
+                }
+            }
 
             string[] categories = ["transaction", "garnet"];
 
@@ -3851,6 +4034,20 @@ namespace Garnet.test.Resp.ACL
         {
             // test is a bit more verbose since it involves @admin
 
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoSave(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-save"]);
+
+                Assert.False(CheckAuthFailure(() => DoSave(db)), "Permitted when should have been denied");
+            }
+
             string[] categories = ["admin", "slow", "dangerous"];
 
             foreach (string category in categories)
@@ -3872,18 +4069,18 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoSave), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoSave(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoSave), "Permitted when should have been denied");
-
-                    void DoSave()
-                    {
-                        RedisResult val = db.Execute("SAVE");
-                        Assert.AreEqual("OK", (string)val);
-                    }
+                    Assert.False(CheckAuthFailure(() => DoSave(db)), "Permitted when should have been denied");
                 }
+            }
+
+            static void DoSave(IDatabase db)
+            {
+                RedisResult val = db.Execute("SAVE");
+                Assert.AreEqual("OK", (string)val);
             }
         }
 
@@ -4295,6 +4492,22 @@ namespace Garnet.test.Resp.ACL
 
             // test is a bit more verbose since it involves @admin
 
+            // test just the command
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+                IServer server = redis.GetServers().Single();
+                IDatabase db = redis.GetDatabase();
+
+                Assert.True(CheckAuthFailure(() => DoSlaveOf(db)), "Denied when should have been permitted");
+                Assert.True(CheckAuthFailure(() => DoSlaveOfNoOne(db)), "Denied when should have been permitted");
+
+                SetUser(server, "default", [$"-slaveof"]);
+
+                Assert.False(CheckAuthFailure(() => DoSlaveOf(db)), "Permitted when should have been denied");
+                Assert.False(CheckAuthFailure(() => DoSlaveOfNoOne(db)), "Permitted when should have been denied");
+            }
+
             string[] categories = ["admin", "slow", "dangerous"];
 
             foreach (string category in categories)
@@ -4316,49 +4529,49 @@ namespace Garnet.test.Resp.ACL
                     IServer server = redis.GetServers().Single();
                     IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(DoSlaveOf), "Denied when should have been permitted");
-                    Assert.True(CheckAuthFailure(DoSlaveOfNoOne), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoSlaveOf(db)), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoSlaveOfNoOne(db)), "Denied when should have been permitted");
 
                     SetUser(server, "temp-admin", [$"-@{category}"]);
 
-                    Assert.False(CheckAuthFailure(DoSlaveOf), "Permitted when should have been denied");
-                    Assert.False(CheckAuthFailure(DoSlaveOfNoOne), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoSlaveOf(db)), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoSlaveOfNoOne(db)), "Permitted when should have been denied");
+                }
+            }
 
-                    void DoSlaveOf()
+            static void DoSlaveOf(IDatabase db)
+            {
+                try
+                {
+                    db.Execute("SLAVEOF", "127.0.0.1", "9999");
+                    Assert.Fail("Should be unreachable, cluster is disabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
                     {
-                        try
-                        {
-                            db.Execute("SLAVEOF", "127.0.0.1", "9999");
-                            Assert.Fail("Should be unreachable, cluster is disabled");
-                        }
-                        catch (RedisException e)
-                        {
-                            if (e.Message == "ERR This instance has cluster support disabled")
-                            {
-                                return;
-                            }
-
-                            throw;
-                        }
+                        return;
                     }
 
-                    void DoSlaveOfNoOne()
-                    {
-                        try
-                        {
-                            db.Execute("SLAVEOF", "NO", "ONE");
-                            Assert.Fail("Should be unreachable, cluster is disabled");
-                        }
-                        catch (RedisException e)
-                        {
-                            if (e.Message == "ERR This instance has cluster support disabled")
-                            {
-                                return;
-                            }
+                    throw;
+                }
+            }
 
-                            throw;
-                        }
+            static void DoSlaveOfNoOne(IDatabase db)
+            {
+                try
+                {
+                    db.Execute("SLAVEOF", "NO", "ONE");
+                    Assert.Fail("Should be unreachable, cluster is disabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
                     }
+
+                    throw;
                 }
             }
         }
