@@ -343,6 +343,46 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
+        /// Adds the given command to the user.
+        /// 
+        /// If the command has subcommands, and no specific subcommand is indicated, adds all subcommands too.
+        /// </summary>
+        /// <param name="command">Command to add.</param>
+        /// <param name="subCommand">Subcommand to add, or none, from <see cref="RespCommandsInfo.SubCommandIds"/>.</param>
+        public void AddCommand(RespCommand command, byte subCommand)
+        {
+            IEnumerable<(RespCommand cmd, byte subCmd)> toAdd;
+            if (subCommand == RespCommandsInfo.SubCommandIds.None)
+            {
+                if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
+                {
+                    throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
+                }
+
+                toAdd = DetermineCommandDetails([info]);
+            }
+            else
+            {
+                toAdd = [(command, subCommand)];
+            }
+
+            CommandPermissionSet prev = this._enabledCommands;
+            CommandPermissionSet oldPerms;
+            CommandPermissionSet updated;
+            do
+            {
+                oldPerms = prev;
+
+                updated = oldPerms.Copy();
+                foreach ((RespCommand cmd, byte subCmd) in toAdd)
+                {
+                    updated.AddCommand(cmd, subCmd);
+                }
+            }
+            while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
+        }
+
+        /// <summary>
         /// Removes the given category from the user.
         /// </summary>
         /// <param name="category">Bit flag of the category to remove.</param>
@@ -379,6 +419,46 @@ namespace Garnet.server.ACL
                     {
                         updated.RemoveCommand(cmd, subCmd);
                     }
+                }
+            }
+            while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
+        }
+
+        /// <summary>
+        /// REmoves the given command from the user.
+        /// 
+        /// If the command has subcommands, and no specific subcommand is indicated, removes all subcommands too.
+        /// </summary>
+        /// <param name="command">Command to remove.</param>
+        /// <param name="subCommand">Subcommand to remove, or none, from <see cref="RespCommandsInfo.SubCommandIds"/>.</param>
+        public void RemoveCommand(RespCommand command, byte subCommand)
+        {
+            IEnumerable<(RespCommand cmd, byte subCmd)> toAdd;
+            if (subCommand == RespCommandsInfo.SubCommandIds.None)
+            {
+                if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
+                {
+                    throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
+                }
+
+                toAdd = DetermineCommandDetails([info]);
+            }
+            else
+            {
+                toAdd = [(command, subCommand)];
+            }
+
+            CommandPermissionSet prev = this._enabledCommands;
+            CommandPermissionSet oldPerms;
+            CommandPermissionSet updated;
+            do
+            {
+                oldPerms = prev;
+
+                updated = oldPerms.Copy();
+                foreach ((RespCommand cmd, byte subCmd) in toAdd)
+                {
+                    updated.RemoveCommand(cmd, subCmd);
                 }
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);

@@ -11,7 +11,7 @@ namespace Garnet.server.ACL
     {
         private static readonly char[] WhitespaceChars = [' ', '\t', '\r', '\n'];
 
-        private static readonly Dictionary<string, RespAclCategories> categoryNames = new Dictionary<string, RespAclCategories>()
+        private static readonly Dictionary<string, RespAclCategories> categoryNames = new Dictionary<string, RespAclCategories>(StringComparer.OrdinalIgnoreCase)
         {
             ["admin"] = RespAclCategories.Admin,
             ["bitmap"] = RespAclCategories.Bitmap,
@@ -210,6 +210,31 @@ namespace Garnet.server.ACL
                     user.AddCategory(category);
                 }
             }
+            else if (op.StartsWith("-", StringComparison.Ordinal) || op.StartsWith("+", StringComparison.Ordinal))
+            {
+                // individual commands or command|subcommand pairs
+                string commandName = op.Substring(1);
+
+                if (commandName.Contains("|"))
+                {
+                    // todo: implement sub commands
+                    throw new ACLUnknownOperationException(op);
+                }
+
+                if (!Enum.TryParse(commandName, ignoreCase: true, out RespCommand command) || IsInvalidCommandToAcl(command))
+                {
+                    throw new AclCommandDoesNotExistException(commandName);
+                }
+
+                if (op[0] == '-')
+                {
+                    user.RemoveCommand(command, subCommand: RespCommandsInfo.SubCommandIds.None);
+                }
+                else
+                {
+                    user.AddCommand(command, subCommand: RespCommandsInfo.SubCommandIds.None);
+                }
+            }
             else if (op.Equals("~*", StringComparison.Ordinal) || op.Equals("ALLKEYS", StringComparison.OrdinalIgnoreCase))
             {
                 // NOTE: No-op, because only wildcard key patterns are currently supported
@@ -222,6 +247,10 @@ namespace Garnet.server.ACL
             {
                 throw new ACLUnknownOperationException(op);
             }
+
+            // some commands aren't really commands, so ACLs shouldn't accept their names
+            static bool IsInvalidCommandToAcl(RespCommand command)
+            => command == RespCommand.INVALID || command == RespCommand.NONE || command == RespCommand.SETEXNX || command == RespCommand.SETEXXX || command == RespCommand.SETKEEPTTL || command == RespCommand.SETKEEPTTLXX;
         }
 
         /// <summary>
