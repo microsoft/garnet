@@ -112,7 +112,7 @@ namespace Garnet.server
         /// The bit is either set or cleared depending on value, which can be either 0 or 1.
         /// When key does not exist, a new key is created.The key is grown to make sure it can hold a bit at offset.
         /// </summary>
-        private bool StringSetBit<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkStringSetBit<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null;
@@ -185,7 +185,7 @@ namespace Garnet.server
         /// <summary>
         /// Returns the bit value at offset in the key stored.
         /// </summary>
-        private bool StringGetBit<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkStringGetBit<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
 
@@ -245,7 +245,7 @@ namespace Garnet.server
         /// Count the number of set bits in a key. 
         /// It can be specified an interval for counting, passing the start and end arguments.
         /// </summary>
-        private bool StringBitCount<TGarnetApi>(byte* ptr, int count, ref TGarnetApi storageApi)
+        private bool NetworkStringBitCount<TGarnetApi>(byte* ptr, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             //<[Get Key]>
@@ -332,7 +332,7 @@ namespace Garnet.server
         /// <summary>
         /// Returns the position of the first bit set to 1 or 0 in a key.
         /// </summary>
-        private bool StringBitPosition<TGarnetApi>(byte* ptr, int count, ref TGarnetApi storageApi)
+        private bool NetworkStringBitPosition<TGarnetApi>(byte* ptr, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             //<[Get Key]>
@@ -436,7 +436,7 @@ namespace Garnet.server
         /// <summary>
         /// Performs bitwise operations on multiple strings and store the result.
         /// </summary>
-        private bool StringBitOperation<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkStringBitOperation<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var keyCount = count - 1;
