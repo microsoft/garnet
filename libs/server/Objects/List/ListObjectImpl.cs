@@ -238,11 +238,11 @@ namespace Garnet.server
                     if (start == 0)
                     {
                         var numDeletes = list.Count - end;
-                        for (int i = 0; i < numDeletes; i++)
+                        for (var i = 0; i < numDeletes; i++)
                         {
-                            var _value = list.Last.Value;
+                            var value = list.Last!.Value;
                             list.RemoveLast();
-                            this.UpdateSize(_value, false);
+                            this.UpdateSize(value, false);
                         }
                         outputHeader->opsDone = numDeletes;
                     }
@@ -262,7 +262,6 @@ namespace Garnet.server
                         outputHeader->opsDone = i;
                     }
                 }
-
 
                 outputHeader->bytesDone = 0;
                 outputHeader->countDone = outputHeader->opsDone;

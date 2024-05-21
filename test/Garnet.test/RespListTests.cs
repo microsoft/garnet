@@ -127,6 +127,8 @@ namespace Garnet.test
             new object[] {8, 12, new[] {8, 9} },
             new object[] {9, 12, new[] {9} },
             new object[] {10, 12, Array.Empty<int>() },
+            new object[] {5, 3, Array.Empty<int>()},
+            new object[] {-3, -5, Array.Empty<int>()}
         };
 
         [Test]
