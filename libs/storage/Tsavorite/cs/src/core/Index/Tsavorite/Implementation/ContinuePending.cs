@@ -58,31 +58,9 @@ namespace Tsavorite.core
                     {
                         // During the pending operation, a record for the key may have been added to the log or readcache.
                         ref var value = ref hlog.GetContextRecordValue(ref request);
-                        bool found, needsRevivCheck = TracebackNeedsRevivCheck(ref stackCtx);
-                        if (needsRevivCheck)
-                        {
-                            var minAddress = pendingContext.InitialLatestLogicalAddress < hlog.HeadAddress ? hlog.HeadAddress : pendingContext.InitialLatestLogicalAddress + 1;
-                            found = TryFindRecordForRead(ref key, ref stackCtx, minAddress, out status);
-                            if (!found && status != OperationStatus.SUCCESS)
-                            {
-                                if (HandleImmediateRetryStatus(status, tsavoriteSession, ref pendingContext))
-                                    continue;
-                                return status;
-                            }
-                        }
-                        else
-                        {
-                            found = TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext);
-                        }
-
-                        if (found)
+                        if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
                         {
                             srcRecordInfo = ref stackCtx.recSrc.GetInfo();
-                            if (!needsRevivCheck && DoRecordIsolation && stackCtx.recSrc.HasMainLogSrc && !stackCtx.recSrc.TryLockShared(ref srcRecordInfo))
-                            {
-                                HandleImmediateRetryStatus(OperationStatus.RETRY_LATER, tsavoriteSession, ref pendingContext);
-                                continue;
-                            }
 
                             // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
                             if (tsavoriteSession.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
@@ -141,8 +119,7 @@ namespace Tsavorite.core
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
-                        if (!TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx))
-                            stackCtx.recSrc.UnlockShared(ref srcRecordInfo, hlog.HeadAddress);
+                        TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
                     }
 
                     // Must do this *after* Unlocking. Status was set by InternalTryCopyToTail.
@@ -202,8 +179,7 @@ namespace Tsavorite.core
                 try
                 {
                     // During the pending operation a record for the key may have been added to the log. If so, break and go through the full InternalRMW sequence;
-                    // the record in 'request' is stale. RecordIsolation locking is not done here; if we find a source record we don't lock--we go to InternalRMW.
-                    // So we only do LockTable-based locking for tag-chain stability during search.
+                    // the record in 'request' is stale. We only lock for tag-chain stability during search.
                     if (TryFindRecordForPendingOperation(ref key, ref stackCtx, hlog.HeadAddress, out status, ref pendingContext))
                     {
                         if (status != OperationStatus.SUCCESS)
@@ -232,7 +208,6 @@ namespace Tsavorite.core
                 {
                     stackCtx.HandleNewRecordOnException(this);
                     TransientXUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
-                    // Do not do RecordIsolation unlock here, as we did not lock it above:  stackCtx.recSrc.UnlockExclusive(ref srcRecordInfo, hlog.HeadAddress);
                 }
 
             // Must do this *after* Unlocking.

@@ -36,8 +36,7 @@ namespace Tsavorite.benchmark
         [Option('z', "locking", Required = false, Default = ConcurrencyControlMode.None,
              HelpText = "Locking Implementation:" +
                        $"\n    {nameof(ConcurrencyControlMode.None)} = No Locking (default)" +
-                       $"\n    {nameof(ConcurrencyControlMode.LockTable)} = Locking using main HashTable buckets" +
-                       $"\n    {nameof(ConcurrencyControlMode.RecordIsolation)} = RecordInfo locking only within concurrent IFunctions callbacks")]
+                       $"\n    {nameof(ConcurrencyControlMode.LockTable)} = Locking using main HashTable buckets")]
         public ConcurrencyControlMode ConcurrencyControlMode { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,

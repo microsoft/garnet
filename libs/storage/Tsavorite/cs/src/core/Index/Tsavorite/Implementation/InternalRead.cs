@@ -164,8 +164,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                if (!TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx))
-                    stackCtx.recSrc.UnlockShared(ref srcRecordInfo, hlog.HeadAddress);
+                TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
             }
         }
 
@@ -309,25 +308,6 @@ namespace Tsavorite.core
                     return OperationStatus.NOTFOUND;
                 // We do not check for Tombstone here; we return the record to the caller.
 
-                // We *do* return RETRY_LATER if there is a locking conflict.
-                if (DoRecordIsolation && !stackCtx.recSrc.TryLock(ref srcRecordInfo, exclusive: false))
-                    return OperationStatus.RETRY_LATER;
-
-                // If we are doing FreeList revivification verify the record is still in the same tag chain. This is similar to the lock-then-verify logic
-                // in TryMatchFirstRecordWithRecordIsolationAndReviv, but does not use the key since we may have NoKey. For ReadAtAddress, the key and keyHash
-                // are merely hints for bucket locking.
-                if (RevivificationManager.UseFreeRecordPool)
-                {
-                    var bucketIndex = OverflowBucketLockTable<Key, Value>.GetBucketIndex(pendingContext.keyHash, this);
-                    if (bucketIndex != stackCtx.hei.bucketIndex)
-                    {
-                        // If the key and/or keyHash were passed in, they do not match what is in the record so ignore them on the retry.
-                        pendingContext.keyHash = default;
-                        pendingContext.NoKey = true;
-                        goto Retry;
-                    }
-                }
-
                 stackCtx.recSrc.SetHasMainLogSrc();
                 pendingContext.recordInfo = srcRecordInfo;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
@@ -355,8 +335,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                if (!TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx))
-                    stackCtx.recSrc.UnlockShared(ref srcRecordInfo, hlog.HeadAddress);
+                TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
             }
             return status;
         }
