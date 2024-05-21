@@ -3,6 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -17,6 +20,7 @@ namespace Garnet.test
     public class RespCommandTests
     {
         GarnetServer server;
+        private string extTestDir;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCommandsInfo;
         private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
 
@@ -24,11 +28,13 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            extTestDir = Path.Combine(TestUtils.MethodTestDir, "test");
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out respCommandsInfo));
             Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
             Assert.IsNotNull(respCommandsInfo);
             Assert.IsNotNull(respCustomCommandsInfo);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: true,
+                extensionBinPaths: [extTestDir]);
             server.Start();
         }
 
@@ -37,6 +43,7 @@ namespace Garnet.test
         {
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.DeleteDirectory(Directory.GetParent(extTestDir)?.FullName);
         }
 
         /// <summary>
@@ -129,11 +136,14 @@ namespace Garnet.test
             // Register custom commands
             var customCommandsRegistered = RegisterCustomCommands();
 
+            // Dynamically register custom commands
+            var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
+
             // Get all commands (including custom commands) using COMMAND command
             results = (RedisResult[])db.Execute("COMMAND");
 
             Assert.IsNotNull(results);
-            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered, results.Length);
+            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered + customCommandsRegisteredDyn, results.Length);
         }
 
         /// <summary>
@@ -154,11 +164,14 @@ namespace Garnet.test
             // Register custom commands
             var customCommandsRegistered = RegisterCustomCommands();
 
+            // Dynamically register custom commands
+            var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
+
             // Get all commands (including custom commands) using COMMAND INFO command
             results = (RedisResult[])db.Execute("COMMAND", "INFO");
 
             Assert.IsNotNull(results);
-            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered, results.Length);
+            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered + customCommandsRegisteredDyn, results.Length);
         }
 
         /// <summary>
@@ -178,10 +191,13 @@ namespace Garnet.test
             // Register custom commands
             var customCommandsRegistered = RegisterCustomCommands();
 
+            // Dynamically register custom commands
+            var customCommandsRegisteredDyn = DynamicallyRegisterCustomCommands(db);
+
             // Get command count (including custom commands)
             commandCount = (int)db.Execute("COMMAND", "COUNT");
 
-            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered, commandCount);
+            Assert.AreEqual(respCommandsInfo.Count + customCommandsRegistered + customCommandsRegisteredDyn, commandCount);
         }
 
         /// <summary>
@@ -253,9 +269,84 @@ namespace Garnet.test
             var factory = new MyDictFactory();
             server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"]);
             server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, respCustomCommandsInfo["MYDICTSET"]);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, respCustomCommandsInfo["MYDICTGET"]);
+            server.Register.NewTransactionProc("MGETIFPM", () => new MGetIfPM(), respCustomCommandsInfo["MGETIFPM"]);
 
             return 3;
+        }
+
+        private string CreateTestLibrary()
+        {
+            var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
+            var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            Assert.IsNotNull(binPath);
+
+            var namespaces = new[]
+            {
+                "Tsavorite.core",
+                "Garnet.common",
+                "Garnet.server",
+                "System",
+                "System.Buffers",
+                "System.Collections.Generic",
+                "System.Diagnostics",
+                "System.IO",
+                "System.Text",
+            };
+
+            var referenceFiles = new[]
+            {
+                Path.Combine(runtimePath, "System.dll"),
+                Path.Combine(runtimePath, "System.Collections.dll"),
+                Path.Combine(runtimePath, "System.Core.dll"),
+                Path.Combine(runtimePath, "System.Private.CoreLib.dll"),
+                Path.Combine(runtimePath, "System.Runtime.dll"),
+                Path.Combine(binPath, "Tsavorite.core.dll"),
+                Path.Combine(binPath, "Garnet.common.dll"),
+                Path.Combine(binPath, "Garnet.server.dll"),
+            };
+
+            var dir1 = Path.Combine(this.extTestDir, Path.GetFileName(TestUtils.MethodTestDir));
+
+            Directory.CreateDirectory(this.extTestDir);
+            Directory.CreateDirectory(dir1);
+
+            var libPathToFiles = new Dictionary<string, string[]>
+            {
+                {
+                    Path.Combine(dir1, "testLib1.dll"),
+                    new[]
+                    {
+                        Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath),
+                        Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath)
+                    }
+                },
+            };
+
+            foreach (var ltf in libPathToFiles)
+            {
+                TestUtils.CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
+            }
+
+            return Path.Combine(dir1, "testLib1.dll");
+        }
+
+        private int DynamicallyRegisterCustomCommands(IDatabase db)
+        {
+            var path = CreateTestLibrary();
+
+            var args = new List<object>
+            {
+                "TXN", "READWRITETX", 3, "ReadWriteTxn", respCustomCommandsInfo["READWRITETX"].ToJsonString(),
+                "READ", "MYDICTGET", 1, "MyDictFactory", 0, respCustomCommandsInfo["MYDICTGET"].ToJsonString(),
+                "SRC", path
+            };
+
+            // Register select custom commands and transactions
+            var result = (string)db.Execute($"REGISTERCS",
+                args.ToArray());
+            Assert.AreEqual("OK", result);
+
+            return 2;
         }
 
         private void VerifyCommandInfo(string cmdName, RedisResult[] result)

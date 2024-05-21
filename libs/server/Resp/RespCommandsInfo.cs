@@ -8,6 +8,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -277,6 +278,48 @@ namespace Garnet.server
 
             respCommandsInfo = tmpRespCommandInfo;
             return true;
+        }
+
+        /// <summary>
+        /// Parse RespCommandInfo object from JSON string
+        /// </summary>
+        /// <param name="json">The source JSON string</param>
+        /// <param name="commandInfo">The resulting deserialized object</param>
+        /// <returns>True if deserialization successful</returns>
+        internal static bool TryParseFromJsonString(string json, out RespCommandsInfo commandInfo)
+        {
+            commandInfo = default;
+            var serializerOptions = new JsonSerializerOptions()
+            {
+                Converters = { new JsonStringEnumConverter(), new KeySpecConverter() }
+            };
+
+            try
+            {
+                commandInfo = JsonSerializer.Deserialize<RespCommandsInfo>(json, serializerOptions);
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Serializes current object to JSON 
+        /// </summary>
+        /// <param name="indented">Specify if JSON string should be indented</param>
+        /// <returns>JSON serialized string</returns>
+        internal string ToJsonString(bool indented = false)
+        {
+            var serializerOptions = new JsonSerializerOptions()
+            {
+                WriteIndented = indented,
+                Converters = { new JsonStringEnumConverter(), new KeySpecConverter() }
+            };
+
+            return JsonSerializer.Serialize(this, serializerOptions);
         }
 
         /// <summary>

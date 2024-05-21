@@ -349,6 +349,7 @@ namespace Garnet.server
         {
             var leftTokens = count;
             var readPathsOnly = false;
+            var optionalParamsRead = 0;
 
             var binaryPaths = new HashSet<string>();
 
@@ -361,13 +362,13 @@ namespace Garnet.server
                 errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
             // Parse the REGISTERCS command - list of registration sub-commands followed by a list of paths to binary files / folders
-            // Syntax - REGISTERCS cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...] SRC path [path ...]
+            // Syntax - REGISTERCS cmdType name numParams className [expTicks [cmdInfo]] [cmdType name numParams className [expTicks [cmdInfo]] ...] SRC path [path ...]
             RegisterArgsBase args = null;
 
             while (leftTokens > 0)
             {
                 byte* firstTokenPtr = null;
-                int firstTokenSize = 0;
+                var firstTokenSize = 0;
 
                 // Read first token of current sub-command or path
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref firstTokenPtr, ref firstTokenSize, ref ptr, recvBufferPtr + bytesRead))
@@ -419,10 +420,25 @@ namespace Garnet.server
                 else
                 {
                     // Check optional parameters for previous sub-command
-                    if (args is RegisterCmdArgs cmdArgs)
+                    if (optionalParamsRead == 0 && args is RegisterCmdArgs cmdArgs)
                     {
                         var expTicks = NumUtils.BytesToLong(tokenSpan);
                         cmdArgs.ExpirationTicks = expTicks;
+                        optionalParamsRead++;
+                        continue;
+                    }
+
+                    if ((optionalParamsRead == 0 && args is RegisterTxnArgs) || (optionalParamsRead == 1 && args is RegisterCmdArgs))
+                    {
+                        var cmdInfoJson = Encoding.ASCII.GetString(tokenSpan);
+                        if (!RespCommandsInfo.TryParseFromJsonString(cmdInfoJson, out var cmdInfo))
+                        {
+                            errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_COMMAND_INFO_JSON;
+                            break;
+                        }
+
+                        args.CommandInfo = cmdInfo;
+                        optionalParamsRead++;
                         continue;
                     }
 
@@ -430,6 +446,8 @@ namespace Garnet.server
                     errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                     break;
                 }
+
+                optionalParamsRead = 0;
 
                 // Start reading the sub-command arguments
                 // Read custom command name
