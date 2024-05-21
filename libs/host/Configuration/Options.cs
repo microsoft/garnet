@@ -482,7 +482,7 @@ namespace Garnet
             var logDir = LogDir;
             if (!useAzureStorage && enableStorageTier) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
             var checkpointDir = CheckpointDir;
-            if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
+            if (!useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? (string.IsNullOrEmpty(logDir) ? "." : logDir) : checkpointDir).FullName;
 
             var address = !string.IsNullOrEmpty(this.Address) && this.Address.Equals("localhost", StringComparison.CurrentCultureIgnoreCase)
                 ? IPAddress.Loopback.ToString()
@@ -629,8 +629,6 @@ namespace Garnet
                     throw new Exception($"Authentication mode {AuthenticationMode} is not supported.");
             }
         }
-
-
     }
 
     /// <summary>

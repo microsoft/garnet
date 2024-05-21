@@ -104,6 +104,10 @@ namespace Garnet.server
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
 
+
+        int respProtocolVersion = 2;
+        string clientName = null;
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
@@ -211,28 +215,22 @@ namespace Garnet.server
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.GetResponseObject();
-
-                try
-                {
-                    ProcessMessages();
-                }
-                catch (RespParsingException ex)
-                {
-                    logger?.LogCritical($"Aborting open session due to RESP parsing error: {ex.Message}");
-                    logger?.LogDebug(ex, "RespParsingException in ProcessMessages:");
-
-                    // Forward parsing error as RESP error
-                    while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
-                        SendAndReset();
-
-                    // Send message and dispose the network sender to end the session
-                    Send(networkSender.GetResponseObjectHead());
-                    networkSender.Dispose();
-                }
+                ProcessMessages();
                 recvBufferPtr = null;
             }
+            catch (RespParsingException ex)
+            {
+                sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
+                logger?.LogCritical($"Aborting open session due to RESP parsing error: {ex.Message}");
+                logger?.LogDebug(ex, "RespParsingException in ProcessMessages:");
 
+                // Forward parsing error as RESP error
+                while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
+                    SendAndReset();
 
+                Send(networkSender.GetResponseObjectHead());
+                networkSender.Dispose();
+            }
             catch (Exception ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
@@ -244,6 +242,7 @@ namespace Garnet.server
             {
                 networkSender.ReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
+
             }
 
             if (txnManager.IsSkippingOperations())
@@ -367,7 +366,6 @@ namespace Garnet.server
             }
             return false;
         }
-
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, byte subcmd, int count, byte* ptr, ref TGarnetApi storageApi)
@@ -535,6 +533,8 @@ namespace Garnet.server
                 (RespCommand.Set, (byte)SetOperation.SUNIONSTORE) => SetUnionStore(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SDIFF) => SetDiff(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SDIFFSTORE) => SetDiffStore(count, ptr, ref storageApi),
+                (RespCommand.Set, (byte)SetOperation.SINTER) => SetIntersect(count, ptr, ref storageApi),
+                (RespCommand.Set, (byte)SetOperation.SINTERSTORE) => SetIntersectStore(count, ptr, ref storageApi),
                 _ => ProcessOtherCommands(cmd, subcmd, count, ref storageApi),
             };
             return success;
@@ -658,7 +658,17 @@ namespace Garnet.server
             return true;
         }
 
-        ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
+        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                GetCommand(bufSpan, out bool success1);
+                if (!success1) return false;
+            }
+            return true;
+        }
+
+        Span<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
         {
             var ptr = recvBufferPtr + readHead;
             var end = recvBufferPtr + bytesRead;
@@ -685,7 +695,7 @@ namespace Garnet.server
                 RespParsingException.ThrowUnexpectedToken(*ptr);
             }
 
-            var result = bufSpan.Slice(readHead, length);
+            var result = new Span<byte>(recvBufferPtr + readHead, length);
             readHead += length + 2;
             success = true;
 
@@ -769,6 +779,13 @@ namespace Garnet.server
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
             }
+            else
+            {
+                // Reaching here means that we retried SendAndReset without the RespWriteUtils.Write*
+                // method making any progress. This should only happen when the message being written is
+                // too large to fit in the response buffer.
+                GarnetException.Throw("Failed to write to response buffer");
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -811,6 +828,35 @@ namespace Garnet.server
                 }
             }
             memory.Dispose();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteDirectLarge(ReadOnlySpan<byte> src)
+        {
+            // Repeat while we have bytes left to write
+            while (src.Length > 0)
+            {
+                // Compute space left on output buffer
+                int destSpace = (int)(dend - dcurr);
+
+                // Fast path if there is enough space 
+                if (src.Length <= destSpace)
+                {
+                    src.CopyTo(new Span<byte>(dcurr, src.Length));
+                    dcurr += src.Length;
+                    break;
+                }
+
+                // Adjust number of bytes to copy, to space left on output buffer, then copy
+                src.Slice(0, destSpace).CopyTo(new Span<byte>(dcurr, destSpace));
+                src = src.Slice(destSpace);
+
+                // Send and reset output buffer
+                Send(networkSender.GetResponseObjectHead());
+                networkSender.GetResponseObject();
+                dcurr = networkSender.GetResponseObjectHead();
+                dend = networkSender.GetResponseObjectTail();
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

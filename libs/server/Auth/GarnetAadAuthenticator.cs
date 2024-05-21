@@ -10,6 +10,7 @@ using System.Text;
 using Garnet.server.Auth.Aad;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.IdentityModel.Validators;
 
 namespace Garnet.server.Auth
 {
@@ -62,6 +63,7 @@ namespace Garnet.server.Auth
                     ValidAudiences = _audiences,
                     IssuerSigningKeys = _signingTokenProvider.SigningTokens
                 };
+                parameters.EnableAadSigningKeyIssuerValidation();
 
                 var identity = _tokenHandler.ValidateToken(Encoding.UTF8.GetString(password), parameters, out var token);
 

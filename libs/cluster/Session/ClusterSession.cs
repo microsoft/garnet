@@ -45,6 +45,8 @@ namespace Garnet.cluster
         /// </summary>
         bool readWriteSession = false;
 
+        public bool ReadWriteSession => clusterProvider.clusterManager.CurrentConfig.IsPrimary || readWriteSession;
+
         public void SetReadOnlySession() => readWriteSession = false;
         public void SetReadWriteSession() => readWriteSession = true;
 
@@ -159,16 +161,6 @@ namespace Garnet.cluster
             }
         }
 
-        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                GetCommand(bufSpan, out bool success1);
-                if (!success1) return false;
-            }
-            return true;
-        }
-
         /// <summary>
         /// Updates the user currently authenticated in the session.
         /// </summary>
@@ -225,7 +217,17 @@ namespace Garnet.cluster
             return true;
         }
 
-        ReadOnlySpan<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
+        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                _ = GetNextToken(bufSpan, out bool success1);
+                if (!success1) return false;
+            }
+            return true;
+        }
+
+        Span<byte> GetNextToken(ReadOnlySpan<byte> bufSpan, out bool success)
         {
             success = false;
 
@@ -253,7 +255,7 @@ namespace Garnet.cluster
             }
 
             success = true;
-            var result = bufSpan.Slice(readHead, length);
+            var result = new Span<byte>(recvBufferPtr + readHead, length);
             readHead += length + 2;
 
             return result;
