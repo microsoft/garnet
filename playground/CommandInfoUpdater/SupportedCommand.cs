@@ -188,6 +188,8 @@ namespace CommandInfoUpdater
             new("SUBSCRIBE", RespCommand.SUBSCRIBE),
             new("SUNION", RespCommand.Set, (byte)SetOperation.SUNION),
             new("SUNIONSTORE", RespCommand.Set, (byte)SetOperation.SUNIONSTORE),
+            new("SINTER", RespCommand.Set, (byte)SetOperation.SINTER),
+            new("SINTERSTORE", RespCommand.Set, (byte)SetOperation.SINTERSTORE),
             new("TIME", RespCommand.TIME),
             new("TTL", RespCommand.TTL),
             new("TYPE", RespCommand.TYPE),

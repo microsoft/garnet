@@ -3904,8 +3904,84 @@
   },
   {
     "Command": "Set",
+    "ArrayCommand": 13,
+    "Name": "SINTER",
+    "IsInternal": false,
+    "Arity": -2,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Read, Set, Slow",
+    "Tips": [
+      "nondeterministic_output_order"
+    ],
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "Set",
     "ArrayCommand": 10,
     "Name": "SUNIONSTORE",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Set, Slow, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "OW, Update"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": -1,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RO, Access"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
+    "Command": "Set",
+    "ArrayCommand": 14,
+    "Name": "SINTERSTORE",
     "IsInternal": false,
     "Arity": -3,
     "Flags": "DenyOom, Write",
