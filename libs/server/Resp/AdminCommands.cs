@@ -72,12 +72,12 @@ namespace Garnet.server
                         {
                             if (username.IsEmpty)
                             {
-                                while (!RespWriteUtils.WriteError("WRONGPASS Invalid password"u8, ref dcurr, dend))
+                                while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD, ref dcurr, dend))
                                     SendAndReset();
                             }
                             else
                             {
-                                while (!RespWriteUtils.WriteError("WRONGPASS Invalid username/password combination"u8, ref dcurr, dend))
+                                while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD, ref dcurr, dend))
                                     SendAndReset();
                             }
                         }
@@ -262,8 +262,16 @@ namespace Garnet.server
             {
                 if (count == 0)
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
-                        SendAndReset();
+                    if (isSubscriptionSession && respProtocolVersion == 2)
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.SUSCRIBE_PONG, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
                 else if (count == 1)
                 {
@@ -281,6 +289,74 @@ namespace Garnet.server
                     errorFlag = true;
                     errorCmd = "ping";
                 }
+            }
+            else if (command == RespCommand.HELLO)
+            {
+                int? respProtocolVersion = null;
+                ReadOnlySpan<byte> authUsername = default, authPassword = default;
+                string clientName = null;
+
+                if (count > 0)
+                {
+                    var ptr = recvBufferPtr + readHead;
+                    int localRespProtocolVersion;
+                    if (!RespReadUtils.ReadIntWithLengthHeader(out localRespProtocolVersion, ref ptr, recvBufferPtr + bytesRead))
+                        return false;
+                    readHead = (int)(ptr - recvBufferPtr);
+
+                    respProtocolVersion = localRespProtocolVersion;
+                    count--;
+                    while (count > 0)
+                    {
+                        var param = GetCommand(bufSpan, out bool success1);
+                        if (!success1) return false;
+                        count--;
+                        if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AUTH))
+                        {
+                            if (count < 2)
+                            {
+                                if (!DrainCommands(bufSpan, count))
+                                    return false;
+                                count = 0;
+                                errorFlag = true;
+                                errorCmd = nameof(RespCommand.HELLO);
+                                break;
+                            }
+                            authUsername = GetCommand(bufSpan, out success1);
+                            if (!success1) return false;
+                            count--;
+                            authPassword = GetCommand(bufSpan, out success1);
+                            if (!success1) return false;
+                            count--;
+                        }
+                        else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETNAME))
+                        {
+                            if (count < 1)
+                            {
+                                if (!DrainCommands(bufSpan, count))
+                                    return false;
+                                count = 0;
+                                errorFlag = true;
+                                errorCmd = nameof(RespCommand.HELLO);
+                                break;
+                            }
+
+                            var arg = GetCommand(bufSpan, out success1);
+                            if (!success1) return false;
+                            count--;
+                            clientName = Encoding.ASCII.GetString(arg);
+                        }
+                        else
+                        {
+                            if (!DrainCommands(bufSpan, count))
+                                return false;
+                            count = 0;
+                            errorFlag = true;
+                            errorCmd = nameof(RespCommand.HELLO);
+                        }
+                    }
+                }
+                if (!errorFlag) ProcessHelloCommand(respProtocolVersion, authUsername, authPassword, clientName);
             }
             else if (command is RespCommand.CLUSTER or RespCommand.MIGRATE or RespCommand.FAILOVER or RespCommand.REPLICAOF or RespCommand.SECONDARYOF)
             {
@@ -477,6 +553,77 @@ namespace Garnet.server
                     SendAndReset();
             }
             return true;
+        }
+
+        void ProcessHelloCommand(int? respProtocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
+        {
+            if (respProtocolVersion != null)
+            {
+                if (respProtocolVersion.Value != 2)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION, ref dcurr, dend))
+                        SendAndReset();
+                    return;
+                }
+
+                this.respProtocolVersion = respProtocolVersion.Value;
+            }
+
+            if (username != default)
+            {
+                if (!this.AuthenticateUser(username, password))
+                {
+                    if (username.IsEmpty)
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    return;
+                }
+            }
+
+            if (clientName != null)
+            {
+                this.clientName = clientName;
+            }
+
+            (string, string)[] helloResult =
+                [
+                    ("server", "redis"),
+                    ("version", storeWrapper.redisProtocolVersion),
+                    ("garnet_version", storeWrapper.version),
+                    ("proto", $"{this.respProtocolVersion}"),
+                    ("id", "63"),
+                    ("mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
+                    ("role", storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() ? "replica" : "master"),
+                ];
+
+            if (this.respProtocolVersion == 2)
+            {
+                while (!RespWriteUtils.WriteArrayLength(helloResult.Length * 2 + 2, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteMapLength(helloResult.Length + 1, ref dcurr, dend))
+                    SendAndReset();
+            }
+            for (int i = 0; i < helloResult.Length; i++)
+            {
+                while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item1, ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item2, ref dcurr, dend))
+                    SendAndReset();
+            }
+            while (!RespWriteUtils.WriteAsciiBulkString("modules", ref dcurr, dend))
+                SendAndReset();
+            while (!RespWriteUtils.WriteArrayLength(0, ref dcurr, dend))
+                SendAndReset();
         }
 
         /// <summary>

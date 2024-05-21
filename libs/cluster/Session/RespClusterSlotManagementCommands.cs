@@ -471,7 +471,7 @@ namespace Garnet.cluster
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            int slot = NumUtils.HashSlot(keyPtr, ksize);
+            int slot = HashSlotUtils.HashSlot(keyPtr, ksize);
             while (!RespWriteUtils.WriteInteger(slot, ref dcurr, dend))
                 SendAndReset();
 

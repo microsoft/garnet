@@ -330,7 +330,7 @@ namespace Garnet.test
             Assert.AreEqual(value1, (string)retValue);
 
             var result = db.Execute("MEMORY", "USAGE", mainkey);
-            var actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             var expectedResponse = 272;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -342,7 +342,7 @@ namespace Garnet.test
             Assert.AreEqual(value2, (string)retValue);
 
             result = db.Execute("MEMORY", "USAGE", mainkey);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 408;
             Assert.AreEqual(expectedResponse, actualValue);
         }

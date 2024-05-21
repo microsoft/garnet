@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using Azure.Core;
 using Garnet.common;
 using Garnet.common.Parsing;
 using Garnet.networking;
@@ -103,6 +104,10 @@ namespace Garnet.server
         /// Current custom object command to be executed in the session.
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
+
+
+        int respProtocolVersion = 2;
+        string clientName = null;
 
         public RespServerSession(
             INetworkSender networkSender,
@@ -534,11 +539,13 @@ namespace Garnet.server
                 RespCommand.SRANDMEMBER => SetRandomMember(count, ptr, ref storageApi),
                 RespCommand.SSCAN => ObjectScan(count, ptr, GarnetObjectType.Set, ref storageApi),
                 RespCommand.SMOVE => SetMove(count, ptr, ref storageApi),
+                RespCommand.SINTER => SetIntersect(count, ptr, ref storageApi),
+                RespCommand.SINTERSTORE => SetIntersectStore(count, ptr, ref storageApi),
                 RespCommand.SUNION => SetUnion(count, ptr, ref storageApi),
                 RespCommand.SUNIONSTORE => SetUnionStore(count, ptr, ref storageApi),
                 RespCommand.SDIFF => SetDiff(count, ptr, ref storageApi),
                 RespCommand.SDIFFSTORE => SetDiffStore(count, ptr, ref storageApi),
-                _ => ProcessOtherCommands(cmd, count, ref storageApi),
+                _ => ProcessOtherCommands(cmd, count, ref storageApi)
             };
             return success;
         }

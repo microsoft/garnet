@@ -888,8 +888,16 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkPING(int count, byte* ptr)
         {
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
-                SendAndReset();
+            if (isSubscriptionSession && respProtocolVersion == 2)
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.SUSCRIBE_PONG, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
+                    SendAndReset();
+            }
             return true;
         }
 

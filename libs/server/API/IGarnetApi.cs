@@ -557,6 +557,16 @@ namespace Garnet.server
         GarnetStatus SetUnionStore(byte[] key, ArgSlice[] keys, out int count);
 
         /// <summary>
+        /// This command is equal to SINTER, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        GarnetStatus SetIntersectStore(byte[] key, ArgSlice[] keys, out int count);
+
+        /// <summary>
         /// This command is equal to SDIFF, but instead of returning the resulting set, it is stored in destination.
         /// If destination already exists, it is overwritten.
         /// </summary>
@@ -1247,6 +1257,15 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         GarnetStatus SetUnion(ArgSlice[] keys, out HashSet<byte[]> output);
+
+        /// <summary>
+        /// Returns the members of the set resulting from the intersection of all the given sets.
+        /// Keys that do not exist are considered to be empty sets.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output);
 
         /// <summary>
         /// Returns the members of the set resulting from the difference between the first set and all the successive sets.

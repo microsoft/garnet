@@ -51,6 +51,7 @@ namespace Garnet.server
         SCAN,
         SCARD,
         SDIFF,
+        SINTER,
         SISMEMBER,
         SMEMBERS,
         SRANDMEMBER,
@@ -123,6 +124,7 @@ namespace Garnet.server
         SETKEEPTTL,
         SETKEEPTTLXX,
         SETRANGE,
+        SINTERSTORE,
         SMOVE,
         SPOP,
         SREM,
@@ -181,6 +183,7 @@ namespace Garnet.server
 
         // Don't require AUTH (if auth is enabled)
         AUTH,
+        HELLO,
         QUIT,
 
         // Have subcommands
@@ -243,7 +246,7 @@ namespace Garnet.server
         {
             // if cmd < RespCommand.Auth - underflows, setting high bits
             uint test = (uint)((int)cmd - (int)RespCommand.AUTH);
-            bool inRange = test <= 1;
+            bool inRange = test <= (RespCommand.QUIT - RespCommand.AUTH);
             return inRange;
         }
     }
@@ -763,6 +766,10 @@ namespace Garnet.server
                                         {
                                             return RespCommand.SUNION;
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SINTER\r\n"u8))
+                                        {
+                                            return RespCommand.SINTER;
+                                        }
                                         break;
 
                                     case 'U':
@@ -970,6 +977,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SUNIONSTORE;
                                 }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
+                                {
+                                    return RespCommand.SINTERSTORE;
+                                }
                                 break;
 
                             case 12:
@@ -1093,6 +1104,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.PING))
             {
                 return RespCommand.PING;
+            }
+            else if (command.SequenceEqual(CmdStrings.HELLO))
+            {
+                return RespCommand.HELLO;
             }
             else if (command.SequenceEqual(CmdStrings.CLUSTER))
             {

@@ -1946,5 +1946,35 @@ namespace Garnet.test
             Assert.IsTrue(time.Value.TotalSeconds > 0);
         }
 
+        [Test]
+        public void HelloTest1()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Test "HELLO 2"
+            var result = db.Execute("HELLO", "2");
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual(ResultType.Array, result.Resp2Type);
+            Assert.AreEqual(ResultType.Array, result.Resp3Type);
+            var resultDict = result.ToDictionary();
+            Assert.IsNotNull(resultDict);
+            Assert.AreEqual(2, (int)resultDict["proto"]);
+            Assert.AreEqual("master", (string)resultDict["role"]);
+
+            /*
+            // Test "HELLO 3"
+            result = db.Execute("HELLO", "3");
+
+            Assert.IsNotNull(result);
+            Assert.AreEqual(ResultType.Array, result.Resp2Type);
+            Assert.AreEqual(ResultType.Map, result.Resp3Type);
+            resultDict = result.ToDictionary();
+            Assert.IsNotNull(resultDict);
+            Assert.AreEqual(3, (int)resultDict["proto"]);
+            Assert.AreEqual("master", (string)resultDict["role"]);
+            */
+        }
     }
 }

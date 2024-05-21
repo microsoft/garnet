@@ -4795,6 +4795,64 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public void SInterACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SINTER",
+                server,
+                ["set", "read", "slow"],
+                [DoSDiff, DoSDiffMulti]
+            );
+
+            void DoSDiff()
+            {
+                RedisResult val = db.Execute("SINTER", "foo");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+
+            void DoSDiffMulti()
+            {
+                RedisResult val = db.Execute("SINTER", "foo", "bar");
+                RedisResult[] valArr = (RedisResult[])val;
+                Assert.AreEqual(0, valArr.Length);
+            }
+        }
+
+        [Test]
+        public void SInterStoreACLs()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+
+            IServer server = redis.GetServers().Single();
+            IDatabase db = redis.GetDatabase();
+
+            CheckCommands(
+                "SINTERSTORE",
+                server,
+                ["set", "write", "slow"],
+                [DoSDiffStore, DoSDiffStoreMulti]
+            );
+
+            void DoSDiffStore()
+            {
+                RedisResult val = db.Execute("SINTERSTORE", "dest", "foo");
+                Assert.AreEqual(0, (int)val);
+            }
+
+            void DoSDiffStoreMulti()
+            {
+                RedisResult val = db.Execute("SINTERSTORE", "dest", "foo", "bar");
+                Assert.AreEqual(0, (int)val);
+            }
+        }
+
+        [Test]
         public void GeoAddACLs()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));

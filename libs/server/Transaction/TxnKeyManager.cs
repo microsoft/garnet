@@ -50,6 +50,8 @@ namespace Garnet.server
                 RespCommand.SPOP => SetObjectKeys(SetOperation.SPOP, inputCount),
                 RespCommand.SMEMBERS => SetObjectKeys(SetOperation.SMEMBERS, inputCount),
                 RespCommand.SCARD => SetObjectKeys(SetOperation.SCARD, inputCount),
+                RespCommand.SINTER => SetObjectKeys(SetOperation.SINTER, inputCount),
+                RespCommand.SINTERSTORE => SetObjectKeys(SetOperation.SINTERSTORE, inputCount),
                 RespCommand.SSCAN => SetObjectKeys(SetOperation.SSCAN, inputCount),
                 RespCommand.SMOVE => SetObjectKeys(SetOperation.SMOVE, inputCount),
                 RespCommand.SRANDMEMBER => SetObjectKeys(SetOperation.SRANDMEMBER, inputCount),
@@ -253,6 +255,8 @@ namespace Garnet.server
                 SetOperation.SDIFF => ListKeys(inputCount, true, LockType.Shared),
                 SetOperation.SDIFFSTORE => XSTOREKeys(inputCount, true),
                 SetOperation.SMOVE => ListKeys(inputCount, true, LockType.Exclusive),
+                SetOperation.SINTER => ListKeys(inputCount, true, LockType.Shared),
+                SetOperation.SINTERSTORE => XSTOREKeys(inputCount, true),
                 _ => -1
             };
         }
