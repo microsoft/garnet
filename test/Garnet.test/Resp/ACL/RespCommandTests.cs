@@ -341,6 +341,8 @@ namespace Garnet.test.Resp.ACL
             IServer server = redis.GetServers().Single();
             IDatabase db = redis.GetDatabase();
 
+            int count = 0;
+
             CheckCommands(
                 "APPEND",
                 server,
@@ -350,7 +352,8 @@ namespace Garnet.test.Resp.ACL
 
             void DoAppend()
             {
-                RedisValue val = db.StringAppend("key", "foo");
+                RedisValue val = db.StringAppend($"key-{count}", "foo");
+                count++;
 
                 Assert.AreEqual(3, (int)val);
             }
@@ -505,6 +508,8 @@ namespace Garnet.test.Resp.ACL
             IServer server = redis.GetServers().Single();
             IDatabase db = redis.GetDatabase();
 
+            int count = 0;
+
             CheckCommands(
                 "BITFIELD",
                 server,
@@ -519,79 +524,92 @@ namespace Garnet.test.Resp.ACL
 
             void DoBitFieldGet()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-a", "GET", "u4", "0");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "GET", "u4", "0");
+                count++;
                 Assert.AreEqual(0, (int)val);
             }
 
             void DoBitFieldGetWrap()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-b", "GET", "u4", "0", "OVERFLOW", "WRAP");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "GET", "u4", "0", "OVERFLOW", "WRAP");
+                count++;
                 Assert.AreEqual(0, (int)val);
             }
 
             void DoBitFieldGetSat()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-c", "GET", "u4", "0", "OVERFLOW", "SAT");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "GET", "u4", "0", "OVERFLOW", "SAT");
+                count++;
                 Assert.AreEqual(0, (int)val);
             }
 
             void DoBitFieldGetFail()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-d", "GET", "u4", "0", "OVERFLOW", "FAIL");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "GET", "u4", "0", "OVERFLOW", "FAIL");
+                count++;
                 Assert.AreEqual(0, (int)val);
             }
 
             void DoBitFieldSet()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-e", "SET", "u4", "0", "1");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "SET", "u4", "0", "1");
+                count++;
                 Assert.AreEqual(0, (int)val);
             }
 
             void DoBitFieldSetWrap()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-f", "SET", "u4", "0", "1", "OVERFLOW", "WRAP");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "SET", "u4", "0", "1", "OVERFLOW", "WRAP");
+                count++;
                 Assert.AreEqual(0, (int)val);
             }
 
             void DoBitFieldSetSat()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-g", "SET", "u4", "0", "1", "OVERFLOW", "SAT");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "SET", "u4", "0", "1", "OVERFLOW", "SAT");
+                count++;
                 Assert.AreEqual(0, (int)val);
             }
 
             void DoBitFieldSetFail()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-h", "SET", "u4", "0", "1", "OVERFLOW", "FAIL");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "SET", "u4", "0", "1", "OVERFLOW", "FAIL");
+                count++;
                 Assert.AreEqual(0, (int)val);
             }
 
             void DoBitFieldIncrBy()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-i", "INCRBY", "u4", "0", "4");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "INCRBY", "u4", "0", "4");
+                count++;
                 Assert.AreEqual(4, (int)val);
             }
 
             void DoBitFieldIncrByWrap()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-j", "INCRBY", "u4", "0", "4", "OVERFLOW", "WRAP");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "INCRBY", "u4", "0", "4", "OVERFLOW", "WRAP");
+                count++;
                 Assert.AreEqual(4, (int)val);
             }
 
             void DoBitFieldIncrBySat()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-k", "INCRBY", "u4", "0", "4", "OVERFLOW", "SAT");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "INCRBY", "u4", "0", "4", "OVERFLOW", "SAT");
+                count++;
                 Assert.AreEqual(4, (int)val);
             }
 
             void DoBitFieldIncrByFail()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-l", "INCRBY", "u4", "0", "4", "OVERFLOW", "FAIL");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "INCRBY", "u4", "0", "4", "OVERFLOW", "FAIL");
+                count++;
                 Assert.AreEqual(4, (int)val);
             }
 
             void DoBitFieldMulti()
             {
-                RedisResult val = db.Execute("BITFIELD", "empty-m", "OVERFLOW", "WRAP", "GET", "u4", "1", "SET", "u4", "2", "1", "OVERFLOW", "FAIL", "INCRBY", "u4", "6", "2");
+                RedisResult val = db.Execute("BITFIELD", $"empty-{count}", "OVERFLOW", "WRAP", "GET", "u4", "1", "SET", "u4", "2", "1", "OVERFLOW", "FAIL", "INCRBY", "u4", "6", "2");
+                count++;
 
                 RedisValue[] arr = (RedisValue[])val;
 
@@ -1152,6 +1170,7 @@ namespace Garnet.test.Resp.ACL
 
             IServer server = redis.GetServers().Single();
             IDatabase db = redis.GetDatabase();
+            int count = 0;
 
             CheckCommands(
                 "DECR",
@@ -1162,7 +1181,8 @@ namespace Garnet.test.Resp.ACL
 
             void DoDecr()
             {
-                RedisResult val = db.Execute("DECR", "foo");
+                RedisResult val = db.Execute("DECR", $"foo-{count}");
+                count++;
                 Assert.AreEqual(-1, (int)val);
             }
         }
@@ -1174,6 +1194,7 @@ namespace Garnet.test.Resp.ACL
 
             IServer server = redis.GetServers().Single();
             IDatabase db = redis.GetDatabase();
+            int count = 0;
 
             CheckCommands(
                 "DECRBY",
@@ -1184,7 +1205,8 @@ namespace Garnet.test.Resp.ACL
 
             void DoDecrBy()
             {
-                RedisResult val = db.Execute("DECRBY", "foo", "2");
+                RedisResult val = db.Execute("DECRBY", $"foo-{count}", "2");
+                count++;
                 Assert.AreEqual(-2, (int)val);
             }
         }
@@ -2215,6 +2237,7 @@ namespace Garnet.test.Resp.ACL
 
             IServer server = redis.GetServers().Single();
             IDatabase db = redis.GetDatabase();
+            int count = 0;
 
             CheckCommands(
                 "INCR",
@@ -2225,7 +2248,8 @@ namespace Garnet.test.Resp.ACL
 
             void DoIncr()
             {
-                RedisResult val = db.Execute("INCR", "foo");
+                RedisResult val = db.Execute("INCR", $"foo-{count}");
+                count++;
                 Assert.AreEqual(1, (int)val);
             }
         }
@@ -2237,6 +2261,7 @@ namespace Garnet.test.Resp.ACL
 
             IServer server = redis.GetServers().Single();
             IDatabase db = redis.GetDatabase();
+            int count = 0;
 
             CheckCommands(
                 "INCRBY",
@@ -2247,7 +2272,8 @@ namespace Garnet.test.Resp.ACL
 
             void DoIncrBy()
             {
-                RedisResult val = db.Execute("INCRBY", "foo", "2");
+                RedisResult val = db.Execute("INCRBY", $"foo-{count}", "2");
+                count++;
                 Assert.AreEqual(2, (int)val);
             }
         }
@@ -2674,7 +2700,7 @@ namespace Garnet.test.Resp.ACL
             int count = 0;
 
             CheckCommands(
-                "RPUSHX",
+                "RPUSH",
                 server,
                 ["write", "list", "fast"],
                 [DoRPushX, DoRPushXMulti]
@@ -2754,7 +2780,7 @@ namespace Garnet.test.Resp.ACL
             IDatabase db = redis.GetDatabase();
 
             CheckCommands(
-                "LLEN",
+                "LTRIM",
                 server,
                 ["write", "list", "slow"],
                 [DoLTrim]
@@ -3535,7 +3561,7 @@ namespace Garnet.test.Resp.ACL
             ISubscriber sub = redis.GetSubscriber();
 
             CheckCommands(
-                "PTTL",
+                "PUBLISH",
                 server,
                 ["pubsub", "fast"],
                 [DoPublish]
@@ -3579,7 +3605,7 @@ namespace Garnet.test.Resp.ACL
             IDatabase db = redis.GetDatabase();
 
             CheckCommands(
-                "READONLY",
+                "READWRITE",
                 server,
                 ["connection", "fast"],
                 [DoReadWrite]
@@ -4002,6 +4028,7 @@ namespace Garnet.test.Resp.ACL
 
             IServer server = redis.GetServers().Single();
             IDatabase db = redis.GetDatabase();
+            int count = 0;
 
             CheckCommands(
                 "SETBIT",
@@ -4012,7 +4039,8 @@ namespace Garnet.test.Resp.ACL
 
             void DoSetBit()
             {
-                RedisResult val = db.Execute("SETBIT", "foo", "10", "1");
+                RedisResult val = db.Execute("SETBIT", $"foo-{count}", "10", "1");
+                count++;
                 Assert.AreEqual(0, (int)val);
             }
         }
@@ -4072,7 +4100,7 @@ namespace Garnet.test.Resp.ACL
             IDatabase db = redis.GetDatabase();
 
             CheckCommands(
-                "SETRANGE",
+                "STRLEN",
                 server,
                 ["string", "read", "fast"],
                 [DoStrLen]
@@ -5465,7 +5493,7 @@ namespace Garnet.test.Resp.ACL
             IDatabase db = redis.GetDatabase();
 
             CheckCommands(
-                "TTL",
+                "TYPE",
                 server,
                 ["keyspace", "read", "fast"],
                 [DoType]
@@ -5658,10 +5686,40 @@ namespace Garnet.test.Resp.ACL
         )
         {
             // check legal with +@all
-            ResetDefaultUser(server);
-            foreach (Action del in commands)
             {
-                Assert.True(CheckAuthFailure(del), $"{command} denied when should have been permitted (user had +@all)");
+                ResetDefaultUser(server);
+                foreach (Action del in commands)
+                {
+                    Assert.True(CheckAuthFailure(del), $"{command} denied when should have been permitted (user had +@all)");
+                }
+            }
+
+            // tood: don't skip subcommands once they are implemented
+            if (!command.Contains(" "))
+            {
+                // check legal with +command
+                {
+                    string commandAcl = $"+{command.Replace(" ", "|").ToLowerInvariant()}";
+
+                    ResetDefaultUser(server);
+                    SetUser(server, "default", ["-@all", "+acl", commandAcl]);  // +acl to allow resetting later (todo: make this +acl|setuser when subcommands are supported)
+                    foreach (Action del in commands)
+                    {
+                        Assert.True(CheckAuthFailure(del), $"{command} denied when should have been permitted (user had {commandAcl})");
+                    }
+                }
+
+                // check illegal with -command
+                {
+                    string commandAcl = $"-{command.Replace(" ", "|").ToLowerInvariant()}";
+
+                    ResetDefaultUser(server);
+                    SetUser(server, "default", commandAcl);
+                    foreach (Action del in commands)
+                    {
+                        Assert.False(CheckAuthFailure(del), $"{command} permitted when should have been denied (user had {commandAcl})");
+                    }
+                }
             }
 
             // check that deny each category causes the command to fail
