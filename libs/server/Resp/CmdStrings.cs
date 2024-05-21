@@ -103,7 +103,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_EXEC_ABORT => "EXECABORT Transaction discarded because of previous errors."u8;
 
         /// <summary>
-        /// Generic error respone strings, i.e. these are of the form "-ERR error message\r\n"
+        /// Generic error response strings, i.e. these are of the form "-ERR error message\r\n"
         /// </summary>
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UNK_CMD => "ERR unknown command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NOT_SUPPORTED_RESP2 => "ERR command not supported in RESP2"u8;

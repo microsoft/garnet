@@ -629,6 +629,9 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Process the HELLO command
+        /// </summary>
         void ProcessHelloCommand(byte? respProtocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
         {
             if (respProtocolVersion != null)
