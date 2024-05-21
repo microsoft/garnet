@@ -3,7 +3,7 @@
 
 using System;
 using System.IO;
-using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
