@@ -113,7 +113,7 @@ namespace Garnet.cluster
             newWorkers[1].Port = port;
             newWorkers[1].Nodeid = nodeId;
             newWorkers[1].ConfigEpoch = configEpoch;
-            newWorkers[1].LastVotedConfigEpoch = currentConfigEpoch;
+            newWorkers[1].CurrentConfigEpoch = currentConfigEpoch;
             newWorkers[1].LastVotedConfigEpoch = lastVotedConfigEpoch;
             newWorkers[1].Role = role;
             newWorkers[1].ReplicaOfNodeId = replicaOfNodeId;
@@ -481,10 +481,8 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="slot">Slot number.</param>
         /// <returns>Long value representing config epoch.</returns>
-        public long GetConfigEpochFromSlot(int slot)
+        public long GetConfigEpochFromSlot(ushort slot)
         {
-            if (slotMap[slot].workerId < 0)
-                return 0;
             return workers[slotMap[slot].workerId].ConfigEpoch;
         }
         #endregion

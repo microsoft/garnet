@@ -356,7 +356,7 @@ namespace Garnet.cluster
                     return false;
 
                 //Check if configEpoch for claimed slots is lower than the config of the requested epoch.
-                for (int i = 0; i < ClusterConfig.MAX_HASH_SLOT_VALUE; i++)
+                for (ushort i = 0; i < ClusterConfig.MAX_HASH_SLOT_VALUE; i++)
                 {
                     if (slotBitmapGetBit(ref claimedSlots, i)) continue;
                     if (current.GetConfigEpochFromSlot(i) < requestedEpoch) continue;
