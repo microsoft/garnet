@@ -286,7 +286,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// SAFETY: The provided unmanaged struct MUST be on the stack or point to pinned memory.
         /// </remarks>
-        public static SpanByte FromPinnedStruct<T>(T* ptr) where T : unmanaged 
+        public static SpanByte FromPinnedStruct<T>(T* ptr) where T : unmanaged
             => new(Unsafe.SizeOf<T>(), (nint)ptr);
 
         /// <summary>
