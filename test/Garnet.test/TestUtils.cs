@@ -47,7 +47,7 @@ namespace Garnet.test
         static readonly bool useTestLogger = false;
 
         private static int procId = Process.GetCurrentProcess().Id;
-        private static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
+        internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
 
         private static bool CustomCommandsInfoInitialized;
         private static IReadOnlyDictionary<string, RespCommandsInfo> RespCustomCommandsInfo;

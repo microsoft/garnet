@@ -287,7 +287,7 @@ namespace Garnet.test
             return registeredCommands;
         }
 
-        private string CreateTestLibrary()
+        private (string, string) CreateTestLibrary()
         {
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -340,19 +340,23 @@ namespace Garnet.test
                 TestUtils.CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
             }
 
-            return Path.Combine(dir1, "testLib1.dll");
+            var cmdInfoPath = Path.Combine(dir1, Path.GetFileName(TestUtils.CustomRespCommandInfoJsonPath)!);
+            File.Copy(TestUtils.CustomRespCommandInfoJsonPath!, cmdInfoPath);
+
+            return (cmdInfoPath, Path.Combine(dir1, "testLib1.dll"));
         }
 
         private string[] DynamicallyRegisterCustomCommands(IDatabase db)
         {
             var registeredCommands = new[] { "READWRITETX", "MYDICTGET" };
-            var path = CreateTestLibrary();
+            var (cmdInfoPath, srcPath) = CreateTestLibrary();
 
             var args = new List<object>
             {
-                "TXN", "READWRITETX", 3, "ReadWriteTxn", respCustomCommandsInfo["READWRITETX"].ToJsonString(),
-                "READ", "MYDICTGET", 1, "MyDictFactory", 0, respCustomCommandsInfo["MYDICTGET"].ToJsonString(),
-                "SRC", path
+                "TXN", "READWRITETX", 3, "ReadWriteTxn",
+                "READ", "MYDICTGET", 1, "MyDictFactory",
+                "INFO", cmdInfoPath,
+                "SRC", srcPath
             };
 
             // Register select custom commands and transactions

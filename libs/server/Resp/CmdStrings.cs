@@ -113,7 +113,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND => "ERR malformed REGISTERCS command."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MALFORMED_COMMAND_INFO_JSON => "ERR malformed command info JSON."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_GETTING_BINARY_FILES => "ERR unable to access one or more binary files."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_GETTING_CMD_INFO_FILE => "ERR unable to access command info file."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS => "ERR one or more binary file are not contained in allowed paths."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CMD_INFO_FILE_NOT_IN_ALLOWED_PATHS => "ERR command info file is not contained in allowed paths."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_LOADING_ASSEMBLIES => "ERR unable to load one or more assemblies."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED => "ERR one or more assemblies loaded is not digitally signed."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INSTANTIATING_CLASS => "ERR unable to instantiate one or more classes from given assemblies."u8;

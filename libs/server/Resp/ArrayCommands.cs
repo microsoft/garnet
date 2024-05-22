@@ -220,18 +220,51 @@ namespace Garnet.server
         /// Register all custom commands / transactions
         /// </summary>
         /// <param name="binaryPaths">Binary paths from which to load assemblies</param>
+        /// <param name="cmdInfoPath">Path of JSON file containing RespCommandsInfo for custom commands</param>
         /// <param name="classNameToRegisterArgs">Mapping between class names to register and arguments required for registration</param>
         /// <param name="customCommandManager">CustomCommandManager instance used to register commands</param>
         /// <param name="errorMessage">If method returned false, contains ASCII encoded generic error string; otherwise <c>default</c></param>
         /// <returns>A boolean value indicating whether registration of the custom commands was successful.</returns>
         private bool TryRegisterCustomCommands(
             IEnumerable<string> binaryPaths,
+            string cmdInfoPath,
             Dictionary<string, List<RegisterArgsBase>> classNameToRegisterArgs,
             CustomCommandManager customCommandManager,
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
             var classInstances = new Dictionary<string, object>();
+            IReadOnlyDictionary<string, RespCommandsInfo> cmdNameToInfo = new Dictionary<string, RespCommandsInfo>();
+
+            if (cmdInfoPath != null)
+            {
+                // Check command info path, if specified
+                if (!File.Exists(cmdInfoPath))
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_CMD_INFO_FILE;
+                    return false;
+                }
+
+                // Check command info path is in allowed paths
+                if (storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(cmdInfoPath, p)))
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CMD_INFO_FILE_NOT_IN_ALLOWED_PATHS;
+                    return false;
+                }
+
+                var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
+                var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
+
+                var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(cmdInfoPath,
+                    streamProvider, out cmdNameToInfo, logger);
+
+                if (!importSucceeded)
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_MALFORMED_COMMAND_INFO_JSON;
+                    return false;
+                }
+            }
+
             // Get all binary file paths from inputs binary paths
             if (!FileUtils.TryGetFiles(binaryPaths, out var files, out _, [".dll", ".exe"],
                     SearchOption.AllDirectories))
@@ -317,6 +350,12 @@ namespace Garnet.server
             {
                 foreach (var args in classNameToArgs.Value)
                 {
+                    // Add command info to register arguments, if exists
+                    if (cmdNameToInfo.ContainsKey(args.Name))
+                    {
+                        args.CommandInfo = cmdNameToInfo[args.Name];
+                    }
+
                     var registerApi =
                         RegisterCustomCommandProviderFactory.GetRegisterCustomCommandProvider(classInstances[classNameToArgs.Key], args);
 
@@ -352,6 +391,7 @@ namespace Garnet.server
             var optionalParamsRead = 0;
 
             var binaryPaths = new HashSet<string>();
+            string cmdInfoPath = default;
 
             // Custom class name to arguments read from each sub-command
             var classNameToRegisterArgs = new Dictionary<string, List<RegisterArgsBase>>();
@@ -361,8 +401,11 @@ namespace Garnet.server
             if (leftTokens == 0)
                 errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
-            // Parse the REGISTERCS command - list of registration sub-commands followed by a list of paths to binary files / folders
-            // Syntax - REGISTERCS cmdType name numParams className [expTicks [cmdInfo]] [cmdType name numParams className [expTicks [cmdInfo]] ...] SRC path [path ...]
+            // Parse the REGISTERCS command - list of registration sub-commands
+            // followed by an optional path to JSON file containing an array of RespCommandsInfo objects,
+            // followed by a list of paths to binary files / folders
+            // Syntax - REGISTERCS cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...]
+            // [INFO path] SRC path [path ...]
             RegisterArgsBase args = null;
 
             while (leftTokens > 0)
@@ -396,6 +439,22 @@ namespace Garnet.server
                 {
                     args = new RegisterTxnArgs();
                 }
+                else if (tokenSpan.SequenceEqual(CmdStrings.INFO) ||
+                         tokenSpan.SequenceEqual(CmdStrings.info))
+                {
+                    // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
+                    if (classNameToRegisterArgs.Count == 0 || leftTokens == 0)
+                    {
+                        errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
+                        break;
+                    }
+
+                    if (!RespReadUtils.ReadStringWithLengthHeader(out cmdInfoPath, ref ptr, recvBufferPtr + bytesRead))
+                        return false;
+
+                    leftTokens--;
+                    continue;
+                }
                 else if (readPathsOnly || (tokenSpan.SequenceEqual(CmdStrings.SRC) ||
                                            tokenSpan.SequenceEqual(CmdStrings.src)))
                 {
@@ -428,26 +487,20 @@ namespace Garnet.server
                         continue;
                     }
 
-                    if ((optionalParamsRead == 0 && args is RegisterTxnArgs) || (optionalParamsRead == 1 && args is RegisterCmdArgs))
-                    {
-                        var cmdInfoJson = Encoding.ASCII.GetString(tokenSpan);
-                        if (!RespCommandsInfo.TryParseFromJsonString(cmdInfoJson, out var cmdInfo))
-                        {
-                            errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_COMMAND_INFO_JSON;
-                            break;
-                        }
-
-                        args.CommandInfo = cmdInfo;
-                        optionalParamsRead++;
-                        continue;
-                    }
-
                     // Unexpected token
                     errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                     break;
                 }
 
                 optionalParamsRead = 0;
+
+                // At this point we expect at least 6 remaining tokens -
+                // 4 tokens for command definition + 2 for source definition
+                if (leftTokens < 6)
+                {
+                    errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
+                    break;
+                }
 
                 // Start reading the sub-command arguments
                 // Read custom command name
@@ -487,7 +540,7 @@ namespace Garnet.server
 
             // If no error is found, continue to try register custom commands in the server
             if (errorMsg == null &&
-                TryRegisterCustomCommands(binaryPaths, classNameToRegisterArgs, customCommandManager, out errorMsg))
+                TryRegisterCustomCommands(binaryPaths, cmdInfoPath, classNameToRegisterArgs, customCommandManager, out errorMsg))
             {
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
