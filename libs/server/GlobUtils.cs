@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Garnet.common;
+
 namespace Garnet.server
 {
     /// <summary>
@@ -14,13 +16,6 @@ namespace Garnet.server
         /// <returns>Whether match was found</returns>
         public static unsafe bool Match(byte* pattern, int patternLen, byte* key, int stringLen, bool ignoreCase = false)
         {
-            static byte ToLowerAscii(byte value)
-            {
-                if ((uint)(value - 'A') <= (uint)('Z' - 'A')) // Is in [A-Z]
-                    value = (byte)(value | 0x20);
-                return value;
-            }
-
             while (patternLen > 0 && stringLen > 0)
             {
                 switch (pattern[0])
@@ -89,9 +84,9 @@ namespace Garnet.server
 
                                     if (ignoreCase)
                                     {
-                                        start = ToLowerAscii(start);
-                                        end = ToLowerAscii(end);
-                                        c = ToLowerAscii(c);
+                                        start = AsciiUtils.ToLower(start);
+                                        end = AsciiUtils.ToLower(end);
+                                        c = AsciiUtils.ToLower(c);
                                     }
                                     pattern += 2;
                                     patternLen -= 2;
@@ -107,7 +102,7 @@ namespace Garnet.server
                                     }
                                     else
                                     {
-                                        if (ToLowerAscii(pattern[0]) == ToLowerAscii(key[0]))
+                                        if (AsciiUtils.ToLower(pattern[0]) == AsciiUtils.ToLower(key[0]))
                                             match = true;
                                     }
                                 }
@@ -141,7 +136,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            if (ToLowerAscii(pattern[0]) != ToLowerAscii(key[0]))
+                            if (AsciiUtils.ToLower(pattern[0]) != AsciiUtils.ToLower(key[0]))
                                 return false; /* no match */
                         }
                         key++;

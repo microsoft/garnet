@@ -30,6 +30,8 @@ namespace Garnet.server
         SUNIONSTORE,
         SDIFF,
         SDIFFSTORE,
+        SINTER,
+        SINTERSTORE
     }
 
 

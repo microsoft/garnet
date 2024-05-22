@@ -24,7 +24,7 @@
   </ItemGroup>
 
 	<ItemGroup>
-	  <EmbeddedResource Include="..\..\main\GarnetServer\CustomRespCommandsInfo.json" Link="CustomRespCommandsInfo.json">
+	  <EmbeddedResource Include="CustomRespCommandsInfo.json" Link="CustomRespCommandsInfo.json">
 	    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 	  </EmbeddedResource>
 	</ItemGroup>

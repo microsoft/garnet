@@ -3,6 +3,7 @@
 
 using System;
 using System.Globalization;
+using System.IO;
 using System.Text;
 using Garnet.server;
 using NUnit.Framework;
@@ -156,7 +157,7 @@ namespace Garnet.test
             Assert.AreEqual(23, response);
 
             var memresponse = db.Execute("MEMORY", "USAGE", "cities");
-            var actualValue = ResultType.Integer == memresponse.Type ? int.Parse(memresponse.ToString()) : -1;
+            var actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
             var expectedResponse = 3944;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -200,7 +201,7 @@ namespace Garnet.test
             Assert.AreEqual(default(GeoPosition), response[1]);
 
             var memresponse = db.Execute("MEMORY", "USAGE", "Sicily");
-            var actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             var expectedResponse = 344;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -210,16 +211,16 @@ namespace Garnet.test
             Assert.IsNotNull(response[0]);
 
             memresponse = db.Execute("MEMORY", "USAGE", "SecondKey");
-            actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
             var responseHash = db.GeoHash(new RedisKey("SecondKey"), ["Palermo"]);
             Assert.AreEqual(1, responseHash.Length);
-            Assert.AreEqual("sqc8b49rnyt", responseHash[0]);
+            Assert.AreEqual("sqc8b49rnys", responseHash[0]);
 
             memresponse = db.Execute("MEMORY", "USAGE", "SecondKey");
-            actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -327,16 +328,16 @@ namespace Garnet.test
             var response = lightClientRequest.Execute("GEOADD Sicily 13.361389 38.115556 Palermo 15.087269 37.502669 Catania", "PING", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
 
-            expectedResponse = "*3\r\n$11\r\nsqc8b49rnyt\r\n$11\r\nsqdtr74hyu1\r\n$-1\r\n+PONG\r\n";
+            expectedResponse = "*3\r\n$11\r\nsqc8b49rnys\r\n$11\r\nsqdtr74hyu0\r\n$-1\r\n+PONG\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo Catania Unknown", "PING", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
 
-            expectedResponse = "*3\r\n$11\r\nsqc8b49rnyt\r\n$11\r\nsqdtr74hyu1\r\n$-1\r\n";
+            expectedResponse = "*3\r\n$11\r\nsqc8b49rnys\r\n$11\r\nsqdtr74hyu0\r\n$-1\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo Catania Unknown", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
 
             // Execute command in chunks
-            expectedResponse = "*1\r\n$11\r\nsqc8b49rnyt\r\n";
+            expectedResponse = "*1\r\n$11\r\nsqc8b49rnys\r\n";
             response = lightClientRequest.Execute("GEOHASH Sicily Palermo", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
         }
@@ -440,48 +441,6 @@ namespace Garnet.test
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
-        #endregion
-
-        #region GeoHash Class Tests
-
-        [Test]
-        public void CanEncodeAndDecodeCoordinates()
-        {
-            double latitude = 30.5388942218;
-            double longitude = 104.0555758833;
-
-            var r = GeoHash.GeoToLongValue(latitude, longitude);
-            Assert.AreEqual(4024744861876082, r);
-            var coord = GeoHash.GetCoordinatesFromLong(r);
-
-            //Assert difference is not higher than "0.000001" using fixed point format
-            var diff = (Math.Round(latitude, 9) - Math.Round(coord.Item1, 9)).ToString("F6", CultureInfo.InvariantCulture);
-            Assert.IsTrue(double.Parse(diff, CultureInfo.InvariantCulture) <= 0.000001);
-        }
-
-        [Test]
-        public void CanEncodeAndDecodeCoordinatesWithGeoHashCode()
-        {
-            double latitude = 37.502669;
-            double longitude = 15.087269;
-
-            var r = GeoHash.GeoToLongValue(latitude, longitude);
-            Assert.AreEqual(3476216502357864, r);
-
-            // Only check the first 10 chars
-            var geoHash = GeoHash.GetGeoHashCode(r).Substring(0, 9);
-            Assert.IsTrue("sqdtr74hyu0".IndexOf(geoHash) == 0);
-
-            longitude = 13.361389;
-            latitude = 38.115556;
-
-            r = GeoHash.GeoToLongValue(latitude, longitude);
-            Assert.AreEqual(3476004292229755, r);
-
-            geoHash = GeoHash.GetGeoHashCode(r).Substring(0, 9);
-            Assert.IsTrue("sqc8b49rnyt".IndexOf(geoHash) == 0);
-        }
-
         #endregion
     }
 }

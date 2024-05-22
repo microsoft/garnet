@@ -12,6 +12,11 @@ namespace Garnet.server
     public interface IClusterSession
     {
         /// <summary>
+        /// Type of session
+        /// </summary>
+        bool ReadWriteSession { get; }
+
+        /// <summary>
         /// Make this cluster session a read-only session
         /// </summary>
         void SetReadOnlySession();

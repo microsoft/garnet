@@ -96,7 +96,7 @@ namespace Garnet.test
             Assert.AreEqual(entries.Length, card);
 
             var response = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = 1792;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -109,7 +109,7 @@ namespace Garnet.test
             Assert.AreEqual(1, added);
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 1952;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -118,7 +118,7 @@ namespace Garnet.test
             Assert.AreEqual(0, added);
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 1952;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -129,7 +129,7 @@ namespace Garnet.test
             Assert.AreEqual(0, added);
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 1952;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -147,7 +147,7 @@ namespace Garnet.test
             Assert.AreEqual(leaderBoard.Length, added);
 
             var response = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = 1792;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -192,7 +192,7 @@ namespace Garnet.test
             Assert.AreEqual(entries.Length, card);
 
             var response = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = 1800;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -205,7 +205,7 @@ namespace Garnet.test
             Assert.AreEqual(0, card);
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 200;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -217,7 +217,7 @@ namespace Garnet.test
             Assert.AreEqual(1, card);
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 360;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -233,7 +233,7 @@ namespace Garnet.test
             Assert.IsEmpty(response_keys);
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 200;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -245,7 +245,7 @@ namespace Garnet.test
             Assert.AreEqual(entries.Length, card);
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 1800;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -258,7 +258,7 @@ namespace Garnet.test
             Assert.AreEqual(entries.Length - 1, card);
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 1640;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -267,7 +267,7 @@ namespace Garnet.test
             Assert.AreEqual(entries.Length - 1, removed);
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 200;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -283,7 +283,7 @@ namespace Garnet.test
             var added = db.SortedSetAdd(key, entries);
 
             var response = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = 1792;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -293,7 +293,7 @@ namespace Garnet.test
             Assert.AreEqual(9, db.SortedSetLength(key));
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 1632;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -304,7 +304,7 @@ namespace Garnet.test
             Assert.AreEqual(7, db.SortedSetLength(key));
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 1312;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -315,7 +315,7 @@ namespace Garnet.test
             Assert.AreEqual(0, db.SortedSetLength(key));
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 192;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -338,7 +338,7 @@ namespace Garnet.test
             Assert.False(score.HasValue);
 
             var response = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = 1800;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -363,7 +363,7 @@ namespace Garnet.test
                 "ERR wrong number of arguments for ZMSCORE command.");
 
             var memResponse = db.Execute("MEMORY", "USAGE", key);
-            var memActualValue = ResultType.Integer == memResponse.Type ? Int32.Parse(memResponse.ToString()) : -1;
+            var memActualValue = ResultType.Integer == memResponse.Resp2Type ? Int32.Parse(memResponse.ToString()) : -1;
             var memExpectedResponse = 1808;
             Assert.AreEqual(memExpectedResponse, memActualValue);
         }
@@ -406,7 +406,7 @@ namespace Garnet.test
             Assert.IsTrue(incr == 650);
 
             var response = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = 1792;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -456,7 +456,7 @@ namespace Garnet.test
             Assert.AreEqual(0, doneRemRangeByScore);
 
             var response = db.Execute("MEMORY", "USAGE", "nokey");
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = -1;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -465,7 +465,7 @@ namespace Garnet.test
             Assert.AreEqual(1, doneZIncr);
 
             response = db.Execute("MEMORY", "USAGE", "nokey");
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 344;
             Assert.AreEqual(expectedResponse, actualValue);
         }

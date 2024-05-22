@@ -43,6 +43,27 @@ Bulk string reply: the given string.
 
 ---
 
+### HELLO
+
+#### Syntax
+
+```bash
+    HELLO [protover [AUTH username password] [SETNAME clientname]]
+```
+
+Switch to a different protocol, optionally authenticating and setting the connection's name, or provide a contextual client report.
+
+When called with the optional `protover` argument, this command switches the protocol to the specified version and also accepts the following options:
+
+`AUTH <username> <password>`: directly authenticate the connection in addition to switching to the specified protocol version. This makes calling AUTH before HELLO unnecessary when setting up a new connection. Note that the username can be set to "default" to authenticate against a server that does not use ACLs, but rather the simpler requirepass mechanism of Redis prior to version 6.
+`SETNAME <clientname>`: this is the equivalent of calling CLIENT SETNAME.
+
+#### Resp Reply
+
+Map reply: a list of server properties. Simple error reply: if the protover requested does not exist.
+
+---
+
 ### PING
 
 #### Syntax

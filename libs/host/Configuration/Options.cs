@@ -11,8 +11,8 @@ using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using CommandLine;
 using Garnet.server;
-using Garnet.server.Auth;
 using Garnet.server.Auth.Aad;
+using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -166,6 +166,9 @@ namespace Garnet
 
         [Option("aad-authorized-app-ids", Required = false, Separator = ',', HelpText = "The authorized client app Ids for AAD authentication. Should be a comma separated string.")]
         public string AuthorizedAadApplicationIds { get; set; }
+
+        [Option("aad-validate-acl-username", Required = false, Separator = ',', HelpText = "Only valid for AclWithAAD mode. Validates username -  expected to be OID of client app or a valid group's object id of which the client is part of.")]
+        public bool? AadValidateUsername { get; set; }
 
         [OptionValidation]
         [Option("aof", Required = false, HelpText = "Enable write ahead logging (append-only file).")]
@@ -623,14 +626,15 @@ namespace Garnet
                 case GarnetAuthenticationMode.Aad:
                     return new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger));
                 case GarnetAuthenticationMode.ACL:
-                    return new AclAuthenticationSettings(AclFile, Password);
+                    return new AclAuthenticationPasswordSettings(AclFile, Password);
+                case GarnetAuthenticationMode.AclWithAad:
+                    var aadAuthSettings = new AadAuthenticationSettings(AuthorizedAadApplicationIds?.Split(','), AadAudiences?.Split(','), AadIssuers?.Split(','), IssuerSigningTokenProvider.Create(AadAuthority, logger), AadValidateUsername.GetValueOrDefault());
+                    return new AclAuthenticationAadSettings(AclFile, Password, aadAuthSettings);
                 default:
                     logger?.LogError("Unsupported authentication mode: {mode}", AuthenticationMode);
                     throw new Exception($"Authentication mode {AuthenticationMode} is not supported.");
             }
         }
-
-
     }
 
     /// <summary>
