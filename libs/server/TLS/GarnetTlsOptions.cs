@@ -165,13 +165,13 @@ namespace Garnet.server.TLS
         /// <summary>
         /// Callback to verify the TLS certificate
         /// </summary>
-        /// <param name="issuerCertificatePath"></param>
+        /// <param name="issuerCertificatePath">The path to issuer certificate file. </param>
         /// <returns></returns>
         /// <exception cref="ArgumentException"></exception>
         /// <exception cref="ArgumentNullException"></exception>
         RemoteCertificateValidationCallback ValidateServerCertificateCallback(string targetHostName, string issuerCertificatePath)
         {
-            var issuer = GetCertIssuer(issuerCertificatePath);
+            var issuer = GetCertificateIssuer(issuerCertificatePath);
             return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
                 => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
                    && certificate is X509Certificate2 certificate2
@@ -183,8 +183,8 @@ namespace Garnet.server.TLS
         /// Validates certificate subject name by looking into DNS name property (preferred), if missing it falls back to
         /// legacy SimpleName. The input certificate subject should match the expected host name provided in server config.
         /// </summary>
-        /// <param name="certificate2"> remote certificate to validate.</param>
-        /// <param name="targetHostName"> target host name configured. </param>
+        /// <param name="certificate2">the remote certificate to validate.</param>
+        /// <param name="targetHostName">The expected target host name. </param>
         private bool ValidateCertificateName(X509Certificate2 certificate2, string targetHostName)
         {
             var subjectName = certificate2.GetNameInfo(X509NameType.DnsName, false);
@@ -199,7 +199,7 @@ namespace Garnet.server.TLS
         /// <summary>
         /// Callback to verify the TLS certificate
         /// </summary>
-        /// <param name="issuerCertificatePath"></param>
+        /// <param name="issuerCertificatePath">The path to issuer certificate file.</param>
         /// <returns></returns>
         /// <exception cref="ArgumentException"></exception>
         /// <exception cref="ArgumentNullException"></exception>
@@ -211,7 +211,7 @@ namespace Garnet.server.TLS
                 return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
                     => true;
             }
-            var issuer = GetCertIssuer(issuerCertificatePath);
+            var issuer = GetCertificateIssuer(issuerCertificatePath);
             return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
                 => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
                     && certificate is X509Certificate2 certificate2
@@ -219,10 +219,10 @@ namespace Garnet.server.TLS
         }
 
         /// <summary>
-        /// Returns issuer certificate in X509Certificate2 format.
+        /// Loads an issuer X.509 certificate using its file name.
         /// </summary>
-        /// <param name="issuerCertificatePath">path to issuer cert.</param>
-        X509Certificate2 GetCertIssuer(string issuerCertificatePath)
+        /// <param name="issuerCertificatePath"> The path to issuer certificate file.</param>
+        X509Certificate2 GetCertificateIssuer(string issuerCertificatePath)
         {
             X509Certificate2 issuer = null;
             if (!string.IsNullOrEmpty(issuerCertificatePath))
