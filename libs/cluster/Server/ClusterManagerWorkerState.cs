@@ -24,8 +24,6 @@ namespace Garnet.cluster
             string address,
             int port,
             long configEpoch,
-            long currentConfigEpoch,
-            long lastVotedConfigEpoch,
             NodeRole role,
             string replicaOfNodeId,
             string hostname)
@@ -33,7 +31,7 @@ namespace Garnet.cluster
             while (true)
             {
                 var current = currentConfig;
-                var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, currentConfigEpoch, lastVotedConfigEpoch, role, replicaOfNodeId, hostname);
+                var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname);
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
@@ -111,9 +109,6 @@ namespace Garnet.cluster
                     var port = current.LocalNodePort;
 
                     var configEpoch = soft ? current.LocalNodeConfigEpoch : 0;
-                    var currentConfigEpoch = soft ? current.LocalNodeCurrentConfigEpoch : 0;
-                    var lastVotedConfigEpoch = soft ? current.LocalNodeLastVotedEpoch : 0;
-
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
                     foreach (var nodeId in current.GetRemoteNodeIds())
                         _ = workerBanList.AddOrUpdate(nodeId, expiry, (key, oldValue) => expiry);
@@ -123,8 +118,6 @@ namespace Garnet.cluster
                         address,
                         port,
                         configEpoch: configEpoch,
-                        currentConfigEpoch: currentConfigEpoch,
-                        lastVotedConfigEpoch: lastVotedConfigEpoch,
                         role: NodeRole.PRIMARY,
                         replicaOfNodeId: null,
                         Format.GetHostName());
