@@ -643,6 +643,13 @@ namespace Garnet.server
                     return;
                 }
 
+                if (respProtocolVersion.Value != this.respProtocolVersion && asyncCompleted < asyncStarted)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_ASYNC_PROTOCOL_CHANGE, ref dcurr, dend))
+                        SendAndReset();
+                    return;
+                }
+
                 this.respProtocolVersion = respProtocolVersion.Value;
             }
 
