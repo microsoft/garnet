@@ -398,7 +398,7 @@ namespace Garnet.server
 
             ReadOnlySpan<byte> errorMsg = null;
 
-            if (leftTokens == 0)
+            if (leftTokens < 6)
                 errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
             // Parse the REGISTERCS command - list of registration sub-commands
@@ -495,8 +495,8 @@ namespace Garnet.server
                 optionalParamsRead = 0;
 
                 // At this point we expect at least 6 remaining tokens -
-                // 4 tokens for command definition + 2 for source definition
-                if (leftTokens < 6)
+                // 3 more tokens for command definition + 2 for source definition
+                if (leftTokens < 5)
                 {
                     errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                     break;
