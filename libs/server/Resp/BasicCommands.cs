@@ -83,10 +83,13 @@ namespace Garnet.server
             keyPtr -= sizeof(int); // length header
             *(int*)keyPtr = ksize;
 
-            // FIXME: this will always cause allocation of IMemory for the Get even if operation completes synchronously
-            // We should fix ConvertToHeap to conditionally avoid this allocation
-            var o = new SpanByteAndMemory();
-            SpanByte input = default;
+            // Optimistically ask storage to write output to network buffer
+            var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+
+            // Set up input to instruct storage to write output to IMemory rather than
+            // network buffer, if the operation goes pending.
+            var h = new RespInputHeader { cmd = RespCommand.ASYNC };
+            var input = SpanByte.FromPinnedStruct(&h);
             var status = storageApi.GET_WithPending(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref o, asyncStarted, out bool pending);
 
             if (pending)

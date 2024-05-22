@@ -281,6 +281,15 @@ namespace Tsavorite.core
         public static SpanByte FromPinnedPointer(byte* pointer, int length) => new(length, (nint)pointer);
 
         /// <summary>
+        /// Create a SpanByte around a pinned unmanaged struct.
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The provided unmanaged struct MUST be on the stack or point to pinned memory.
+        /// </remarks>
+        public static SpanByte FromPinnedStruct<T>(T* ptr) where T : unmanaged 
+            => new(Unsafe.SizeOf<T>(), (nint)ptr);
+
+        /// <summary>
         /// Create a <see cref="SpanByte"/> from the given <paramref name="span"/>.
         /// </summary>
         /// <remarks>
