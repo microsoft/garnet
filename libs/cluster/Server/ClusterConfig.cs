@@ -56,7 +56,6 @@ namespace Garnet.cluster
             workers[0].Port = 0;
             workers[0].Nodeid = null;
             workers[0].ConfigEpoch = 0;
-            workers[0].LastVotedConfigEpoch = 0;
             workers[0].Role = NodeRole.UNASSIGNED;
             workers[0].ReplicaOfNodeId = null;
             workers[0].ReplicationOffset = 0;
@@ -90,8 +89,6 @@ namespace Garnet.cluster
         /// <param name="address">Local worker IP address.</param>
         /// <param name="port">Local worker port.</param>
         /// <param name="configEpoch">Local worker config epoch.</param>
-        /// <param name="currentConfigEpoch">Local worker current config epoch.</param>
-        /// <param name="lastVotedConfigEpoch">Local worker last voted epoch.</param>
         /// <param name="role">Local worker role.</param>
         /// <param name="replicaOfNodeId">Local worker primary id.</param>
         /// <param name="hostname">Local worker hostname.</param>
@@ -101,8 +98,6 @@ namespace Garnet.cluster
             string address,
             int port,
             long configEpoch,
-            long currentConfigEpoch,
-            long lastVotedConfigEpoch,
             NodeRole role,
             string replicaOfNodeId,
             string hostname)
@@ -113,8 +108,6 @@ namespace Garnet.cluster
             newWorkers[1].Port = port;
             newWorkers[1].Nodeid = nodeId;
             newWorkers[1].ConfigEpoch = configEpoch;
-            newWorkers[1].LastVotedConfigEpoch = currentConfigEpoch;
-            newWorkers[1].LastVotedConfigEpoch = lastVotedConfigEpoch;
             newWorkers[1].Role = role;
             newWorkers[1].ReplicaOfNodeId = replicaOfNodeId;
             newWorkers[1].ReplicationOffset = 0;
@@ -215,18 +208,6 @@ namespace Garnet.cluster
         /// </summary>
         /// <returns>Config epoch of local node.</returns>
         public long LocalNodeConfigEpoch => workers[1].ConfigEpoch;
-
-        /// <summary>
-        /// Next valid config epoch which can be used as requestedEpoch for voting.
-        /// </summary>
-        /// <returns>Current config epoch of local node.</returns>
-        public long LocalNodeCurrentConfigEpoch => workers[1].CurrentConfigEpoch;
-
-        /// <summary>
-        /// Get last epoch this node has voted for
-        /// </summary>
-        /// <returns>Last voted config epoch of local node.</returns>
-        public long LocalNodeLastVotedEpoch => workers[1].LastVotedConfigEpoch;
 
         /// <summary>
         /// Return endpoint of primary if this node is a replica.
@@ -474,18 +455,6 @@ namespace Garnet.cluster
         {
             var workerId = GetWorkerIdFromNodeId(nodeid);
             return (workers[workerId].Address, workers[workerId].Port);
-        }
-
-        /// <summary>
-        /// Get config epoch from slot.
-        /// </summary>
-        /// <param name="slot">Slot number.</param>
-        /// <returns>Long value representing config epoch.</returns>
-        public long GetConfigEpochFromSlot(int slot)
-        {
-            if (slotMap[slot].workerId < 0)
-                return 0;
-            return workers[slotMap[slot].workerId].ConfigEpoch;
         }
         #endregion
 
@@ -898,8 +867,6 @@ namespace Garnet.cluster
                     other.workers[i].Address,
                     other.workers[i].Port,
                     other.workers[i].ConfigEpoch,
-                    other.workers[i].CurrentConfigEpoch,
-                    other.workers[i].LastVotedConfigEpoch,
                     other.workers[i].Role,
                     other.workers[i].ReplicaOfNodeId,
                     other.workers[i].hostname,
@@ -913,8 +880,6 @@ namespace Garnet.cluster
             string address,
             int port,
             long configEpoch,
-            long currentConfigEpoch,
-            long lastVotedConfigEpoch,
             NodeRole role,
             string replicaOfNodeId,
             string hostname,
@@ -945,8 +910,6 @@ namespace Garnet.cluster
             newWorkers[workerId].Port = port;
             newWorkers[workerId].Nodeid = nodeid;
             newWorkers[workerId].ConfigEpoch = configEpoch;
-            newWorkers[workerId].CurrentConfigEpoch = currentConfigEpoch;
-            newWorkers[workerId].LastVotedConfigEpoch = lastVotedConfigEpoch;
             newWorkers[workerId].Role = role;
             newWorkers[workerId].ReplicaOfNodeId = replicaOfNodeId;
             newWorkers[workerId].hostname = hostname;
@@ -1193,19 +1156,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Bump current config epoch for voting
-        /// </summary>
-        /// <returns>ClusterConfig object with updates.</returns>
-        public ClusterConfig BumpLocalNodeCurrentConfigEpoch()
-        {
-            long nextValidConfigEpoch = LocalNodeCurrentConfigEpoch;
-            var newWorkers = new Worker[workers.Length];
-            Array.Copy(workers, newWorkers, workers.Length);
-            newWorkers[1].CurrentConfigEpoch = nextValidConfigEpoch == 0 ? GetMaxConfigEpoch() : nextValidConfigEpoch + 1;
-            return new ClusterConfig(slotMap, newWorkers);
-        }
-
-        /// <summary>
         /// Check if sender has same local worker epoch as the receiver node and resolve collision.
         /// </summary>
         /// <param name="other">Incoming configuration object.</param>        
@@ -1225,19 +1175,6 @@ namespace Garnet.cluster
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
             newWorkers[1].ConfigEpoch++;
-            return new ClusterConfig(slotMap, newWorkers);
-        }
-
-        /// <summary>
-        /// Updated last voted epoch to requested epoch.
-        /// </summary>
-        /// <param name="requestedEpoch">Requested epoch value.</param>
-        /// <returns>ClusterConfig object with updates.</returns>
-        public ClusterConfig SetLocalNodeLastVotedConfigEpoch(long requestedEpoch)
-        {
-            var newWorkers = new Worker[workers.Length];
-            Array.Copy(workers, newWorkers, workers.Length);
-            newWorkers[1].LastVotedConfigEpoch = requestedEpoch;
             return new ClusterConfig(slotMap, newWorkers);
         }
     }

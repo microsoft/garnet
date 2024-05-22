@@ -48,16 +48,6 @@ namespace Garnet.cluster
         public long ConfigEpoch;
 
         /// <summary>
-        /// Current config epoch used for voting.
-        /// </summary>
-        public long CurrentConfigEpoch;
-
-        /// <summary>
-        /// Last config epoch this worker has voted for.
-        /// </summary>
-        public long LastVotedConfigEpoch;
-
-        /// <summary>
         /// Role of node (i.e 0: primary 1: replica).
         /// </summary>
         public NodeRole Role;
