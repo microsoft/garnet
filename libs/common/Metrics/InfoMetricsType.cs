@@ -68,6 +68,10 @@ namespace Garnet.common
         /// Database related stats
         /// </summary>
         KEYSPACE,
+        /// <summary>
+        /// Modules info
+        /// </summary>
+        MODULES,
     }
 
     /// <summary>

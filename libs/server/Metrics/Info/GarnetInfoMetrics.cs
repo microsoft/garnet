@@ -276,15 +276,16 @@ namespace Garnet.server
                 InfoMetricsType.PERSISTENCE => "Persistence",
                 InfoMetricsType.CLIENTS => "Clients",
                 InfoMetricsType.KEYSPACE => "Keyspace",
+                InfoMetricsType.MODULES => "Modules",
                 _ => "Default",
             };
         }
 
         private static string GetSectionRespInfo(InfoMetricsType infoType, MetricsItem[] info)
         {
-            if (info == null)
-                return "";
             var section = $"# {GetSectionHeader(infoType)}\r\n";
+            if (info == null)
+                return section;
 
             // For some metrics we have a multi-string in the value and no name, so don't print a stray leading ':'.
             if (string.IsNullOrEmpty(info[0].Name))
@@ -350,6 +351,8 @@ namespace Garnet.server
                 case InfoMetricsType.KEYSPACE:
                     PopulateKeyspaceInfo(storeWrapper);
                     return GetSectionRespInfo(InfoMetricsType.KEYSPACE, keyspaceInfo);
+                case InfoMetricsType.MODULES:
+                    return GetSectionRespInfo(section, null);
                 default:
                     return "";
             }
@@ -417,6 +420,8 @@ namespace Garnet.server
                 case InfoMetricsType.KEYSPACE:
                     PopulateKeyspaceInfo(storeWrapper);
                     return keyspaceInfo;
+                case InfoMetricsType.MODULES:
+                    return null;
                 default:
                     return null;
             }
