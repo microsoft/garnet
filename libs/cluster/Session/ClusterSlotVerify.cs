@@ -133,7 +133,7 @@ namespace Garnet.cluster
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, endPtr))
                     return new(SlotVerifiedState.OK, 0);
 
-            var slot = NumUtils.HashSlot(keyPtr, ksize);
+            var slot = HashSlotUtils.HashSlot(keyPtr, ksize);
 
             for (var c = 1; c < keyCount; c++)
             {
@@ -148,7 +148,7 @@ namespace Garnet.cluster
                     if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, endPtr))
                         return new(SlotVerifiedState.OK, 0);
 
-                var _slot = NumUtils.HashSlot(keyPtr, ksize);
+                var _slot = HashSlotUtils.HashSlot(keyPtr, ksize);
                 crossSlot |= (_slot != slot);
             }
 
