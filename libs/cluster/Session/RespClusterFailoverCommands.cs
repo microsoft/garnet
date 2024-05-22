@@ -105,42 +105,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Implements CLUSTER failauthreq command (only for internode use)
-        /// </summary>
-        /// <returns></returns>
-        private bool NetworkClusterFailAuthReq(int count, out bool invalidParameters)
-        {
-            invalidParameters = false;
-
-            // Expecting exactly 3 arguments
-            if (count != 3)
-            {
-                invalidParameters = true;
-                return true;
-            }
-
-            var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var nodeIdBytes, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var requestEpochBytes, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var claimedSlots, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-            readHead = (int)(ptr - recvBufferPtr);
-
-            var resp = clusterProvider.clusterManager.AuthorizeFailover(
-                Encoding.ASCII.GetString(nodeIdBytes),
-                BitConverter.ToInt64(requestEpochBytes),
-                claimedSlots) ? CmdStrings.RESP_RETURN_VAL_1 : CmdStrings.RESP_RETURN_VAL_0;
-            while (!RespWriteUtils.WriteDirect(resp, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
-        }
-
-        /// <summary>
         /// Implements CLUSTER failstopwrites (only for internode use)
         /// </summary>
         /// <param name="count"></param>
