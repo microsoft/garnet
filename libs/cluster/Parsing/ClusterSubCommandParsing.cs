@@ -30,7 +30,6 @@ namespace Garnet.cluster
                 _ when param.SequenceEqual(CmdStrings.aofsync) => ClusterSubcommand.AOFSYNC,
                 _ when param.SequenceEqual(CmdStrings.begin_replica_recover) => ClusterSubcommand.BEGIN_REPLICA_RECOVER,
                 _ when param.SequenceEqual(CmdStrings.initiate_replica_sync) => ClusterSubcommand.INITIATE_REPLICA_SYNC,
-                _ when param.SequenceEqual(CmdStrings.failauthreq) => ClusterSubcommand.FAILAUTHREQ,
                 _ when param.SequenceEqual(CmdStrings.failstopwrites) => ClusterSubcommand.FAILSTOPWRITES,
                 _ when param.SequenceEqual(CmdStrings.failreplicationoffset) => ClusterSubcommand.FAILREPLICATIONOFFSET,
                 _ => ConvertToClusterSubcommandIgnoreCase(ref param)
