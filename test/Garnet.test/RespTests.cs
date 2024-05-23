@@ -404,14 +404,16 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out var ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out var ttl));
+            Assert.AreEqual(-2, ttl);
 
             // px
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000");
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // keepttl
             Assert.IsTrue(db.StringSet(key, 1, TimeSpan.FromMinutes(1)));
@@ -426,7 +428,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // ex .. nx, existing key
             Assert.IsTrue(db.StringSet(key, value));
@@ -444,7 +447,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // px .. nx, non-existing key
             Assert.IsTrue(db.KeyDelete(key));
@@ -452,7 +456,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // px .. nx, existing key
             Assert.IsTrue(db.StringSet(key, value));
@@ -470,7 +475,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
         }
 
         [Test]

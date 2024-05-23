@@ -17,7 +17,6 @@ namespace Garnet.server
         /// <param name="count">Number of tokens in the buffer, including the name of the command</param>
         /// <param name="ptr">Pointer to the inpu buffer</param>
         /// <param name="objectType">SortedSet, Hash or Set type</param>
-        /// <param name="respCommand">The RESP command called</param>
         /// <param name="storageApi">The storageAPI object</param>
         /// <returns></returns>
         private unsafe bool ObjectScan<TGarnetApi>(int count, byte* ptr, GarnetObjectType objectType, ref TGarnetApi storageApi)
