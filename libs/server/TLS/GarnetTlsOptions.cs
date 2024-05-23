@@ -198,7 +198,7 @@ namespace Garnet.server.TLS
         /// Callback to verify the TLS certificate
         /// </summary>
         /// <param name="issuerCertificatePath">The path to issuer certificate file.</param>
-        /// <returns>the RemoteCertificateValidationCallback delegate to invoke</returns>
+        /// <returns>The RemoteCertificateValidationCallback delegate to invoke</returns>
         RemoteCertificateValidationCallback ValidateClientCertificateCallback(string issuerCertificatePath)
         {
             if (!ClientCertificateRequired)
@@ -246,7 +246,7 @@ namespace Garnet.server.TLS
         /// </summary>
         /// <param name="certificateToValidate">X509Certificate2 certificate to be validated.</param>
         /// <param name="authority">X509Certificate2 representing the root cert.</param>
-        /// <returns>a boolean indicating whether the certificate has a valid issuer.</returns>
+        /// <returns>A boolean indicating whether the certificate has a valid issuer.</returns>
         bool ValidateCertificateIssuer(X509Certificate2 certificateToValidate, X509Certificate2 authority)
         {
             using X509Chain chain = new();
