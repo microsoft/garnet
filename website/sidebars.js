@@ -24,10 +24,10 @@ const sidebars = {
 		{type: 'category', label: 'Server Extensions', items: ["extensions/transactions", "extensions/raw-strings", "extensions/objects"]},
 		{type: 'category', label: 'Cluster Mode', items: ["cluster/overview", "cluster/replication", "cluster/key-migration"]},
 		{type: 'category', label: 'Developer Guide', items: ["dev/onboarding", "dev/code-structure", "dev/configuration", "dev/network", "dev/processing", "dev/garnet-api",
-		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: false, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking"]},
+		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking"]},
 		  "dev/transactions",
 		  "dev/custom-commands",
-		  "dev/cluster",
+		  {type: 'category', label: 'Cluster', collapsed: true, items: ["dev/cluster/overview","dev/cluster/sharding", "dev/cluster/slot-migration"]},
 		  "dev/contributing"]},
 		/*
 		{type: 'category', label: 'Command Reference', items: ["commands", "pubsub", "transactions"]},
