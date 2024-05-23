@@ -24,7 +24,6 @@ namespace Garnet.cluster
 
         // Failover management commands
         FAILOVER,
-        FAILAUTHREQ,
         FAILSTOPWRITES,
         FAILREPLICATIONOFFSET,
 
