@@ -57,7 +57,6 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
         public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         public static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
-        public static ReadOnlySpan<byte> failauthreq => "FAILAUTHREQ"u8;
         public static ReadOnlySpan<byte> failstopwrites => "FAILSTOPWRITES"u8;
         public static ReadOnlySpan<byte> failreplicationoffset => "FAILREPLICATIONOFFSET"u8;
 
