@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -738,19 +737,6 @@ namespace Tsavorite.core
         #endregion ITsavoriteContext
 
         #region Pending Operations
-
-        /// <summary>
-        /// Get list of pending requests (for current session)
-        /// </summary>
-        /// <returns></returns>
-        public IEnumerable<long> GetPendingRequests()
-        {
-            foreach (var kvp in ctx.prevCtx?.ioPendingRequests)
-                yield return kvp.Value.serialNum;
-
-            foreach (var kvp in ctx.ioPendingRequests)
-                yield return kvp.Value.serialNum;
-        }
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)

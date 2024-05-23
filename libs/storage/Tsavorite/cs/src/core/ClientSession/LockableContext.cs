@@ -137,9 +137,8 @@ namespace Tsavorite.core
                             continue;   // Success; continue to the next key.
                     }
 
-                    // Cancellation or lock failure before we've completed all keys; we may or may not have locked the current key. Unlock anything we've locked.
-                    var unlockIdx = keyIdx - (status == OperationStatus.SUCCESS ? 0 : 1);
-                    DoInternalUnlock(clientSession, keys, start, unlockIdx);
+                    // Cancellation or lock failure before we've completed all keys; we have not locked the current key. Unlock anything we've locked.
+                    DoInternalUnlock(clientSession, keys, start, keyIdx - 1);
 
                     // Lock failure is the only place we check the timeout. If we've exceeded that, or if we've had a cancellation, return false.
                     if (cancellationToken.IsCancellationRequested || DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks)

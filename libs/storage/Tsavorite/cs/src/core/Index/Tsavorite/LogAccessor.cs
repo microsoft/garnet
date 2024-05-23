@@ -178,6 +178,12 @@ namespace Tsavorite.core
             }
         }
 
+        public Func<bool> IsSizeBeyondLimit
+        {
+            get => allocator.IsSizeBeyondLimit;
+            set => allocator.IsSizeBeyondLimit = value;
+        }
+
         /// <summary>
         /// Subscribe to records (in batches) as they become read-only in the log
         /// Currently, we support only one subscriber to the log (easy to extend)
@@ -201,6 +207,12 @@ namespace Tsavorite.core
         public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator<Key, Value>> evictionObserver)
         {
             allocator.OnEvictionObserver = evictionObserver;
+            return new LogSubscribeDisposable(allocator, false);
+        }
+
+        public IDisposable SubscribeDeserializations(IObserver<ITsavoriteScanIterator<Key, Value>> deserializationObserver)
+        {
+            allocator.OnDeserializationObserver = deserializationObserver;
             return new LogSubscribeDisposable(allocator, false);
         }
 
