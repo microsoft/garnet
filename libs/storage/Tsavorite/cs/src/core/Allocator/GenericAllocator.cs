@@ -902,6 +902,7 @@ namespace Tsavorite.core
 
             long streamStartPos = stream.Position;
             long start_addr = -1;
+            int start_offset = -1, end_offset = -1;
             if (KeyHasObjects())
             {
                 keySerializer = SerializerSettings.keySerializer();
@@ -917,6 +918,10 @@ namespace Tsavorite.core
             {
                 ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
                 src[ptr / RecordSize].info = record.info;
+                if (start_offset == -1)
+                    start_offset = (int)(ptr / RecordSize);
+
+                end_offset = (int)(ptr / RecordSize) + 1;
 
                 if (!record.info.Invalid)
                 {
@@ -964,6 +969,12 @@ namespace Tsavorite.core
             if (ValueHasObjects())
             {
                 valueSerializer.EndDeserialize();
+            }
+
+            if (OnDeserializationObserver != null && start_offset != -1 && end_offset != -1)
+            {
+                using var iter = new MemoryPageScanIterator<Key, Value>(src, start_offset, end_offset, -1, RecordSize);
+                OnDeserializationObserver.OnNext(iter);
             }
         }
 
@@ -1193,14 +1204,34 @@ namespace Tsavorite.core
             return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
+        private void ComputeScanBoundaries(long beginAddress, long endAddress, out long pageStartAddress, out int start, out int end)
+        {
+            pageStartAddress = beginAddress & ~PageSizeMask;
+            start = (int)(beginAddress & PageSizeMask) / RecordSize;
+            var count = (int)(endAddress - beginAddress) / RecordSize;
+            end = start + count;
+        }
+
+        /// <inheritdoc />
+        public override void EvictPage(long page)
+        {
+            if (OnEvictionObserver is not null)
+            {
+                var beginAddress = page << LogPageSizeBits;
+                var endAddress = (page + 1) << LogPageSizeBits;
+                ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
+                using var iter = new MemoryPageScanIterator<Key, Value>(values[(int)(page % BufferSize)], start, end, pageStartAddress, RecordSize);
+                OnEvictionObserver?.OnNext(iter);
+            }
+
+            FreePage(page);
+        }
+
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<Key, Value>> observer)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
-            long pageStartAddress = beginAddress & ~PageSizeMask;
-            int start = (int)(beginAddress & PageSizeMask) / RecordSize;
-            int count = (int)(endAddress - beginAddress) / RecordSize;
-            int end = start + count;
+            ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
             using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end, pageStartAddress, RecordSize);
             Debug.Assert(epoch.ThisInstanceProtected());
             try
