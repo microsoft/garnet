@@ -235,8 +235,11 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                for (int i = 0; i < 3000; i++) db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
-                for (int i = 0; i < 3000; i++) Assert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
+                for (int i = 0; i < 3000; i++)
+                    db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
+
+                for (int i = 0; i < 3000; i++)
+                    Assert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
 
                 // Issue and wait for DB save
                 var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
@@ -252,8 +255,11 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                for (var i = 3000; i < 3100; i++) db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
-                for (var i = 0; i < 3100; i++) Assert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
+                for (var i = 3000; i < 3100; i++)
+                    db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
+
+                for (var i = 0; i < 3100; i++)
+                    Assert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
             }
         }
 

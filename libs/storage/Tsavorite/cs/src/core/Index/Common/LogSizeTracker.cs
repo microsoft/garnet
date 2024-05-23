@@ -53,7 +53,8 @@ namespace Tsavorite.core
                 size += logSizeTracker.LogSizeCalculator.CalculateRecordSize(info, key, value);
             }
 
-            if (size == 0) return;
+            if (size == 0)
+                return;
 
             if (logOperationType == LogOperationType.Deserialize)
             {

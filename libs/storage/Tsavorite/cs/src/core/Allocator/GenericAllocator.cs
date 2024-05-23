@@ -918,7 +918,9 @@ namespace Tsavorite.core
             {
                 ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
                 src[ptr / RecordSize].info = record.info;
-                if (start_offset == -1) start_offset = (int)(ptr / RecordSize);
+                if (start_offset == -1)
+                    start_offset = (int)(ptr / RecordSize);
+
                 end_offset = (int)(ptr / RecordSize) + 1;
 
                 if (!record.info.Invalid)

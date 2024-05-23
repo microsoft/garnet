@@ -451,7 +451,10 @@ namespace Tsavorite.core
                 // Then recover snapshot into mutable region
                 var snapshotLastFreedPage = RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
                                 recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo);
-                if (snapshotLastFreedPage != NoPageFreed) lastFreedPage = snapshotLastFreedPage;
+
+                if (snapshotLastFreedPage != NoPageFreed)
+                    lastFreedPage = snapshotLastFreedPage;
+
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
             }
 
@@ -496,7 +499,10 @@ namespace Tsavorite.core
                 // Then recover snapshot into mutable region
                 var snapshotLastFreedPage = await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
                                         recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo, cancellationToken).ConfigureAwait(false);
-                if (snapshotLastFreedPage != NoPageFreed) lastFreedPage = snapshotLastFreedPage;
+
+                if (snapshotLastFreedPage != NoPageFreed)
+                    lastFreedPage = snapshotLastFreedPage;
+
                 readOnlyAddress = recoveredHLCInfo.info.flushedLogicalAddress;
             }
 
@@ -508,6 +514,8 @@ namespace Tsavorite.core
         {
             // Adjust head and read-only address post-recovery
             var _head = (1 + (tailAddress >> hlog.LogPageSizeBits) - (hlog.GetCapacityNumPages() - hlog.MinEmptyPageCount)) << hlog.LogPageSizeBits;
+
+            // If additional pages have been freed to accommodate heap memory constraints, adjust head address accordingly
             if (lastFreedPage != NoPageFreed)
             {
                 var nextAddress = (lastFreedPage + 1) << hlog.LogPageSizeBits;
@@ -663,7 +671,8 @@ namespace Tsavorite.core
         private long FreePagesToLimitHeapMemory(RecoveryStatus recoveryStatus, long page)
         {
             long lastFreedPage = NoPageFreed;
-            if (hlog.IsSizeBeyondLimit == null) return lastFreedPage;
+            if (hlog.IsSizeBeyondLimit == null)
+                return lastFreedPage;
 
             // free up additional pages, one at a time, to bring memory usage under control starting with the earliest possible page
             for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlog.IsSizeBeyondLimit(); p++)
@@ -717,7 +726,8 @@ namespace Tsavorite.core
         private async Task<long> FreePagesToLimitHeapMemoryAsync(RecoveryStatus recoveryStatus, long page, CancellationToken cancellationToken)
         {
             long lastFreedPage = NoPageFreed;
-            if (hlog.IsSizeBeyondLimit == null) return lastFreedPage;
+            if (hlog.IsSizeBeyondLimit == null)
+                return lastFreedPage;
 
             // free up additional pages, one at a time, to bring memory usage under control starting with the earliest possible page
             for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlog.IsSizeBeyondLimit(); p++)
@@ -752,7 +762,8 @@ namespace Tsavorite.core
                     recoveryStatus.WaitRead(pageIndex);
 
                     var freedPage = FreePagesToLimitHeapMemory(recoveryStatus, p);
-                    if (freedPage != NoPageFreed) lastFreedPage = freedPage;
+                    if (freedPage != NoPageFreed)
+                        lastFreedPage = freedPage;
 
                     // We make an extra pass to clear locks when reading every page back into memory
                     ClearLocksOnPage(p, options);
@@ -770,6 +781,7 @@ namespace Tsavorite.core
             long lastFreedPage = NoPageFreed;
             if (untilAddress <= scanFromAddress)
                 return lastFreedPage;
+
             var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadPerIteration);
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
@@ -783,7 +795,8 @@ namespace Tsavorite.core
                     await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
 
                     var freedPage = await FreePagesToLimitHeapMemoryAsync(recoveryStatus, p, cancellationToken).ConfigureAwait(false);
-                    if (freedPage != NoPageFreed) lastFreedPage = freedPage;
+                    if (freedPage != NoPageFreed)
+                        lastFreedPage = freedPage;
 
                     // We make an extra pass to clear locks when reading every page back into memory
                     ClearLocksOnPage(p, options);
@@ -809,6 +822,7 @@ namespace Tsavorite.core
             int totalPagesToRead = (int)(endPage - startPage);
 
             // Leave out at least MinEmptyPageCount pages to maintain memory size during recovery
+            // If heap memory is to be tracked, then read one page at a time to control memory usage
             numPagesToReadPerIteration = hlog.IsSizeBeyondLimit == null ? Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead) : 1;
             return new RecoveryStatus(capacity, hlog.MinEmptyPageCount, endPage, untilAddress, checkpointType);
         }
@@ -884,7 +898,8 @@ namespace Tsavorite.core
                         // Ensure the page is read from file
                         recoveryStatus.WaitRead(pageIndex);
                         var freedPage = FreePagesToLimitHeapMemory(recoveryStatus, p);
-                        if (freedPage != NoPageFreed) lastFreedPage = freedPage;
+                        if (freedPage != NoPageFreed)
+                            lastFreedPage = freedPage;
 
                         // We make an extra pass to clear locks when reading pages back into memory
                         ClearLocksOnPage(p, options);
@@ -925,7 +940,8 @@ namespace Tsavorite.core
                         // Ensure the page is read from file
                         await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
                         var freedPage = await FreePagesToLimitHeapMemoryAsync(recoveryStatus, p, cancellationToken).ConfigureAwait(false);
-                        if (freedPage != NoPageFreed) lastFreedPage = freedPage;
+                        if (freedPage != NoPageFreed)
+                            lastFreedPage = freedPage;
 
                         // We make an extra pass to clear locks when reading pages back into memory
                         ClearLocksOnPage(p, options);
@@ -999,6 +1015,7 @@ namespace Tsavorite.core
             };
 
             // Initially issue read request for all pages that can be held in memory
+            // If heap memory is to be tracked, then read one page at a time to control memory usage
             int totalPagesToRead = (int)(snapshotEndPage - startPage);
             numPagesToReadPerIteration = hlog.IsSizeBeyondLimit == null ? Math.Min(capacity - hlog.MinEmptyPageCount, totalPagesToRead) : 1;
         }
