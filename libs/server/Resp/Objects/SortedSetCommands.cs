@@ -917,27 +917,28 @@ namespace Garnet.server
                     return true;
                 }
 
-                byte* memberPtr = null;
-                int memberSize = 0;
+                //byte* memberPtr = null;
+                //int memberSize = 0;
 
-                // Read member parameter
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref memberPtr, ref memberSize, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                //// Read member parameter
+                //if (!RespReadUtils.ReadPtrWithLengthHeader(ref memberPtr, ref memberSize, ref ptr, recvBufferPtr + bytesRead))
+                //    return false;
 
                 // Prepare input
-                var inputPtr = (ObjectInputHeader*)(memberPtr - sizeof(ObjectInputHeader));
+                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
 
                 // Save old values on buffer for possible revert
                 var save = *inputPtr;
 
                 // Prepare length of header in input buffer
-                var inputLength = memberSize + sizeof(ObjectInputHeader);
+                //var inputLength = memberSize + sizeof(ObjectInputHeader);
+                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = op;
-                inputPtr->count = memberSize;
+                inputPtr->count = count;
                 inputPtr->done = 0;
 
                 var status = storageApi.SortedSetRank(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
