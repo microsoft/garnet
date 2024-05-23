@@ -38,10 +38,8 @@ namespace Garnet.common
     /// </summary>
     public class FileLoggerOutput : IDisposable
     {
-        private StreamWriter streamWriter;
-        private readonly object lockObj = new object();
-        private readonly TimeSpan flushInterval = Debugger.IsAttached ? TimeSpan.FromMilliseconds(10) : TimeSpan.FromMilliseconds(10);
-        private DateTime lastFlush = DateTime.UtcNow;
+        private readonly StreamWriter streamWriter;
+        private readonly object lockObj;
 
         /// <summary>
         /// Create a file logger output
@@ -50,10 +48,8 @@ namespace Garnet.common
         /// <param name="flushInterval"></param>
         public FileLoggerOutput(string filename, int flushInterval = default)
         {
-            this.flushInterval = flushInterval == default ?
-                Debugger.IsAttached ? TimeSpan.FromMilliseconds(10) : TimeSpan.FromSeconds(1) :
-                TimeSpan.FromMilliseconds(flushInterval);
             streamWriter = new StreamWriter(File.Open(filename, FileMode.Append, FileAccess.Write, FileShare.ReadWrite), Encoding.UTF8);
+            lockObj = new object();
         }
 
         /// <summary>
@@ -61,7 +57,7 @@ namespace Garnet.common
         /// </summary>
         public void Dispose()
         {
-            streamWriter?.Dispose();
+            streamWriter.Dispose();
         }
 
         /// <summary>
@@ -84,16 +80,10 @@ namespace Garnet.common
                 categoryName,
                 formatter(state, exception));
 
-            lock (this.lockObj)
+            lock (lockObj)
             {
-                streamWriter?.WriteLine(msg);
-
-                //var now = DateTime.UtcNow;
-                //if(now - lastFlush > flushInterval)
-                {
-                    //lastFlush = now;
-                    streamWriter.Flush();
-                }
+                streamWriter.WriteLine(msg);
+                streamWriter.Flush();
             }
         }
     }

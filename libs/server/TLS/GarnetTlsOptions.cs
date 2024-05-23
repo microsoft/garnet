@@ -138,7 +138,7 @@ namespace Garnet.server.TLS
             {
                 ClientCertificateRequired = ClientCertificateRequired,
                 CertificateRevocationCheckMode = CertificateRevocationCheckMode,
-                RemoteCertificateValidationCallback = ValidateCertificateCallback(IssuerCertificatePath),
+                RemoteCertificateValidationCallback = ValidateClientCertificateCallback(IssuerCertificatePath),
                 ServerCertificateSelectionCallback = (sender, hostName) =>
                 {
                     return serverCertificateSelector.GetSslServerCertificate();
@@ -152,7 +152,7 @@ namespace Garnet.server.TLS
             {
                 TargetHost = ClusterTlsClientTargetHost,
                 AllowRenegotiation = false,
-                RemoteCertificateValidationCallback = ValidateCertificateCallback(IssuerCertificatePath),
+                RemoteCertificateValidationCallback = ValidateServerCertificateCallback(ClusterTlsClientTargetHost, IssuerCertificatePath),
                 // We use the same server certificate selector for the server's own client as well
                 LocalCertificateSelectionCallback = (object sender, string targetHost, X509CertificateCollection localCertificates, X509Certificate remoteCertificate, string[] acceptableIssuers) =>
                 {
@@ -161,14 +161,45 @@ namespace Garnet.server.TLS
             };
         }
 
+
         /// <summary>
         /// Callback to verify the TLS certificate
         /// </summary>
-        /// <param name="issuerCertificatePath"></param>
+        /// <param name="issuerCertificatePath">The path to issuer certificate file. </param>
         /// <returns></returns>
-        /// <exception cref="ArgumentException"></exception>
-        /// <exception cref="ArgumentNullException"></exception>
-        RemoteCertificateValidationCallback ValidateCertificateCallback(string issuerCertificatePath)
+        RemoteCertificateValidationCallback ValidateServerCertificateCallback(string targetHostName, string issuerCertificatePath)
+        {
+            var issuer = GetCertificateIssuer(issuerCertificatePath);
+            return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
+                => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
+                   && certificate is X509Certificate2 certificate2
+                   && ValidateCertificateName(certificate2, targetHostName)
+                   && ValidateCertificateIssuer(certificate2, issuer));
+        }
+
+        /// <summary>
+        /// Validates certificate subject name by looking into DNS name property (preferred), if missing it falls back to
+        /// legacy SimpleName. The input certificate subject should match the expected host name provided in server config.
+        /// </summary>
+        /// <param name="certificate2">The remote certificate to validate.</param>
+        /// <param name="targetHostName">The expected target host name. </param>
+        private bool ValidateCertificateName(X509Certificate2 certificate2, string targetHostName)
+        {
+            var subjectName = certificate2.GetNameInfo(X509NameType.DnsName, false);
+            if (string.IsNullOrWhiteSpace(subjectName))
+            {
+                subjectName = certificate2.GetNameInfo(X509NameType.SimpleName, false);
+            }
+
+            return subjectName.Equals(targetHostName, StringComparison.InvariantCultureIgnoreCase);
+        }
+
+        /// <summary>
+        /// Callback to verify the TLS certificate
+        /// </summary>
+        /// <param name="issuerCertificatePath">The path to issuer certificate file.</param>
+        /// <returns>The RemoteCertificateValidationCallback delegate to invoke.</returns>
+        RemoteCertificateValidationCallback ValidateClientCertificateCallback(string issuerCertificatePath)
         {
             if (!ClientCertificateRequired)
             {
@@ -176,6 +207,19 @@ namespace Garnet.server.TLS
                 return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
                     => true;
             }
+            var issuer = GetCertificateIssuer(issuerCertificatePath);
+            return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
+                => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
+                    && certificate is X509Certificate2 certificate2
+                    && ValidateCertificateIssuer(certificate2, issuer));
+        }
+
+        /// <summary>
+        /// Loads an issuer X.509 certificate using its file name.
+        /// </summary>
+        /// <param name="issuerCertificatePath">The path to issuer certificate file.</param>
+        X509Certificate2 GetCertificateIssuer(string issuerCertificatePath)
+        {
             X509Certificate2 issuer = null;
             if (!string.IsNullOrEmpty(issuerCertificatePath))
             {
@@ -192,10 +236,7 @@ namespace Garnet.server.TLS
             else
                 logger?.LogWarning("ClientCertificateRequired is true and IssuerCertificatePath is not provided. The remote certificate chain will not be validated against issuer.");
 
-            return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
-                => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
-                    && certificate is X509Certificate2 certificate2
-                    && ValidateCertificateIssuer(certificate2, issuer));
+            return issuer;
         }
 
         /// <summary>
@@ -203,9 +244,9 @@ namespace Garnet.server.TLS
         /// https://stackoverflow.com/questions/6497040/how-do-i-validate-that-a-certificate-was-created-by-a-particular-certification-a
         /// Make sure to validate for your requirements before using in production.
         /// </summary>
-        /// <param name="certificateToValidate"></param>
-        /// <param name="authority"></param>
-        /// <returns></returns>
+        /// <param name="certificateToValidate">X509Certificate2 certificate to be validated.</param>
+        /// <param name="authority">X509Certificate2 representing the root cert.</param>
+        /// <returns>A boolean indicating whether the certificate has a valid issuer.</returns>
         bool ValidateCertificateIssuer(X509Certificate2 certificateToValidate, X509Certificate2 authority)
         {
             using X509Chain chain = new();
@@ -228,7 +269,7 @@ namespace Garnet.server.TLS
                     string certificateErrorsString = "Unknown errors.";
                     if (errors != null && errors.Length > 0)
                         certificateErrorsString = String.Join(", ", errors);
-                    throw new Exception("Trust chain did not complete to the known authority anchor. Errors: " + certificateErrorsString);
+                    throw new GarnetException("Trust chain did not complete to the known authority anchor. Errors: " + certificateErrorsString);
                 }
 
                 if (authority != null)
@@ -239,11 +280,11 @@ namespace Garnet.server.TLS
                         .Any(x => x.Certificate.Thumbprint == authority.Thumbprint);
 
                     if (!valid)
-                        throw new Exception("Trust chain did not complete to the known authority anchor. Thumbprints did not match.");
+                        throw new GarnetException("Trust chain did not complete to the known authority anchor. Thumbprints did not match.");
                 }
                 return true;
             }
-            catch (Exception ex)
+            catch (GarnetException ex)
             {
                 logger?.LogError(ex, "Error validating certificate issuer");
                 return false;
