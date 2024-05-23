@@ -289,12 +289,6 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
-            // Check GEOADD with insufficient parameters
-            //response = lightClientRequest.SendCommandChunks("GEOADD Sicily NX CH 13.361389 38.115556", bytesSent);
-            //expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR)}\r\n";
-            //actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
-            //Assert.AreEqual(expectedResponse, actualValue);
-
             response = lightClientRequest.SendCommandChunks("GEOADD Sicily NX 13.361389 38.115556 Palermo 15.087269 37.502669 Catania", bytesSent);
             expectedResponse = ":2\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
@@ -431,6 +425,11 @@ namespace Garnet.test
 
             var expectedResponse = ":2\r\n+PONG\r\n";
             var response = lightClientRequest.Execute("GEOADD Sicily 13.361389 38.115556 Palermo 15.087269 37.502669 Catania", "PING", expectedResponse.Length, bytesSent);
+            Assert.AreEqual(expectedResponse, response);
+
+            // GEOPOS with unknown key
+            response = lightClientRequest.Execute("GEOPOS Unknown Palermo Catania", expectedResponse.Length, bytesSent);
+            expectedResponse = "*2\r\n*-1\r\n*-1\r\n";
             Assert.AreEqual(expectedResponse, response);
 
             expectedResponse = "*3\r\n*2\r\n$18\r\n13.361389338970184\r\n$17\r\n38.11555668711662\r\n*2\r\n$18\r\n15.087267458438873\r\n$18\r\n37.502669245004654\r\n*-1\r\n+PONG\r\n";

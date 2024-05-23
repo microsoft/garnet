@@ -1523,7 +1523,7 @@ namespace Garnet.test
             string value = "0123456789";
 
             var resp = (string)db.StringGetRange(key, 2, 10);
-            Assert.AreEqual(null, resp);
+            Assert.AreEqual(string.Empty, resp);
             Assert.AreEqual(true, db.StringSet(key, value));
 
             //0,0

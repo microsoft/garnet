@@ -362,7 +362,7 @@ namespace Garnet.server
             {
                 sessionMetrics?.incr_total_notfound();
                 Debug.Assert(o.IsSpanByte);
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTY, ref dcurr, dend))
                     SendAndReset();
             }
 
