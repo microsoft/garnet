@@ -46,26 +46,6 @@ namespace Garnet.cluster
             => await client.ExecuteForLongResultWithCancellationAsync(GarnetClient.CLUSTER, new Memory<byte>[] { CmdStrings.failstopwrites.ToArray(), nodeid }, cancellationToken).ConfigureAwait(false);
 
         /// <summary>
-        /// Send request for failover authorization to all primaries
-        /// </summary>
-        /// <param name="client"></param>
-        /// <param name="nodeid"></param>
-        /// <param name="requestedEpoch"></param>
-        /// <param name="claimedSlots"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        public static async Task<long> failauthreq(this GarnetClient client, byte[] nodeid, long requestedEpoch, byte[] claimedSlots, CancellationToken cancellationToken = default)
-        {
-            var args = new Memory<byte>[] {
-                CmdStrings.failauthreq.ToArray(),
-                nodeid,
-                BitConverter.GetBytes(requestedEpoch),
-                claimedSlots
-            };
-            return await client.ExecuteForLongResultWithCancellationAsync(GarnetClient.CLUSTER, args, cancellationToken).ConfigureAwait(false);
-        }
-
-        /// <summary>
         /// Send request to await for replication offset sync with replica
         /// </summary>
         /// <param name="client"></param>
