@@ -3,7 +3,6 @@
 
 using System;
 using System.Globalization;
-using System.IO;
 using System.Text;
 using Garnet.server;
 using NUnit.Framework;
@@ -283,13 +282,32 @@ namespace Garnet.test
         public void CanDoGeoAddWhenInvalidPairLC(int bytesSent)
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var response = lightClientRequest.SendCommandChunks("GEOADD Sicily NX 13.361389 38.115556 Palermo 15.087269 37.502669 Catania", bytesSent);
-            var expectedResponse = ":2\r\n";
+
+            // Check GEOADD without members
+            var response = lightClientRequest.SendCommandChunks("GEOADD Sicily NX", bytesSent);
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(SortedSetOperation.GEOADD))}\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
+            // Check GEOADD with insufficient parameters
+            //response = lightClientRequest.SendCommandChunks("GEOADD Sicily NX CH 13.361389 38.115556", bytesSent);
+            //expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR)}\r\n";
+            //actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            //Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommandChunks("GEOADD Sicily NX 13.361389 38.115556 Palermo 15.087269 37.502669 Catania", bytesSent);
+            expectedResponse = ":2\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            // Add new elements, return only the elements changed
+            response = lightClientRequest.SendCommandChunks("GEOADD Sicily NX CH 14.361389 39.115556 Palermo 15.087269 37.502669 Catania 38.0350 14.0212 Cefalu 37.8545 15.2889 Taormina", bytesSent);
+            expectedResponse = ":2\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
             // Only update elements, return only the elements changed
-            response = lightClientRequest.SendCommandChunks("GEOADD Sicily XX CH 14.361389 39.115556 Palermo 15.087269 37.502669 Catania", bytesSent);
+            response = lightClientRequest.SendCommandChunks("GEOADD Sicily XX CH 15.361389 39.115556 Palermo 15.087269 37.502669 Catania", bytesSent);
             expectedResponse = ":1\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);

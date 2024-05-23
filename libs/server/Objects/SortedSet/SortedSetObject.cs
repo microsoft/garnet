@@ -221,7 +221,7 @@ namespace Garnet.server
                         SortedSetRangeByScore(_input, input.Length, ref output);
                         break;
                     case SortedSetOperation.GEOADD:
-                        GeoAdd(_input, input.Length, _output);
+                        GeoAdd(_input, input.Length, ref output);
                         break;
                     case SortedSetOperation.GEOHASH:
                         GeoHash(_input, input.Length, ref output);

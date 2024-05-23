@@ -1220,7 +1220,13 @@ namespace Garnet.test
             var val = "expireValue";
             var expire = 2;
 
+            var ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-2, (int)ttl);
+
             db.StringSet(key, val);
+            ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-1, (int)ttl);
+
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
             var time = db.KeyTimeToLive(key);
@@ -1247,7 +1253,13 @@ namespace Garnet.test
             var key = "expireKey";
             var expire = 2;
 
+            var ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-2, (int)ttl);
+
             db.SortedSetAdd(key, key, 1.0);
+            ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-1, (int)ttl);
+
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
             var time = db.KeyTimeToLive(key);
@@ -1770,11 +1782,17 @@ namespace Garnet.test
             var val = "myKeyValue";
             var expireTimeInMilliseconds = 3000;
 
+            var pttl = db.Execute("PTTL", key);
+            Assert.AreEqual(-2, (int)pttl);
+
             db.StringSet(key, val);
+            pttl = db.Execute("PTTL", key);
+            Assert.AreEqual(-1, (int)pttl);
+
             db.KeyExpire(key, TimeSpan.FromMilliseconds(expireTimeInMilliseconds));
 
             //check TTL of the key in milliseconds
-            var pttl = db.Execute("PTTL", key);
+            pttl = db.Execute("PTTL", key);
 
             Assert.IsTrue(long.TryParse(pttl.ToString(), out var pttlInMs));
             Assert.IsTrue(pttlInMs > 0);

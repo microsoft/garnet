@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -46,88 +47,180 @@ namespace Garnet.server
             public bool WithHash { get; set; }
         }
 
-        private void GeoAdd(byte* input, int length, byte* output)
+        private void GeoAdd(byte* input, int length, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
-            var _output = (ObjectOutputHeader*)output;
-            *_output = default;
+            ObjectOutputHeader _output = default;
 
             int count = _input->count;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
 
-            // By default add new elements but do not update the ones already in the set
-            bool nx = true;
+            bool isMemory = false;
+            MemoryHandle ptrHandle = default;
+            byte* ptr = output.SpanByte.ToPointer();
 
-            bool ch = false;
+            var curr = ptr;
+            var end = curr + output.Length;
 
-            // Read the options
-            var optsCount = count % 3;
-            if (optsCount > 0 && optsCount <= 2)
+            try
             {
-                // Is NX or XX, if not nx then use XX
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var byteOptions, ref input_currptr, input + length))
-                    return;
-                nx = (byteOptions.Length == 2 && (byteOptions[0] == (int)'N' && byteOptions[1] == (int)'X') || (byteOptions[0] == (int)'n' && byteOptions[1] == (int)'x'));
-                if (optsCount == 2)
+                // By default add new elements but do not update the ones already in the set
+                var nx = false;
+                var xx = false;
+                var ch = false;
+
+                byte* tokenPtr = null;
+                var tokenSize = 0;
+                Span<byte> tokenSpan = default;
+
+                // Read the options
+                while (count > 0)
                 {
-                    // Read CH option
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out byteOptions, ref input_currptr, input + length))
+                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref tokenPtr, ref tokenSize, ref input_currptr,
+                            input + length))
                         return;
-                    ch = (byteOptions.Length == 2 && (byteOptions[0] == (int)'C' && byteOptions[1] == (int)'H') || (byteOptions[0] == (int)'c' && byteOptions[1] == (int)'h'));
-                }
-                count -= optsCount;
-            }
 
-            int elementsChanged = 0;
-
-            for (int c = 0; c < count / 3; c++)
-            {
-                if (!RespReadUtils.ReadDoubleWithLengthHeader(out var longitude, out var parsed, ref input_currptr, input + length))
-                    return;
-                if (!RespReadUtils.ReadDoubleWithLengthHeader(out var latitude, out parsed, ref input_currptr, input + length))
-                    return;
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input + length))
-                    return;
-
-                if (c < _input->done)
-                    continue;
-
-                _output->countDone++;
-
-                if (parsed)
-                {
-                    var score = server.GeoHash.GeoToLongValue(latitude, longitude);
-                    if (score != -1)
+                    count--;
+                    tokenSpan = new Span<byte>(tokenPtr, tokenSize);
+                    if (tokenSpan.SequenceEqual("NX"u8))
                     {
-                        if (!sortedSetDict.TryGetValue(member, out double scoreStored))
-                        {
-                            if (nx)
-                            {
-                                sortedSetDict.Add(member, score);
-                                sortedSet.Add((score, member));
-                                _output->opsDone++;
-
-                                this.UpdateSize(member);
-                            }
-                        }
-                        else if (!nx && scoreStored != score)
-                        {
-                            sortedSetDict[member] = score;
-                            var success = sortedSet.Remove((scoreStored, member));
-                            Debug.Assert(success);
-                            success = sortedSet.Add((score, member));
-                            Debug.Assert(success);
-                            elementsChanged++;
-                        }
+                        nx = true;
+                    }
+                    else if (tokenSpan.SequenceEqual("XX"u8))
+                    {
+                        xx = true;
+                    }
+                    else if (tokenSpan.SequenceEqual("CH"u8))
+                    {
+                        ch = true;
+                    }
+                    else
+                    {
+                        break;
                     }
                 }
-                _output->opsDone = ch ? elementsChanged : _output->opsDone;
-            }
 
-            // Write output
-            _output->bytesDone = (int)(input_currptr - input_startptr);
+                ReadOnlySpan<byte> errorMessage = default;
+                // No members defined
+                if (count == 0)
+                {
+                    errorMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(SortedSetOperation.GEOADD)));
+                }
+                // NX & XX can't both be set
+                // Also, each member definition should contain 3 tokens - longitude latitude member
+                // Remaining token count should be a multiple of 3
+                else if ((nx && xx) || (count + 1) % 3 != 0)
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
+                }
+                else
+                {
+                    var elementsChanged = 0;
+
+                    var memberCount = (count + 1) / 3;
+                    for (var c = 0; c < memberCount; c++)
+                    {
+                        double longitude = default;
+                        var longParsed = false;
+                        // If this is the first member, use last token parsed
+                        if (c == 0)
+                        {
+                            longParsed = Utf8Parser.TryParse(tokenSpan, out longitude, out _);
+                        }
+                        else
+                        {
+                            if (!RespReadUtils.ReadDoubleWithLengthHeader(out longitude, out longParsed, ref input_currptr,
+                                    input + length))
+                                return;
+                            count--;
+                        }
+
+                        if (!RespReadUtils.ReadDoubleWithLengthHeader(out var latitude, out var latParsed, ref input_currptr,
+                                input + length))
+                            return;
+                        count--;
+
+                        if (!longParsed || !latParsed)
+                        {
+                            errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                            break;
+                        }
+
+                        if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr,
+                                input + length))
+                            return;
+                        count--;
+
+                        if (c < _input->done)
+                            continue;
+
+                        var score = server.GeoHash.GeoToLongValue(latitude, longitude);
+                        if (score != -1)
+                        {
+                            if (!sortedSetDict.TryGetValue(member, out var scoreStored))
+                            {
+                                if (!xx)
+                                {
+                                    sortedSetDict.Add(member, score);
+                                    sortedSet.Add((score, member));
+                                    _output.opsDone++;
+
+                                    this.UpdateSize(member);
+                                    elementsChanged++;
+                                }
+                            }
+                            else if (!nx && Math.Abs(scoreStored - score) > double.Epsilon)
+                            {
+                                sortedSetDict[member] = score;
+                                var success = sortedSet.Remove((scoreStored, member));
+                                Debug.Assert(success);
+                                success = sortedSet.Add((score, member));
+                                Debug.Assert(success);
+                                elementsChanged++;
+                            }
+                        }
+                    }
+
+                    _output.opsDone = ch ? elementsChanged : _output.opsDone;
+                    if (elementsChanged == 0)
+                    {
+
+                    }
+                }
+
+                // Flush unread tokens
+                while (count > 0)
+                {
+                    RespReadUtils.ReadPtrWithLengthHeader(ref tokenPtr, ref tokenSize, ref input_currptr,
+                        input + length);
+                    count--;
+                }
+
+                if (errorMessage != default)
+                {
+                    while (!RespWriteUtils.WriteError(errorMessage, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+
+                if (_output.opsDone == 0)
+                {
+
+                }
+
+                // Write output
+                _output.bytesDone = (int)(input_currptr - input_startptr);
+                _output.countDone = _input->count - count;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
         }
 
         private void GeoHash(byte* input, int length, ref SpanByteAndMemory output)
