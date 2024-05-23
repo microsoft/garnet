@@ -501,6 +501,8 @@ namespace Garnet.server
                                                         count += 1;
                                                     }
                                                 }
+
+                                                return (RespCommand.BITOP, (byte)BitmapOperation.NONE);
                                             }
                                         }
                                         break;
