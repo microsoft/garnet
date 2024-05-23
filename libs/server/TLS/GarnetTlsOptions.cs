@@ -198,7 +198,7 @@ namespace Garnet.server.TLS
         /// Callback to verify the TLS certificate
         /// </summary>
         /// <param name="issuerCertificatePath">The path to issuer certificate file.</param>
-        /// <returns>The RemoteCertificateValidationCallback delegate to invoke</returns>
+        /// <returns>The RemoteCertificateValidationCallback delegate to invoke.</returns>
         RemoteCertificateValidationCallback ValidateClientCertificateCallback(string issuerCertificatePath)
         {
             if (!ClientCertificateRequired)
