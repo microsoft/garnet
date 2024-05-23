@@ -19,11 +19,7 @@ namespace Garnet
                 using var server = new GarnetServer(args);
 
                 // Optional: register custom extensions
-                if (!TryRegisterExtensions(server))
-                {
-                    Console.WriteLine("Unable to register server extensions.");
-                    return;
-                }
+                RegisterExtensions(server);
 
                 // Start the server
                 server.Start();
@@ -41,7 +37,7 @@ namespace Garnet
         /// commands such as db.Execute in StackExchange.Redis. Example:
         ///   db.Execute("SETIFPM", key, value, prefix);
         /// </summary>
-        static bool TryRegisterExtensions(GarnetServer server)
+        static void RegisterExtensions(GarnetServer server)
         {
             // Register custom command on raw strings (SETIFPM = "set if prefix match")
             // Add RESP command info to registration for command to appear when client runs COMMAND / COMMAND INFO
@@ -94,8 +90,6 @@ namespace Garnet
             // Register sample transactional procedures
             server.Register.NewTransactionProc("SAMPLEUPDATETX", 8, () => new SampleUpdateTxn());
             server.Register.NewTransactionProc("SAMPLEDELETETX", 5, () => new SampleDeleteTxn());
-
-            return true;
         }
     }
 }
