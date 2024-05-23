@@ -460,7 +460,49 @@ namespace Garnet.server
                                     case 'B':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBITOP\r\n"u8))
                                         {
-                                            return (RespCommand.BITOP, 0);
+                                            // Check for matching bit-operation
+                                            if (remainingBytes > length + 6 + 8)
+                                            {
+                                                // 2-character operations
+                                                if (*(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("$2\r\n"u8))
+                                                {
+                                                    if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nOR\r\n"u8) || *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nor\r\n"u8))
+                                                    {
+                                                        readHead += 8;
+                                                        count -= 1;
+                                                        return (RespCommand.BITOP, (byte)BitmapOperation.OR);
+                                                    }
+                                                }
+                                                // 3-character operations
+                                                else if (remainingBytes > length + 6 + 9)
+                                                {
+                                                    if (*(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("$3\r\n"u8))
+                                                    {
+                                                        // Optimistically adjust read head and count
+                                                        readHead += 9;
+                                                        count -= 1;
+
+                                                        if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nAND\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nand\r\n"u8))
+                                                        {
+                                                            return (RespCommand.BITOP, (byte)BitmapOperation.AND);
+                                                        }
+                                                        else if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nXOR\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nxor\r\n"u8))
+                                                        {
+                                                            return (RespCommand.BITOP, (byte)BitmapOperation.XOR);
+                                                        }
+                                                        else if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nNOT\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nnot\r\n"u8))
+                                                        {
+                                                            return (RespCommand.BITOP, (byte)BitmapOperation.NOT);
+                                                        }
+
+                                                        // Reset read head and count if we didn't match operator.
+                                                        readHead -= 9;
+                                                        count += 1;
+                                                    }
+                                                }
+
+                                                return (RespCommand.BITOP, (byte)BitmapOperation.NONE);
+                                            }
                                         }
                                         break;
 

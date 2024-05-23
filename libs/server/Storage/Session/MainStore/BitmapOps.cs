@@ -115,14 +115,6 @@ namespace Garnet.server
             var srcBitmapStartPtrs = stackalloc byte*[keyCount - 1];
             var srcBitmapEndPtrs = stackalloc byte*[keyCount - 1];
 
-            if (sizeof(byte*) * (keyCount - 1) <= 512)
-            {
-                var tmpSrcBitmapStartPtrs = stackalloc byte*[(keyCount - 1)];
-                var tmpSrcBitmapEndPtrs = stackalloc byte*[(keyCount - 1)];
-                srcBitmapStartPtrs = tmpSrcBitmapStartPtrs;
-                srcBitmapEndPtrs = tmpSrcBitmapEndPtrs;
-            }
-
             byte* dstBitmapPtr;
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
@@ -155,6 +147,7 @@ namespace Garnet.server
                     {
                         goto readFromScratch;
                     }
+
                     //Skip if key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
@@ -163,6 +156,7 @@ namespace Garnet.server
                     var localSrcBitmapPtr = (byte*)((IntPtr)(*(long*)outputBitmapPtr));
                     var len = *(int*)(outputBitmapPtr + 8);
 
+                    // Keep track of pointers returned from IFunctions
                     srcBitmapStartPtrs[keysFound] = localSrcBitmapPtr;
                     srcBitmapEndPtrs[keysFound] = localSrcBitmapPtr + len;
                     keysFound++;

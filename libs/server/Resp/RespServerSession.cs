@@ -483,7 +483,7 @@ namespace Garnet.server
                 (RespCommand.PFMERGE, 0) => HyperLogLogMerge(count, ptr, ref storageApi),
                 (RespCommand.PFCOUNT, 0) => HyperLogLogLength(count, ptr, ref storageApi),
                 //Bitmap Commands
-                (RespCommand.BITOP, 0) => NetworkStringBitOperation(count, ptr, ref storageApi),
+                (RespCommand.BITOP, (byte)BitmapOperation.NONE or (byte)BitmapOperation.AND or (byte)BitmapOperation.OR or (byte)BitmapOperation.XOR or (byte)BitmapOperation.NOT) => NetworkStringBitOperation(count, ptr, (BitmapOperation)subcmd, ref storageApi),
                 (RespCommand.BITFIELD, 0) => StringBitField(count, ptr, ref storageApi),
                 (RespCommand.BITFIELD_RO, 0) => StringBitFieldReadOnly(count, ptr, ref storageApi),
                 // List Commands

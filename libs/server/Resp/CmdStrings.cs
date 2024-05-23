@@ -126,6 +126,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "syntax error"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
 
 
         /// <summary>

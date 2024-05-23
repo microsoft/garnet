@@ -2305,5 +2305,27 @@ namespace Garnet.test
                 Assert.AreEqual("syntax error", ex.Message);
             }
         }
+
+        [Test, Order(36)]
+        [Category("BITOP")]
+        public void BitmapOperationTooManyKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var args = new List<object> { "AND", "a" };
+
+            for (var i = 0; i < 128; i++)
+                args.Add(i.ToString());
+
+            try
+            {
+                db.Execute("BITOP", args);
+            }
+            catch (Exception ex)
+            {
+                Assert.AreEqual("ERR Bitop source key limit (64) exceeded", ex.Message);
+            }
+        }
     }
 }

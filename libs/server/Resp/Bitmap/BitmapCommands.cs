@@ -436,17 +436,22 @@ namespace Garnet.server
         /// <summary>
         /// Performs bitwise operations on multiple strings and store the result.
         /// </summary>
-        private bool NetworkStringBitOperation<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkStringBitOperation<TGarnetApi>(int count, byte* ptr, BitmapOperation bitop, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var keyCount = count - 1;
+            // Check if option provided is valid
+            if (bitop == BitmapOperation.NONE)
+            {
+                ReadOnlySpan<byte> bufSpan = new(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            var keyCount = count;
             var keys = new ArgSlice[keyCount];
-
-            // Extract bitmap operation option
-            Span<byte> optionSeq = default;
-            if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref optionSeq, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
             // Read keys
             for (var i = 0; i < keys.Length; i++)
             {
@@ -459,28 +464,11 @@ namespace Garnet.server
             if (NetworkKeyArraySlotVerify(ref keys, false))
                 return true;
 
-            // Match bitmap operation option
-            ConvertUtils.MakeUpperCase(optionSeq);
-            var bitop = optionSeq switch
+            if (keyCount > 64)
             {
-                _ when optionSeq.SequenceEqual("OR"u8) => BitmapOperation.OR,
-                _ when optionSeq.SequenceEqual("AND"u8) => BitmapOperation.AND,
-                _ when optionSeq.SequenceEqual("XOR"u8) => BitmapOperation.XOR,
-                _ when optionSeq.SequenceEqual("NOT"u8) => BitmapOperation.NOT,
-                _ => BitmapOperation.NONE
-            };
-
-            // Check if option provided is valid
-            if (bitop == BitmapOperation.NONE)
-            {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_BITOP_KEY_LIMIT, ref dcurr, dend))
                     SendAndReset();
                 return true;
-            }
-
-            if (sizeof(byte*) * (keyCount - 1) > 512)
-            {
-                throw new Exception("Bitop source key limit (64) exceeded");
             }
 
             _ = storageApi.StringBitOperation(keys, bitop, out var result);
