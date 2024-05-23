@@ -1316,7 +1316,7 @@ namespace Garnet.test.cluster
                 }
                 return 0;
             }
-            return ResultType.Integer == result.Type ? int.Parse(result.ToString()) : 0;
+            return ResultType.Integer == result.Resp2Type ? int.Parse(result.ToString()) : 0;
         }
 
         public int CountKeysInSlot(int nodeIndex, int slot, ILogger logger = null)

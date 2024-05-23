@@ -64,7 +64,7 @@ namespace Garnet.test
             Assert.AreEqual(2, members.Length);
 
             var response = db.Execute("MEMORY", "USAGE", "user1:set");
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = 272;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -121,7 +121,7 @@ namespace Garnet.test
             _ = db.SetMembers(new RedisKey("myset"));
 
             var response = db.Execute("MEMORY", "USAGE", "myset");
-            var actualValue = ResultType.Integer == response.Type ? int.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? int.Parse(response.ToString()) : -1;
             var expectedResponse = -1;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -156,7 +156,7 @@ namespace Garnet.test
             Assert.IsTrue(existingMemberExists, "Existing member 'ItemOne' does not exist in the set.");
 
             var memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            var actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             var expectedResponse = 424;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -164,7 +164,7 @@ namespace Garnet.test
             Assert.AreEqual(true, response);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -172,7 +172,7 @@ namespace Garnet.test
             Assert.AreEqual(false, response);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -180,7 +180,7 @@ namespace Garnet.test
             Assert.AreEqual(2, longResponse);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            actualValue = ResultType.Integer == memresponse.Type ? Int32.Parse(memresponse.ToString()) : -1;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
             expectedResponse = 200;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -382,6 +382,75 @@ namespace Garnet.test
             var expectedResult = new[] { "a", "b", "c", "d", "e" };
             Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
         }
+
+
+        [Test]
+        public void CanDoSetInter()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var redisValues1 = new RedisValue[] { "item-a", "item-b", "item-c", "item-d" };
+            var result = db.SetAdd(new RedisKey("key1"), redisValues1);
+            Assert.AreEqual(4, result);
+
+            result = db.SetAdd(new RedisKey("key2"), ["item-c"]);
+            Assert.AreEqual(1, result);
+
+            result = db.SetAdd(new RedisKey("key3"), ["item-a", "item-c", "item-e"]);
+            Assert.AreEqual(3, result);
+
+            var members = db.SetCombine(SetOperation.Intersect, ["key1", "key2", "key3"]);
+            RedisValue[] entries = ["item-c"];
+            Assert.AreEqual(1, members.Length);
+            // assert two arrays are equal ignoring order
+            Assert.IsTrue(members.OrderBy(x => x).SequenceEqual(entries.OrderBy(x => x)));
+
+            members = db.SetCombine(SetOperation.Intersect, ["key1", "key2", "key3", "_not_exists"]);
+            Assert.IsEmpty(members);
+
+            members = db.SetCombine(SetOperation.Intersect, ["_not_exists_1", "_not_exists_2", "_not_exists_3"]);
+            Assert.IsEmpty(members);
+
+
+            try
+            {
+                db.SetCombine(SetOperation.Intersect, []);
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                Assert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, "SINTER"), e.Message);
+            }
+        }
+
+        [Test]
+        public void CanDoSetInterStore()
+        {
+            string key = "key";
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = "key1";
+            var key1Value = new RedisValue[] { "a", "b", "c" };
+
+            var key2 = "key2";
+            var key2Value = new RedisValue[] { "c", "d", "e" };
+
+            var addResult = db.SetAdd(key1, key1Value);
+            Assert.AreEqual(key1Value.Length, addResult);
+            addResult = db.SetAdd(key2, key2Value);
+            Assert.AreEqual(key2Value.Length, addResult);
+
+            var result = (int)db.Execute("SINTERSTORE", key, key1, key2);
+            Assert.AreEqual(1, result);
+
+            var membersResult = db.SetMembers(key);
+            Assert.AreEqual(1, membersResult.Length);
+            var strResult = membersResult.Select(m => m.ToString()).ToArray();
+            var expectedResult = new[] { "c" };
+            Assert.IsTrue(expectedResult.SequenceEqual(strResult));
+        }
+
 
         [Test]
         [TestCase("key1", "key2")]
@@ -977,6 +1046,90 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
         }
 
+
+        [Test]
+        public void CanDoSinterLC()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SADD key1 a b c d");
+            lightClientRequest.SendCommand("SADD key2 c");
+            lightClientRequest.SendCommand("SADD key3 a c e");
+            var response = lightClientRequest.SendCommand("SINTER key1 key2 key3");
+            var expectedResponse = "*1\r\n$1\r\nc\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
+        [Test]
+        public void IntersectWithEmptySetReturnEmptySet()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SADD key1 a");
+
+            var response = lightClientRequest.SendCommand("SINTER key1 key2");
+            var expectedResponse = "*0\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
+        [Test]
+        public void IntersectWithNoKeysReturnError()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SINTER");
+            var expectedResponse = "-ERR wrong number of arguments for 'SINTER' command\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
+        [Test]
+        public void IntersectAndStoreWithNoKeysReturnError()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SINTERSTORE");
+            var expectedResponse = "-ERR wrong number of arguments for 'SINTERSTORE' command\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
+
+        [Test]
+        public void IntersectAndStoreWithNotExisingSetsOverwitesDestinationSet()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SADD key a");
+
+            var SINTERSTOREResponse = lightClientRequest.SendCommand("SINTERSTORE key key1 key2 key3");
+            var expectedSINTERSTOREResponse = ":0\r\n";
+            Assert.AreEqual(expectedSINTERSTOREResponse, SINTERSTOREResponse.AsSpan().Slice(0, expectedSINTERSTOREResponse.Length).ToArray());
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            var expectedResponse = "*0\r\n";
+            Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
+        [Test]
+        public void IntersectAndStoreWithNoSetsReturnErrWrongNumArgs()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            var SINTERSTOREResponse = lightClientRequest.SendCommand("SINTERSTORE key");
+            var expectedSINTERSTOREResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, "SINTERSTORE")}\r\n";
+            Assert.AreEqual(expectedSINTERSTOREResponse, SINTERSTOREResponse.AsSpan().Slice(0, expectedSINTERSTOREResponse.Length).ToArray());
+        }
+
+
+        [Test]
+        public void CanDoSinterStoreLC()
+        {
+            var lightClientRequest = TestUtils.CreateRequest();
+            lightClientRequest.SendCommand("SADD key1 a b c d");
+            lightClientRequest.SendCommand("SADD key2 c");
+            lightClientRequest.SendCommand("SADD key3 a c e");
+            var response = lightClientRequest.SendCommand("SINTERSTORE key key1 key2 key3");
+            var expectedResponse = ":1\r\n";
+            Assert.AreEqual(expectedResponse, response.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*1\r\n$1\r\nc\r\n";
+            Assert.AreEqual(expectedResponse, membersResponse.AsSpan().Slice(0, expectedResponse.Length).ToArray());
+        }
+
         [Test]
         [TestCase("")]
         [TestCase("key")]
@@ -1069,6 +1222,22 @@ namespace Garnet.test
             strResponse = Encoding.ASCII.GetString(membersResponse).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, strResponse);
         }
+
+        [Test]
+        public void CanDoSinterStoreWhenMemberKeysNotExisting()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SINTERSTORE key key1 key2 key3");
+            var expectedResponse = ":0\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            var membersResponse = lightClientRequest.SendCommand("SMEMBERS key");
+            expectedResponse = "*0\r\n";
+            strResponse = Encoding.ASCII.GetString(membersResponse).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+        }
+
         #endregion
 
 

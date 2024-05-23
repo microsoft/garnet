@@ -550,6 +550,33 @@ If **destination** already exists, it is overwritten.
 
 ---
 
+### SINTER
+
+#### Syntax
+
+```bash
+    SINTER key [key ...]
+```
+
+Returns the members of the set resulting from the intersection of all the given sets.
+Keys that do not exist are considered to be empty sets.
+
+---
+
+### SINTERSTORE
+
+#### Syntax
+
+```bash
+    SINTERSTORE destination key [key ...]
+```
+
+This command is equal to [SINTER](#INTER), but instead of returning the resulting set, it is stored in **destination**.
+
+If **destination** already exists, it is overwritten.
+
+---
+
 ### SDIFF
 
 #### Syntax

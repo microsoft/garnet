@@ -72,7 +72,6 @@ namespace Garnet.test.cluster
         [TestCase("SEND_CKPT_METADATA", new int[] { 0, 1, 2, 4, 5, 6 })]
         [TestCase("SEND_CKPT_FILE_SEGMENT", new int[] { 0, 1, 2, 3, 4, 6 })]
         [TestCase("BEGIN_REPLICA_RECOVER", new int[] { 0, 1, 2, 3, 4, 5, 6, 8, 9 })]
-        [TestCase("FAILAUTHREQ", new int[] { 0, 2, 4 })]
         [TestCase("FAILSTOPWRITES", new int[] { 0, 2, 3, 4 })]
         [TestCase("FAILREPLICATIONOFFSET", new int[] { 0, 2, 3, 4 })]
         public void ClusterCommandWrongParameters(string subcommand, params int[] invalidCount)

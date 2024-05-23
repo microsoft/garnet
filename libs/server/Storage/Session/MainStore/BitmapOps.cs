@@ -94,17 +94,16 @@ namespace Garnet.server
 
         public unsafe GarnetStatus StringBitOperation(ArgSlice[] keys, BitmapOperation bitop, out long result)
         {
-            int maxBitmapLen = int.MinValue;
-            int minBitmapLen = int.MaxValue;
+            var maxBitmapLen = int.MinValue;
+            var minBitmapLen = int.MaxValue;
             var status = GarnetStatus.NOTFOUND;
-
-            int keyCount = keys.Length;
+            var keyCount = keys.Length;
 
             // prepare input
-            int inputSize = sizeof(int) + RespInputHeader.Size;
-            byte* pbCmdInput = stackalloc byte[inputSize];
+            var inputSize = sizeof(int) + RespInputHeader.Size;
+            var pbCmdInput = stackalloc byte[inputSize];
 
-            byte* pcurr = pbCmdInput;
+            var pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
             (*(RespInputHeader*)pcurr).cmd = RespCommand.BITOP;
@@ -112,28 +111,18 @@ namespace Garnet.server
 
             // 8 byte start pointer
             // 4 byte int length
-            byte* output = stackalloc byte[12];
-            byte** srcBitmapStartPtrs = stackalloc byte*[keyCount - 1];
-            byte** srcBitmapEndPtrs = stackalloc byte*[keyCount - 1];
-
-            if (sizeof(byte*) * (keyCount - 1) <= 512)
-            {
-                byte** tmpSrcBitmapStartPtrs = stackalloc byte*[(keyCount - 1)];
-                byte** tmpSrcBitmapEndPtrs = stackalloc byte*[(keyCount - 1)];
-                srcBitmapStartPtrs = tmpSrcBitmapStartPtrs;
-                srcBitmapEndPtrs = tmpSrcBitmapEndPtrs;
-            }
+            var output = stackalloc byte[12];
+            var srcBitmapStartPtrs = stackalloc byte*[keyCount - 1];
+            var srcBitmapEndPtrs = stackalloc byte*[keyCount - 1];
 
             byte* dstBitmapPtr;
-
-            //TODO: Reenable transaction
-            bool createTransaction = false;
+            var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
                 Debug.Assert(txnManager.state == TxnState.None);
                 txnManager.SaveKeyEntryToLock(keys[0], false, LockType.Exclusive);
-                for (int i = 1; i < keys.Length; i++)
+                for (var i = 1; i < keys.Length; i++)
                     txnManager.SaveKeyEntryToLock(keys[i], false, LockType.Shared);
                 txnManager.Run(true);
             }
@@ -146,11 +135,11 @@ namespace Garnet.server
                 uc.BeginUnsafe();
             readFromScratch:
                 var localHeadAddress = HeadAddress;
-                int srcKeyOffset = 0;
+                var keysFound = 0;
 
-                for (int i = 1; i < keys.Length; i++)
+                for (var i = 1; i < keys.Length; i++)
                 {
-                    ArgSlice srcKey = keys[i];
+                    var srcKey = keys[i];
                     //Read srcKey
                     var outputBitmap = new SpanByteAndMemory(output, 12);
                     status = ReadWithUnsafeContext(srcKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref outputBitmap, localHeadAddress, out bool epochChanged, ref uc);
@@ -158,22 +147,25 @@ namespace Garnet.server
                     {
                         goto readFromScratch;
                     }
+
                     //Skip if key does not exist
                     if (status == GarnetStatus.NOTFOUND)
                         continue;
 
-                    byte* outputBitmapPtr = outputBitmap.SpanByte.ToPointer();
-                    byte* localSrcBitmapPtr = (byte*)((IntPtr)(*(long*)outputBitmapPtr));
-                    int len = *(int*)(outputBitmapPtr + 8);
+                    var outputBitmapPtr = outputBitmap.SpanByte.ToPointer();
+                    var localSrcBitmapPtr = (byte*)((IntPtr)(*(long*)outputBitmapPtr));
+                    var len = *(int*)(outputBitmapPtr + 8);
 
-                    srcBitmapStartPtrs[srcKeyOffset] = localSrcBitmapPtr;
-                    srcBitmapEndPtrs[srcKeyOffset] = localSrcBitmapPtr + len;
-                    srcKeyOffset++;
+                    // Keep track of pointers returned from IFunctions
+                    srcBitmapStartPtrs[keysFound] = localSrcBitmapPtr;
+                    srcBitmapEndPtrs[keysFound] = localSrcBitmapPtr + len;
+                    keysFound++;
                     maxBitmapLen = Math.Max(len, maxBitmapLen);
                     minBitmapLen = Math.Min(len, minBitmapLen);
                 }
 
                 #region performBitop
+                // Allocate result buffers
                 sectorAlignedMemoryBitmap ??= new SectorAlignedMemory(bitmapBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
                 dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
                 if (maxBitmapLen + sectorAlignedMemoryPoolAlignment > bitmapBufferSize)
@@ -188,17 +180,28 @@ namespace Garnet.server
                     dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
                 }
 
-                //1. Multi-way bitmap merge
-                BitmapManager.BitOpMainUnsafeMultiKey(dstBitmapPtr, maxBitmapLen, srcBitmapStartPtrs, srcBitmapEndPtrs, srcKeyOffset, minBitmapLen, (byte)bitop);
-                #endregion
 
-                if (maxBitmapLen > 0)
+                // Check if at least one key is found and execute bitop
+                if (keysFound > 0)
                 {
-                    SpanByte dstKey = keys[0].SpanByte;
-                    byte* valPtr = dstBitmapPtr;
-                    valPtr -= sizeof(int);
-                    *(int*)valPtr = (int)maxBitmapLen;
-                    status = SET(ref dstKey, ref Unsafe.AsRef<SpanByte>(valPtr), ref uc);
+                    //1. Multi-way bitmap merge
+                    _ = BitmapManager.BitOpMainUnsafeMultiKey(dstBitmapPtr, maxBitmapLen, srcBitmapStartPtrs, srcBitmapEndPtrs, keysFound, minBitmapLen, (byte)bitop);
+                    #endregion
+
+                    if (maxBitmapLen > 0)
+                    {
+                        var dstKey = keys[0].SpanByte;
+                        var valPtr = dstBitmapPtr;
+                        valPtr -= sizeof(int);
+                        *(int*)valPtr = maxBitmapLen;
+                        status = SET(ref dstKey, ref Unsafe.AsRef<SpanByte>(valPtr), ref uc);
+                    }
+                }
+                else
+                {
+                    // Return OK even when no source keys were found
+                    status = GarnetStatus.OK;
+                    maxBitmapLen = 0;
                 }
             }
             finally
