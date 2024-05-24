@@ -224,6 +224,9 @@ namespace Garnet
         [Option("cluster-tls-client-target-host", Required = false, HelpText = "Name for the client target host when using TLS connections in cluster mode.")]
         public string ClusterTlsClientTargetHost { get; set; }
 
+        [Option("enable-tls-client-target-host-validation", Required = false, HelpText = "whether to validate the ClusterTlsClientTargetHost or bypass this check. This is needed for backward compatibility for users who may not be using this validation.")]
+        public bool? EnableTlsClientHostValidation { get; set; }
+
         [OptionValidation]
         [Option("tls", Required = false, HelpText = "Enable TLS.")]
         public bool? EnableTLS { get; set; }
@@ -580,6 +583,7 @@ namespace Garnet
                     CertificateRefreshFrequency,
                     EnableCluster.GetValueOrDefault(),
                     ClusterTlsClientTargetHost,
+                    EnableTlsClientHostValidation.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
                 MetricsSamplingFrequency = MetricsSamplingFrequency,

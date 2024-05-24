@@ -34,6 +34,7 @@ namespace Garnet.server.TLS
         readonly int CertificateRefreshFrequency;
 
         readonly bool ClientCertificateRequired;
+        readonly bool EnableTlsClientHostValidation;
         readonly X509RevocationMode CertificateRevocationCheckMode;
 
         string ClusterTlsClientTargetHost;
@@ -52,6 +53,7 @@ namespace Garnet.server.TLS
             string certSubjectName, int certificateRefreshFrequency,
             bool enableCluster,
             string clusterTlsClientTargetHost,
+            bool enableTlsClientHostValidation = false,
             SslServerAuthenticationOptions tlsServerOptionsOverride = null,
             SslClientAuthenticationOptions clusterTlsClientOptionsOverride = null,
             ILogger logger = null)
@@ -63,6 +65,7 @@ namespace Garnet.server.TLS
             this.CertSubjectName = certSubjectName;
             this.CertificateRefreshFrequency = certificateRefreshFrequency;
 
+            this.EnableTlsClientHostValidation = enableTlsClientHostValidation;
             this.ClusterTlsClientTargetHost = clusterTlsClientTargetHost;
             this.IssuerCertificatePath = issuerCertificatePath;
 
@@ -173,7 +176,7 @@ namespace Garnet.server.TLS
             return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
                 => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
                    && certificate is X509Certificate2 certificate2
-                   && ValidateCertificateName(certificate2, targetHostName)
+                   && (!EnableTlsClientHostValidation || ValidateCertificateName(certificate2, targetHostName))
                    && ValidateCertificateIssuer(certificate2, issuer));
         }
 
