@@ -45,13 +45,12 @@ namespace Tsavorite.core
                 {
                     if (!FindTagAndTryTransientSLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out var status))
                     {
+                        Debug.Assert(status != OperationStatus.NOTFOUND, "Expected to FindTag in InternalContinuePendingRead");
                         if (HandleImmediateRetryStatus(status, tsavoriteSession, ref pendingContext))
                             continue;
                         return status;
                     }
 
-                    if (!FindTag(ref stackCtx.hei))
-                        Debug.Fail("Expected to FindTag in InternalContinuePendingRead");
                     stackCtx.SetRecordSourceToHashEntry(hlog);
 
                     try
