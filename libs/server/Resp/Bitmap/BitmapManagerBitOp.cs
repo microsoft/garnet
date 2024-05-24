@@ -26,7 +26,7 @@ namespace Garnet.server
             switch (bitop)
             {
                 case (byte)BitmapOperation.NOT:
-                    __bitop_multikey_simdX256_not(dstPtr, dstLen, srcStartPtrs[0], (srcEndPtrs[0] - srcStartPtrs[0]));
+                    __bitop_multikey_simdX256_not(dstPtr, dstLen, srcStartPtrs[0], srcEndPtrs[0] - srcStartPtrs[0]);
                     break;
                 case (byte)BitmapOperation.AND:
                     __bitop_multikey_simdX256_and(dstPtr, dstLen, srcStartPtrs, srcEndPtrs, srcKeyCount, minSize);
