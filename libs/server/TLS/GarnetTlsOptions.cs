@@ -34,7 +34,7 @@ namespace Garnet.server.TLS
         readonly int CertificateRefreshFrequency;
 
         readonly bool ClientCertificateRequired;
-        readonly bool EnableTlsClientHostValidation;
+        readonly bool ValidateClusterCertificate;
         readonly X509RevocationMode CertificateRevocationCheckMode;
 
         string ClusterTlsClientTargetHost;
@@ -53,7 +53,7 @@ namespace Garnet.server.TLS
             string certSubjectName, int certificateRefreshFrequency,
             bool enableCluster,
             string clusterTlsClientTargetHost,
-            bool enableTlsClientHostValidation = false,
+            bool validateClusterCertificate = false,
             SslServerAuthenticationOptions tlsServerOptionsOverride = null,
             SslClientAuthenticationOptions clusterTlsClientOptionsOverride = null,
             ILogger logger = null)
@@ -65,7 +65,7 @@ namespace Garnet.server.TLS
             this.CertSubjectName = certSubjectName;
             this.CertificateRefreshFrequency = certificateRefreshFrequency;
 
-            this.EnableTlsClientHostValidation = enableTlsClientHostValidation;
+            this.ValidateClusterCertificate = validateClusterCertificate;
             this.ClusterTlsClientTargetHost = clusterTlsClientTargetHost;
             this.IssuerCertificatePath = issuerCertificatePath;
 
@@ -164,7 +164,6 @@ namespace Garnet.server.TLS
             };
         }
 
-
         /// <summary>
         /// Callback to verify the TLS certificate
         /// </summary>
@@ -172,11 +171,16 @@ namespace Garnet.server.TLS
         /// <returns></returns>
         RemoteCertificateValidationCallback ValidateServerCertificateCallback(string targetHostName, string issuerCertificatePath)
         {
+            if (!ValidateClusterCertificate)
+            {
+                logger?.LogWarning("Server certificate validation is disabled. Remote certificate validation will always succeed.");
+                return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors) => true;
+            }
             var issuer = GetCertificateIssuer(issuerCertificatePath);
             return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
                 => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
                    && certificate is X509Certificate2 certificate2
-                   && (!EnableTlsClientHostValidation || ValidateCertificateName(certificate2, targetHostName))
+                   && (ValidateCertificateName(certificate2, targetHostName))
                    && ValidateCertificateIssuer(certificate2, issuer));
         }
 
