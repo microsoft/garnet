@@ -180,7 +180,7 @@ namespace Garnet.server.TLS
             return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
                 => (sslPolicyErrors == SslPolicyErrors.None) || (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors
                    && certificate is X509Certificate2 certificate2
-                   && (ValidateCertificateName(certificate2, targetHostName))
+                   && ValidateCertificateName(certificate2, targetHostName)
                    && ValidateCertificateIssuer(certificate2, issuer));
         }
 
