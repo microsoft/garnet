@@ -57,6 +57,9 @@ namespace Garnet.server
     /// </summary>
     public partial class ListObject : GarnetObjectBase
     {
+        /// <inheritdoc />
+        public override int Count => list.Count;
+
         readonly LinkedList<byte[]> list;
 
         /// <summary>

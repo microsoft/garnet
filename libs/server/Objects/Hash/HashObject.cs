@@ -41,6 +41,8 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class HashObject : GarnetObjectBase
     {
+        public override int Count => hash.Count;
+
         readonly Dictionary<byte[], byte[]> hash;
 
         /// <summary>

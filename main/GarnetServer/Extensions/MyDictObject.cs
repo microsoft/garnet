@@ -22,6 +22,8 @@ namespace Garnet
 
     class MyDict : CustomObjectBase
     {
+        public override int Count => dict.Count;
+
         readonly Dictionary<byte[], byte[]> dict;
 
         public MyDict(byte type)

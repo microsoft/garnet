@@ -27,6 +27,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public long Size { get; set; }
 
+        /// <inheritdoc />
+        public abstract int Count { get; }
+
         protected GarnetObjectBase(long expiration, long size)
         {
             Debug.Assert(size >= 0);

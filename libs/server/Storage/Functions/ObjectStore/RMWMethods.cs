@@ -87,7 +87,14 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     return true;
                 default:
-                    return value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange);
+                    var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange);
+                    if (value.Count == 0)
+                    {
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                        return false;
+                    }
+
+                    return operateSuccessful;
             }
         }
 
@@ -134,6 +141,7 @@ namespace Garnet.server
                     break;
                 default:
                     value.Operate(ref input, ref output.spanByteAndMemory, out _);
+
                     break;
             }
 

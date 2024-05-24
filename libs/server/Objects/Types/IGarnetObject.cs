@@ -29,6 +29,11 @@ namespace Garnet.server
         long Size { get; set; }
 
         /// <summary>
+        /// Item count in the collection
+        /// </summary>
+        int Count { get; }
+
+        /// <summary>
         /// Operator on object
         /// </summary>
         /// <param name="input"></param>

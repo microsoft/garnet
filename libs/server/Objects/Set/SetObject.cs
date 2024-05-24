@@ -40,6 +40,9 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class SetObject : GarnetObjectBase
     {
+        /// <inheritdoc />
+        public override int Count => set.Count;
+
         readonly HashSet<byte[]> set;
 
         /// <summary>

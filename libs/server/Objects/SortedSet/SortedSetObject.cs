@@ -72,6 +72,8 @@ namespace Garnet.server
     /// </summary>
     public partial class SortedSetObject : GarnetObjectBase
     {
+        public override int Count => sortedSetDict.Count;
+
         private readonly SortedSet<(double, byte[])> sortedSet;
         private readonly Dictionary<byte[], double> sortedSetDict;
 
