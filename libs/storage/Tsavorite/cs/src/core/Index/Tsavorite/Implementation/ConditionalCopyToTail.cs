@@ -139,7 +139,6 @@ namespace Tsavorite.core
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-            pendingContext.version = tsavoriteSession.Ctx.version;
             pendingContext.serialNum = lsn;
 
             return OperationStatus.RECORD_ON_DISK;

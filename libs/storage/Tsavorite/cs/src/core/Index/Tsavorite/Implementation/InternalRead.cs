@@ -378,7 +378,6 @@ namespace Tsavorite.core
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = logicalAddress;
-            pendingContext.version = tsavoriteSession.Ctx.version;
             pendingContext.serialNum = lsn;
         }
     }

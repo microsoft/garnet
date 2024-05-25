@@ -150,10 +150,9 @@ namespace Tsavorite.core
 
             // Some additional information about the previous attempt
             internal long id;
-            internal long version;  // TODO unused?
             internal long logicalAddress;
-            internal long serialNum;
-            internal HashBucketEntry entry;
+            internal long serialNum;        // TODO remove
+            internal long InitialLatestLogicalAddress;
 
             // operationFlags values
             internal ushort operationFlags;
@@ -161,11 +160,11 @@ namespace Tsavorite.core
             internal const ushort kNoKey = 0x0001;
             internal const ushort kIsAsync = 0x0002;
 
-            internal ReadCopyOptions readCopyOptions;
+            internal ReadCopyOptions readCopyOptions;   // Two byte enums
+            internal WriteReason writeReason;   // for ConditionalCopyToTail; one byte enum
 
             internal RecordInfo recordInfo;
             internal long minAddress;
-            internal WriteReason writeReason;   // for ConditionalCopyToTail
 
             // For flushing head pages on tail allocation.
             internal CompletionEvent flushEvent;
@@ -208,16 +207,11 @@ namespace Tsavorite.core
                 set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
             }
 
+            // RecordInfo is not used as such during the pending phase, so we reuse the space here.
             internal long InitialEntryAddress
             {
                 readonly get => recordInfo.PreviousAddress;
                 set => recordInfo.PreviousAddress = value;
-            }
-
-            internal long InitialLatestLogicalAddress
-            {
-                readonly get => entry.Address;
-                set => entry.Address = value;
             }
 
             public void Dispose()

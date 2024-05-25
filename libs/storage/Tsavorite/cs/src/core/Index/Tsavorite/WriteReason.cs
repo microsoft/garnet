@@ -6,7 +6,7 @@ namespace Tsavorite.core
     /// <summary>
     /// The reason a SingleWriter was performed
     /// </summary>
-    public enum WriteReason
+    public enum WriteReason : byte
     {
         /// <summary>A new record appended by Upsert</summary>
         Upsert,

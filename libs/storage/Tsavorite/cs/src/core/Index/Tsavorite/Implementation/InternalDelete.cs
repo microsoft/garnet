@@ -98,9 +98,6 @@ namespace Tsavorite.core
                             goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
                             goto CreateNewRecord;
-                        case LatchDestination.CreatePendingContext:
-                            CreatePendingDeleteContext(ref key, userContext, ref pendingContext, tsavoriteSession, lsn, ref stackCtx);
-                            goto LatchRelease;
                         default:
                             Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
                             break;
@@ -230,9 +227,8 @@ namespace Tsavorite.core
             pendingContext.type = OperationType.DELETE;
             if (pendingContext.key == default) pendingContext.key = hlog.GetKeyContainer(ref key);
             pendingContext.userContext = userContext;
-            pendingContext.entry.word = stackCtx.recSrc.LatestLogicalAddress;
+            pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-            pendingContext.version = tsavoriteSession.Ctx.version;
             pendingContext.serialNum = lsn;
         }
 
