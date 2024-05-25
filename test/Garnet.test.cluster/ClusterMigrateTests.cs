@@ -8,6 +8,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -330,15 +331,17 @@ namespace Garnet.test.cluster
             #endregion
 
             #region DelSlots
-            resp = context.clusterTestUtils.AddDelSlots(0, new List<int> { 7638 }, true);
-            Assert.AreEqual(resp, "OK");
-
             byte[] key = Encoding.ASCII.GetBytes("{abc}0");
             byte[] val = Encoding.ASCII.GetBytes("1234");
+            var slot = HashSlotUtils.HashSlot(key);
+            resp = context.clusterTestUtils.AddDelSlots(0, [slot], true);
+            Assert.AreEqual(resp, "OK");
+
+
             var respState = context.clusterTestUtils.SetKey(0, key, val, out var _, out var _, out var _, logger: context.logger);
             Assert.AreEqual(respState, ResponseState.OK);
 
-            resp = context.clusterTestUtils.AddDelSlots(0, new List<int> { 7638 }, false);
+            resp = context.clusterTestUtils.AddDelSlots(0, [slot], false);
             Assert.AreEqual(resp, "OK");
 
             respState = context.clusterTestUtils.SetKey(0, key, val, out var _, out var _, out var _, logger: context.logger);
@@ -347,7 +350,7 @@ namespace Garnet.test.cluster
             resp = context.clusterTestUtils.GetKey(0, key, out var _, out var _, out var _, out var _, logger: context.logger);
             Assert.AreEqual(resp, "CLUSTERDOWN");
 
-            resp = context.clusterTestUtils.AddDelSlots(0, new List<int> { 7638 }, true);
+            resp = context.clusterTestUtils.AddDelSlots(0, [slot], true);
             Assert.AreEqual(resp, "OK");
 
             resp = context.clusterTestUtils.GetKey(0, key, out var _, out var _, out var _, out var _, logger: context.logger);
@@ -374,7 +377,9 @@ namespace Garnet.test.cluster
             var val = Encoding.ASCII.GetBytes("1234");
             var respState = context.clusterTestUtils.SetKey(sourcePortIndex, key, val, out _, out _, out _, logger: context.logger);
             Assert.AreEqual(respState, ResponseState.OK);
-            var slot = 7638;
+            var slot = (int)HashSlotUtils.HashSlot(key);
+            var expectedSlot = 7638;
+            Assert.AreEqual(expectedSlot, slot);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourcePortIndex, context.logger);
             var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetPortIndex, context.logger);
@@ -442,7 +447,7 @@ namespace Garnet.test.cluster
             resp = context.clusterTestUtils.GetKey(otherNodeIndex, key, out slot, out var address, out var port, out var responseState, logger: context.logger);
             Assert.AreEqual(ResponseState.MOVED, responseState);
             Assert.AreEqual(resp, "MOVED");
-            Assert.AreEqual(slot, 7638);
+            Assert.AreEqual(expectedSlot, slot);
             Assert.AreEqual(address, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Address.ToString());
             Assert.AreEqual(port, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Port);
 
@@ -455,7 +460,7 @@ namespace Garnet.test.cluster
             resp = context.clusterTestUtils.GetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), out slot, out address, out port, out responseState, logger: context.logger);
             Assert.AreEqual(ResponseState.ASK, responseState);
             Assert.AreEqual(resp, "ASK");
-            Assert.AreEqual(slot, 7638);
+            Assert.AreEqual(expectedSlot, slot);
             Assert.AreEqual(address, context.clusterTestUtils.GetEndPoint(targetPortIndex).Address.ToString());
             Assert.AreEqual(port, context.clusterTestUtils.GetEndPoint(targetPortIndex).Port);
 
@@ -463,7 +468,7 @@ namespace Garnet.test.cluster
             resp = context.clusterTestUtils.GetKey(targetPortIndex, Encoding.ASCII.GetBytes("{abc}1"), out slot, out address, out port, out responseState, logger: context.logger);
             Assert.AreEqual(ResponseState.MOVED, responseState);
             Assert.AreEqual(resp, "MOVED");
-            Assert.AreEqual(slot, 7638);
+            Assert.AreEqual(expectedSlot, slot);
             Assert.AreEqual(address, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Address.ToString());
             Assert.AreEqual(port, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Port);
 
@@ -474,7 +479,7 @@ namespace Garnet.test.cluster
             //5. request write on source node to new key redirect.
             respState = context.clusterTestUtils.SetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), Encoding.ASCII.GetBytes("5678"), out slot, out address, out port, logger: context.logger);
             Assert.AreEqual(respState, ResponseState.ASK);
-            Assert.AreEqual(slot, 7638);
+            Assert.AreEqual(expectedSlot, slot);
             Assert.AreEqual(address, context.clusterTestUtils.GetEndPoint(targetPortIndex).Address.ToString());
             Assert.AreEqual(port, context.clusterTestUtils.GetEndPoint(targetPortIndex).Port);
 
@@ -486,18 +491,18 @@ namespace Garnet.test.cluster
             #endregion
 
             #region RESET_SLOT_STATE
-            resp = context.clusterTestUtils.SetSlot(targetPortIndex, 7638, "STABLE", "", logger: context.logger);
+            resp = context.clusterTestUtils.SetSlot(targetPortIndex, expectedSlot, "STABLE", "", logger: context.logger);
             Assert.AreEqual(resp, "OK");
             resp = context.clusterTestUtils.GetKey(targetPortIndex, Encoding.ASCII.GetBytes("{abc}1"), out slot, out address, out port, out responseState, logger: context.logger);
             Assert.AreEqual(ResponseState.MOVED, responseState);
             Assert.AreEqual(resp, "MOVED");
-            Assert.AreEqual(slot, 7638);
+            Assert.AreEqual(expectedSlot, slot);
             Assert.AreEqual(address, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Address.ToString());
             Assert.AreEqual(port, context.clusterTestUtils.GetEndPoint(sourcePortIndex).Port);
 
-            resp = context.clusterTestUtils.SetSlot(sourcePortIndex, 7638, "STABLE", "", logger: context.logger);
+            resp = context.clusterTestUtils.SetSlot(sourcePortIndex, expectedSlot, "STABLE", "", logger: context.logger);
             Assert.AreEqual(resp, "OK");
-            resp = context.clusterTestUtils.GetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), out slot, out address, out port, out responseState, logger: context.logger);
+            resp = context.clusterTestUtils.GetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), out _, out _, out _, out responseState, logger: context.logger);
             Assert.AreEqual(ResponseState.OK, responseState);
             #endregion
 
@@ -514,7 +519,6 @@ namespace Garnet.test.cluster
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
             var key = Encoding.ASCII.GetBytes("{abc}0");
-
             var slot = ClusterTestUtils.HashSlot(key);
 
             List<byte[]> keys = [];
@@ -529,32 +533,35 @@ namespace Garnet.test.cluster
                 vals.Add(newKey);
             }
 
-            var resp = context.clusterTestUtils.SetMultiKey(0, keys, vals, out var _, out var _, out var _);
+            var sourceNodeIndex = 0;
+            var otherNodeIndex = 1;
+
+            var resp = context.clusterTestUtils.SetMultiKey(sourceNodeIndex, keys, vals, out var _, out var _, out var _);
             Assert.AreEqual(resp, "OK");
 
-            _ = context.clusterTestUtils.GetMultiKey(0, keys, out var valuesGet, out _, out _, out _);
+            _ = context.clusterTestUtils.GetMultiKey(sourceNodeIndex, keys, out var valuesGet, out _, out _, out _);
             Assert.AreEqual(valuesGet, vals);
 
             keys[0][1] = (byte)('w');
-            resp = context.clusterTestUtils.GetMultiKey(0, keys, out _, out _, out _, out _);
+            resp = context.clusterTestUtils.GetMultiKey(sourceNodeIndex, keys, out _, out _, out _, out _);
             Assert.AreEqual(resp, "CROSSSLOT");
 
-            resp = context.clusterTestUtils.SetMultiKey(0, keys, vals, out _, out _, out _);
+            resp = context.clusterTestUtils.SetMultiKey(sourceNodeIndex, keys, vals, out _, out _, out _);
             Assert.AreEqual(resp, "CROSSSLOT");
 
             keys[0][1] = (byte)('a');
             Assert.AreEqual(ClusterTestUtils.HashSlot(keys[0]), ClusterTestUtils.HashSlot(keys[1]));
-            resp = context.clusterTestUtils.GetMultiKey(1, keys, out _, out var _slot, out var _address, out var _port);
+            resp = context.clusterTestUtils.GetMultiKey(otherNodeIndex, keys, out _, out var _slot, out var _address, out var _port);
             Assert.AreEqual(resp, "MOVED");
             Assert.AreEqual(_slot, slot);
-            Assert.AreEqual(_address, context.clusterTestUtils.GetEndPoint(0).Address.ToString());
-            Assert.AreEqual(_port, context.clusterTestUtils.GetEndPoint(0).Port);
+            Assert.AreEqual(_address, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Address.ToString());
+            Assert.AreEqual(_port, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
 
-            resp = context.clusterTestUtils.SetMultiKey(1, keys, vals, out _slot, out _address, out _port);
+            resp = context.clusterTestUtils.SetMultiKey(otherNodeIndex, keys, vals, out _slot, out _address, out _port);
             Assert.AreEqual(resp, "MOVED");
             Assert.AreEqual(_slot, slot);
-            Assert.AreEqual(_address, context.clusterTestUtils.GetEndPoint(0).Address.ToString());
-            Assert.AreEqual(_port, context.clusterTestUtils.GetEndPoint(0).Port);
+            Assert.AreEqual(_address, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Address.ToString());
+            Assert.AreEqual(_port, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
 
             context.logger.LogDebug("1. ClusterRedirectMessageTest done");
         }
@@ -852,7 +859,7 @@ namespace Garnet.test.cluster
             var key = Encoding.ASCII.GetBytes("{abc}0");
             var slot = ClusterTestUtils.HashSlot(key);
             var memberCount = 10;
-            Assert.AreEqual(slot, 7638);
+            Assert.AreEqual(7638, slot);
 
             context.logger.LogDebug($"1. Loading object keys data started");
             List<Tuple<int, byte[]>> memberPair;
@@ -906,7 +913,7 @@ namespace Garnet.test.cluster
 
             var keyCount = 10;
             var key = Encoding.ASCII.GetBytes("{abc}a");
-            List<byte[]> keys = new();
+            List<byte[]> keys = [];
             var _workingSlot = ClusterTestUtils.HashSlot(key);
             Assert.AreEqual(7638, _workingSlot);
 

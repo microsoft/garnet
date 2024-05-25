@@ -189,6 +189,8 @@ namespace Garnet.server
                 (byte)SetOperation.SDIFF => ListKeys(inputCount, true, LockType.Shared),
                 (byte)SetOperation.SDIFFSTORE => XSTOREKeys(inputCount, true),
                 (byte)SetOperation.SMOVE => ListKeys(inputCount, true, LockType.Exclusive),
+                (byte)SetOperation.SINTER => ListKeys(inputCount, true, LockType.Shared),
+                (byte)SetOperation.SINTERSTORE => XSTOREKeys(inputCount, true),
                 _ => -1
             };
         }
