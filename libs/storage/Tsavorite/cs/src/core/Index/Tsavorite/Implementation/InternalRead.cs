@@ -168,7 +168,7 @@ namespace Tsavorite.core
             }
         }
 
-        // No AggressiveInlining; this is a less-common function and it may imnprove inlining of InternalRead to have this be a virtcall.
+        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
         private OperationStatus CopyFromImmutable<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, Context userContext, long lsn,
                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, Value recordValue)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
@@ -190,7 +190,7 @@ namespace Tsavorite.core
             return OperationStatus.SUCCESS;
         }
 
-        // No AggressiveInlining; this is a less-common function and it may imnprove inlining of InternalRead to have this be a virtcall.
+        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
         private static OperationStatus CheckFalseActionStatus(ReadInfo readInfo)
         {
             if (readInfo.Action == ReadAction.CancelOperation)
