@@ -1178,9 +1178,7 @@ namespace Tsavorite.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            {
-                return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo, ref recordInfo);
-            }
+                => _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo, ref recordInfo);
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
                 => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
@@ -1315,7 +1313,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!Store.DoTransientLocking)
+                if (!Store.IsLocking)
                     return true;
                 if (!Store.LockTable.TryLockTransientExclusive(ref key, ref stackCtx.hei))
                     return false;
@@ -1326,7 +1324,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!Store.DoTransientLocking)
+                if (!Store.IsLocking)
                     return true;
                 if (!Store.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
                     return false;
@@ -1337,7 +1335,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!Store.DoTransientLocking)
+                if (!Store.IsLocking)
                     return;
                 Store.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.ClearHasTransientXLock();
@@ -1346,7 +1344,7 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!Store.DoTransientLocking)
+                if (!Store.IsLocking)
                     return;
                 Store.LockTable.UnlockShared(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.ClearHasTransientSLock();

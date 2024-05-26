@@ -70,9 +70,7 @@ namespace Tsavorite.core
         ConcurrentDictionary<string, int> _recoveredSessionNameMap;
         int maxSessionID;
 
-        internal readonly bool DoTransientLocking;  // uses LockTable
-        internal bool IsLocking => DoTransientLocking;
-        internal bool IsBucketLocking => DoTransientLocking;
+        internal readonly bool IsLocking;  // uses LockTable
         internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
         internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 
@@ -142,7 +140,7 @@ namespace Tsavorite.core
                 }
             }
 
-            DoTransientLocking = concurrencyControlMode == ConcurrencyControlMode.LockTable;
+            IsLocking = concurrencyControlMode == ConcurrencyControlMode.LockTable;
 
             checkpointSettings ??= new CheckpointSettings();
 

@@ -262,9 +262,6 @@ namespace Tsavorite.core
             // We're in-memory, so it is safe to get the address now.
             var physicalAddress = hlog.GetPhysicalAddress(readAtAddress);
 
-            // See if we are doing Transient-only locking (LockTable with a non-LockableContext).
-            bool doTransientLocking = DoTransientLocking && !tsavoriteSession.IsManualLocking;
-
             Key defaultKey = default;
             if (readOptions.KeyHash.HasValue)
                 pendingContext.keyHash = readOptions.KeyHash.Value;

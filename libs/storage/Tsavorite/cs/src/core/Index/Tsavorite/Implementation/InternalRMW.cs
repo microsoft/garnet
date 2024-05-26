@@ -301,7 +301,7 @@ namespace Tsavorite.core
 
         private LatchDestination CheckCPRConsistencyRMW(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
-            if (!DoTransientLocking)
+            if (!IsLocking)
                 return AcquireCPRLatchRMW(phase, ref stackCtx, ref status, ref latchOperation);
 
             // This is AcquireCPRLatchRMW without the bucket latching, since we already have a latch on either the bucket or the recordInfo.
