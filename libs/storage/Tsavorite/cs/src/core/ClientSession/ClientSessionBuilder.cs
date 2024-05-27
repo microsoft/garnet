@@ -26,8 +26,6 @@ namespace Tsavorite.core
                 throw new ArgumentNullException(nameof(functions));
             if (sessionName == "")
                 throw new TsavoriteException("Cannot use empty string as session name");
-            if (sessionName != null && _recoveredSessionNameMap != null && _recoveredSessionNameMap.ContainsKey(sessionName))
-                throw new TsavoriteException($"Session named {sessionName} already exists in recovery info, use RecoverSession to resume it");
 
             int sessionID = Interlocked.Increment(ref maxSessionID);
             var ctx = new TsavoriteExecutionContext<Input, Output, Context>();

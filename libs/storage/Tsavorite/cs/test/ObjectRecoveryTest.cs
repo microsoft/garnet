@@ -143,20 +143,14 @@ namespace Tsavorite.test.recovery.objectstore
                 };
             }
 
-            var outputArray = new Output[numUniqueKeys];
-            for (int i = 0; i < numUniqueKeys; i++)
-            {
-                outputArray[i] = new Output();
-            }
-
-            // Register with thread
             var session = store.NewSession<Input, Output, Empty, Functions>(new Functions());
 
             Input input = default;
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                session.Read(ref inputArray[i].Item1, ref input, ref outputArray[i], Empty.Default);
+                Output output = new();
+                session.Read(ref inputArray[i].Item1, ref input, ref output, Empty.Default);
             }
 
             // Complete all pending requests
@@ -164,44 +158,6 @@ namespace Tsavorite.test.recovery.objectstore
 
             // Release
             session.Dispose();
-
-            // Test outputs
-            var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(cprVersion,
-                new DeviceLogCommitCheckpointManager(
-                    new LocalStorageNamedDeviceFactory(),
-                        new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(TestUtils.MethodTestDir).FullName)), null);
-
-            // Compute expected array
-            long[] expected = new long[numUniqueKeys];
-            foreach (var guid in checkpointInfo.continueTokens.Keys)
-            {
-                var cp = checkpointInfo.continueTokens[guid].Item2;
-                for (long i = 0; i <= cp.UntilSerialNo; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            int threadCount = 1; // single threaded test
-            int numCompleted = threadCount - checkpointInfo.continueTokens.Count;
-            for (int t = 0; t < numCompleted; t++)
-            {
-                var sno = numOps;
-                for (long i = 0; i < sno; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            // Assert if expected is same as found
-            for (long i = 0; i < numUniqueKeys; i++)
-            {
-                Assert.AreEqual(expected[i], outputArray[i].value.numClicks, $"AdId {inputArray[i].Item1.adId}");
-            }
         }
     }
 }

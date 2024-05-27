@@ -55,7 +55,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal static void InitContext<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)
+        internal static void InitContext<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName)
         {
             ctx.phase = Phase.REST;
             // The system version starts at 1. Because we do not know what the current state machine state is,
@@ -63,7 +63,6 @@ namespace Tsavorite.core
             // never "catch up" with the rest of the system when stepping through the state machine as it is ahead.
             ctx.version = 1;
             ctx.markers = new bool[8];
-            ctx.serialNum = lsn;
             ctx.sessionID = sessionID;
             ctx.sessionName = sessionName;
 
@@ -81,9 +80,7 @@ namespace Tsavorite.core
             dst.version = src.version;
             dst.threadStateMachine = src.threadStateMachine;
             dst.markers = src.markers;
-            dst.serialNum = src.serialNum;
             dst.sessionName = src.sessionName;
-            dst.excludedSerialNos = new List<long>();
         }
 
         internal bool InternalCompletePending<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, bool wait = false,

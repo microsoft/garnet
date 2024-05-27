@@ -68,7 +68,7 @@ namespace Tsavorite.test.async
             }
         }
 
-        // Test that does .ReadAsync with minimum parameters but no default (ref key, userContext, serialNo, token)
+        // Test that does .ReadAsync with minimum parameters but no default (ref key, userContext, token)
         [Test]
         [Category("TsavoriteKV")]
         public async Task ReadAsyncMinParamTestNoDefaultTest()
@@ -249,7 +249,7 @@ namespace Tsavorite.test.async
         }
 
         // Test that uses StartAddress parameter
-        // (ref key, ref input, StartAddress,  userContext, serialNo, CancellationToken)
+        // (ref key, ref input, StartAddress,  userContext, CancellationToken)
         [Test]
         [Category("TsavoriteKV")]
         public async Task AsyncStartAddressParamTest()

@@ -213,36 +213,7 @@ namespace Tsavorite.test.recovery.sumstore
 
             // Complete all pending requests
             session.CompletePending(true);
-
-            // Compute expected array
-            long[] expected = new long[numUniqueKeys];
-            foreach (var guid in checkpointInfo.continueTokens.Keys)
-            {
-                var sno = checkpointInfo.continueTokens[guid].Item2.UntilSerialNo;
-                for (long i = 0; i <= sno; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            int threadCount = 1; // single threaded test
-            int numCompleted = threadCount - checkpointInfo.continueTokens.Count;
-            for (int t = 0; t < numCompleted; t++)
-            {
-                var sno = numOps;
-                for (long i = 0; i < sno; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            // Assert that expected is same as found
-            for (long i = 0; i < numUniqueKeys; i++)
-            {
-                Assert.AreEqual(expected[i], inputArray[i].numClicks.numClicks, $"AdId {inputArray[i].adId.adId}");
-            }
+            session.Dispose();
         }
 
         private bool IsDirectoryEmpty(string path) => !Directory.Exists(path) || !Directory.EnumerateFileSystemEntries(path).Any();

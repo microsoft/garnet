@@ -136,7 +136,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
                 Assert.Null(store2.RecoveredCommitCookie);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
-            Assert.AreEqual(2, session2.ID);
+            Assert.AreEqual(1, session2.ID);    // This is the first session on the recovered store
 
             for (int key = 0; key < numOps; key++)
             {

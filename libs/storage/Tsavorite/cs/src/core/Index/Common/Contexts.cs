@@ -233,7 +233,6 @@ namespace Tsavorite.core
             internal ReadCopyOptions ReadCopyOptions;
 
             internal long version;
-            internal long serialNum;
             public Phase phase;
 
             public bool[] markers;
@@ -241,7 +240,6 @@ namespace Tsavorite.core
             public Dictionary<long, PendingContext<Input, Output, Context>> ioPendingRequests;
             public AsyncCountDown pendingReads;
             public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
-            public List<long> excludedSerialNos;
             public int asyncPendingCount;
             public ISynchronizationStateMachine threadStateMachine;
 
@@ -294,22 +292,6 @@ namespace Tsavorite.core
 
             public TsavoriteExecutionContext<Input, Output, Context> prevCtx;
         }
-    }
-
-    /// <summary>
-    /// Descriptor for a CPR commit point
-    /// </summary>
-    public struct CommitPoint
-    {
-        /// <summary>
-        /// Serial number until which we have committed
-        /// </summary>
-        public long UntilSerialNo;
-
-        /// <summary>
-        /// List of operation serial nos excluded from commit
-        /// </summary>
-        public List<long> ExcludedSerialNos;
     }
 
     /// <summary>
@@ -372,25 +354,9 @@ namespace Tsavorite.core
         public bool manualLockingActive;
 
         /// <summary>
-        /// Commit tokens per session restored during Restore()
-        /// </summary>
-        public ConcurrentDictionary<int, (string, CommitPoint)> continueTokens;
-
-        /// <summary>
-        /// Map of session name to session ID restored during Restore()
-        /// </summary>
-        public ConcurrentDictionary<string, int> sessionNameMap;
-
-        /// <summary>
-        /// Max session ID
-        /// </summary>
-        public int maxSessionID;
-
-        /// <summary>
         /// Object log segment offsets
         /// </summary>
         public long[] objectLogSegmentOffsets;
-
 
         /// <summary>
         /// Tail address of delta file: -1 indicates this is not a delta checkpoint metadata
@@ -420,14 +386,14 @@ namespace Tsavorite.core
             objectLogSegmentOffsets = null;
         }
 
+        const int checkpointTokenCount = 0;  // Temporary to keep compatibility with previous checkpoint versions
+
         /// <summary>
         /// Initialize from stream
         /// </summary>
         /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
-            continueTokens = new();
-
             string value = reader.ReadLine();
             var cversion = int.Parse(value);
 
@@ -479,31 +445,6 @@ namespace Tsavorite.core
             value = reader.ReadLine();
             var numSessions = int.Parse(value);
 
-            for (int i = 0; i < numSessions; i++)
-            {
-                var sessionID = int.Parse(reader.ReadLine());
-                var sessionName = reader.ReadLine();
-                if (sessionName == "") sessionName = null;
-                var serialno = long.Parse(reader.ReadLine());
-
-                var exclusions = new List<long>();
-                var exclusionCount = int.Parse(reader.ReadLine());
-                for (int j = 0; j < exclusionCount; j++)
-                    exclusions.Add(long.Parse(reader.ReadLine()));
-
-                continueTokens.TryAdd(sessionID, (sessionName, new CommitPoint
-                {
-                    UntilSerialNo = serialno,
-                    ExcludedSerialNos = exclusions
-                }));
-                if (sessionName != null)
-                {
-                    sessionNameMap ??= new();
-                    sessionNameMap.TryAdd(sessionName, sessionID);
-                }
-                if (sessionID > maxSessionID) maxSessionID = sessionID;
-            }
-
             // Read object log segment offsets
             value = reader.ReadLine();
             var numSegments = int.Parse(value);
@@ -517,7 +458,7 @@ namespace Tsavorite.core
                 }
             }
 
-            if (checksum != Checksum(continueTokens.Count))
+            if (checksum != Checksum(checkpointTokenCount))
                 throw new TsavoriteException("Invalid checksum for checkpoint");
         }
 
@@ -581,7 +522,6 @@ namespace Tsavorite.core
                 {
                     writer.WriteLine(CheckpointVersion); // checkpoint version
 
-                    const int checkpointTokenCount = 0;  // Temporary to keep compatibility with previous checkpoint versions
                     writer.WriteLine(Checksum(checkpointTokenCount)); // checksum
 
                     writer.WriteLine(guid);
@@ -641,15 +581,6 @@ namespace Tsavorite.core
             logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);
             logger?.LogInformation("Delta Tail Address: {deltaTailAddress}", deltaTailAddress);
             logger?.LogInformation("Manual Locking Active: {manualLockingActive}", manualLockingActive);
-            logger?.LogInformation("Num sessions recovered: {continueTokensCount}", continueTokens.Count);
-            logger?.LogInformation("Recovered sessions: ");
-            foreach (var sessionInfo in continueTokens.Take(10))
-            {
-                logger?.LogInformation("{sessionInfo.Key}: {sessionInfo.Value}", sessionInfo.Key, sessionInfo.Value);
-            }
-
-            if (continueTokens.Count > 10)
-                logger?.LogInformation("... {continueTokensSkipped} skipped", continueTokens.Count - 10);
         }
     }
 

@@ -250,15 +250,7 @@ namespace Tsavorite.test.recovery
                     );
 
                 if (i > 0)
-                {
                     store.Recover(default, token);
-                    if (i == 3) store.DisposeRecoverableSessions();
-                    int recoverableSessionCount = store.RecoverableSessions.Count();
-                    if (i < 3)
-                        Assert.AreEqual(i, recoverableSessionCount);
-                    else
-                        Assert.AreEqual(i - 3, recoverableSessionCount);
-                }
 
                 using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
 

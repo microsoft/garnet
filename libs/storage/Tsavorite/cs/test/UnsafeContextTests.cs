@@ -447,7 +447,7 @@ namespace Tsavorite.test.UnsafeContext
             }
         }
 
-        // Tests the overload where no reference params used: key,input,userContext,serialNo
+        // Tests the overload where no reference params used: key,input,userContext
         [Test]
         [Category("TsavoriteKV")]
         public unsafe void NativeInMemRMWNoRefKeys([Values] DeviceType deviceType)
@@ -512,7 +512,7 @@ namespace Tsavorite.test.UnsafeContext
             }
         }
 
-        // Tests the overload of .Read(key, input, out output,  context, serialNo)
+        // Tests the overload of .Read(key, input, out output,  context)
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
@@ -544,7 +544,7 @@ namespace Tsavorite.test.UnsafeContext
             }
         }
 
-        // Test the overload call of .Read (key, out output, userContext, serialNo)
+        // Test the overload call of .Read (key, out output, userContext)
         [Test]
         [Category("TsavoriteKV")]
         public void ReadNoRefKey([Values] DeviceType deviceType)
@@ -574,7 +574,7 @@ namespace Tsavorite.test.UnsafeContext
         }
 
 
-        // Test the overload call of .Read (ref key, ref output, userContext, serialNo)
+        // Test the overload call of .Read (ref key, ref output, userContext)
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
@@ -595,41 +595,6 @@ namespace Tsavorite.test.UnsafeContext
                 AssertCompleted(new(StatusCode.Found), status);
 
                 // Verify the read data
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
-                Assert.AreEqual(key1.kfield1, 13);
-                Assert.AreEqual(key1.kfield2, 14);
-            }
-            finally
-            {
-                uContext.EndUnsafe();
-            }
-        }
-
-        // Test the overload call of .Read (ref key, ref input, ref output, ref recordInfo, userContext: context)
-        [Test]
-        [Category("TsavoriteKV")]
-        [Category("Smoke")]
-        public void ReadWithoutSerialID()
-        {
-            // Just checking without Serial ID so one device type is enough
-            deviceType = DeviceType.MLSD;
-
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
-            uContext.BeginUnsafe();
-
-            try
-            {
-                InputStruct input = default;
-                OutputStruct output = default;
-
-                var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
-                var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
-
-                uContext.Upsert(ref key1, ref value, Empty.Default);
-                var status = uContext.Read(ref key1, ref input, ref output, Empty.Default);
-                AssertCompleted(new(StatusCode.Found), status);
-
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
                 Assert.AreEqual(key1.kfield1, 13);

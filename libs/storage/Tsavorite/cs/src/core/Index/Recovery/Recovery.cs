@@ -527,11 +527,7 @@ namespace Tsavorite.core
             if (readOnlyAddress < headAddress)
                 readOnlyAddress = headAddress;
 
-            // Recover session information
             hlog.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
-            _recoveredSessions = recoveredHLCInfo.info.continueTokens;
-            _recoveredSessionNameMap = recoveredHLCInfo.info.sessionNameMap;
-            maxSessionID = Math.Max(recoveredHLCInfo.info.maxSessionID, maxSessionID);
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
             recoveredHLCInfo.Dispose();
         }

@@ -372,7 +372,7 @@ namespace Tsavorite.test
             AssertCompleted(new(StatusCode.NotFound), status);
         }
 
-        // Tests the overload where no reference params used: key,input,userContext,serialNo
+        // Tests the overload where no reference params used: key,input,userContext
         [Test]
         [Category("TsavoriteKV")]
         public unsafe void NativeInMemRMWNoRefKeys([Values] DeviceType deviceType)
@@ -432,7 +432,7 @@ namespace Tsavorite.test
             AssertCompleted(new(StatusCode.NotFound), status);
         }
 
-        // Tests the overload of .Read(key, input, out output,  context, serialNo)
+        // Tests the overload of .Read(key, input, out output, context)
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
@@ -456,7 +456,7 @@ namespace Tsavorite.test
             Assert.AreEqual(key1.kfield2, 14);
         }
 
-        // Test the overload call of .Read (key, out output, userContext, serialNo)
+        // Test the overload call of .Read (key, out output, userContext)
         [Test]
         [Category("TsavoriteKV")]
         public void ReadNoRefKey([Values] DeviceType deviceType)
@@ -478,7 +478,7 @@ namespace Tsavorite.test
         }
 
 
-        // Test the overload call of .Read (ref key, ref output, userContext, serialNo)
+        // Test the overload call of .Read (ref key, ref output, userContext)
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
@@ -496,34 +496,6 @@ namespace Tsavorite.test
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
-            Assert.AreEqual(value.vfield1, output.value.vfield1);
-            Assert.AreEqual(value.vfield2, output.value.vfield2);
-            Assert.AreEqual(key1.kfield1, 13);
-            Assert.AreEqual(key1.kfield2, 14);
-        }
-
-
-        // Test the overload call of .Read (ref key, ref input, ref output, ref recordInfo, userContext: context)
-        [Test]
-        [Category("TsavoriteKV")]
-        [Category("Smoke")]
-        public void ReadWithoutSerialID()
-        {
-            // Just checking without Serial ID so one device type is enough
-            deviceType = DeviceType.MLSD;
-
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
-
-            InputStruct input = default;
-            OutputStruct output = default;
-
-            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
-            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
-
-            session.Upsert(ref key1, ref value, Empty.Default);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
-            AssertCompleted(new(StatusCode.Found), status);
-
             Assert.AreEqual(value.vfield1, output.value.vfield1);
             Assert.AreEqual(value.vfield2, output.value.vfield2);
             Assert.AreEqual(key1.kfield1, 13);
@@ -736,45 +708,6 @@ namespace Tsavorite.test
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
             Assert.AreEqual(value.vfield2, output.value.vfield2);
-        }
-
-
-        // Upsert Test using Serial Numbers ... based on the VersionedRead Sample
-        [Test]
-        [Category("TsavoriteKV")]
-        [Category("Smoke")]
-        public void UpsertSerialNumberTest()
-        {
-            // Simple Upsert of Serial Number test so one device is enough
-            deviceType = DeviceType.MLSD;
-
-            Setup(128, new LogSettings { MemorySizeBits = 29 }, deviceType);
-
-            int numKeys = 100;
-            int keyMod = 10;
-            int maxLap = numKeys / keyMod;
-            InputStruct input = default;
-            OutputStruct output = default;
-
-            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
-            var key = new KeyStruct { kfield1 = 13, kfield2 = 14 };
-
-            for (int i = 0; i < numKeys; i++)
-            {
-                // lap is used to illustrate the changing values
-                var lap = i / keyMod;
-                session.Upsert(ref key, ref value);
-            }
-
-            // Now verify 
-            for (int j = 0; j < numKeys; j++)
-            {
-                var status = session.Read(ref key, ref input, ref output);
-
-                AssertCompleted(new(StatusCode.Found), status);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
-            }
         }
 
         //**** Quick End to End Sample code from help docs ***
