@@ -226,7 +226,7 @@ namespace Tsavorite.test
                 {
                     int j = i / 4;
                     key1 = new KeyStruct { kfield1 = j, kfield2 = j + 1 };
-                    session.Delete(ref key1, 0, 0);
+                    session.Delete(ref key1, 0);
                 }
             }
 

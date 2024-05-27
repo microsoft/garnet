@@ -192,7 +192,7 @@ namespace Tsavorite.test
                 {
                     int j = i / 4;
                     key1 = new MyKey { key = j };
-                    session.Delete(ref key1, 0, 0);
+                    session.Delete(ref key1);
                 }
             }
 

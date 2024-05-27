@@ -80,7 +80,7 @@ namespace Tsavorite.test
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new MyKey { key = i };
-                session.Delete(ref key1, 0, 0);
+                session.Delete(ref key1);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -127,7 +127,7 @@ namespace Tsavorite.test
             var value100 = new MyValue { value = 100 };
             var key200 = new MyKey { key = 200 };
 
-            session.Delete(ref key100, 0, 0);
+            session.Delete(ref key100);
 
             var input = new MyInput { value = 1000 };
             var output = new MyOutput();
@@ -141,8 +141,8 @@ namespace Tsavorite.test
             Assert.IsTrue(status.Found, status.ToString());
             Assert.AreEqual(value100.value, output.value.value);
 
-            session.Delete(ref key100, 0);
-            session.Delete(ref key200, 0);
+            session.Delete(ref key100);
+            session.Delete(ref key200);
 
             // This RMW should create new initial value, since item is deleted
             status = session.RMW(ref key200, ref input, 1);
@@ -153,7 +153,7 @@ namespace Tsavorite.test
             Assert.AreEqual(input.value, output.value.value);
 
             // Delete key 200 again
-            session.Delete(ref key200, 0);
+            session.Delete(ref key200);
 
             // Eliminate all records from memory
             for (int i = 201; i < 2000; i++)

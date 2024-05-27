@@ -634,7 +634,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status Delete(ref Key key, long keyHash, Context userContext = default)
+        private Status Delete(ref Key key, long keyHash, Context userContext = default)
         {
             UnsafeResumeThread();
             try
