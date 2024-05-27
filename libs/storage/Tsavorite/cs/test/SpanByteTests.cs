@@ -259,7 +259,7 @@ namespace Tsavorite.test
                 keySpan[0] = keyValue;
                 value.Length = valueLength;
                 valueSpan[0] = tag;
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref value, Empty.Default);
             }
         }
     }

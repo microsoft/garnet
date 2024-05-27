@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -1167,22 +1166,13 @@ namespace Tsavorite.core
             }
         }
 
-        internal static bool AtomicSwitch<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> fromCtx, TsavoriteExecutionContext<Input, Output, Context> toCtx, long version, ConcurrentDictionary<int, (string, CommitPoint)> tokens)
+        internal static bool AtomicSwitch<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> fromCtx, TsavoriteExecutionContext<Input, Output, Context> toCtx, long version)
         {
             lock (toCtx)
             {
                 if (toCtx.version < version)
                 {
                     CopyContext(fromCtx, toCtx);
-                    if (toCtx.serialNum != -1)
-                    {
-                        tokens.TryAdd(toCtx.sessionID, (toCtx.sessionName,
-                            new CommitPoint
-                            {
-                                UntilSerialNo = toCtx.serialNum,
-                                ExcludedSerialNos = toCtx.excludedSerialNos
-                            }));
-                    }
                     return true;
                 }
             }

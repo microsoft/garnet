@@ -151,7 +151,6 @@ namespace Tsavorite.core
             // Some additional information about the previous attempt
             internal long id;
             internal long logicalAddress;
-            internal long serialNum;        // TODO remove
             internal long InitialLatestLogicalAddress;
 
             // operationFlags values
@@ -383,11 +382,6 @@ namespace Tsavorite.core
         public ConcurrentDictionary<string, int> sessionNameMap;
 
         /// <summary>
-        /// Commit tokens per session created during Checkpoint
-        /// </summary>
-        public ConcurrentDictionary<int, (string, CommitPoint)> checkpointTokens;
-
-        /// <summary>
         /// Max session ID
         /// </summary>
         public int maxSessionID;
@@ -422,8 +416,6 @@ namespace Tsavorite.core
             snapshotFinalLogicalAddress = 0;
             deltaTailAddress = -1; // indicates this is not a delta checkpoint metadata
             headAddress = 0;
-
-            checkpointTokens = new();
 
             objectLogSegmentOffsets = null;
         }
@@ -588,7 +580,9 @@ namespace Tsavorite.core
                 using (StreamWriter writer = new(ms))
                 {
                     writer.WriteLine(CheckpointVersion); // checkpoint version
-                    writer.WriteLine(Checksum(checkpointTokens.Count)); // checksum
+
+                    const int checkpointTokenCount = 0;  // Temporary to keep compatibility with previous checkpoint versions
+                    writer.WriteLine(Checksum(checkpointTokenCount)); // checksum
 
                     writer.WriteLine(guid);
                     writer.WriteLine(useSnapshotFile);
@@ -604,16 +598,7 @@ namespace Tsavorite.core
                     writer.WriteLine(deltaTailAddress);
                     writer.WriteLine(manualLockingActive);
 
-                    writer.WriteLine(checkpointTokens.Count);
-                    foreach (var kvp in checkpointTokens)
-                    {
-                        writer.WriteLine(kvp.Key);
-                        writer.WriteLine(kvp.Value.Item1);
-                        writer.WriteLine(kvp.Value.Item2.UntilSerialNo);
-                        writer.WriteLine(kvp.Value.Item2.ExcludedSerialNos.Count);
-                        foreach (long item in kvp.Value.Item2.ExcludedSerialNos)
-                            writer.WriteLine(item);
-                    }
+                    writer.WriteLine(checkpointTokenCount);
 
                     // Write object log segment offsets
                     writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);

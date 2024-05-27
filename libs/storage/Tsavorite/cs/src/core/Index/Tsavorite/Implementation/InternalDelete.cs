@@ -17,7 +17,6 @@ namespace Tsavorite.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="tsavoriteSession">Callback functions.</param>
-        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -40,7 +39,7 @@ namespace Tsavorite.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalDelete<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Context userContext,
-                            ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long lsn)
+                            ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
@@ -193,7 +192,7 @@ namespace Tsavorite.core
                     // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                     Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
                     if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
-                        CreatePendingDeleteContext(ref key, userContext, ref pendingContext, tsavoriteSession, lsn, ref stackCtx);
+                        CreatePendingDeleteContext(ref key, userContext, ref pendingContext, tsavoriteSession, ref stackCtx);
                 }
             }
             finally
@@ -221,7 +220,7 @@ namespace Tsavorite.core
         }
 
         private void CreatePendingDeleteContext<Input, Output, Context, TsavoriteSession>(ref Key key, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long lsn, ref OperationStackContext<Key, Value> stackCtx)
+                ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             pendingContext.type = OperationType.DELETE;
@@ -229,7 +228,6 @@ namespace Tsavorite.core
             pendingContext.userContext = userContext;
             pendingContext.InitialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-            pendingContext.serialNum = lsn;
         }
 
         private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)

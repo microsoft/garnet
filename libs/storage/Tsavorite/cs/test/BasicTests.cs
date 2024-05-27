@@ -78,8 +78,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            session.Upsert(ref key1, ref value, Empty.Default);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
 
             AssertCompleted(new(StatusCode.Found), status);
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -99,20 +99,20 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            session.Upsert(ref key1, ref value, Empty.Default);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
-            session.Delete(ref key1, Empty.Default, 0);
+            session.Delete(ref key1, Empty.Default);
 
-            status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            status = session.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.NotFound), status);
 
             var key2 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
             var value2 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-            session.Upsert(ref key2, ref value2, Empty.Default, 0);
-            status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
+            session.Upsert(ref key2, ref value2, Empty.Default);
+            status = session.Read(ref key2, ref input, ref output, Empty.Default);
 
             AssertCompleted(new(StatusCode.Found), status);
             Assert.AreEqual(value2.vfield1, output.value.vfield1);
@@ -141,13 +141,13 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default);
             }
 
             for (int i = 0; i < 10 * count; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
-                session.Delete(ref key1, Empty.Default, 0);
+                session.Delete(ref key1, Empty.Default);
             }
 
             for (int i = 0; i < 10 * count; i++)
@@ -155,16 +155,16 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.NotFound), status);
 
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default);
             }
 
             for (int i = 0; i < 10 * count; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
             }
         }
@@ -191,7 +191,7 @@ namespace Tsavorite.test
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default);
             }
 
             r = new Random(10);
@@ -203,7 +203,7 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
                     session.CompletePending(true);
                 }
@@ -221,7 +221,7 @@ namespace Tsavorite.test
                 var i = r.Next(10000);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                Assert.IsFalse(session.Read(ref key1, ref input, ref output, Empty.Default, 0).Found);
+                Assert.IsFalse(session.Read(ref key1, ref input, ref output, Empty.Default).Found);
             }
         }
 
@@ -246,7 +246,7 @@ namespace Tsavorite.test
                 var i = r.Next(RandRange);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default);
             }
 
             r = new Random(RandSeed);
@@ -259,7 +259,7 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                if (session.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
                     Assert.AreEqual(value.vfield1, output.value.vfield1);
                     Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -279,7 +279,7 @@ namespace Tsavorite.test
                 var i = r.Next(RandRange);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(foundStatus.IsPending);
                 if (batchMode == BatchMode.NoBatch)
                 {
@@ -332,14 +332,14 @@ namespace Tsavorite.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                session.RMW(ref key1, ref input, Empty.Default, 0);
+                session.RMW(ref key1, ref input, Empty.Default);
             }
             for (int j = 0; j < nums.Length; ++j)
             {
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                if (session.RMW(ref key1, ref input, ref output, Empty.Default, 0).IsPending)
+                if (session.RMW(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
                     session.CompletePending(true);
                 }
@@ -360,7 +360,7 @@ namespace Tsavorite.test
                 key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 ValueStruct value = new() { vfield1 = i, vfield2 = i + 1 };
 
-                status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+                status = session.Read(ref key, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
                 Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
@@ -368,7 +368,7 @@ namespace Tsavorite.test
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
-            status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+            status = session.Read(ref key, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.NotFound), status);
         }
 
@@ -397,7 +397,7 @@ namespace Tsavorite.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                session.RMW(ref key1, ref input, Empty.Default, 0);
+                session.RMW(ref key1, ref input, Empty.Default);
             }
 
             // CopyUpdater
@@ -420,7 +420,7 @@ namespace Tsavorite.test
                 key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 ValueStruct value = new() { vfield1 = i, vfield2 = i + 1 };
 
-                status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+                status = session.Read(ref key, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
                 Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
@@ -428,7 +428,7 @@ namespace Tsavorite.test
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
-            status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+            status = session.Read(ref key, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.NotFound), status);
         }
 
@@ -445,8 +445,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = session.Read(key1, input, out OutputStruct output, Empty.Default, 111);
+            session.Upsert(ref key1, ref value, Empty.Default);
+            var status = session.Read(key1, input, out OutputStruct output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
@@ -466,8 +466,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = session.Read(key1, out OutputStruct output, Empty.Default, 1);
+            session.Upsert(ref key1, ref value, Empty.Default);
+            var status = session.Read(key1, out OutputStruct output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
@@ -491,8 +491,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = session.Read(ref key1, ref output, Empty.Default, 99);
+            session.Upsert(ref key1, ref value, Empty.Default);
+            var status = session.Read(ref key1, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
@@ -520,7 +520,7 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            session.Upsert(ref key1, ref value, Empty.Default);
             var status = session.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
@@ -541,7 +541,7 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default, 0);
+            session.Upsert(ref key1, ref value, Empty.Default);
 
             var (status, output) = session.Read(key1);
             AssertCompleted(new(StatusCode.Found), status);
@@ -569,8 +569,8 @@ namespace Tsavorite.test
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
             ReadOptions readOptions = default;
 
-            session.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = session.ReadAtAddress(store.Log.BeginAddress, ref input, ref output, ref readOptions, out _, Empty.Default, 0);
+            session.Upsert(ref key1, ref value, Empty.Default);
+            var status = session.ReadAtAddress(store.Log.BeginAddress, ref input, ref output, ref readOptions, out _, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -627,7 +627,7 @@ namespace Tsavorite.test
             var readAtAddress = store.Log.BeginAddress;
             Status status;
 
-            skipReadCacheSession.Upsert(ref key1, ref value, Empty.Default, 0);
+            skipReadCacheSession.Upsert(ref key1, ref value, Empty.Default);
 
             void VerifyOutput()
             {
@@ -705,7 +705,7 @@ namespace Tsavorite.test
             Assert.AreEqual(0, store.EntryCount);
 
             session.Upsert(ref key1, ref value);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(1, store.EntryCount);
@@ -730,8 +730,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(key1, value, Empty.Default, 0);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            session.Upsert(key1, value, Empty.Default);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -763,13 +763,13 @@ namespace Tsavorite.test
             {
                 // lap is used to illustrate the changing values
                 var lap = i / keyMod;
-                session.Upsert(ref key, ref value, serialNo: lap);
+                session.Upsert(ref key, ref value);
             }
 
             // Now verify 
             for (int j = 0; j < numKeys; j++)
             {
-                var status = session.Read(ref key, ref input, ref output, serialNo: maxLap + 1);
+                var status = session.Read(ref key, ref input, ref output);
 
                 AssertCompleted(new(StatusCode.Found), status);
                 Assert.AreEqual(value.vfield1, output.value.vfield1);

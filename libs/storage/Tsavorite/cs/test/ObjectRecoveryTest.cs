@@ -104,7 +104,7 @@ namespace Tsavorite.test.recovery.objectstore
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {
-                session.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default, i);
+                session.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default);
 
                 if ((i + 1) % checkpointInterval == 0)
                 {
@@ -156,7 +156,7 @@ namespace Tsavorite.test.recovery.objectstore
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                session.Read(ref inputArray[i].Item1, ref input, ref outputArray[i], Empty.Default, i);
+                session.Read(ref inputArray[i].Item1, ref input, ref outputArray[i], Empty.Default);
             }
 
             // Complete all pending requests

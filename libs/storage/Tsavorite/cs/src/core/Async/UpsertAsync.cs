@@ -34,7 +34,7 @@ namespace Tsavorite.core
                 do
                 {
                     internalStatus = tsavoriteKV.InternalUpsert(ref key, keyHash, ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref output,
-                                                            ref pendingContext.userContext, ref pendingContext, tsavoriteSession, pendingContext.serialNum);
+                                                            ref pendingContext.userContext, ref pendingContext, tsavoriteSession);
                 } while (tsavoriteKV.HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pendingContext));
                 return TranslateStatus(internalStatus);
             }
@@ -110,7 +110,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<UpsertAsyncResult<Input, Output, Context>> UpsertAsync<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
-                ref Key key, ref Input input, ref Value value, ref UpsertOptions upsertOptions, Context userContext, long serialNo, CancellationToken token = default)
+                ref Key key, ref Input input, ref Value value, ref UpsertOptions upsertOptions, Context userContext, CancellationToken token = default)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
@@ -123,7 +123,7 @@ namespace Tsavorite.core
                 var keyHash = upsertOptions.KeyHash ?? comparer.GetHashCode64(ref key);
                 do
                 {
-                    internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref userContext, ref pcontext, tsavoriteSession, serialNo);
+                    internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref userContext, ref pcontext, tsavoriteSession);
                 } while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 
                 if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
@@ -132,8 +132,6 @@ namespace Tsavorite.core
             }
             finally
             {
-                Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-                tsavoriteSession.Ctx.serialNum = serialNo;
                 tsavoriteSession.UnsafeSuspendThread();
             }
 

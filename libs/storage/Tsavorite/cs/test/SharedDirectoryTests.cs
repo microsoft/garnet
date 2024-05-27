@@ -170,7 +170,7 @@ namespace Tsavorite.test.recovery.sumstore
             // Process the batch of input data
             for (int i = 0; i < numOps; i++)
             {
-                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default);
 
                 if (i % completePendingInterval == 0)
                 {
@@ -206,7 +206,7 @@ namespace Tsavorite.test.recovery.sumstore
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 inputArray[i].numClicks = output.value;
             }

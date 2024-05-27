@@ -57,7 +57,7 @@ namespace Tsavorite.test
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                session.Upsert(ref _key, ref _value, 0, 0);
+                session.Upsert(ref _key, ref _value, 0);
             }
 
             for (int i = 0; i < totalRecords; i++)
@@ -67,7 +67,7 @@ namespace Tsavorite.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                if (session.Read(ref key1, ref input, ref output, 0, 0).IsPending)
+                if (session.Read(ref key1, ref input, ref output, 0).IsPending)
                 {
                     session.CompletePending(true);
                 }
@@ -89,7 +89,7 @@ namespace Tsavorite.test
                 var output = new MyOutput();
                 var key1 = new MyKey { key = i };
 
-                var status = session.Read(ref key1, ref input, ref output, 1, 0);
+                var status = session.Read(ref key1, ref input, ref output, 1);
 
                 if (status.IsPending)
                 {
@@ -120,7 +120,7 @@ namespace Tsavorite.test
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                session.Upsert(ref _key, ref _value, 0, 0);
+                session.Upsert(ref _key, ref _value, 0);
             }
 
             var key100 = new MyKey { key = 100 };
@@ -131,47 +131,47 @@ namespace Tsavorite.test
 
             var input = new MyInput { value = 1000 };
             var output = new MyOutput();
-            var status = session.Read(ref key100, ref input, ref output, 1, 0);
+            var status = session.Read(ref key100, ref input, ref output, 1);
             Assert.IsFalse(status.Found, status.ToString());
 
-            status = session.Upsert(ref key100, ref value100, 0, 0);
+            status = session.Upsert(ref key100, ref value100, 0);
             Assert.IsTrue(!status.Found, status.ToString());
 
-            status = session.Read(ref key100, ref input, ref output, 0, 0);
+            status = session.Read(ref key100, ref input, ref output, 0);
             Assert.IsTrue(status.Found, status.ToString());
             Assert.AreEqual(value100.value, output.value.value);
 
-            session.Delete(ref key100, 0, 0);
-            session.Delete(ref key200, 0, 0);
+            session.Delete(ref key100, 0);
+            session.Delete(ref key200, 0);
 
             // This RMW should create new initial value, since item is deleted
-            status = session.RMW(ref key200, ref input, 1, 0);
+            status = session.RMW(ref key200, ref input, 1);
             Assert.IsFalse(status.Found);
 
-            status = session.Read(ref key200, ref input, ref output, 0, 0);
+            status = session.Read(ref key200, ref input, ref output, 0);
             Assert.IsTrue(status.Found, status.ToString());
             Assert.AreEqual(input.value, output.value.value);
 
             // Delete key 200 again
-            session.Delete(ref key200, 0, 0);
+            session.Delete(ref key200, 0);
 
             // Eliminate all records from memory
             for (int i = 201; i < 2000; i++)
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                session.Upsert(ref _key, ref _value, 0, 0);
+                session.Upsert(ref _key, ref _value, 0);
             }
-            status = session.Read(ref key100, ref input, ref output, 1, 0);
+            status = session.Read(ref key100, ref input, ref output, 1);
             Assert.IsTrue(status.IsPending);
             session.CompletePending(true);
 
             // This RMW should create new initial value, since item is deleted
-            status = session.RMW(ref key200, ref input, 1, 0);
+            status = session.RMW(ref key200, ref input, 1);
             Assert.IsTrue(status.IsPending);
             session.CompletePending(true);
 
-            status = session.Read(ref key200, ref input, ref output, 0, 0);
+            status = session.Read(ref key200, ref input, ref output, 0);
             Assert.IsTrue(status.Found, status.ToString());
             Assert.AreEqual(input.value, output.value.value);
         }

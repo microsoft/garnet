@@ -56,13 +56,10 @@ namespace Tsavorite.core
                     {
                         // Need to be very careful here as threadCtx is changing
                         var _ctx = prev.Phase == Phase.IN_PROGRESS ? ctx.prevCtx : ctx;
-                        var tokens = store._hybridLogCheckpoint.info.checkpointTokens;
-                        if (!store.SameCycle(ctx, current) || tokens == null)
-                            return;
 
                         if (!_ctx.markers[EpochPhaseIdx.InProgress])
                         {
-                            TsavoriteKV<Key, Value>.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version, tokens);
+                            TsavoriteKV<Key, Value>.AtomicSwitch(ctx, ctx.prevCtx, _ctx.version);
                             TsavoriteKV<Key, Value>.InitContext(ctx, ctx.prevCtx.sessionID, ctx.prevCtx.sessionName, ctx.prevCtx.serialNum);
 
                             // Has to be prevCtx, not ctx

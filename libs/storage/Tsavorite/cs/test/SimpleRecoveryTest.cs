@@ -116,7 +116,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                session1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             if (testCommitCookie)
@@ -140,7 +140,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
 
             for (int key = 0; key < numOps; key++)
             {
-                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
+                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
@@ -183,7 +183,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                session1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
             store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -197,7 +197,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
             for (int key = 0; key < numOps; key++)
             {
-                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, 0);
+                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default);
 
                 if (status.IsPending)
                     session2.CompletePending(true);
@@ -233,7 +233,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                session1.Upsert(ref inputArray[key], ref value, Empty.Default);
 
                 if (key == 2999)
                     address = store1.Log.TailAddress;
@@ -282,7 +282,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
             {
                 value.numClicks = key;
                 if ((key & 1) > 0)
-                    session1.Upsert(ref inputArray[key], ref value, Empty.Default, 0);
+                    session1.Upsert(ref inputArray[key], ref value, Empty.Default);
                 else
                 {
                     AdInput input = new() { adId = inputArray[key], numClicks = value };
@@ -299,11 +299,11 @@ namespace Tsavorite.test.recovery.sumstore.simple
 
             // Just need one operation here to verify readInfo/upsertInfo in the functions
             var lastKey = inputArray.Length - 1;
-            var status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default, 0);
+            var status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
             Assert.IsFalse(status.IsPending, status.ToString());
 
             value.numClicks = lastKey;
-            status = session2.Upsert(ref inputArray[lastKey], ref value, Empty.Default, 0);
+            status = session2.Upsert(ref inputArray[lastKey], ref value, Empty.Default);
             Assert.IsFalse(status.IsPending, status.ToString());
 
             inputArg = new() { adId = inputArray[lastKey], numClicks = new NumClicks { numClicks = 0 } }; // CopyUpdater adds, so make this 0
@@ -315,7 +315,7 @@ namespace Tsavorite.test.recovery.sumstore.simple
 
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
-            status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default, 0);
+            status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
             Assert.IsTrue(status.IsPending, status.ToString());
             session2.CompletePending(wait: true);
 

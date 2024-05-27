@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -588,7 +587,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextRead<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, Context context, TsavoriteSession tsavoriteSession, long serialNo)
+        internal Status ContextRead<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, Context context, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions);
@@ -596,19 +595,17 @@ namespace Tsavorite.core
             var keyHash = comparer.GetHashCode64(ref key);
 
             do
-                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, serialNo, ref pcontext, tsavoriteSession);
+                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, tsavoriteSession);
             while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 
             var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
 
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context,
-                TsavoriteSession tsavoriteSession, long serialNo)
+                TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions);
@@ -616,125 +613,107 @@ namespace Tsavorite.core
             var keyHash = readOptions.KeyHash ?? comparer.GetHashCode64(ref key);
 
             do
-                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, serialNo, ref pcontext, tsavoriteSession);
+                internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, tsavoriteSession);
             while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 
             var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context, long serialNo, TsavoriteSession tsavoriteSession)
+        internal Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions, noKey: true);
             Key key = default;
-            return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, serialNo, context, ref pcontext, tsavoriteSession);
+            return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, tsavoriteSession);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context, long serialNo, TsavoriteSession tsavoriteSession)
+        internal Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions, noKey: false);
-            return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, serialNo, context, ref pcontext, tsavoriteSession);
+            return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, tsavoriteSession);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, long serialNo,
+        private Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 Context context, ref PendingContext<Input, Output, Context> pcontext, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             OperationStatus internalStatus;
             do
-                internalStatus = InternalReadAtAddress(address, ref key, ref input, ref output, ref readOptions, context, serialNo, ref pcontext, tsavoriteSession);
+                internalStatus = InternalReadAtAddress(address, ref key, ref input, ref output, ref readOptions, context, ref pcontext, tsavoriteSession);
             while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 
             var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextUpsert<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, Context context, TsavoriteSession tsavoriteSession, long serialNo)
+        internal Status ContextUpsert<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, Context context, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, tsavoriteSession, serialNo);
+                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, tsavoriteSession);
             while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 
             var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
-                                                                            Context context, TsavoriteSession tsavoriteSession, long serialNo)
+                                                                            Context context, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, tsavoriteSession, serialNo);
+                internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref context, ref pcontext, tsavoriteSession);
             while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 
             var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Output output, out RecordMetadata recordMetadata,
-                                                                          Context context, TsavoriteSession tsavoriteSession, long serialNo)
+                                                                          Context context, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, tsavoriteSession, serialNo);
+                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, tsavoriteSession);
             while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 
             var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
             recordMetadata = status.IsCompletedSuccessfully ? new(pcontext.recordInfo, pcontext.logicalAddress) : default;
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ContextDelete<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, Context context, TsavoriteSession tsavoriteSession, long serialNo)
+        internal Status ContextDelete<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, Context context, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
 
             do
-                internalStatus = InternalDelete(ref key, keyHash, ref context, ref pcontext, tsavoriteSession, serialNo);
+                internalStatus = InternalDelete(ref key, keyHash, ref context, ref pcontext, tsavoriteSession);
             while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 
             var status = HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus);
-
-            Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-            tsavoriteSession.Ctx.serialNum = serialNo;
             return status;
         }
 

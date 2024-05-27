@@ -20,7 +20,6 @@ namespace Tsavorite.core
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
         /// <param name="tsavoriteSession">Callback functions.</param>
-        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -47,7 +46,7 @@ namespace Tsavorite.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRMW<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Output output, ref Context userContext,
-                                    ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long lsn)
+                                    ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
@@ -170,7 +169,7 @@ namespace Tsavorite.core
 
                     // Disk Region: Need to issue async io requests. Locking will be checked on pending completion.
                     status = OperationStatus.RECORD_ON_DISK;
-                    CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, lsn, ref stackCtx);
+                    CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, ref stackCtx);
                     goto LatchRelease;
                 }
 
@@ -189,7 +188,7 @@ namespace Tsavorite.core
                     {
                         // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
                         if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync || status == OperationStatus.RECORD_ON_DISK)
-                            CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, lsn, ref stackCtx);
+                            CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, ref stackCtx);
                     }
                     goto LatchRelease;
                 }
@@ -221,7 +220,7 @@ namespace Tsavorite.core
 
         // No AggressiveInlining; this is a less-common function and it may imnprove inlining of InternalUpsert to have this be a virtcall.
         private void CreatePendingRMWContext<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, Output output, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long lsn, ref OperationStackContext<Key, Value> stackCtx)
+                ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             pendingContext.type = OperationType.RMW;
@@ -236,7 +235,6 @@ namespace Tsavorite.core
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-            pendingContext.serialNum = lsn;
         }
 
         private bool TryRevivifyInChain<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, ref PendingContext<Input, Output, Context> pendingContext,
