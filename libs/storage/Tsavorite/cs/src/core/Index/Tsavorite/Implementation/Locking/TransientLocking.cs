@@ -13,21 +13,21 @@ namespace Tsavorite.core
                                     out OperationStatus status)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
-            status = OperationStatus.SUCCESS;
-            if (!LockTable.IsEnabled || tsavoriteSession.TryLockTransientExclusive(ref key, ref stackCtx))
+            if (tsavoriteSession.TryLockTransientExclusive(ref key, ref stackCtx))
+            {
+                status = OperationStatus.SUCCESS;
                 return true;
+            }
             status = OperationStatus.RETRY_LATER;
             return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool TransientXUnlock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+        private static void TransientXUnlock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
-            if (!stackCtx.recSrc.HasTransientXLock)
-                return false;
-            tsavoriteSession.UnlockTransientExclusive(ref key, ref stackCtx);
-            return true;
+            if (stackCtx.recSrc.HasTransientXLock)
+                tsavoriteSession.UnlockTransientExclusive(ref key, ref stackCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -35,29 +35,30 @@ namespace Tsavorite.core
                                     out OperationStatus status)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
-            status = OperationStatus.SUCCESS;
-            if (!LockTable.IsEnabled || tsavoriteSession.TryLockTransientShared(ref key, ref stackCtx))
+            if (tsavoriteSession.TryLockTransientShared(ref key, ref stackCtx))
+            {
+                status = OperationStatus.SUCCESS;
                 return true;
+            }
             status = OperationStatus.RETRY_LATER;
             return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool TransientSUnlock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+        internal static void TransientSUnlock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
-            if (!stackCtx.recSrc.HasTransientSLock)
-                return false;
-            tsavoriteSession.UnlockTransientShared(ref key, ref stackCtx);
-            return true;
+            if (stackCtx.recSrc.HasTransientSLock)
+                tsavoriteSession.UnlockTransientShared(ref key, ref stackCtx);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void LockForScan(ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
         {
             Debug.Assert(!stackCtx.recSrc.HasLock, $"Should not call LockForScan if recSrc already has a lock ({stackCtx.recSrc.LockStateString()})");
-            if (DoTransientLocking)
+            if (IsLocking)
             {
+                // This will always be a transient lock as it is not session-based
                 stackCtx = new(comparer.GetHashCode64(ref key));
                 FindTag(ref stackCtx.hei);
                 stackCtx.SetRecordSourceToHashEntry(hlog);
@@ -65,11 +66,6 @@ namespace Tsavorite.core
                 while (!LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
                     epoch.ProtectAndDrain();
                 stackCtx.recSrc.SetHasTransientSLock();
-            }
-            else if (DoRecordIsolation)
-            {
-                while (!stackCtx.recSrc.TryLockShared(ref recordInfo))
-                    epoch.ProtectAndDrain();
             }
         }
 
@@ -80,10 +76,6 @@ namespace Tsavorite.core
             {
                 LockTable.UnlockShared(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.ClearHasTransientSLock();
-            }
-            else
-            {
-                stackCtx.recSrc.UnlockShared(ref recordInfo, headAddress: 0);
             }
         }
     }

@@ -112,6 +112,12 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
                 session.Upsert(ref key1, ref value, Empty.Default, 0);
+
+                OutputStruct output = default;
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(value.vfield1, output.value.vfield1);
+                Assert.AreEqual(value.vfield2, output.value.vfield2);
             }
 
             // RMW to overwrite the read cache
@@ -130,6 +136,12 @@ namespace Tsavorite.test.ReadCacheTests
                     Assert.AreEqual(i + 1, output.value.vfield1);
                     Assert.AreEqual(i + 2, output.value.vfield2);
                 }
+
+                OutputStruct expectedOutput = output;
+                status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                Assert.IsTrue(status.Found);
+                Assert.AreEqual(expectedOutput.value.vfield1, output.value.vfield1);
+                Assert.AreEqual(expectedOutput.value.vfield2, output.value.vfield2);
             }
 
             // Read 100 keys

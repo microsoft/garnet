@@ -40,8 +40,8 @@ namespace Tsavorite.core
             // record was found at that level.
             while (true)
             {
-                // ConditionalCopyToTail is different in regard to RecordIsolation from the usual procedures, in that if we find a source record we don't lock--we exit with success.
-                // So we only do LockTable-based locking for tag-chain stability during search.
+                // ConditionalCopyToTail is different from the usual procedures, in that if we find a source record we don't lock--we exit with success.
+                // So we only lock for tag-chain stability during search.
                 if (callerHasTransientLock || TryTransientSLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out OperationStatus status))
                 {
                     try
