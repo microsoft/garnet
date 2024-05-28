@@ -445,6 +445,18 @@ namespace Tsavorite.core
             value = reader.ReadLine();
             var numSessions = int.Parse(value);
 
+            // Temporary for backward compatibility
+            for (int i = 0; i < numSessions; i++)
+            {
+                _ /*var sessionID*/ = int.Parse(reader.ReadLine());
+                _ /*var sessionName*/ = reader.ReadLine();
+                _ /*var serialno*/ = long.Parse(reader.ReadLine());
+
+                var exclusionCount = int.Parse(reader.ReadLine());
+                for (int j = 0; j < exclusionCount; j++)
+                    _ = reader.ReadLine();
+            }
+
             // Read object log segment offsets
             value = reader.ReadLine();
             var numSegments = int.Parse(value);
@@ -458,7 +470,7 @@ namespace Tsavorite.core
                 }
             }
 
-            if (checksum != Checksum(checkpointTokenCount))
+            if (checksum != Checksum(numSessions))
                 throw new TsavoriteException("Invalid checksum for checkpoint");
         }
 
