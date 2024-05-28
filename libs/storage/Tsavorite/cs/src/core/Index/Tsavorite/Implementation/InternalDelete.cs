@@ -60,12 +60,8 @@ namespace Tsavorite.core
             try
             {
                 // Search the entire in-memory region; this lets us find a tombstoned record in the immutable region, avoiding unnecessarily adding one.
-                if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlog.HeadAddress, out status, wantLock: DoRecordIsolation))
+                if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlog.HeadAddress, out status))
                     return status;
-
-                // Need the extra 'if' to set this here as there are several places it would have to be set otherwise if it has a RecordIsolation lock.
-                if (stackCtx.recSrc.HasInMemorySrc)
-                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
 
                 // Note: Delete does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingDelete
 
@@ -77,13 +73,10 @@ namespace Tsavorite.core
                     KeyHash = stackCtx.hei.hash
                 };
 
-                // If we already have a deleted record, there's nothing to do.
-                if (srcRecordInfo.Tombstone)
-                    return OperationStatus.NOTFOUND;
-
                 if (stackCtx.recSrc.HasReadCacheSrc)
                 {
                     // Use the readcache record as the CopyUpdater source.
+                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
                     goto CreateNewRecord;
                 }
 
@@ -105,11 +98,17 @@ namespace Tsavorite.core
 
                 if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                 {
+                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+
+                    // If we already have a deleted record, there's nothing to do.
+                    if (srcRecordInfo.Tombstone)
+                        return OperationStatus.NOTFOUND;
+
                     // Mutable Region: Update the record in-place
                     deleteInfo.SetRecordInfo(ref srcRecordInfo);
                     ref Value recordValue = ref stackCtx.recSrc.GetValue();
 
-                    // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside ConcurrentDeleter, in RecordIsolation if needed
+                    // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside ConcurrentDeleter.
                     if (tsavoriteSession.ConcurrentDeleter(stackCtx.recSrc.PhysicalAddress, ref stackCtx.recSrc.GetKey(), ref recordValue, ref deleteInfo, ref srcRecordInfo, out int fullRecordLength))
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, tsavoriteSession.Ctx);
@@ -123,31 +122,30 @@ namespace Tsavorite.core
                         {
                             if (!RevivificationManager.IsEnabled)
                             {
-                                // If we succeed, we need to SealAndInvalidate. It's fine if we don't succeed here; this is just tidying up the HashBucket. 
+                                // We are not doing revivification, so we just want to remove the record from the tag chain so we don't potentially do an IO later for key 
+                                // traceback. If we succeed, we need to SealAndInvalidate. It's fine if we don't succeed here; this is just tidying up the HashBucket. 
                                 if (stackCtx.hei.TryElide())
                                     srcRecordInfo.SealAndInvalidate();
                             }
-                            else
+                            else if (RevivificationManager.UseFreeRecordPool)
                             {
-                                // Always Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
+                                // For non-FreeRecordPool revivification, we leave the record in as a normal tombstone so we can revivify it in the chain for the same key.
+                                // For FreeRecord Pool we must first Seal here, even if we're using the LockTable, because the Sealed state must survive this Delete() call.
                                 // We invalidate it also for checkpoint/recovery consistency (this removes Sealed bit so Scan would enumerate records that are not in any
                                 // tag chain--they would be in the freelist if the freelist survived Recovery), but we restore the Valid bit if it is returned to the chain,
                                 // which due to epoch protection is guaranteed to be done before the record can be written to disk and violate the "No Invalid records in
                                 // tag chain" invariant.
-                                stackCtx.recSrc.UnlockExclusiveAndSealInvalidate(ref srcRecordInfo);
+                                srcRecordInfo.SealAndInvalidate();
 
                                 bool isElided = false, isAdded = false;
-                                if (RevivificationManager.UseFreeRecordPool)
-                                {
-                                    Debug.Assert(srcRecordInfo.Tombstone, $"Unexpected loss of Tombstone; Record should have been XLocked or SealInvalidated. RecordInfo: {srcRecordInfo.ToString()}");
-                                    (isElided, isAdded) = TryElideAndTransferToFreeList<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref stackCtx, ref srcRecordInfo,
-                                                            (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, fullRecordLength));
-                                }
+                                Debug.Assert(srcRecordInfo.Tombstone, $"Unexpected loss of Tombstone; Record should have been XLocked or SealInvalidated. RecordInfo: {srcRecordInfo.ToString()}");
+                                (isElided, isAdded) = TryElideAndTransferToFreeList<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref stackCtx, ref srcRecordInfo,
+                                                        (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, fullRecordLength));
 
                                 if (!isElided)
                                 {
                                     // Leave this in the chain as a normal Tombstone; we aren't going to add a new record so we can't leave this one sealed.
-                                    srcRecordInfo.Unseal(makeValid: true);
+                                    srcRecordInfo.UnsealAndValidate();
                                 }
                                 else if (!isAdded && RevivificationManager.restoreDeletedRecordsIfBinIsFull)
                                 {
@@ -159,7 +157,7 @@ namespace Tsavorite.core
                                     FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
 
                                     if (stackCtx.hei.entry.Address <= Constants.kTempInvalidAddress && stackCtx.hei.TryCAS(stackCtx.recSrc.LogicalAddress))
-                                        srcRecordInfo.Unseal(makeValid: true);
+                                        srcRecordInfo.UnsealAndValidate();
                                 }
                             }
                         }
@@ -176,12 +174,16 @@ namespace Tsavorite.core
                     // Could not delete in place for some reason - create new record.
                     goto CreateNewRecord;
                 }
-                if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+                else if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
                 {
+                    // If we already have a deleted record, there's nothing to do.
+                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+                    if (srcRecordInfo.Tombstone)
+                        return OperationStatus.NOTFOUND;
                     goto CreateNewRecord;
                 }
 
-                // Either on-disk or no record exists - drop through to create new record. RecordIsolation does not lock in ReadOnly as we cannot modify the record in-place.
+                // Either on-disk or no record exists - drop through to create new record.
                 Debug.Assert(!tsavoriteSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Delete() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
@@ -198,8 +200,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                if (!TransientXUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx))
-                    stackCtx.recSrc.UnlockExclusive(ref srcRecordInfo, hlog.HeadAddress);
+                TransientXUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
             }
 
         LatchRelease:
@@ -219,6 +220,7 @@ namespace Tsavorite.core
             return status;
         }
 
+        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalDelete if the compiler decides not to inline this.
         private void CreatePendingDeleteContext<Input, Output, Context, TsavoriteSession>(ref Key key, Context userContext,
                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
@@ -300,7 +302,7 @@ namespace Tsavorite.core
                 tsavoriteSession.PostSingleDeleter(ref key, ref deleteInfo, ref newRecordInfo);
 
                 // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
-                stackCtx.recSrc.UnlockExclusiveAndSeal(ref srcRecordInfo);    // Not elided so Seal without invalidate
+                srcRecordInfo.Seal();    // Not elided so Seal without invalidate
 
                 stackCtx.ClearNewRecord();
                 pendingContext.recordInfo = newRecordInfo;

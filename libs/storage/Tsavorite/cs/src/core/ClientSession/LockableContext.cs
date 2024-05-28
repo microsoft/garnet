@@ -976,10 +976,7 @@ namespace Tsavorite.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            {
-                // Note: RecordIsolation is not used with Lockable contexts
-                return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo, ref recordInfo);
-            }
+                => _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo, ref recordInfo);
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
                 => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
@@ -1001,7 +998,6 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
             {
-                // Note: RecordIsolation is not used with Lockable contexts
                 (upsertInfo.UsedValueLength, upsertInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref dst, ref recordInfo);
                 if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo))
                     return false;
@@ -1050,7 +1046,6 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, ref RecordInfo recordInfo)
             {
-                // Note: RecordIsolation is not used with Lockable contexts
                 (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
                 if (!_clientSession.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status))
                     return false;
@@ -1080,7 +1075,6 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo, out int allocatedSize)
             {
-                // Note: RecordIsolation is not used with Lockable contexts
                 (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, allocatedSize) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
                 if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo, ref recordInfo))
                     return false;
@@ -1106,6 +1100,7 @@ namespace Tsavorite.core
             #endregion IFunctions - Dispose
 
             #region Transient locking
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(Store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
@@ -1115,6 +1110,7 @@ namespace Tsavorite.core
                 return true;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(Store.LockTable.IsLocked(ref key, ref stackCtx.hei),
@@ -1124,6 +1120,7 @@ namespace Tsavorite.core
                 return true;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(Store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
@@ -1132,6 +1129,7 @@ namespace Tsavorite.core
                             + $" Slocked {_clientSession.store.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
                 Debug.Assert(Store.LockTable.IsLockedShared(ref key, ref stackCtx.hei),
