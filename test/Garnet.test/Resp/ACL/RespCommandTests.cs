@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Garnet.server;
+using Microsoft.CodeAnalysis.VisualBasic.Syntax;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -5965,31 +5966,55 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            // tood: don't skip subcommands once they are implemented
-            if (!command.Contains(" "))
+            // check legal with +command
             {
-                // check legal with +command
-                {
-                    string commandAcl = $"+{command.Replace(" ", "|").ToLowerInvariant()}";
+                string commandAcl = $"+{command.Replace(" ", "|").ToLowerInvariant()}";
 
-                    ResetDefaultUser(server);
-                    SetUser(server, "default", ["-@all", "+acl", commandAcl]);  // +acl to allow resetting later (todo: make this +acl|setuser when subcommands are supported)
-                    foreach (Action del in commands)
-                    {
-                        Assert.True(CheckAuthFailure(del), $"{command} denied when should have been permitted (user had {commandAcl})");
-                    }
+                ResetDefaultUser(server);
+                SetUser(server, "default", ["-@all", "+acl|setuser", commandAcl]);
+                foreach (Action del in commands)
+                {
+                    Assert.True(CheckAuthFailure(del), $"{command} denied when should have been permitted (user had {commandAcl})");
                 }
+            }
 
-                // check illegal with -command
+            // check legal with -command +subcommand (except ACL|SETUSER because that's needed)
+            if (command.Contains(" ") && !command.Equals("ACL SETUSER"))
+            {
+                string removeParentAcl = $"-{command[..command.IndexOf(' ')].ToLowerInvariant()}";
+                string addSubAcl = $"+{command.Replace(" ", "|").ToLowerInvariant()}";
+
+                ResetDefaultUser(server);
+                SetUser(server, "default", ["+acl|setuser", removeParentAcl, addSubAcl]);
+                foreach (Action del in commands)
                 {
-                    string commandAcl = $"-{command.Replace(" ", "|").ToLowerInvariant()}";
+                    Assert.True(CheckAuthFailure(del), $"{command} denied when should have been permitted (user had {addSubAcl})");
+                }
+            }
 
-                    ResetDefaultUser(server);
-                    SetUser(server, "default", commandAcl);
-                    foreach (Action del in commands)
-                    {
-                        Assert.False(CheckAuthFailure(del), $"{command} permitted when should have been denied (user had {commandAcl})");
-                    }
+            // check illegal with -command
+            {
+                string commandAcl = $"-{command.Replace(" ", "|").ToLowerInvariant()}";
+
+                ResetDefaultUser(server);
+                SetUser(server, "default", commandAcl);
+                foreach (Action del in commands)
+                {
+                    Assert.False(CheckAuthFailure(del), $"{command} permitted when should have been denied (user had {commandAcl})");
+                }
+            }
+
+            // check illegal with +command -subcommand
+            if (command.Contains(" ") && !command.Equals("ACL SETUSER"))
+            {
+                string addParentAcl = $"+{command[..command.IndexOf(' ')].ToLowerInvariant()}";
+                string removeSubAcl = $"-{command.Replace(" ", "|").ToLowerInvariant()}";
+
+                ResetDefaultUser(server);
+                SetUser(server, "default", ["+acl|setuser", addParentAcl, removeSubAcl]);
+                foreach (Action del in commands)
+                {
+                    Assert.False(CheckAuthFailure(del), $"{command} permitted when should have been denied (user had {removeSubAcl})");
                 }
             }
 

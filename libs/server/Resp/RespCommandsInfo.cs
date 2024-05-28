@@ -21,224 +21,6 @@ namespace Garnet.server
     /// </summary>
     public class RespCommandsInfo : IRespSerializable
     {
-        // todo: really don't love hardcoding this
-        public static class SubCommandIds
-        {
-            /// <summary>
-            /// For commands without sub commands, or when a sub command is not present for that that do.
-            /// </summary>
-            public const byte None = 0;
-
-            /// <summary>
-            /// ACL|List
-            /// </summary>
-            public const byte AclList = 1;
-            /// <summary>
-            /// ACL|Users
-            /// </summary>
-            public const byte AclUsers = 2;
-            /// <summary>
-            /// ACL|Cat
-            /// </summary>
-            public const byte AclCat = 3;
-            /// <summary>
-            /// ACL|SetUser
-            /// </summary>
-            public const byte AclSetUser = 4;
-            /// <summary>
-            /// ACL|DelUSer
-            /// </summary>
-            public const byte AclDelUser = 5;
-            /// <summary>
-            /// ACL|WhoAmI
-            /// </summary>
-            public const byte AclWhoAmI = 6;
-            /// <summary>
-            /// ACL|Load
-            /// </summary>
-            public const byte AclLoad = 7;
-
-            /// <summary>
-            /// Command|Count
-            /// </summary>
-            public const byte CommandCount = 1;
-            /// <summary>
-            /// Command|Docs
-            /// </summary>
-            public const byte CommandDocs = 2;
-            /// <summary>
-            /// Command|Info
-            /// </summary>
-            public const byte CommandInfo = 3;
-
-            /// <summary>
-            /// Cluster|BumpEpoch
-            /// </summary>
-            public const byte ClusterBumpEpoch = 1;
-            /// <summary>
-            /// Cluster|Forget
-            /// </summary>
-            public const byte ClusterForget = 2;
-            /// <summary>
-            /// Cluster|Info
-            /// </summary>
-            public const byte ClusterInfo = 3;
-            /// <summary>
-            /// Cluster|Meet
-            /// </summary>
-            public const byte ClusterMeet = 4;
-            /// <summary>
-            /// Cluster|MyId
-            /// </summary>
-            public const byte ClusterMyId = 5;
-            /// <summary>
-            /// Cluster|Nodes
-            /// </summary>
-            public const byte ClusterNodes = 6;
-            /// <summary>
-            /// Cluster|Set-Config-Epoch
-            /// </summary>
-            public const byte ClusterSetConfigEpoch = 7;
-            /// <summary>
-            /// Cluster|Shards
-            /// </summary>
-            public const byte ClusterShards = 8;
-            /// <summary>
-            /// Cluster|Shards
-            /// </summary>
-            public const byte ClusterReset = 9;
-            /// <summary>
-            /// Cluster|Failover
-            /// </summary>
-            public const byte ClusterFailover = 10;
-            /// <summary>
-            /// Cluster|AddSlots
-            /// </summary>
-            public const byte ClusterAddSlots = 11;
-            /// <summary>
-            /// Cluster|AddSlotsRange
-            /// </summary>
-            public const byte ClusterAddSlotsRange = 12;
-            /// <summary>
-            /// Cluster|CountKeysInSlot
-            /// </summary>
-            public const byte ClusterCountKeysInSlot = 13;
-            /// <summary>
-            /// Cluster|DelSlots
-            /// </summary>
-            public const byte ClusterDelSlots = 14;
-            /// <summary>
-            /// Cluster|DelSlotsRange
-            /// </summary>
-            public const byte ClusterDelSlotsRange = 15;
-            /// <summary>
-            /// Cluster|GetKeysInSlot
-            /// </summary>
-            public const byte ClusterGetKeysInSlot = 16;
-            /// <summary>
-            /// Cluster|KeySlot
-            /// </summary>
-            public const byte ClusterKeySlot = 17;
-            /// <summary>
-            /// Cluster|SetSlot
-            /// </summary>
-            public const byte ClusterSetSlot = 18;
-            /// <summary>
-            /// Cluster|Slots
-            /// </summary>
-            public const byte ClusterSlots = 19;
-            /// <summary>
-            /// Cluster|Replicas
-            /// </summary>
-            public const byte ClusterReplicas = 20;
-            /// <summary>
-            /// Cluster|Replicate
-            /// </summary>
-            public const byte ClusterReplicate = 21;
-            /// <summary>
-            /// Cluster|DelKeysInSlot
-            /// </summary>
-            public const byte ClusterDelKeysInSlot = 22;
-            /// <summary>
-            /// Cluster|DelKeysInSlotRange
-            /// </summary>
-            public const byte ClusterDelKeysInSlotRange = 23;
-            /// <summary>
-            /// Cluster|SetSlotsRange
-            /// </summary>
-            public const byte ClusterSetSlotsRange = 24;
-            /// <summary>
-            /// Cluster|SlotState
-            /// </summary>
-            public const byte ClusterSlotState = 25;
-            /// <summary>
-            /// Cluster|Migrate
-            /// </summary>
-            public const byte ClusterMigrate = 26;
-
-            /// <summary>
-            /// Config|Get
-            /// </summary>
-            public const byte ConfigGet = 1;
-            /// <summary>
-            /// Config|Rewrite
-            /// </summary>
-            public const byte ConfigRewrite = 2;
-            /// <summary>
-            /// Config|Set
-            /// </summary>
-            public const byte ConfigSet = 3;
-
-            /// <summary>
-            /// Latency|Histogram
-            /// </summary>
-            public const byte LatencyHistogram = 1;
-            /// <summary>
-            /// Latency|Reset
-            /// </summary>
-            public const byte LatencyReset = 2;
-            /// <summary>
-            /// Latency|Help
-            /// </summary>
-            public const byte LatencyHelp = 3;
-
-            /// <summary>
-            /// Memory|Usage
-            /// </summary>
-            public const byte MemoryUsage = 1;
-
-            /// <summary>
-            /// Watch|MS
-            /// </summary>
-            public const byte WatchMS = 1;
-            /// <summary>
-            /// Watch|OS
-            /// </summary>
-            public const byte WatchOS = 2;
-
-            /// <summary>
-            /// Returns the sub command id.
-            /// 
-            /// This is very very slow, so should only be used to initialize faster lookups.
-            /// </summary>
-            /// <param name="subCommand">Name of subcommand, in the style of PARENT|CHILD ie. ACL|CAT</param>
-            internal static byte GetSubCommandId(string subCommand)
-            {
-                string expectedName = subCommand.Replace("|", "").Replace("-", "");
-
-                IEnumerable<FieldInfo> fs = typeof(SubCommandIds).GetFields(BindingFlags.Public | BindingFlags.Static).Where(x => x.Name.Equals(expectedName, StringComparison.OrdinalIgnoreCase));
-
-                if (!fs.Any())
-                {
-                    throw new ACLException($"No sub command id found for {subCommand}, this breaks ACL security");
-                }
-
-                FieldInfo f = fs.Single();
-
-                return (byte)f.GetValue(null);
-            }
-        }
-
         /// <summary>
         /// Garnet's RespCommand enum command representation
         /// </summary>
@@ -327,6 +109,9 @@ namespace Garnet.server
         [JsonIgnore]
         public RespCommandsInfo Parent { get; set; }
 
+        [JsonIgnore]
+        public RespCommand? SubCommand { get; set; }
+
         private const string RespCommandsEmbeddedFileName = @"RespCommandsInfo.json";
 
         private string respFormat;
@@ -370,52 +155,37 @@ namespace Garnet.server
 
             // force sub commands into a well known order so we can quickly validate them against ACL lists
             // setup parent refs so we can navigate from child -> parent
+
+            // todo: remove all of this once sub command ids is dead
+
             var tmpAllRespCommandsInfo =
                 scratchAllRespCommandsInfo.ToDictionary(
                     static kv => kv.Key,
                     static kv =>
                     {
-                        if (kv.Value.SubCommands == null)
+                        if (kv.Value.SubCommands != null)
                         {
-                            return kv.Value;
-                        }
-
-                        SetupParentRefs(kv.Value);
-
-                        // force sub commands into a reasonable order for ACL'ing purposes
-                        Array.Sort(
-                            kv.Value.SubCommands,
-                            (a, b) =>
-                            {
-                                int aIx = SubCommandIds.GetSubCommandId(a.Name);
-                                int bIx = SubCommandIds.GetSubCommandId(b.Name);
-
-                                return aIx.CompareTo(bIx);
-                            }
-                        );
-
-                        for (int i = 0; i < kv.Value.SubCommands.Length; i++)
-                        {
-                            int expectedlIx = SubCommandIds.GetSubCommandId(kv.Value.SubCommands[i].Name);
-                            int actualIx = i + 1;
-
-                            if (expectedlIx != actualIx)
-                            {
-                                throw new ACLException($"Expected {kv.Value.SubCommands[i].Name} to be at {expectedlIx} index (base 1) in sub commands array; actually at {actualIx}.  This invalidates ACL assumptions");
-                            }
+                            SetupSubCommands(kv.Value);
                         }
 
                         return kv.Value;
 
-                        static void SetupParentRefs(RespCommandsInfo cmd)
+                        static void SetupSubCommands(RespCommandsInfo cmd)
                         {
                             foreach (var subCommand in cmd.SubCommands)
                             {
                                 subCommand.Parent = cmd;
 
+                                if (!Enum.TryParse(subCommand.Name.Replace("|", "_").Replace("-", ""), out RespCommand parsed))
+                                {
+                                    throw new ACLException($"Couldn't map '{subCommand.Name}' to a member of {nameof(RespCommand)} this will break ACLs");
+                                }
+
+                                subCommand.SubCommand = parsed;
+
                                 if (subCommand.SubCommands != null)
                                 {
-                                    SetupParentRefs(subCommand);
+                                    SetupSubCommands(subCommand);
                                 }
                             }
                         }
@@ -428,6 +198,18 @@ namespace Garnet.server
                 if (respCommandInfo.Command == RespCommand.NONE) continue;
 
                 tmpBasicRespCommandsInfo.Add(respCommandInfo.Command, respCommandInfo);
+
+                if (respCommandInfo.SubCommands != null)
+                {
+                    foreach (var subRespCommandInfo in respCommandInfo.SubCommands)
+                    {
+                        // todo: eventually just assume a sub-command
+                        if (subRespCommandInfo.SubCommand != null)
+                        {
+                            tmpBasicRespCommandsInfo.Add(subRespCommandInfo.SubCommand.Value, subRespCommandInfo);
+                        }
+                    }
+                }
             }
 
             AllRespCommandsInfo = tmpAllRespCommandsInfo;

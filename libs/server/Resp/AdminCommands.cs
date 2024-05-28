@@ -95,145 +95,118 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
                     SendAndReset();
             }
-            else if (command == RespCommand.CONFIG)
+            else if (command == RespCommand.CONFIG_GET)
             {
-
-                // Terminate early if command arguments are less than expected
-                if (count < 1)
+                return NetworkCONFIG_GET(bufSpan, count);
+            }
+            else if (command == RespCommand.CONFIG_REWRITE)
+            {
+                if (count != 0)
                 {
-                    while (!RespWriteUtils.WriteBulkString("ERR wrong number of arguments for 'config' command"u8, ref dcurr, dend))
+                    if (!DrainCommands(bufSpan, count))
+                        return false;
+
+                    while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for CONFIG REWRITE.", ref dcurr, dend))
                         SendAndReset();
+
                     return true;
                 }
 
-                var param = GetCommand(bufSpan, out var success1);
-                if (!success1) return false;
+                storeWrapper.clusterProvider?.FlushConfig();
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
 
-                if (param.SequenceEqual(CmdStrings.GET) || param.SequenceEqual(CmdStrings.get))
+                return true;
+            }
+            else if (command == RespCommand.CONFIG_SET)
+            {
+                string certFileName = null;
+                string certPassword = null;
+                string clusterUsername = null;
+                string clusterPassword = null;
+                bool unknownOption = false;
+                string unknownKey = "";
+                if (count == 0 || count % 2 != 0)
                 {
-                    if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.ConfigGet, count - 1, out success))
-                    {
-                        return success;
-                    }
-
-                    if (!NetworkConfigGet(bufSpan, count, out errorFlag))
+                    if (!DrainCommands(bufSpan, count))
                         return false;
-
-                    if (errorFlag)
-                        errorCmd = Encoding.ASCII.GetString(CmdStrings.CONFIG) + "|" + Encoding.ASCII.GetString(param);
-                }
-                else if (param.SequenceEqual(CmdStrings.REWRITE) || param.SequenceEqual(CmdStrings.rewrite))
-                {
-                    if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.ConfigRewrite, count - 1, out success))
-                    {
-                        return success;
-                    }
-
-                    storeWrapper.clusterProvider?.FlushConfig();
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_WRONG_ARGUMENTS, ref dcurr, dend))
                         SendAndReset();
-                }
-                else if (param.SequenceEqual(CmdStrings.SET) || param.SequenceEqual(CmdStrings.set))
-                {
-                    if (!CheckACLPermissions(command, RespCommandsInfo.SubCommandIds.ConfigSet, count - 1, out success))
-                    {
-                        return success;
-                    }
 
-                    string certFileName = null;
-                    string certPassword = null;
-                    string clusterUsername = null;
-                    string clusterPassword = null;
-                    bool unknownOption = false;
-                    string unknownKey = "";
-                    if (count == 1 || count % 2 != 1)
-                    {
-                        if (!DrainCommands(bufSpan, count - 1))
-                            return false;
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_WRONG_ARGUMENTS, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-                    else
-                    {
-                        for (int c = 0; c < (count - 1) / 2; c++)
-                        {
-                            var key = GetCommand(bufSpan, out bool success2);
-                            if (!success2) return false;
-                            var value = GetCommand(bufSpan, out bool success3);
-                            if (!success3) return false;
-
-                            if (key.SequenceEqual(CmdStrings.CertFileName))
-                                certFileName = Encoding.ASCII.GetString(value);
-                            else if (key.SequenceEqual(CmdStrings.CertPassword))
-                                certPassword = Encoding.ASCII.GetString(value);
-                            else if (key.SequenceEqual(CmdStrings.ClusterUsername))
-                                clusterUsername = Encoding.ASCII.GetString(value);
-                            else if (key.SequenceEqual(CmdStrings.ClusterPassword))
-                                clusterPassword = Encoding.ASCII.GetString(value);
-                            else
-                            {
-                                if (!unknownOption)
-                                {
-                                    unknownOption = true;
-                                    unknownKey = Encoding.ASCII.GetString(key);
-                                }
-                            }
-                        }
-                    }
-                    string errorMsg = null;
-                    if (unknownOption)
-                    {
-                        errorMsg = string.Format(CmdStrings.GenericErrUnknownOption, unknownKey);
-                    }
-                    else
-                    {
-                        if (clusterUsername != null || clusterPassword != null)
-                        {
-                            if (clusterUsername == null)
-                                logger?.LogWarning("Cluster username is not provided, will use new password with existing username");
-                            if (storeWrapper.clusterProvider != null)
-                                storeWrapper.clusterProvider?.UpdateClusterAuth(clusterUsername, clusterPassword);
-                            else
-                            {
-                                if (errorMsg == null) errorMsg = "ERR Cluster is disabled.";
-                                else errorMsg += " Cluster is disabled.";
-                            }
-                        }
-                        if (certFileName != null || certPassword != null)
-                        {
-                            if (storeWrapper.serverOptions.TlsOptions != null)
-                            {
-                                if (!storeWrapper.serverOptions.TlsOptions.UpdateCertFile(certFileName, certPassword, out var certErrorMessage))
-                                {
-                                    if (errorMsg == null) errorMsg = "ERR " + certErrorMessage;
-                                    else errorMsg += " " + certErrorMessage;
-                                }
-                            }
-                            else
-                            {
-                                if (errorMsg == null) errorMsg = "ERR TLS is disabled.";
-                                else errorMsg += " TLS is disabled.";
-                            }
-                        }
-                    }
-                    if (errorMsg == null)
-                    {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
-                            SendAndReset();
-                    }
+                    return true;
                 }
                 else
                 {
-                    if (!DrainCommands(bufSpan, count - 1))
-                        return false;
-                    errorFlag = true;
-                    errorCmd = command.ToString() + " " + Encoding.ASCII.GetString(param);
+                    for (int c = 0; c < count / 2; c++)
+                    {
+                        var key = GetCommand(bufSpan, out bool success2);
+                        if (!success2) return false;
+                        var value = GetCommand(bufSpan, out bool success3);
+                        if (!success3) return false;
+
+                        if (key.SequenceEqual(CmdStrings.CertFileName))
+                            certFileName = Encoding.ASCII.GetString(value);
+                        else if (key.SequenceEqual(CmdStrings.CertPassword))
+                            certPassword = Encoding.ASCII.GetString(value);
+                        else if (key.SequenceEqual(CmdStrings.ClusterUsername))
+                            clusterUsername = Encoding.ASCII.GetString(value);
+                        else if (key.SequenceEqual(CmdStrings.ClusterPassword))
+                            clusterPassword = Encoding.ASCII.GetString(value);
+                        else
+                        {
+                            if (!unknownOption)
+                            {
+                                unknownOption = true;
+                                unknownKey = Encoding.ASCII.GetString(key);
+                            }
+                        }
+                    }
+                }
+                string errorMsg = null;
+                if (unknownOption)
+                {
+                    errorMsg = string.Format(CmdStrings.GenericErrUnknownOption, unknownKey);
+                }
+                else
+                {
+                    if (clusterUsername != null || clusterPassword != null)
+                    {
+                        if (clusterUsername == null)
+                            logger?.LogWarning("Cluster username is not provided, will use new password with existing username");
+                        if (storeWrapper.clusterProvider != null)
+                            storeWrapper.clusterProvider?.UpdateClusterAuth(clusterUsername, clusterPassword);
+                        else
+                        {
+                            if (errorMsg == null) errorMsg = "ERR Cluster is disabled.";
+                            else errorMsg += " Cluster is disabled.";
+                        }
+                    }
+                    if (certFileName != null || certPassword != null)
+                    {
+                        if (storeWrapper.serverOptions.TlsOptions != null)
+                        {
+                            if (!storeWrapper.serverOptions.TlsOptions.UpdateCertFile(certFileName, certPassword, out var certErrorMessage))
+                            {
+                                if (errorMsg == null) errorMsg = "ERR " + certErrorMessage;
+                                else errorMsg += " " + certErrorMessage;
+                            }
+                        }
+                        else
+                        {
+                            if (errorMsg == null) errorMsg = "ERR TLS is disabled.";
+                            else errorMsg += " TLS is disabled.";
+                        }
+                    }
+                }
+                if (errorMsg == null)
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                        SendAndReset();
                 }
             }
             else if (command == RespCommand.ECHO)
@@ -358,7 +331,7 @@ namespace Garnet.server
                 }
                 if (!errorFlag) ProcessHelloCommand(respProtocolVersion, authUsername, authPassword, clientName);
             }
-            else if (command is RespCommand.CLUSTER or RespCommand.MIGRATE or RespCommand.FAILOVER or RespCommand.REPLICAOF or RespCommand.SECONDARYOF)
+            else if (command.IsClusterSubCommand() || command == RespCommand.MIGRATE || command == RespCommand.FAILOVER || command == RespCommand.REPLICAOF || command == RespCommand.SECONDARYOF)
             {
                 if (clusterSession == null)
                 {
@@ -372,9 +345,17 @@ namespace Garnet.server
                 clusterSession.ProcessClusterCommands(command, bufSpan, count, recvBufferPtr, bytesRead, ref readHead, ref dcurr, ref dend, out bool result);
                 return result;
             }
-            else if (command == RespCommand.LATENCY)
+            else if (command == RespCommand.LATENCY_HELP)
             {
-                return ProcessLatencyCommands(bufSpan, count);
+                return NetworkLATENCY_HELP(bufSpan, count);
+            }
+            else if (command == RespCommand.LATENCY_HISTOGRAM)
+            {
+                return NetworkLATENCY_HISTOGRAM(bufSpan, count);
+            }
+            else if (command == RespCommand.LATENCY_RESET)
+            {
+                return NetworkLATENCY_RESET(bufSpan, count);
             }
             else if (command == RespCommand.TIME)
             {
@@ -521,17 +502,41 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-            else if (command == RespCommand.MEMORY)
+            else if (command == RespCommand.MEMORY_USAGE)
             {
-                return NetworkMEMORY(count, recvBufferPtr + readHead, ref storageApi);
+                return NetworkMEMORY_USAGE(count, recvBufferPtr + readHead, ref storageApi);
             }
             else if (command == RespCommand.MONITOR)
             {
                 return NetworkMONITOR(count, recvBufferPtr + readHead);
             }
-            else if (command == RespCommand.ACL)
+            else if (command == RespCommand.ACL_CAT)
             {
-                return ProcessACLCommands(bufSpan, count);
+                return NetworkACL_CAT(bufSpan, count);
+            }
+            else if (command == RespCommand.ACL_DELUSER)
+            {
+                return NetworkACL_DELUSER(bufSpan, count);
+            }
+            else if (command == RespCommand.ACL_LIST)
+            {
+                return NetworkACL_LIST(bufSpan, count);
+            }
+            else if (command == RespCommand.ACL_LOAD)
+            {
+                return NetworkACL_LOAD(bufSpan, count);
+            }
+            else if (command == RespCommand.ACL_SETUSER)
+            {
+                return NetworkACL_SETUSER(bufSpan, count);
+            }
+            else if (command == RespCommand.ACL_USERS)
+            {
+                return NetworkACL_USERS(bufSpan, count);
+            }
+            else if (command == RespCommand.ACL_WHOAMI)
+            {
+                return NetworkACL_WHOAMI(bufSpan, count);
             }
             else if ((command == RespCommand.REGISTERCS))
             {
@@ -631,11 +636,11 @@ namespace Garnet.server
         /// (NOTE: This function does not check keyspaces)
         /// </summary>
         /// <param name="cmd">Command be processed</param>
-        /// <param name="subCommand">Id (w.r.t. <see cref="RespCommandsInfo"/>) of any sub command - will be 0 if no sub command is being processed</param>
+        /// <param name="bufSpan">Buffer with remaining parts of command to process.</param>
         /// <param name="count">Number of parameters left in the command specification.</param>
         /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLPermissions(RespCommand cmd, byte subCommand, int count, out bool processingCompleted)
+        bool CheckACLPermissions(RespCommand cmd, ReadOnlySpan<byte> bufSpan, int count, out bool processingCompleted)
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
 
@@ -643,8 +648,6 @@ namespace Garnet.server
             //       we _could_ refactor SET to handle these options, but perf is tricky enough there
             //       that it should be a different command
             RespCommand effectiveCommand =
-                subCommand != RespCommandsInfo.SubCommandIds.None ?
-                    cmd :
                     cmd switch
                     {
                         RespCommand.SETEXNX => RespCommand.SET,
@@ -654,14 +657,9 @@ namespace Garnet.server
                         _ => cmd
                     };
 
-            Debug.Assert(subCommand == RespCommandsInfo.SubCommandIds.None || effectiveCommand.HasSubCommands(), $"Subcommand provided for unexpected command: {cmd}");
-
-            if (!effectiveCommand.IsNoAuth() && (!_authenticator.IsAuthenticated || !_user.CanAccessCommand(effectiveCommand, subCommand)))
+            if (!effectiveCommand.IsNoAuth() && (!_authenticator.IsAuthenticated || !_user.CanAccessCommand(effectiveCommand)))
             {
-                ReadOnlySpan<byte> toDrain = new(recvBufferPtr, bytesRead);
-                toDrain = toDrain[readHead..];
-
-                if (!DrainCommands(toDrain, count))
+                if (!DrainCommands(bufSpan, count))
                 {
                     processingCompleted = false;
                 }
@@ -690,43 +688,32 @@ namespace Garnet.server
             storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
-        private bool NetworkMEMORY<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkMEMORY_USAGE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
             //MEMORY USAGE [key] [SAMPLES count]
 
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var memoryOption, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
             var status = GarnetStatus.OK;
             long memoryUsage = default;
 
-            if (memoryOption.Equals("USAGE", StringComparison.OrdinalIgnoreCase))
+            // read key
+            byte* keyPtr = null;
+            int kSize = 0;
+
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref kSize, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (count == 3)
             {
-                if (!CheckACLPermissions(RespCommand.MEMORY, RespCommandsInfo.SubCommandIds.MemoryUsage, count, out bool success))
-                {
-                    return success;
-                }
-
-                // read key
-                byte* keyPtr = null;
-                int kSize = 0;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref kSize, ref ptr, recvBufferPtr + bytesRead))
+                // Calculations for nested types do not apply to garnet, but we are parsing the parameter for API compatibility
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var samplesBA, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                if (count == 4)
-                {
-                    // Calculations for nested types do not apply to garnet, but we are parsing the parameter for API compatibility
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var samplesBA, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
-
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countSamplesBA, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
-                }
-
-                status = storageApi.MemoryUsageForKey(new(keyPtr, kSize), out memoryUsage);
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countSamplesBA, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
             }
+
+            status = storageApi.MemoryUsageForKey(new(keyPtr, kSize), out memoryUsage);
 
             if (status == GarnetStatus.OK)
             {

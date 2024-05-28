@@ -192,8 +192,7 @@ namespace Garnet.test
             }
             catch (RedisServerException e)
             {
-                var expectedErrorMessage = string.Format(CmdStrings.GenericErrUnknownSubCommand, unknownSubCommand, RespCommand.COMMAND);
-                Assert.AreEqual(expectedErrorMessage, e.Message);
+                Assert.AreEqual("ERR unknown command", e.Message);
             }
         }
 

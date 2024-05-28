@@ -37,7 +37,6 @@ namespace Garnet.server.ACL
         }
 
         // do not move these, initialization order is important
-        private static readonly byte MaxSubCommands = GetMaxSubCommands();
         private static readonly ushort CommandListLength = GetCommandListLength();
 
         public static readonly CommandPermissionSet All = new(AllState.AllPermitted);
@@ -63,7 +62,7 @@ namespace Garnet.server.ACL
         /// <summary>
         /// Returns true if the given command + subCommand pair can be run.
         /// </summary>
-        public bool CanRunCommand(RespCommand command, byte subCommand)
+        public bool CanRunCommand(RespCommand command)
         {
             // quick check for +@all
             if (this._all == AllState.AllPermitted)
@@ -77,7 +76,7 @@ namespace Garnet.server.ACL
                 return false;
             }
 
-            int index = ((int)command * MaxSubCommands) + subCommand;
+            int index = (int)command;
             int ulongIndex = index / 64;
             int bitIndex = index % 64;
 
@@ -115,11 +114,11 @@ namespace Garnet.server.ACL
         /// 
         /// This is not thread safe.
         /// </summary>
-        public void AddCommand(RespCommand command, byte subCommand)
+        public void AddCommand(RespCommand command)
         {
             this._all = AllState.PerCommand;
 
-            int index = ((int)command * MaxSubCommands) + subCommand;
+            int index = (int)command;
             int ulongIndex = index / 64;
             int bitIndex = index % 64;
 
@@ -133,11 +132,11 @@ namespace Garnet.server.ACL
         /// 
         /// This is not thread safe.
         /// </summary>
-        public void RemoveCommand(RespCommand command, byte subCommand)
+        public void RemoveCommand(RespCommand command)
         {
             this._all = AllState.PerCommand;
 
-            int index = ((int)command * MaxSubCommands) + subCommand;
+            int index = (int)command;
             int ulongIndex = index / 64;
             int bitIndex = index % 64;
 
@@ -172,9 +171,9 @@ namespace Garnet.server.ACL
                 bool allAllowed = true;
                 if (RespCommandsInfo.TryGetCommandsforAclCategory(cat, out IReadOnlyList<RespCommandsInfo> commands))
                 {
-                    foreach ((RespCommand cmd, byte subCmd) in User.DetermineCommandDetails(commands))
+                    foreach (RespCommand cmd in User.DetermineCommandDetails(commands))
                     {
-                        bool canRun = this.CanRunCommand(cmd, subCmd);
+                        bool canRun = this.CanRunCommand(cmd);
                         allAllowed &= canRun;
                     }
                 }
@@ -206,44 +205,13 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
-        /// Figure out the maximum actual number of sub commands we have configured.
-        /// </summary>
-        private static byte GetMaxSubCommands()
-        {
-            RespCommand[] cmds = Enum.GetValues<RespCommand>().Where(static cmd => cmd != RespCommand.NONE && cmd != RespCommand.INVALID).ToArray();
-
-            byte max = 0;
-
-            foreach (RespCommand cmd in cmds)
-            {
-                if (RespCommandsInfo.TryGetRespCommandInfo(cmd, out RespCommandsInfo info) && info.SubCommands != null)
-                {
-                    int len = info.SubCommands.Length;
-                    if (len > byte.MaxValue - 1)
-                    {
-                        throw new ACLException($"Too many sub-commands ({len}) for command {cmd} to create command permission set");
-                    }
-
-                    if (len > max)
-                    {
-                        max = (byte)len;
-                    }
-                }
-            }
-
-            return max;
-        }
-
-        /// <summary>
         /// Determines the size of the <see cref="_commandList"/> in each permission set.
         /// </summary>
         private static ushort GetCommandListLength()
         {
             int commandCount = (int)Enum.GetValues<RespCommand>().Where(static cmd => cmd != RespCommand.NONE && cmd != RespCommand.INVALID).Max();
 
-            byte maxSubCommands = GetMaxSubCommands();
-
-            int neededBits = commandCount * (1 + maxSubCommands); // space for the parent command itself
+            int neededBits = commandCount;
             int neededULongs = neededBits / 64;
 
             if ((neededBits % 64) != 0)

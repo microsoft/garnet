@@ -517,7 +517,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("ERR wrong number of arguments for 'CONFIG' command", ex.Message);
+                Assert.AreEqual("ERR unknown command", ex.Message);
             }
         }
 
@@ -532,7 +532,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("ERR wrong number of arguments for 'CONFIG|GET' command", ex.Message);
+                Assert.AreEqual("ERR Wrong number of arguments for CONFIG GET.", ex.Message);
             }
         }
         #endregion

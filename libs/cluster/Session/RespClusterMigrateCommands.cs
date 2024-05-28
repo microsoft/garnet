@@ -24,11 +24,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterMigrate, count, out bool success))
-            {
-                return success;
-            }
-
             // Expecting exactly 3 arguments
             if (count != 3)
             {

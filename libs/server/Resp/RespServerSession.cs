@@ -369,18 +369,15 @@ namespace Garnet.server
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            bool success;
+            ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
 
             // do ACL validation up front if we don't have to do any additional parsing
             // to do so
             //
             // all commands with sub-commands have to do validation post-parsing
-            if (!cmd.HasSubCommands())
+            if (!CheckACLPermissions(cmd, bufSpan, count, out bool success))
             {
-                if (!CheckACLPermissions(cmd, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
+                return success;
             }
 
             if (!_authenticator.IsAuthenticated) return ProcessArrayCommands(cmd, count, ref storageApi);
@@ -423,7 +420,10 @@ namespace Garnet.server
                 RespCommand.RUNTXP => NetworkRUNTXP(count, ptr),
                 RespCommand.READONLY => NetworkREADONLY(ptr),
                 RespCommand.READWRITE => NetworkREADWRITE(ptr),
-                RespCommand.COMMAND => NetworkCOMMAND(count),
+                RespCommand.COMMAND => NetworkCOMMAND(bufSpan, count),
+                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(bufSpan, count),
+                RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(bufSpan, count),
+                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(bufSpan, count),
 
                 _ => ProcessArrayCommands(cmd, count, ref storageApi)
             };
@@ -446,6 +446,8 @@ namespace Garnet.server
                 RespCommand.UNLINK => NetworkDEL(count, ptr, ref storageApi),
                 RespCommand.SELECT => NetworkSELECT(ptr),
                 RespCommand.WATCH => NetworkWATCH(count),
+                RespCommand.WATCH_MS => NetworkWATCH_MS(count),
+                RespCommand.WATCH_OS => NetworkWATCH_OS(count),
                 RespCommand.STRLEN => NetworkSTRLEN(ptr, ref storageApi),
                 RespCommand.MODULE => NetworkMODULE(count, ptr, ref storageApi),
                 //General key commands
@@ -495,7 +497,7 @@ namespace Garnet.server
                 //Bitmap Commands
                 RespCommand.BITOP => NetworkStringBitOperation(count, ptr, ref storageApi),
                 RespCommand.BITFIELD => StringBitField(count, ptr, ref storageApi),
-                RespCommand.BITFIELD_RO=> StringBitFieldReadOnly(count, ptr, ref storageApi),
+                RespCommand.BITFIELD_RO => StringBitFieldReadOnly(count, ptr, ref storageApi),
                 // List Commands
                 RespCommand.LPUSH => ListPush(cmd, count, ptr, ref storageApi),
                 RespCommand.LPUSHX => ListPush(cmd, count, ptr, ref storageApi),

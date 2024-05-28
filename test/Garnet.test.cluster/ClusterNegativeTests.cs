@@ -88,7 +88,7 @@ namespace Garnet.test.cluster
             if (subcommand.Equals("set-config-epoch"))
                 errorCmd = "SETCONFIGEPOCH";
 
-            var expectedResp = $"-ERR wrong number of arguments for '{errorCmd}' command\r\n";
+            var expectedResp = $"-ERR Parsing error\r\n";
             foreach (var count in invalidCount)
             {
                 var packet = $"*{2 + count}\r\n" + clusterCMD;

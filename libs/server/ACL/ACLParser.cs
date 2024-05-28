@@ -214,12 +214,6 @@ namespace Garnet.server.ACL
                 // individual commands or command|subcommand pairs
                 string commandName = op.Substring(1);
 
-                if (commandName.Contains("|"))
-                {
-                    // todo: implement sub commands
-                    throw new ACLUnknownOperationException(op);
-                }
-
                 if (!TryParseCommandForAcl(commandName, out RespCommand command))
                 {
                     throw new AclCommandDoesNotExistException(commandName);
@@ -227,11 +221,11 @@ namespace Garnet.server.ACL
 
                 if (op[0] == '-')
                 {
-                    user.RemoveCommand(command, subCommand: RespCommandsInfo.SubCommandIds.None);
+                    user.RemoveCommand(command);
                 }
                 else
                 {
-                    user.AddCommand(command, subCommand: RespCommandsInfo.SubCommandIds.None);
+                    user.AddCommand(command);
                 }
             }
             else if (op.Equals("~*", StringComparison.Ordinal) || op.Equals("ALLKEYS", StringComparison.OrdinalIgnoreCase))
@@ -250,7 +244,7 @@ namespace Garnet.server.ACL
             // there's some fixup that has to be done when parsing a command
             static bool TryParseCommandForAcl(string commandName, out RespCommand command)
             {
-                if (!Enum.TryParse(commandName, ignoreCase: true, out command))
+                if (!Enum.TryParse(commandName.Replace("|", "_"), ignoreCase: true, out command))
                 {
                     if (commandName.Equals("SLAVEOF", StringComparison.OrdinalIgnoreCase))
                     {

@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
+using Garnet.server.ACL;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -991,26 +992,79 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkCOMMAND(int count)
+        /// <summary>
+        /// Common bits of COMMAND and COMMAND INFO implementation
+        /// </summary>
+        private void WriteCOMMANDResponse()
         {
-            var subCommand = ReadOnlySpan<byte>.Empty;
-            ReadOnlySpan<byte> bufSpan = new(recvBufferPtr, bytesRead);
+            var resultSb = new StringBuilder();
+            var cmdCount = 0;
 
-            if (count > 0)
+            foreach (var customCmd in storeWrapper.customCommandManager.CustomCommandsInfo)
             {
-                subCommand = GetCommand(bufSpan, out var success);
-                if (!success)
-                    return false;
+                cmdCount++;
+                resultSb.Append(customCmd.RespFormat);
             }
 
-            // Handle COMMAND COUNT
-            if (count > 0 && (subCommand.SequenceEqual(CmdStrings.COUNT) || subCommand.SequenceEqual(CmdStrings.count)))
+            if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, true, logger))
             {
-                if (!CheckACLPermissions(RespCommand.COMMAND, RespCommandsInfo.SubCommandIds.CommandCount, count - 1, out bool success))
+                foreach (var cmd in respCommandsInfo.Values)
                 {
-                    return success;
+                    cmdCount++;
+                    resultSb.Append(cmd.RespFormat);
                 }
+            }
 
+            while (!RespWriteUtils.WriteArrayLength(cmdCount, ref dcurr, dend))
+                SendAndReset();
+            while (!RespWriteUtils.WriteAsciiDirect(resultSb.ToString(), ref dcurr, dend))
+                SendAndReset();
+        }
+
+        /// <summary>
+        /// Processes COMMAND command.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkCOMMAND(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            // no additonal args allowed
+            if (count != 0)
+            {
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for COMMAND.", ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                WriteCOMMANDResponse();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes COMMAND COUNT subcommand.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkCOMMAND_COUNT(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            // no additonal args allowed
+            if (count != 0)
+            {
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for COMMAND COUNT.", ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
                 if (!RespCommandsInfo.TryGetRespCommandsInfoCount(out var respCommandCount, true, logger))
                 {
                     respCommandCount = 0;
@@ -1021,102 +1075,65 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteInteger(commandCount, ref dcurr, dend))
                     SendAndReset();
             }
-            // Handle COMMAND and COMMAND INFO
-            else if (count == 0 || subCommand.SequenceEqual(CmdStrings.INFO) || subCommand.SequenceEqual(CmdStrings.info))
-            {
-                if (count == 0)
-                {
-                    if (!CheckACLPermissions(RespCommand.COMMAND, RespCommandsInfo.SubCommandIds.None, count, out bool success))
-                    {
-                        return success;
-                    }
-                }
-                else
-                {
-                    if (!CheckACLPermissions(RespCommand.COMMAND, RespCommandsInfo.SubCommandIds.CommandInfo, count - 1, out bool success))
-                    {
-                        return success;
-                    }
-                }
 
-                // Handle COMMAND and COMMAND INFO without command names - return all commands
-                if (count < 2)
-                {
-                    var resultSb = new StringBuilder();
-                    var cmdCount = 0;
+            return true;
+        }
 
-                    foreach (var customCmd in storeWrapper.customCommandManager.CustomCommandsInfo)
-                    {
-                        cmdCount++;
-                        resultSb.Append(customCmd.RespFormat);
-                    }
-
-                    if (RespCommandsInfo.TryGetRespCommandsInfo(out var respCommandsInfo, true, logger))
-                    {
-                        foreach (var cmd in respCommandsInfo.Values)
-                        {
-                            cmdCount++;
-                            resultSb.Append(cmd.RespFormat);
-                        }
-                    }
-
-                    while (!RespWriteUtils.WriteArrayLength(cmdCount, ref dcurr, dend))
-                        SendAndReset();
-                    while (!RespWriteUtils.WriteAsciiDirect(resultSb.ToString(), ref dcurr, dend))
-                        SendAndReset();
-                }
-                // Handle COMMAND INFO with command names - return all commands specified
-                else
-                {
-                    RespWriteUtils.WriteArrayLength(count - 1, ref dcurr, dend);
-
-                    for (var i = 0; i < count - 1; i++)
-                    {
-                        var cmdNameSpan = GetCommand(bufSpan, out var success);
-                        if (!success)
-                            return false;
-
-                        var cmdName = Encoding.ASCII.GetString(cmdNameSpan);
-
-                        if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, logger) ||
-                            storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
-                        {
-                            while (!RespWriteUtils.WriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            while (!RespWriteUtils.WriteNull(ref dcurr, dend))
-                                SendAndReset();
-                        }
-                    }
-                }
-            }
+        /// <summary>
+        /// Processes COMMAND DOCS subcommand.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkCOMMAND_DOCS(ReadOnlySpan<byte> bufSpan, int count)
+        {
             // Placeholder for handling DOCS sub-command - returning Nil in the meantime.
-            else if (count > 0 && (subCommand.SequenceEqual(CmdStrings.DOCS) || subCommand.SequenceEqual(CmdStrings.docs)))
+            if (!DrainCommands(bufSpan, count))
+                return false;
+
+            while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes COMMAND INFO subcommand.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkCOMMAND_INFO(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            if (count == 0)
             {
-                if (!CheckACLPermissions(RespCommand.COMMAND, RespCommandsInfo.SubCommandIds.CommandDocs, count - 1, out bool success))
-                {
-                    return success;
-                }
-
-                if (!DrainCommands(bufSpan, count - 1))
-                    return false;
-
-                while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
-                    SendAndReset();
+                // zero arg case is equivalent to COMMAND w/o subcommand
+                WriteCOMMANDResponse();
             }
-            // Unsupported COMMAND subcommand
             else
             {
-                if (!DrainCommands(bufSpan, count - 1))
-                    return false;
+                RespWriteUtils.WriteArrayLength(count, ref dcurr, dend);
 
-                var subCmdName = Encoding.ASCII.GetString(subCommand);
-                var errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, subCmdName, RespCommand.COMMAND);
+                for (var i = 0; i < count; i++)
+                {
+                    var cmdNameSpan = GetCommand(bufSpan, out var success);
+                    if (!success)
+                        return false;
 
-                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
+                    var cmdName = Encoding.ASCII.GetString(cmdNameSpan);
+
+                    if (RespCommandsInfo.TryGetRespCommandInfo(cmdName, out var cmdInfo, logger) ||
+                        storeWrapper.customCommandManager.TryGetCustomCommandInfo(cmdName, out cmdInfo))
+                    {
+                        while (!RespWriteUtils.WriteAsciiDirect(cmdInfo.RespFormat, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                }
             }
 
             return true;

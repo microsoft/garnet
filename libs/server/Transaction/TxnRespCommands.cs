@@ -116,7 +116,7 @@ namespace Garnet.server
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
-            bool isWatch = commandInfo.Command == RespCommand.WATCH;
+            bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCH_MS || commandInfo.Command == RespCommand.WATCH_OS;
 
             if (invalidNumArgs || isWatch)
             {
@@ -193,96 +193,60 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Watch (MS|OS) key [key key]
+        /// Common implementation of various WATCH commands and subcommands.
         /// </summary>
-        private bool NetworkWATCH(int count)
+        /// <param name="count">Remaining keys in the command buffer.</param>
+        /// <param name="type">Store type that's bein gwatch</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool CommonWATCH(int count, StoreType type)
         {
-            bool success;
-
+            // have to provide at least one key
             if (count == 0)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.GenericErrWrongNumArgs, ref dcurr, dend))
                     SendAndReset();
 
                 return true;
             }
 
-            if (count == 1)
+            List<ArgSlice> keys = new();
+
+            for (int c = 0; c < count; c++)
             {
-                var key = GetCommandAsArgSlice(out success);
+                var nextKey = GetCommandAsArgSlice(out bool success);
                 if (!success) return false;
 
-                count--;
-
-                // subcommand, but no actual commands
-                if (key.Span.SequenceEqual("MS"u8) || key.Span.SequenceEqual("ms"u8) || key.Span.SequenceEqual("OS"u8) || key.Span.SequenceEqual("os"u8))
-                {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                        SendAndReset();
-
-                    return true;
-                }
-
-                if (!CheckACLPermissions(RespCommand.WATCH, RespCommandsInfo.SubCommandIds.None, count, out success))
-                {
-                    return success;
-                }
-
-                txnManager.Watch(key, StoreType.All);
+                keys.Add(nextKey);
             }
-            else
+
+            foreach (var toWatch in keys)
             {
-                var key = GetCommandAsArgSlice(out success);
-                if (!success) return false;
-
-                // first key or first subcommand
-                count--;
-
-                List<ArgSlice> keys = new();
-
-                StoreType type;
-                if (key.Span.SequenceEqual("MS"u8) || key.Span.SequenceEqual("ms"u8))
-                {
-                    type = StoreType.Main;
-
-                    if (!CheckACLPermissions(RespCommand.WATCH, RespCommandsInfo.SubCommandIds.WatchMS, count, out success))
-                    {
-                        return success;
-                    }
-                }
-                else if (key.Span.SequenceEqual("OS"u8) || key.Span.SequenceEqual("os"u8))
-                {
-                    type = StoreType.Object;
-
-                    if (!CheckACLPermissions(RespCommand.WATCH, RespCommandsInfo.SubCommandIds.WatchOS, count, out success))
-                    {
-                        return success;
-                    }
-                }
-                else
-                {
-                    type = StoreType.All;
-
-                    keys.Add(key);
-                }
-
-                for (int c = 0; c < count; c++)
-                {
-                    var nextKey = GetCommandAsArgSlice(out success);
-                    if (!success) return false;
-                    keys.Add(nextKey);
-                }
-
-                foreach (var toWatch in keys)
-                {
-                    txnManager.Watch(toWatch, type);
-                }
+                txnManager.Watch(toWatch, type);
             }
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+
             return true;
         }
+
+        /// <summary>
+        /// WATCH MS key [key ..]
+        /// </summary>
+        private bool NetworkWATCH_MS(int count)
+        => CommonWATCH(count, StoreType.Main);
+
+        /// <summary>
+        /// WATCH OS key [key ..]
+        /// </summary>
+        private bool NetworkWATCH_OS(int count)
+        => CommonWATCH(count, StoreType.Object);
+
+        /// <summary>
+        /// Watch key [key ...]
+        /// </summary>
+        private bool NetworkWATCH(int count)
+        => CommonWATCH(count, StoreType.All);
 
         /// <summary>
         /// UNWATCH

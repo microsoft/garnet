@@ -173,5 +173,48 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> NOT => "NOT"u8;
         public static ReadOnlySpan<byte> not => "not"u8;
 
+        // subcommand parsing strings
+        public static ReadOnlySpan<byte> CAT => "CAT"u8;
+        public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
+        public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
+        public static ReadOnlySpan<byte> SETUSER => "SETUSER"u8;
+        public static ReadOnlySpan<byte> USERS => "USERS"u8;
+        public static ReadOnlySpan<byte> WHOAMI => "WHOAMI"u8;
+        public static ReadOnlySpan<byte> USAGE => "USAGE"u8;
+        public static ReadOnlySpan<byte> BUMPEPOCH => "BUMPEPOCH"u8;
+        public static ReadOnlySpan<byte> FORGET => "FORGET"u8;
+        public static ReadOnlySpan<byte> GOSSIP => "GOSSIP"u8;
+        public static ReadOnlySpan<byte> MEET => "MEET"u8;
+        public static ReadOnlySpan<byte> MYID => "MYID"u8;
+        public static ReadOnlySpan<byte> NODES => "NODES"u8;
+        public static ReadOnlySpan<byte> SETCONFIGEPOCH => "SET-CONFIG-EPOCH"u8;
+        public static ReadOnlySpan<byte> SHARDS => "SHARDS"u8;
+        public static ReadOnlySpan<byte> ADDSLOTS => "ADDSLOTS"u8;
+        public static ReadOnlySpan<byte> ADDSLOTSRANGE => "ADDSLOTSRANGE"u8;
+        public static ReadOnlySpan<byte> COUNTKEYSINSLOT => "COUNTKEYSINSLOT"u8;
+        public static ReadOnlySpan<byte> DELSLOTS => "DELSLOTS"u8;
+        public static ReadOnlySpan<byte> DELSLOTSRANGE => "DELSLOTSRANGE"u8;
+        public static ReadOnlySpan<byte> GETKEYSINSLOT => "GETKEYSINSLOT"u8;
+        public static ReadOnlySpan<byte> KEYSLOT => "KEYSLOT"u8;
+        public static ReadOnlySpan<byte> SETSLOT => "SETSLOT"u8;
+        public static ReadOnlySpan<byte> SLOTS => "SLOTS"u8;
+        public static ReadOnlySpan<byte> REPLICAS => "REPLICAS"u8;
+        public static ReadOnlySpan<byte> REPLICATE => "REPLICATE"u8;
+        public static ReadOnlySpan<byte> DELKEYSINSLOT => "DELKEYSINSLOT"u8;
+        public static ReadOnlySpan<byte> SETSLOTSRANGE => "SETSLOTSRANGE"u8;
+        public static ReadOnlySpan<byte> SLOTSTATE => "SLOTSTATE"u8;
+        public static ReadOnlySpan<byte> INITIATE_REPLICA_SYNC => "INITIATE_REPLICA_SYNC"u8;
+        public static ReadOnlySpan<byte> AOFSYNC => "AOFSYNC"u8;
+        public static ReadOnlySpan<byte> APPENDLOG => "APPENDLOG"u8;
+        public static ReadOnlySpan<byte> BANLIST => "BANLIST"u8;
+        public static ReadOnlySpan<byte> BEGIN_REPLICA_RECOVER => "BEGIN_REPLICA_RECOVER"u8;
+        public static ReadOnlySpan<byte> ENDPOINT => "ENDPOINT"u8;
+        public static ReadOnlySpan<byte> FAILREPLICATIONOFFSET => "FAILREPLICATIONOFFSET"u8;
+        public static ReadOnlySpan<byte> FAILSTOPWRITES => "FAILSTOPWRITES"u8;
+        public static ReadOnlySpan<byte> SEND_CKPT_FILE_SEGMENT => "SEND_CKPT_FILE_SEGMENT"u8;
+        public static ReadOnlySpan<byte> SEND_CKPT_METADATA => "SEND_CKPT_METADATA"u8;
+        public static ReadOnlySpan<byte> MTASKS => "MTASKS"u8;
+        public static ReadOnlySpan<byte> DELKEYSINSLOTRANGE => "DELKEYSINSLOTRANGE"u8;
+        public static ReadOnlySpan<byte> MYPARENTID => "MYPARENTID"u8;
     }
 }

@@ -44,8 +44,8 @@ namespace Garnet.server.ACL
         /// <summary>
         /// Check whether the user can access the given command.
         /// </summary>
-        public bool CanAccessCommand(RespCommand command, byte subCommand)
-        => this._enabledCommands.CanRunCommand(command, subCommand);
+        public bool CanAccessCommand(RespCommand command)
+        => this._enabledCommands.CanRunCommand(command);
 
         /// <summary>
         /// Adds the given category to the user.
@@ -80,9 +80,9 @@ namespace Garnet.server.ACL
                 else
                 {
                     updated = oldPerms.Copy();
-                    foreach ((RespCommand cmd, byte subCmd) in DetermineCommandDetails(commandInfos))
+                    foreach (RespCommand cmd in DetermineCommandDetails(commandInfos))
                     {
-                        updated.AddCommand(cmd, subCmd);
+                        updated.AddCommand(cmd);
                     }
                 }
             }
@@ -95,23 +95,14 @@ namespace Garnet.server.ACL
         /// If the command has subcommands, and no specific subcommand is indicated, adds all subcommands too.
         /// </summary>
         /// <param name="command">Command to add.</param>
-        /// <param name="subCommand">Subcommand to add, or none, from <see cref="RespCommandsInfo.SubCommandIds"/>.</param>
-        public void AddCommand(RespCommand command, byte subCommand)
+        public void AddCommand(RespCommand command)
         {
-            IEnumerable<(RespCommand cmd, byte subCmd)> toAdd;
-            if (subCommand == RespCommandsInfo.SubCommandIds.None)
+            if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
             {
-                if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
-                {
-                    throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
-                }
+                throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
+            }
 
-                toAdd = DetermineCommandDetails([info]);
-            }
-            else
-            {
-                toAdd = [(command, subCommand)];
-            }
+            IEnumerable<RespCommand> toAdd = DetermineCommandDetails([info]);
 
             CommandPermissionSet prev = this._enabledCommands;
             CommandPermissionSet oldPerms;
@@ -121,9 +112,9 @@ namespace Garnet.server.ACL
                 oldPerms = prev;
 
                 updated = oldPerms.Copy();
-                foreach ((RespCommand cmd, byte subCmd) in toAdd)
+                foreach (RespCommand cmd in toAdd)
                 {
-                    updated.AddCommand(cmd, subCmd);
+                    updated.AddCommand(cmd);
                 }
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
@@ -162,9 +153,9 @@ namespace Garnet.server.ACL
                 else
                 {
                     updated = oldPerms.Copy();
-                    foreach ((RespCommand cmd, byte subCmd) in DetermineCommandDetails(commandInfos))
+                    foreach (RespCommand cmd in DetermineCommandDetails(commandInfos))
                     {
-                        updated.RemoveCommand(cmd, subCmd);
+                        updated.RemoveCommand(cmd);
                     }
                 }
             }
@@ -177,23 +168,14 @@ namespace Garnet.server.ACL
         /// If the command has subcommands, and no specific subcommand is indicated, removes all subcommands too.
         /// </summary>
         /// <param name="command">Command to remove.</param>
-        /// <param name="subCommand">Subcommand to remove, or none, from <see cref="RespCommandsInfo.SubCommandIds"/>.</param>
-        public void RemoveCommand(RespCommand command, byte subCommand)
+        public void RemoveCommand(RespCommand command)
         {
-            IEnumerable<(RespCommand cmd, byte subCmd)> toAdd;
-            if (subCommand == RespCommandsInfo.SubCommandIds.None)
+            if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
             {
-                if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
-                {
-                    throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
-                }
+                throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
+            }
 
-                toAdd = DetermineCommandDetails([info]);
-            }
-            else
-            {
-                toAdd = [(command, subCommand)];
-            }
+            IEnumerable<RespCommand> toAdd = DetermineCommandDetails([info]);
 
             CommandPermissionSet prev = this._enabledCommands;
             CommandPermissionSet oldPerms;
@@ -203,9 +185,9 @@ namespace Garnet.server.ACL
                 oldPerms = prev;
 
                 updated = oldPerms.Copy();
-                foreach ((RespCommand cmd, byte subCmd) in toAdd)
+                foreach (RespCommand cmd in toAdd)
                 {
-                    updated.RemoveCommand(cmd, subCmd);
+                    updated.RemoveCommand(cmd);
                 }
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
@@ -338,7 +320,7 @@ namespace Garnet.server.ACL
         /// <summary>
         /// Determine the command / sub command pairs that are associated with this command information entries
         /// </summary>
-        internal static IEnumerable<(RespCommand Command, byte SubCommand)> DetermineCommandDetails(IReadOnlyList<RespCommandsInfo> infos)
+        internal static IEnumerable<RespCommand> DetermineCommandDetails(IReadOnlyList<RespCommandsInfo> infos)
         {
             for (int i = 0; i < infos.Count; i++)
             {
@@ -346,24 +328,17 @@ namespace Garnet.server.ACL
 
                 if (info.Parent != null)
                 {
-                    // banning a sub command means we need to figure out the subCommand index...
-                    int subCommadIx = Array.IndexOf(info.Parent.SubCommands, info);
-                    if (subCommadIx == -1)
-                    {
-                        throw new ACLException("Couldn't find sub command index, this shouldn't happen");
-                    }
-
-                    yield return (info.Parent.Command, (byte)(subCommadIx + 1));
+                    yield return info.SubCommand.Value;
                 }
                 else
                 {
-                    yield return (info.Command, SubCommand: 0);
+                    yield return info.Command;
 
                     if (info.SubCommands != null)
                     {
-                        for (int j = 0; j < info.SubCommands.Length; j++)
+                        foreach (RespCommandsInfo subCommand in info.SubCommands)
                         {
-                            yield return (info.Command, (byte)(j + 1));
+                            yield return subCommand.SubCommand.Value;
                         }
                     }
                 }

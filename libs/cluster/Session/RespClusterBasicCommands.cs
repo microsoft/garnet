@@ -22,12 +22,7 @@ namespace Garnet.cluster
         private bool NetworkClusterBumpEpoch(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            // Check admin permissions for command
-            if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterBumpEpoch, count, out bool success))
-            {
-                return success;
-            }
-
+            
             // Expecting exactly 0 arguments
             if (count != 0)
             {
@@ -61,11 +56,7 @@ namespace Garnet.cluster
         private bool NetworkClusterForget(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterForget, count, out bool success))
-            {
-                return success;
-            }
-
+            
             // Expecting 1 or 2 arguments
             if (count is < 1 or > 2)
             {
@@ -170,11 +161,7 @@ namespace Garnet.cluster
         private bool NetworkClusterMeet(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterMeet, count, out bool success))
-            {
-                return success;
-            }
-
+            
             // Expecting exactly 2 arguments
             if (count != 2)
             {
@@ -317,11 +304,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterSetConfigEpoch, count, out bool success))
-            {
-                return success;
-            }
-
             // Expecting exactly 1 arguments
             if (count != 1)
             {
@@ -459,11 +441,6 @@ namespace Garnet.cluster
         private bool NetworkClusterReset(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLPermissions(RespCommand.CLUSTER, RespCommandsInfo.SubCommandIds.ClusterReset, count, out bool success))
-            {
-                return success;
-            }
 
             // Expecting 0, 1 or 2 arguments
             if (count > 2)

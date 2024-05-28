@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
 using Garnet.networking;
@@ -76,26 +77,32 @@ namespace Garnet.cluster
 
             try
             {
-                if (command == RespCommand.CLUSTER)
+                if (command.IsClusterSubCommand())
                 {
-                    result = ProcessClusterCommands(bufSpan, count);
-                }
-                else if (command == RespCommand.MIGRATE)
-                {
-                    result = TryMIGRATE(count, recvBufferPtr + readHead);
-                }
-                else if (command == RespCommand.FAILOVER)
-                {
-                    result = TryFAILOVER(count, recvBufferPtr + readHead);
-                }
-                else if ((command == RespCommand.REPLICAOF) || (command == RespCommand.SECONDARYOF))
-                {
-                    result = TryREPLICAOF(count, recvBufferPtr + readHead);
+                    result = ProcessClusterCommands(command, bufSpan, count);
                 }
                 else
                 {
-                    return false;
+                    switch (command)
+                    {
+                        case RespCommand.MIGRATE:
+                            result = TryMIGRATE(count, recvBufferPtr + readHead);
+                            break;
+
+                        case RespCommand.FAILOVER:
+                            result = TryFAILOVER(count, recvBufferPtr + readHead);
+                            break;
+
+                        case RespCommand.SECONDARYOF:
+                        case RespCommand.REPLICAOF:
+                            result = TryREPLICAOF(count, recvBufferPtr + readHead);
+                            break;
+
+                        default:
+                            return false;
+                    }
                 }
+
                 return true;
             }
             finally
@@ -159,43 +166,6 @@ namespace Garnet.cluster
         {
             this.user = user;
         }
-
-        /// <summary>
-        /// Performs permission checks for the current user and the given command.
-        /// (NOTE: This function does not check keyspaces)
-        /// </summary>
-        /// <param name="cmd">Command be processed</param>
-        /// <param name="subCommand">Id (w.r.t. <see cref="RespCommandsInfo"/>) of any sub command - will be 0 if no sub command is being processed</param>
-        /// <param name="count">Number of parameters left in the command specification.</param>
-        /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
-        /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLPermissions(RespCommand cmd, byte subCommand, int count, out bool processingCompleted)
-        {
-            Debug.Assert(!authenticator.IsAuthenticated || (user != null));
-
-            if (!authenticator.IsAuthenticated || !user.CanAccessCommand(cmd, subCommand))
-            {
-                ReadOnlySpan<byte> toDrain = new(recvBufferPtr, bytesRead);
-                toDrain = toDrain[readHead..];
-
-                if (!DrainCommands(toDrain, count))
-                {
-                    processingCompleted = false;
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                        SendAndReset();
-                    processingCompleted = true;
-                }
-                return false;
-            }
-
-            processingCompleted = true;
-
-            return true;
-        }
-
 
         bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
         {
