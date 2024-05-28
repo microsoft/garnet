@@ -89,7 +89,7 @@ namespace Garnet.server.ACL
     }
 
     /// <summary>
-    /// Exception indication a given command does not exist.
+    /// Exception indicating a given command does not exist.
     /// </summary>
     class AclCommandDoesNotExistException : ACLException
     {
