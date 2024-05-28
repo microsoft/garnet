@@ -25,20 +25,20 @@ namespace Garnet.test
 
         private static object[] LeftPushTestCases =
         [
-            new object[] { "list1", new [] { "foo" }, new [] { "foo" } },
-            new object[] { "list2", new [] { "foo", "baz" }, new [] { "baz", "foo" } },
-            new object[] { "list1", new [] { "bar", "baz" }, new [] { "baz", "bar", "foo" } },
-            new object[] { "list3", new [] { "foo", "bar", "baz" }, new [] { "baz", "bar", "foo" } },
-            new object[] { "list2", new [] { "foo", "bar", "baz" }, new[] { "baz", "bar", "foo", "baz", "foo" } }
+            new object[] { "list1", new[] { "foo" }, new[] { "foo" } },
+            new object[] { "list2", new[] { "foo", "baz" }, new[] { "baz", "foo" } },
+            new object[] { "list1", new[] { "bar", "baz" }, new[] { "baz", "bar", "foo" } },
+            new object[] { "list3", new[] { "foo", "bar", "baz" }, new[] { "baz", "bar", "foo" } },
+            new object[] { "list2", new[] { "foo", "bar", "baz" }, new[] { "baz", "bar", "foo", "baz", "foo" } }
         ];
 
         private static object[] RightPushTestCases =
         [
-            new object[] { "list1", new [] { "foo" }, new [] { "foo" } },
-            new object[] { "list2", new [] { "foo", "baz" }, new [] { "foo", "baz" } },
-            new object[] { "list1", new [] { "bar", "baz" }, new [] { "foo", "bar", "baz" } },
-            new object[] { "list3", new [] { "foo", "bar", "baz" }, new [] { "foo", "bar", "baz" } },
-            new object[] { "list2", new [] { "foo", "bar", "baz" }, new[] { "foo", "baz", "foo", "bar", "baz" } }
+            new object[] { "list1", new[] { "foo" }, new[] { "foo" } },
+            new object[] { "list2", new[] { "foo", "baz" }, new[] { "foo", "baz" } },
+            new object[] { "list1", new[] { "bar", "baz" }, new[] { "foo", "bar", "baz" } },
+            new object[] { "list3", new[] { "foo", "bar", "baz" }, new[] { "foo", "bar", "baz" } },
+            new object[] { "list2", new[] { "foo", "bar", "baz" }, new[] { "foo", "baz", "foo", "bar", "baz" } }
         ];
 
         private static string GetTestKey(string key)
