@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -42,22 +43,20 @@ namespace Garnet.client
         /// <param name="elements">The elements to be added.</param>
         /// <param name="callback">The callback function when operation completes.</param>
         /// <param name="context">An optional context to correlate request to callback.</param>
-        public void ListLeftPush(string key, List<string> elements, Action<long, long, string> callback, long context = 0)
+        public void ListLeftPush(string key, IEnumerable<string> elements, Action<long, long, string> callback, long context = 0)
         {
             ArgumentNullException.ThrowIfNull(key);
             ArgumentNullException.ThrowIfNull(elements);
             ArgumentNullException.ThrowIfNull(callback);
 
-            if (elements.Count == 0)
+            var arrElem = new[] { key }.Union(elements).ToArray();
+
+            if (arrElem.Length == 1)
             {
                 throw new ArgumentException("The elements can't be empty.", nameof(elements));
             }
 
-            elements.Insert(0, key);
-
-            ExecuteForLongResult(callback, context, nameof(LPUSH), elements);
-
-            elements.RemoveAt(0);
+            ExecuteForLongResult(callback, context, nameof(LPUSH), arrElem);
         }
 
         /// <summary>
@@ -110,22 +109,20 @@ namespace Garnet.client
         /// <param name="elements">The elements to be added.</param>
         /// <param name="callback">The callback function when operation completes.</param>
         /// <param name="context">An optional context to correlate request to callback.</param>
-        public void ListRightPush(string key, List<string> elements, Action<long, long, string> callback, long context = 0)
+        public void ListRightPush(string key, IEnumerable<string> elements, Action<long, long, string> callback, long context = 0)
         {
             ArgumentNullException.ThrowIfNull(key);
             ArgumentNullException.ThrowIfNull(elements);
             ArgumentNullException.ThrowIfNull(callback);
 
-            if (elements.Count == 0)
+            var arrElem = new[] { key }.Union(elements).ToArray();
+
+            if (arrElem.Length == 1)
             {
                 throw new ArgumentException("The elements can't be empty.", nameof(elements));
             }
 
-            elements.Insert(0, key);
-
-            ExecuteForLongResult(callback, context, nameof(RPUSH), elements);
-
-            elements.RemoveAt(0);
+            ExecuteForLongResult(callback, context, nameof(RPUSH), arrElem);
         }
 
         /// <summary>
