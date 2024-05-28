@@ -49,8 +49,7 @@ namespace Garnet.test
 
         [Test]
         [TestCaseSource(nameof(LeftPushTestCases))]
-
-        public void AddElementsToTheListHead_WithCallback(string key, string[] elements, string[] expectedList)
+        public void AddElementsToTheListHeadInBulk_WithCallback(string key, string[] elements, string[] expectedList)
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
@@ -80,6 +79,41 @@ namespace Garnet.test
 
         [Test]
         [TestCaseSource(nameof(LeftPushTestCases))]
+        public void AddElementsToTheListHead_WithCallback(string key, string[] elements, string[] expectedList)
+        {
+            // Arrange
+            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            db.Connect();
+
+            using ManualResetEventSlim e = new();
+
+            var isResultSet = false;
+            var actualListLength = 0L;
+
+            // Act & Assert
+            var testKey = GetTestKey(key);
+
+            foreach (var element in elements)
+            {
+                db.ListLeftPush(testKey, element, (_, returnValue, _) =>
+                {
+                    actualListLength = returnValue;
+                    isResultSet = true;
+                    e.Set();
+                });
+
+                e.Wait();
+                e.Reset();
+            }
+
+            Assert.IsTrue(isResultSet);
+            Assert.AreEqual(expectedList.Length, actualListLength);
+
+            ValidateListContent(testKey, expectedList);
+        }
+
+        [Test]
+        [TestCaseSource(nameof(LeftPushTestCases))]
         public async Task AddElementsToTheListHead_WithAsync(string key, string[] elements, string[] expectedList)
         {
             // Arrange
@@ -97,7 +131,7 @@ namespace Garnet.test
 
         [Test]
         [TestCaseSource(nameof(RightPushTestCases))]
-        public void AddElementsToListTail_WithCallback(string key, string[] elements, string[] expectedList)
+        public void AddElementsToListTailInBulk_WithCallback(string key, string[] elements, string[] expectedList)
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
@@ -119,6 +153,41 @@ namespace Garnet.test
             });
 
             e.Wait();
+            Assert.IsTrue(isResultSet);
+            Assert.AreEqual(expectedList.Length, actualListLength);
+
+            ValidateListContent(testKey, expectedList);
+        }
+
+        [Test]
+        [TestCaseSource(nameof(RightPushTestCases))]
+        public void AddElementsToListTail_WithCallback(string key, string[] elements, string[] expectedList)
+        {
+            // Arrange
+            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            db.Connect();
+
+            using ManualResetEventSlim e = new();
+
+            var isResultSet = false;
+            var actualListLength = 0L;
+
+            // Act & Assert
+            var testKey = GetTestKey(key);
+
+            foreach (var element in elements)
+            {
+                db.ListRightPush(testKey, element, (_, returnValue, _) =>
+                {
+                    actualListLength = returnValue;
+                    isResultSet = true;
+                    e.Set();
+                });
+
+                e.Wait();
+                e.Reset();
+            }
+
             Assert.IsTrue(isResultSet);
             Assert.AreEqual(expectedList.Length, actualListLength);
 
