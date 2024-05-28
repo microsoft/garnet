@@ -338,10 +338,10 @@ namespace Garnet.server
 
             readHead = (int)(ptr - recvBufferPtr);
 
-            keyPtr -= sizeof(int); // length header
-            *(int*)keyPtr = ksize;
             if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
                 return true;
+            keyPtr -= sizeof(int); // length header
+            *(int*)keyPtr = ksize;
 
             int sliceStart = NumUtils.BytesToInt(startSize, startPtr);
             int sliceLength = NumUtils.BytesToInt(endSize, endPtr);
@@ -762,7 +762,7 @@ namespace Garnet.server
             return true;
         }
 
-        /// <summary> 
+        /// <summary>
         /// Increment (INCRBY, DECRBY, INCR, DECR)
         /// </summary>
         private bool NetworkIncrement<TGarnetApi>(byte* ptr, RespCommand cmd, ref TGarnetApi storageApi)
@@ -888,8 +888,16 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkPING()
         {
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
-                SendAndReset();
+            if (isSubscriptionSession && respProtocolVersion == 2)
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.SUSCRIBE_PONG, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_PONG, ref dcurr, dend))
+                    SendAndReset();
+            }
             return true;
         }
 

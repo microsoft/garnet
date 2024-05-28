@@ -327,6 +327,14 @@ namespace Garnet.server
         public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys, out int count)
             => storageSession.SetDiffStore(key, keys, out count);
 
+        /// <inheritdoc />
+        public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
+            => storageSession.SetIntersect(keys, out output);
+
+        /// <inheritdoc />
+        public GarnetStatus SetIntersectStore(byte[] key, ArgSlice[] keys, out int count)
+            => storageSession.SetIntersectStore(key, keys, out count);
+
         #endregion
 
         #region Hash Methods

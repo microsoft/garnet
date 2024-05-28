@@ -31,6 +31,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> ACL => "ACL"u8;
         public static ReadOnlySpan<byte> AUTH => "AUTH"u8;
         public static ReadOnlySpan<byte> auth => "auth"u8;
+        public static ReadOnlySpan<byte> SETNAME => "SETNAME"u8;
         public static ReadOnlySpan<byte> INFO => "INFO"u8;
         public static ReadOnlySpan<byte> info => "info"u8;
         public static ReadOnlySpan<byte> DOCS => "DOCS"u8;
@@ -47,6 +48,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> HELP => "HELP"u8;
         public static ReadOnlySpan<byte> help => "help"u8;
         public static ReadOnlySpan<byte> PING => "PING"u8;
+        public static ReadOnlySpan<byte> HELLO => "HELLO"u8;
         public static ReadOnlySpan<byte> TIME => "TIME"u8;
         public static ReadOnlySpan<byte> RESET => "RESET"u8;
         public static ReadOnlySpan<byte> reset => "reset"u8;
@@ -80,12 +82,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_1 => ":1\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_0 => ":0\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_N1 => ":-1\r\n"u8;
+        public static ReadOnlySpan<byte> SUSCRIBE_PONG => "*2\r\n$4\r\npong\r\n$0\r\n\r\n"u8;
         public static ReadOnlySpan<byte> RESP_PONG => "+PONG\r\n"u8;
         public static ReadOnlySpan<byte> RESP_EMPTY => "$0\r\n\r\n"u8;
         public static ReadOnlySpan<byte> RESP_QUEUED => "+QUEUED\r\n"u8;
 
         /// <summary>
-        /// Simple error respone strings, i.e. these are of the form "-errorString\r\n"
+        /// Simple error response strings, i.e. these are of the form "-errorString\r\n"
         /// </summary>
         public static ReadOnlySpan<byte> RESP_ERR_NOAUTH => "NOAUTH Authentication required."u8;
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE => "WRONGTYPE Operation against a key holding the wrong kind of value."u8;
@@ -119,6 +122,12 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_INVALID_INDEX => "ERR invalid database index."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_CLUSTER_MODE => "ERR SELECT is not allowed in cluster mode"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION => "ERR Unsupported protocol version"u8;
+        public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
+        public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
+        public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "syntax error"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
+
 
         /// <summary>
         /// Response string templates

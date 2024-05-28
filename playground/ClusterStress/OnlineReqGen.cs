@@ -54,7 +54,7 @@ namespace Resp.benchmark
             while (slots.Count > 0)
             {
                 int keyPrefix = keyRandomGen.Next(0, int.MaxValue);
-                int slot = Garnet.common.NumUtils.HashSlot(Encoding.ASCII.GetBytes(keyPrefix.ToString()));
+                int slot = Garnet.common.HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(keyPrefix.ToString()));
                 if (slots.Contains(slot))
                 {
                     slotPrefixes[slot] = keyPrefix;
@@ -72,10 +72,10 @@ namespace Resp.benchmark
         public byte[] GenerateKeyBytes(out int slot)
         {
             int key = randomGen ? (zipf ? zipfg.Next() : keyRandomGen.Next(DbSize)) : (keyIndex++ % DbSize);
-            slot = Garnet.common.NumUtils.HashSlot(Encoding.ASCII.GetBytes(key.ToString()));
+            slot = Garnet.common.HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(key.ToString()));
             byte[] keyBytes = GetClusterKeyBytes(key);
 #if DEBUG
-            int _slot = Garnet.common.NumUtils.HashSlot(keyBytes);
+            int _slot = Garnet.common.HashSlotUtils.HashSlot(keyBytes);
             System.Diagnostics.Debug.Assert(_slot == slot, $"GenerateKeyBytes slot number incosistence {_slot}:{slot}");
 #endif
             return keyBytes;
@@ -84,10 +84,10 @@ namespace Resp.benchmark
         public string GenerateKey(out int slot)
         {
             int key = randomGen ? (zipf ? zipfg.Next() : keyRandomGen.Next(DbSize)) : (keyIndex++ % DbSize);
-            slot = Garnet.common.NumUtils.HashSlot(Encoding.ASCII.GetBytes(key.ToString()));
+            slot = Garnet.common.HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(key.ToString()));
             byte[] keyBytes = GetClusterKeyBytes(key);
 #if DEBUG
-            int _slot = Garnet.common.NumUtils.HashSlot(keyBytes);
+            int _slot = Garnet.common.HashSlotUtils.HashSlot(keyBytes);
             System.Diagnostics.Debug.Assert(_slot == slot, $"GenerateKeyBytes slot number incosistence {_slot}:{slot}");
 #endif
             return Encoding.ASCII.GetString(keyBytes);

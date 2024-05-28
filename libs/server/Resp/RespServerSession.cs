@@ -104,6 +104,10 @@ namespace Garnet.server
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
 
+
+        int respProtocolVersion = 2;
+        string clientName = null;
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
@@ -392,10 +396,10 @@ namespace Garnet.server
                 RespCommand.INCRBY => NetworkIncrement(ptr, RespCommand.INCRBY, ref storageApi),
                 RespCommand.DECR => NetworkIncrement(ptr, RespCommand.DECR, ref storageApi),
                 RespCommand.DECRBY => NetworkIncrement(ptr, RespCommand.DECRBY, ref storageApi),
-                RespCommand.SETBIT => StringSetBit(ptr, ref storageApi),
-                RespCommand.GETBIT => StringGetBit(ptr, ref storageApi),
-                RespCommand.BITCOUNT => StringBitCount(ptr, count, ref storageApi),
-                RespCommand.BITPOS => StringBitPosition(ptr, count, ref storageApi),
+                RespCommand.SETBIT => NetworkStringSetBit(ptr, ref storageApi),
+                RespCommand.GETBIT => NetworkStringGetBit(ptr, ref storageApi),
+                RespCommand.BITCOUNT => NetworkStringBitCount(ptr, count, ref storageApi),
+                RespCommand.BITPOS => NetworkStringBitPosition(ptr, count, ref storageApi),
                 RespCommand.PUBLISH => NetworkPUBLISH(ptr),
                 RespCommand.PING => count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, subcmd, count, ref storageApi),
                 RespCommand.ASKING => NetworkASKING(),
@@ -479,7 +483,7 @@ namespace Garnet.server
                 (RespCommand.PFMERGE, 0) => HyperLogLogMerge(count, ptr, ref storageApi),
                 (RespCommand.PFCOUNT, 0) => HyperLogLogLength(count, ptr, ref storageApi),
                 //Bitmap Commands
-                (RespCommand.BITOP, (byte)BitmapOperation.AND or (byte)BitmapOperation.OR or (byte)BitmapOperation.XOR or (byte)BitmapOperation.NOT) => StringBitOperation(count, ptr, (BitmapOperation)subcmd, ref storageApi),
+                (RespCommand.BITOP, (byte)BitmapOperation.NONE or (byte)BitmapOperation.AND or (byte)BitmapOperation.OR or (byte)BitmapOperation.XOR or (byte)BitmapOperation.NOT) => NetworkStringBitOperation(count, ptr, (BitmapOperation)subcmd, ref storageApi),
                 (RespCommand.BITFIELD, 0) => StringBitField(count, ptr, ref storageApi),
                 (RespCommand.BITFIELD_RO, 0) => StringBitFieldReadOnly(count, ptr, ref storageApi),
                 // List Commands
@@ -529,6 +533,8 @@ namespace Garnet.server
                 (RespCommand.Set, (byte)SetOperation.SUNIONSTORE) => SetUnionStore(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SDIFF) => SetDiff(count, ptr, ref storageApi),
                 (RespCommand.Set, (byte)SetOperation.SDIFFSTORE) => SetDiffStore(count, ptr, ref storageApi),
+                (RespCommand.Set, (byte)SetOperation.SINTER) => SetIntersect(count, ptr, ref storageApi),
+                (RespCommand.Set, (byte)SetOperation.SINTERSTORE) => SetIntersectStore(count, ptr, ref storageApi),
                 _ => ProcessOtherCommands(cmd, subcmd, count, ref storageApi),
             };
             return success;
