@@ -16,7 +16,7 @@ namespace Garnet.server
         /// <summary>
         /// MULTI
         /// </summary>
-        private bool NetworkMULTI(int count, byte* ptr)
+        private bool NetworkMULTI(byte* ptr)
         {
             if (txnManager.state != TxnState.None)
             {
@@ -36,7 +36,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkEXEC(int count, byte* ptr)
+        private bool NetworkEXEC(byte* ptr)
         {
             // pass over the EXEC in buffer during execution
             if (txnManager.state == TxnState.Running)
@@ -178,7 +178,7 @@ namespace Garnet.server
         /// <summary>
         /// DISCARD
         /// </summary>
-        private bool NetworkDISCARD(int count, byte* ptr)
+        private bool NetworkDISCARD(byte* ptr)
         {
             if (txnManager.state == TxnState.None)
             {
@@ -287,7 +287,7 @@ namespace Garnet.server
         /// <summary>
         /// UNWATCH
         /// </summary>
-        private bool NetworkUNWATCH(int count, byte* ptr)
+        private bool NetworkUNWATCH(byte* ptr)
         {
             if (txnManager.state == TxnState.None)
             {

@@ -66,7 +66,7 @@ namespace Garnet.server
         /// <summary>
         /// PUBLISH
         /// </summary>
-        private bool NetworkPUBLISH(int count, byte* ptr)
+        private bool NetworkPUBLISH(byte* ptr)
         {
             Debug.Assert(isSubscriptionSession == false);
             // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n

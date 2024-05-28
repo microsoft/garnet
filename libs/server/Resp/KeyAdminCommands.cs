@@ -15,7 +15,7 @@ namespace Garnet.server
         /// <summary>
         /// TryRENAME
         /// </summary>
-        private bool NetworkRENAME<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkRENAME<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* key1Ptr = null, key2Ptr = null;
@@ -94,7 +94,7 @@ namespace Garnet.server
         /// <param name="ptr"> Location of command buffer </param>
         /// <param name="garnetApi"> Garnet API reference </param>
         /// <returns> True if successful, false otherwise </returns>
-        private bool NetworkGETDEL<TGarnetApi>(int count, byte* ptr, ref TGarnetApi garnetApi)
+        private bool NetworkGETDEL<TGarnetApi>(byte* ptr, ref TGarnetApi garnetApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null;
@@ -280,7 +280,7 @@ namespace Garnet.server
         /// <param name="ptr">Reading pointer to the buffer</param>
         /// <param name="storageApi">The Garnet API instance</param>
         /// <returns></returns>
-        private bool NetworkPERSIST<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkPERSIST<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null;
@@ -317,7 +317,7 @@ namespace Garnet.server
         /// <param name="command">either if the call is for tll or pttl command</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkTTL<TGarnetApi>(int count, byte* ptr, RespCommand command, ref TGarnetApi storageApi)
+        private bool NetworkTTL<TGarnetApi>(byte* ptr, RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null;

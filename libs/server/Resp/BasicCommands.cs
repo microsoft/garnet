@@ -18,7 +18,7 @@ namespace Garnet.server
         /// <summary>
         /// GET
         /// </summary>
-        bool NetworkGET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        bool NetworkGET<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
@@ -238,7 +238,7 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        private bool NetworkSET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSET<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null, valPtr = null;
@@ -270,7 +270,7 @@ namespace Garnet.server
         /// <summary>
         /// SETRANGE
         /// </summary>
-        private bool NetworkSetRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSetRange<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null;
@@ -317,7 +317,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkGetRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkGetRange<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null;
@@ -372,7 +372,7 @@ namespace Garnet.server
         /// <summary>
         /// SETEX
         /// </summary>
-        private bool NetworkSETEX<TGarnetApi>(RespCommand cmd, int count, byte* ptr, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSETEX<TGarnetApi>(RespCommand cmd, byte* ptr, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null, valPtr = null;
@@ -765,7 +765,7 @@ namespace Garnet.server
         /// <summary> 
         /// Increment (INCRBY, DECRBY, INCR, DECR)
         /// </summary>
-        private bool NetworkIncrement<TGarnetApi>(int count, byte* ptr, RespCommand cmd, ref TGarnetApi storageApi)
+        private bool NetworkIncrement<TGarnetApi>(byte* ptr, RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY || cmd == RespCommand.INCR ||
@@ -849,7 +849,7 @@ namespace Garnet.server
         /// <summary>
         /// APPEND command - appends value at the end of existing string
         /// </summary>
-        private bool NetworkAppend<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkAppend<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null, valPtr = null;
@@ -886,7 +886,7 @@ namespace Garnet.server
         /// <summary>
         /// PING
         /// </summary>
-        private bool NetworkPING(int count, byte* ptr)
+        private bool NetworkPING(byte* ptr)
         {
             if (isSubscriptionSession && respProtocolVersion == 2)
             {
@@ -904,7 +904,7 @@ namespace Garnet.server
         /// <summary>
         /// ASKING
         /// </summary>
-        private bool NetworkASKING(int count, byte* ptr)
+        private bool NetworkASKING(byte* ptr)
         {
             //*1\r\n$6\r\n ASKING\r\n = 16
             if (storeWrapper.serverOptions.EnableCluster)
@@ -917,7 +917,7 @@ namespace Garnet.server
         /// <summary>
         /// QUIT
         /// </summary>
-        private bool NetworkQUIT(int count, byte* ptr)
+        private bool NetworkQUIT(byte* ptr)
         {
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -929,7 +929,7 @@ namespace Garnet.server
         /// Mark this session as readonly session
         /// </summary>
         /// <returns></returns>
-        private bool NetworkREADONLY(int count, byte* ptr)
+        private bool NetworkREADONLY(byte* ptr)
         {
             //*1\r\n$8\r\nREADONLY\r\n
             clusterSession?.SetReadOnlySession();
@@ -942,7 +942,7 @@ namespace Garnet.server
         /// Mark this session as readwrite
         /// </summary>
         /// <returns></returns>
-        private bool NetworkREADWRITE(int count, byte* ptr)
+        private bool NetworkREADWRITE(byte* ptr)
         {
             //*1\r\n$9\r\nREADWRITE\r\n
             clusterSession?.SetReadWriteSession();
@@ -958,7 +958,7 @@ namespace Garnet.server
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkSTRLEN<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSTRLEN<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null;

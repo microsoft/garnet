@@ -176,6 +176,7 @@ namespace Garnet.cluster
             if (!authenticator.IsAuthenticated || !user.CanAccessCommand(cmd, subCommand))
             {
                 ReadOnlySpan<byte> toDrain = new(recvBufferPtr, bytesRead);
+                toDrain = toDrain[readHead..];
 
                 if (!DrainCommands(toDrain, count))
                 {

@@ -660,7 +660,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="ptr"></param>
         /// <returns></returns>
-        private bool NetworkSELECT(int count, byte* ptr)
+        private bool NetworkSELECT(byte* ptr)
         {
             // Read index
             if (!RespReadUtils.ReadStringWithLengthHeader(out var result, ref ptr, recvBufferPtr + bytesRead))
@@ -691,7 +691,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkDBSIZE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkDBSIZE<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             readHead = (int)(ptr - recvBufferPtr);
@@ -700,7 +700,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkKEYS<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkKEYS<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             byte* pattern = null;
