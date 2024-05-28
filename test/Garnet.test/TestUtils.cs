@@ -15,7 +15,7 @@ using System.Threading;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -190,7 +190,7 @@ namespace Garnet.test
             IAuthenticationSettings authenticationSettings = null;
             if (useAcl)
             {
-                authenticationSettings = new AclAuthenticationSettings(aclFile, defaultPassword);
+                authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, defaultPassword);
             }
             else if (defaultPassword != null)
             {
@@ -315,7 +315,8 @@ namespace Garnet.test
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
             X509CertificateCollection certificates = null,
-            ILoggerFactory loggerFactory = null)
+            ILoggerFactory loggerFactory = null,
+            AadAuthenticationSettings authenticationSettings = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -353,7 +354,8 @@ namespace Garnet.test
                     useAcl: useAcl,
                     aclFile: aclFile,
                     certificates: certificates,
-                    logger: loggerFactory?.CreateLogger("GarnetServer"));
+                    logger: loggerFactory?.CreateLogger("GarnetServer"),
+                    aadAuthenticationSettings: authenticationSettings);
 
                 Assert.IsNotNull(opts);
                 int iter = 0;
@@ -397,6 +399,7 @@ namespace Garnet.test
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
             X509CertificateCollection certificates = null,
+            AadAuthenticationSettings aadAuthenticationSettings = null,
             ILogger logger = null)
         {
             if (UseAzureStorage)
@@ -412,9 +415,13 @@ namespace Garnet.test
             if (!UseAzureStorage) _CheckpointDir = new DirectoryInfo(string.IsNullOrEmpty(_CheckpointDir) ? "." : _CheckpointDir).FullName;
 
             IAuthenticationSettings authenticationSettings = null;
-            if (useAcl)
+            if (useAcl && aadAuthenticationSettings != null)
             {
-                authenticationSettings = new AclAuthenticationSettings(aclFile, authPassword);
+                authenticationSettings = new AclAuthenticationAadSettings(aclFile, authPassword, aadAuthenticationSettings);
+            }
+            else if (useAcl)
+            {
+                authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, authPassword);
             }
             else if (authPassword != null)
             {

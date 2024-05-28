@@ -123,7 +123,8 @@ namespace Garnet.server
                                 foreach (var e in events)
                                     storeWrapper.monitor.resetLatencyMetrics[e] = true;
                             }
-                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+
+                            while (!RespWriteUtils.WriteInteger(events.Count, ref dcurr, dend))
                                 SendAndReset();
                         }
 

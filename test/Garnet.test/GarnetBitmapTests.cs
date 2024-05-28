@@ -2274,5 +2274,58 @@ namespace Garnet.test
             pos = db.StringBitPosition(key, true, 10, 12, StringIndexType.Bit);
             Assert.AreEqual(10, pos);
         }
+
+        [Test, Order(34)]
+        [Category("BITOP")]
+        public void BitmapOperationNonExistentSourceKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            RedisKey dstKey = "dstKey";
+            RedisKey[] sourceKeys = ["a", "b", "c"];
+            var size = db.StringBitOperation(Bitwise.And, dstKey, sourceKeys);
+            Assert.AreEqual(0, size);
+        }
+
+        [Test, Order(35)]
+        [Category("BITOP")]
+        public void BitmapOperationInvalidOption()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var args = new List<object> { "INVALID_OPTION", "a", "b", "c" };
+            try
+            {
+                db.Execute("BITOP", args);
+            }
+            catch (Exception ex)
+            {
+                Assert.AreEqual("ERR syntax error", ex.Message);
+            }
+        }
+
+        [Test, Order(36)]
+        [Category("BITOP")]
+        public void BitmapOperationTooManyKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var args = new List<object> { "AND", "a" };
+
+            for (var i = 0; i < 128; i++)
+                args.Add(i.ToString());
+
+            try
+            {
+                db.Execute("BITOP", args);
+            }
+            catch (Exception ex)
+            {
+                Assert.AreEqual("ERR Bitop source key limit (64) exceeded", ex.Message);
+            }
+        }
     }
 }

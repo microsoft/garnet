@@ -578,6 +578,7 @@ namespace Garnet.server
                                     case 'B':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBITOP\r\n"u8))
                                         {
+                                            // todo: restore parsing the AND|OR|XOR|NOT "subcommand" here
                                             return RespCommand.BITOP;
                                         }
                                         break;

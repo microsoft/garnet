@@ -189,9 +189,6 @@ namespace Garnet.cluster
                     case ClusterSubcommand.FAILOVER:
                         parseSuccess = NetworkClusterFailover(bufSpan, count - 1, out invalidParameters);
                         break;
-                    case ClusterSubcommand.FAILAUTHREQ:
-                        parseSuccess = NetworkClusterFailAuthReq(count - 1, out invalidParameters);
-                        break;
                     case ClusterSubcommand.FAILSTOPWRITES:
                         parseSuccess = NetworkClusterFailStopWrites(count - 1, out invalidParameters);
                         break;

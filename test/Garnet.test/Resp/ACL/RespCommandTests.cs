@@ -2633,19 +2633,19 @@ namespace Garnet.test.Resp.ACL
                     void DoLatencyReset()
                     {
                         RedisResult val = db.Execute("LATENCY", "RESET");
-                        Assert.AreEqual("OK", (string)val);
+                        Assert.AreEqual(6, (int)val);
                     }
 
                     void DoLatencyResetSingle()
                     {
                         RedisResult val = db.Execute("LATENCY", "RESET", "NET_RS_LAT");
-                        Assert.AreEqual("OK", (string)val);
+                        Assert.AreEqual(1, (int)val);
                     }
 
                     void DoLatencyResetMulti()
                     {
                         RedisResult val = db.Execute("LATENCY", "RESET", "NET_RS_LAT", "NET_RS_LAT_ADMIN");
-                        Assert.AreEqual("OK", (string)val);
+                        Assert.AreEqual(2, (int)val);
                     }
                 }
             }
