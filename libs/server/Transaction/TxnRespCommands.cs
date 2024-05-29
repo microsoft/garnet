@@ -250,6 +250,9 @@ namespace Garnet.server
 
         private bool NetworkRUNTXP(int count, byte* ptr)
         {
+            if (count < 1)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP), count);
+
             if (!RespReadUtils.ReadIntWithLengthHeader(out int txid, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
@@ -275,7 +278,9 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {txid}, expected {numParams}, actual {count - 1}", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(
+                           string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txid, numParams, count - 1), ref dcurr,
+                           dend))
                     SendAndReset();
                 return true;
             }

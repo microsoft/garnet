@@ -405,14 +405,16 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out var ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out var ttl));
+            Assert.AreEqual(-2, ttl);
 
             // px
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000");
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // keepttl
             Assert.IsTrue(db.StringSet(key, 1, TimeSpan.FromMinutes(1)));
@@ -427,7 +429,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // ex .. nx, existing key
             Assert.IsTrue(db.StringSet(key, value));
@@ -445,7 +448,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // px .. nx, non-existing key
             Assert.IsTrue(db.KeyDelete(key));
@@ -453,7 +457,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // px .. nx, existing key
             Assert.IsTrue(db.StringSet(key, value));
@@ -471,7 +476,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
         }
 
         [Test]
@@ -1221,7 +1227,13 @@ namespace Garnet.test
             var val = "expireValue";
             var expire = 2;
 
+            var ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-2, (int)ttl);
+
             db.StringSet(key, val);
+            ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-1, (int)ttl);
+
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
             var time = db.KeyTimeToLive(key);
@@ -1248,7 +1260,13 @@ namespace Garnet.test
             var key = "expireKey";
             var expire = 2;
 
+            var ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-2, (int)ttl);
+
             db.SortedSetAdd(key, key, 1.0);
+            ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-1, (int)ttl);
+
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
             var time = db.KeyTimeToLive(key);
@@ -1512,7 +1530,7 @@ namespace Garnet.test
             string value = "0123456789";
 
             var resp = (string)db.StringGetRange(key, 2, 10);
-            Assert.AreEqual(null, resp);
+            Assert.AreEqual(string.Empty, resp);
             Assert.AreEqual(true, db.StringSet(key, value));
 
             //0,0
@@ -1771,11 +1789,17 @@ namespace Garnet.test
             var val = "myKeyValue";
             var expireTimeInMilliseconds = 3000;
 
+            var pttl = db.Execute("PTTL", key);
+            Assert.AreEqual(-2, (int)pttl);
+
             db.StringSet(key, val);
+            pttl = db.Execute("PTTL", key);
+            Assert.AreEqual(-1, (int)pttl);
+
             db.KeyExpire(key, TimeSpan.FromMilliseconds(expireTimeInMilliseconds));
 
             //check TTL of the key in milliseconds
-            var pttl = db.Execute("PTTL", key);
+            pttl = db.Execute("PTTL", key);
 
             Assert.IsTrue(long.TryParse(pttl.ToString(), out var pttlInMs));
             Assert.IsTrue(pttlInMs > 0);
