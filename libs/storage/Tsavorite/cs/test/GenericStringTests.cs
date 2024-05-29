@@ -60,7 +60,7 @@ namespace Tsavorite.test
             {
                 var _key = $"{i}";
                 var _value = $"{i}"; ;
-                session.Upsert(ref _key, ref _value, Empty.Default, 0);
+                session.Upsert(ref _key, ref _value, Empty.Default);
             }
             session.CompletePending(true);
             Assert.AreEqual(totalRecords, store.EntryCount);
@@ -72,7 +72,7 @@ namespace Tsavorite.test
                 var key = $"{i}";
                 var value = $"{i}";
 
-                var status = session.Read(ref key, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key, ref input, ref output, Empty.Default);
                 if (status.IsPending)
                 {
                     session.CompletePendingWithOutputs(out var outputs, wait: true);

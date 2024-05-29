@@ -20,7 +20,6 @@ namespace Tsavorite.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="tsavoriteSession">Callback functions.</param>
-        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -43,7 +42,7 @@ namespace Tsavorite.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalUpsert<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output,
-                            ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long lsn)
+                            ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
@@ -86,9 +85,6 @@ namespace Tsavorite.core
                             goto LatchRelease;
                         case LatchDestination.CreateNewRecord:
                             goto CreateNewRecord;
-                        case LatchDestination.CreatePendingContext:
-                            CreatePendingUpsertContext(ref key, ref input, ref value, output, userContext, ref pendingContext, tsavoriteSession, lsn, ref stackCtx);
-                            goto LatchRelease;
                         default:
                             Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
                             break;
@@ -152,7 +148,7 @@ namespace Tsavorite.core
                     // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                     Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
                     if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
-                        CreatePendingUpsertContext(ref key, ref input, ref value, output, userContext, ref pendingContext, tsavoriteSession, lsn, ref stackCtx);
+                        CreatePendingUpsertContext(ref key, ref input, ref value, output, userContext, ref pendingContext, tsavoriteSession, ref stackCtx);
                 }
                 goto LatchRelease;
             }
@@ -182,7 +178,7 @@ namespace Tsavorite.core
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalUpsert if the compiler decides not to inline this.
         private void CreatePendingUpsertContext<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Value value, Output output, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long lsn, ref OperationStackContext<Key, Value> stackCtx)
+                ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             pendingContext.type = OperationType.UPSERT;
@@ -199,8 +195,6 @@ namespace Tsavorite.core
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-            pendingContext.version = tsavoriteSession.Ctx.version;
-            pendingContext.serialNum = lsn;
         }
 
         private bool TryRevivifyInChain<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext,

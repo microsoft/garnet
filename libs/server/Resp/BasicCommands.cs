@@ -24,6 +24,9 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
                 return NetworkGET_SG(ptr, ref storageApi);
 
+            if (useAsync)
+                return NetworkGETAsync(ptr, ref storageApi);
+
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -57,6 +60,59 @@ namespace Garnet.server
                     break;
             }
 
+            return true;
+        }
+
+        /// <summary>
+        /// GET - async version
+        /// </summary>
+        bool NetworkGETAsync<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            byte* keyPtr = null;
+            int ksize = 0;
+
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            readHead = (int)(ptr - recvBufferPtr);
+
+            if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
+                return true;
+
+            keyPtr -= sizeof(int); // length header
+            *(int*)keyPtr = ksize;
+
+            // Optimistically ask storage to write output to network buffer
+            var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+
+            // Set up input to instruct storage to write output to IMemory rather than
+            // network buffer, if the operation goes pending.
+            var h = new RespInputHeader { cmd = RespCommand.ASYNC };
+            var input = SpanByte.FromPinnedStruct(&h);
+            var status = storageApi.GET_WithPending(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref o, asyncStarted, out bool pending);
+
+            if (pending)
+            {
+                NetworkGETPending(ref storageApi);
+            }
+            else
+            {
+                switch (status)
+                {
+                    case GarnetStatus.OK:
+                        if (!o.IsSpanByte)
+                            SendAndReset(o.Memory, o.Length);
+                        else
+                            dcurr += o.Length;
+                        break;
+                    case GarnetStatus.NOTFOUND:
+                        Debug.Assert(o.IsSpanByte);
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                }
+            }
             return true;
         }
 

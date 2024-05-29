@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
@@ -15,11 +14,6 @@ namespace Tsavorite.benchmark
 
         public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
-        }
-
-        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
-        {
-            Debug.WriteLine($"Session {sessionID} ({(sessionName ?? "null")}) reports persistence until {commitPoint.UntilSerialNo}");
         }
 
         // Read functions

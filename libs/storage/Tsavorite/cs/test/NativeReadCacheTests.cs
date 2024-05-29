@@ -46,7 +46,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default);
             }
             session.CompletePending(true);
 
@@ -60,7 +60,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
@@ -72,7 +72,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -88,7 +88,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
@@ -100,7 +100,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -111,13 +111,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
-
-                OutputStruct output = default;
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(value.vfield1, output.value.vfield1);
-                Assert.AreEqual(value.vfield2, output.value.vfield2);
+                session.Upsert(ref key1, ref value, Empty.Default);
             }
 
             // RMW to overwrite the read cache
@@ -126,7 +120,7 @@ namespace Tsavorite.test.ReadCacheTests
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
-                var status = session.RMW(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.RMW(ref key1, ref input, ref output, Empty.Default);
                 if (status.IsPending)
                 {
                     session.CompletePending(true);
@@ -136,12 +130,6 @@ namespace Tsavorite.test.ReadCacheTests
                     Assert.AreEqual(i + 1, output.value.vfield1);
                     Assert.AreEqual(i + 2, output.value.vfield2);
                 }
-
-                OutputStruct expectedOutput = output;
-                status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
-                Assert.IsTrue(status.Found);
-                Assert.AreEqual(expectedOutput.value.vfield1, output.value.vfield1);
-                Assert.AreEqual(expectedOutput.value.vfield2, output.value.vfield2);
             }
 
             // Read 100 keys
@@ -151,7 +139,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i + 1, vfield2 = i + 2 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -170,7 +158,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default);
             }
             session.CompletePending(true);
 
@@ -184,7 +172,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
@@ -196,7 +184,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);
@@ -212,7 +200,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
@@ -224,7 +212,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
                 Assert.AreEqual(value.vfield2, output.value.vfield2);

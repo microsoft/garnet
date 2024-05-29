@@ -124,6 +124,7 @@ namespace Garnet.server
         FAILOVER = 0x3C,
         ACL = 0x3D,
         HELLO = 0x3E,
+        ASYNC = 0x3F,
 
         // Custom commands
         CustomTxn = 0x29,
@@ -1118,6 +1119,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.REGISTERCS))
             {
                 return (RespCommand.REGISTERCS, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.ASYNC))
+            {
+                return (RespCommand.ASYNC, 0);
             }
             else
             {

@@ -84,7 +84,7 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
@@ -99,7 +99,7 @@ namespace Tsavorite.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, 0, 0);
+                var status = session.Read(ref key1, ref input, ref output, 0);
                 if (status.IsPending)
                 {
                     session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
@@ -131,7 +131,7 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             // Put fresh entries for 1000 records
@@ -139,7 +139,7 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             store.Log.Flush(true);
@@ -157,7 +157,7 @@ namespace Tsavorite.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, 0, 0);
+                var status = session.Read(ref key1, ref input, ref output, 0);
                 if (status.IsPending)
                     session.CompletePending(true);
                 else
@@ -186,13 +186,13 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
 
                 if (i % 8 == 0)
                 {
                     int j = i / 4;
                     key1 = new MyKey { key = j };
-                    session.Delete(ref key1, 0, 0);
+                    session.Delete(ref key1);
                 }
             }
 
@@ -209,7 +209,7 @@ namespace Tsavorite.test
 
                 int ctx = ((i < 500) && (i % 2 == 0)) ? 1 : 0;
 
-                var status = session.Read(ref key1, ref input, ref output, ctx, 0);
+                var status = session.Read(ref key1, ref input, ref output, ctx);
                 if (status.IsPending)
                     session.CompletePending(true);
                 else
@@ -245,7 +245,7 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
@@ -261,7 +261,7 @@ namespace Tsavorite.test
 
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
-                var status = session.Read(ref key1, ref input, ref output, ctx, 0);
+                var status = session.Read(ref key1, ref input, ref output, ctx);
                 if (status.IsPending)
                 {
                     session.CompletePending(true);
@@ -295,12 +295,12 @@ namespace Tsavorite.test
             var key = new MyKey { key = 100 };
             var value = new MyValue { value = 20 };
 
-            session.Upsert(ref key, ref value, 0, 0);
+            session.Upsert(ref key, ref value, 0);
 
             store.Log.Flush(true);
 
             value = new MyValue { value = 21 };
-            session.Upsert(ref key, ref value, 0, 0);
+            session.Upsert(ref key, ref value, 0);
 
             store.Log.Flush(true);
 
@@ -310,7 +310,7 @@ namespace Tsavorite.test
 
             var input = default(MyInput);
             var output = default(MyOutput);
-            var status = session.Read(ref key, ref input, ref output, 0, 0);
+            var status = session.Read(ref key, ref input, ref output);
             if (status.IsPending)
             {
                 session.CompletePendingWithOutputs(out var outputs, wait: true);

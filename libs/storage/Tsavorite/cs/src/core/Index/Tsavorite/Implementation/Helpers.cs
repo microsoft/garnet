@@ -12,7 +12,6 @@ namespace Tsavorite.core
         private enum LatchDestination
         {
             CreateNewRecord,
-            CreatePendingContext,
             NormalProcessing,
             Retry
         }

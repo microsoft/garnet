@@ -36,7 +36,7 @@ namespace Garnet.server
         /// Size of header
         /// </summary>
         public const int Size = 2;
-        internal const byte FlagMask = (byte)RespInputFlags.Deterministic - 1;
+        internal const byte FlagMask = (byte)RespInputFlags.SetGet - 1;
 
         [FieldOffset(0)]
         internal RespCommand cmd;
