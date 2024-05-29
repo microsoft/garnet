@@ -361,6 +361,11 @@ namespace Tsavorite.core
         internal void SetRecordInfo(ref RecordInfo recordInfo) => RecordInfo = recordInfo;
 
         /// <summary>
+        /// Whether the call is from sync or async (pending) path
+        /// </summary>
+        public bool IsFromPending { get; internal set; }
+
+        /// <summary>
         /// What actions Tsavorite should perform on a false return from the IFunctions method
         /// </summary>
         public ReadAction Action { get; set; }

@@ -73,6 +73,7 @@ namespace Tsavorite.core
                         {
                             Version = tsavoriteSession.Ctx.version,
                             Address = request.logicalAddress,
+                            IsFromPending = pendingContext.type != OperationType.NONE,
                         };
                         readInfo.SetRecordInfo(ref srcRecordInfo);
 
