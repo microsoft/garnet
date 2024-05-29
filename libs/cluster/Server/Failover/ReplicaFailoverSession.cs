@@ -122,7 +122,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                // Cachec connection for use with next operations
+                // Cache connection for use with next operations
                 primaryClient = client;
 
                 // Issue stop writes to the primary
