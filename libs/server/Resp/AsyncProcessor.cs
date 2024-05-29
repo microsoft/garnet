@@ -79,7 +79,7 @@ namespace Garnet.server
         async Task AsyncGetProcessor<TGarnetApi>(TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            while (true)
+            while (!asyncWaiterCancel.Token.IsCancellationRequested)
             {
                 while (asyncCompleted < asyncStarted)
                 {
@@ -137,9 +137,6 @@ namespace Garnet.server
                 // Wait for next async operation
                 // We do not need to cancel the wait - it should get garbage collected when the session ends
                 await asyncWaiter.WaitAsync();
-
-                if (asyncWaiterCancel.Token.IsCancellationRequested)
-                    break;
             }
         }
     }
