@@ -55,7 +55,6 @@ namespace Tsavorite.core
                     return true;
                 case OperationStatus.RETRY_LATER:
                     InternalRefresh<Input, Output, Context, TsavoriteSession>(tsavoriteSession);
-                    pendingContext.version = tsavoriteSession.Ctx.version;
                     Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:

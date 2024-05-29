@@ -18,7 +18,6 @@ namespace Tsavorite.core
         /// <param name="value">the value to insert</param>
         /// <param name="output">Location to store output computed from input and value.</param>
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
-        /// <param name="lsn">Operation serial number</param>
         /// <param name="stackCtx">Contains information about the call context, record metadata, and so on</param>
         /// <param name="writeReason">The reason the CopyToTail is being done</param>
         /// <param name="wantIO">Whether to do IO if the search must go below HeadAddress. ReadFromImmutable, for example,
@@ -27,7 +26,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private OperationStatus ConditionalCopyToTail<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
                 ref PendingContext<Input, Output, Context> pendingContext,
-                ref Key key, ref Input input, ref Value value, ref Output output, Context userContext, long lsn,
+                ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
                 ref OperationStackContext<Key, Value> stackCtx, WriteReason writeReason, bool wantIO = true)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
@@ -82,7 +81,7 @@ namespace Tsavorite.core
                         return OperationStatus.SUCCESS;
                 }
                 else if (needIO)
-                    return PrepareIOForConditionalOperation(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, userContext, lsn,
+                    return PrepareIOForConditionalOperation(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, userContext,
                                                       ref stackCtx2, minAddress, WriteReason.Compaction);
             }
         }
@@ -106,17 +105,17 @@ namespace Tsavorite.core
             while (tsavoriteSession.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(status, tsavoriteSession));
 
             if (needIO)
-                status = PrepareIOForConditionalOperation(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, default, 0L,
+                status = PrepareIOForConditionalOperation(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, default,
                                                     ref stackCtx, minAddress, WriteReason.Compaction);
             else
-                status = ConditionalCopyToTail(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, default, 0L, ref stackCtx, WriteReason.Compaction);
+                status = ConditionalCopyToTail(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, default, ref stackCtx, WriteReason.Compaction);
             return HandleOperationStatus(tsavoriteSession.Ctx, ref pendingContext, status, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus PrepareIOForConditionalOperation<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
                                         ref PendingContext<Input, Output, Context> pendingContext,
-                                        ref Key key, ref Input input, ref Value value, ref Output output, Context userContext, long lsn,
+                                        ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
                                         ref OperationStackContext<Key, Value> stackCtx, long minAddress, WriteReason writeReason, OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
@@ -139,8 +138,6 @@ namespace Tsavorite.core
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
-            pendingContext.version = tsavoriteSession.Ctx.version;
-            pendingContext.serialNum = lsn;
 
             return OperationStatus.RECORD_ON_DISK;
         }

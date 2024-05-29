@@ -208,9 +208,9 @@ namespace Tsavorite.test.readaddress
 
                     var status = useRMW
                         ? useAsync
-                            ? (await session.RMWAsync(ref key, ref value, serialNo: lap)).Complete().status
-                            : session.RMW(ref key, ref value, serialNo: lap)
-                        : session.Upsert(ref key, ref value, serialNo: lap);
+                            ? (await session.RMWAsync(ref key, ref value)).Complete().status
+                            : session.RMW(ref key, ref value)
+                        : session.Upsert(ref key, ref value);
 
                     if (status.IsPending)
                         await session.CompletePendingAsync();
@@ -220,7 +220,7 @@ namespace Tsavorite.test.readaddress
 
                     // Illustrate that deleted records can be shown as well (unless overwritten by in-place operations, which are not done here)
                     if (lap == deleteLap)
-                        session.Delete(ref key, serialNo: lap);
+                        session.Delete(ref key);
                 }
 
                 await Flush();
@@ -292,8 +292,8 @@ namespace Tsavorite.test.readaddress
                 {
                     // We need a non-AtAddress read to start the loop of returning the previous address to read at.
                     var status = readAtAddress == 0
-                        ? session.Read(ref key, ref input, ref output, ref readOptions, out _, serialNo: maxLap + 1)
-                        : session.ReadAtAddress(readAtAddress, ref key, ref input, ref output, ref readOptions, out _, serialNo: maxLap + 1);
+                        ? session.Read(ref key, ref input, ref output, ref readOptions, out _)
+                        : session.ReadAtAddress(readAtAddress, ref key, ref input, ref output, ref readOptions, out _);
 
                     if (status.IsPending)
                     {
@@ -403,8 +403,8 @@ namespace Tsavorite.test.readaddress
                 {
                     // We need a non-AtAddress read to start the loop of returning the previous address to read at.
                     var readAsyncResult = readAtAddress == 0
-                        ? await session.ReadAsync(ref key, ref input, ref readOptions, default, serialNo: maxLap + 1)
-                        : await session.ReadAtAddressAsync(readAtAddress, ref key, ref input, ref readOptions, default, serialNo: maxLap + 1);
+                        ? await session.ReadAsync(ref key, ref input, ref readOptions, default)
+                        : await session.ReadAtAddressAsync(readAtAddress, ref key, ref input, ref readOptions, default);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
@@ -443,8 +443,8 @@ namespace Tsavorite.test.readaddress
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
                     var status = readAtAddress == 0
-                        ? session.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata, serialNo: maxLap + 1)
-                        : session.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata, serialNo: maxLap + 1);
+                        ? session.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata)
+                        : session.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
                     if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
@@ -487,8 +487,8 @@ namespace Tsavorite.test.readaddress
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
                     var readAsyncResult = readAtAddress == 0
-                        ? await session.ReadAsync(ref key, ref input, ref readOptions, default, serialNo: maxLap + 1)
-                        : await session.ReadAtAddressAsync(readAtAddress, ref input, ref readOptions, default, serialNo: maxLap + 1);
+                        ? await session.ReadAsync(ref key, ref input, ref readOptions, default)
+                        : await session.ReadAtAddressAsync(readAtAddress, ref input, ref readOptions, default);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
@@ -526,8 +526,8 @@ namespace Tsavorite.test.readaddress
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
                     var readAsyncResult = readAtAddress == 0
-                        ? await session.ReadAsync(ref key, ref input, ref readOptions, default, serialNo: maxLap + 1)
-                        : await session.ReadAtAddressAsync(readAtAddress, ref input, ref readOptions, default, serialNo: maxLap + 1);
+                        ? await session.ReadAsync(ref key, ref input, ref readOptions, default)
+                        : await session.ReadAtAddressAsync(readAtAddress, ref input, ref readOptions, default);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
@@ -568,7 +568,7 @@ namespace Tsavorite.test.readaddress
                     {
                         CopyOptions = session.functions.readCopyOptions
                     };
-                    var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, ref readOptions, out RecordMetadata recordMetadata, serialNo: maxLap + 1);
+                    var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, ref readOptions, out RecordMetadata recordMetadata);
                     if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
@@ -615,7 +615,7 @@ namespace Tsavorite.test.readaddress
                         CopyOptions = session.functions.readCopyOptions
                     };
 
-                    var readAsyncResult = await session.ReadAtAddressAsync(testStore.InsertAddresses[keyOrdinal], ref input, ref readOptions, default, serialNo: maxLap + 1);
+                    var readAsyncResult = await session.ReadAtAddressAsync(testStore.InsertAddresses[keyOrdinal], ref input, ref readOptions, default);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                     TestStore.ProcessNoKeyRecord(updateOp == UpdateOp.RMW, status, recordMetadata.RecordInfo, ref output, keyOrdinal);

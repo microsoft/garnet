@@ -105,7 +105,7 @@ namespace Tsavorite.core
                         {
                             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
                                 status = ConditionalCopyToTail(tsavoriteSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref pendingContext.output,
-                                                               pendingContext.userContext, pendingContext.serialNum, ref stackCtx, WriteReason.CopyToTail);
+                                                               pendingContext.userContext, ref stackCtx, WriteReason.CopyToTail);
                             else if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache && !stackCtx.recSrc.HasReadCacheSrc
                                     && TryCopyToReadCache(tsavoriteSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref value, ref stackCtx))
                                 status |= OperationStatus.COPIED_RECORD_TO_READ_CACHE;
@@ -219,7 +219,7 @@ namespace Tsavorite.core
             // Unfortunately, InternalRMW will go through the lookup process again. But we're only here in the case another record was added or we went below
             // HeadAddress, and this should be rare.
             do
-                status = InternalRMW(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, tsavoriteSession, pendingContext.serialNum);
+                status = InternalRMW(ref key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, tsavoriteSession);
             while (HandleImmediateRetryStatus(status, tsavoriteSession, ref pendingContext));
             return status;
         }
@@ -271,9 +271,9 @@ namespace Tsavorite.core
                     // HeadAddress may have risen above minAddress; if so, we need IO.
                     internalStatus = needIO
                         ? PrepareIOForConditionalOperation(tsavoriteSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),
-                                                            ref pendingContext.output, pendingContext.userContext, pendingContext.serialNum, ref stackCtx, minAddress, WriteReason.Compaction)
+                                                            ref pendingContext.output, pendingContext.userContext, ref stackCtx, minAddress, WriteReason.Compaction)
                         : ConditionalCopyToTail(tsavoriteSession, ref pendingContext, ref key, ref pendingContext.input.Get(), ref pendingContext.value.Get(),
-                                                            ref pendingContext.output, pendingContext.userContext, pendingContext.serialNum, ref stackCtx, pendingContext.writeReason);
+                                                            ref pendingContext.output, pendingContext.userContext, ref stackCtx, pendingContext.writeReason);
                 }
             }
             while (tsavoriteSession.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(internalStatus, tsavoriteSession));

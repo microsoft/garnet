@@ -100,7 +100,7 @@ namespace Tsavorite.test.recovery.objects
             {
                 var _key = new MyKey { key = i, name = i.ToString() };
                 var value = new MyValue { value = i.ToString() };
-                session.Upsert(ref _key, ref value, context, 0);
+                session.Upsert(ref _key, ref value, context);
 
                 if (i % 100 == 0)
                 {
@@ -117,7 +117,7 @@ namespace Tsavorite.test.recovery.objects
                 MyKey key = new() { key = i, name = i.ToString() };
                 MyInput input = default;
                 MyOutput g1 = new();
-                var status = session.Read(ref key, ref input, ref g1, context, 0);
+                var status = session.Read(ref key, ref input, ref g1, context);
 
                 if (status.IsPending)
                 {
@@ -134,8 +134,8 @@ namespace Tsavorite.test.recovery.objects
                 MyKey key = new() { key = 1, name = "1" };
                 MyInput input = default;
                 MyOutput output = new();
-                session.Delete(ref key, context, 0);
-                var status = session.Read(ref key, ref input, ref output, context, 0);
+                session.Delete(ref key, context);
+                var status = session.Read(ref key, ref input, ref output, context);
 
                 if (status.IsPending)
                 {

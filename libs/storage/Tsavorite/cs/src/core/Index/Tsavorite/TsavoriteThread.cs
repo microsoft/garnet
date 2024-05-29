@@ -10,56 +10,6 @@ namespace Tsavorite.core
 {
     public partial class TsavoriteKV<Key, Value> : TsavoriteBase
     {
-        internal (string, CommitPoint) InternalContinue<Input, Output, Context>(int sessionID, out TsavoriteExecutionContext<Input, Output, Context> ctx)
-        {
-            ctx = null;
-
-            if (_recoveredSessions != null)
-            {
-                if (_recoveredSessions.TryGetValue(sessionID, out _))
-                {
-                    // We have recovered the corresponding session. 
-                    // Now obtain the session by first locking the rest phase
-                    var currentState = SystemState.Copy(ref systemState);
-                    if (currentState.Phase == Phase.REST)
-                    {
-                        var intermediateState = SystemState.MakeIntermediate(currentState);
-                        if (MakeTransition(currentState, intermediateState))
-                        {
-                            // No one can change from REST phase
-                            if (_recoveredSessions.TryRemove(sessionID, out var cp))
-                            {
-                                // We have atomically removed session details. 
-                                // No one else can continue this session
-                                ctx = new TsavoriteExecutionContext<Input, Output, Context>();
-                                InitContext(ctx, sessionID, cp.Item1);
-                                ctx.prevCtx = new TsavoriteExecutionContext<Input, Output, Context>();
-                                InitContext(ctx.prevCtx, sessionID, cp.Item1);
-                                ctx.prevCtx.version--;
-                                ctx.serialNum = cp.Item2.UntilSerialNo;
-                            }
-                            else
-                            {
-                                // Someone else continued this session
-                                cp = ((string)null, new CommitPoint { UntilSerialNo = -1 });
-                                Debug.WriteLine("Session already continued by another thread!");
-                            }
-
-                            MakeTransition(intermediateState, currentState);
-                            return cp;
-                        }
-                    }
-
-                    // Need to try again when in REST
-                    Debug.WriteLine("Can continue only in REST phase");
-                    return (null, new CommitPoint { UntilSerialNo = -1 });
-                }
-            }
-
-            Debug.WriteLine("No recovered sessions!");
-            return (null, new CommitPoint { UntilSerialNo = -1 });
-        }
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRefresh<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
@@ -105,7 +55,7 @@ namespace Tsavorite.core
             }
         }
 
-        internal static void InitContext<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName, long lsn = -1)
+        internal static void InitContext<Input, Output, Context>(TsavoriteExecutionContext<Input, Output, Context> ctx, int sessionID, string sessionName)
         {
             ctx.phase = Phase.REST;
             // The system version starts at 1. Because we do not know what the current state machine state is,
@@ -113,7 +63,6 @@ namespace Tsavorite.core
             // never "catch up" with the rest of the system when stepping through the state machine as it is ahead.
             ctx.version = 1;
             ctx.markers = new bool[8];
-            ctx.serialNum = lsn;
             ctx.sessionID = sessionID;
             ctx.sessionName = sessionName;
 
@@ -131,14 +80,7 @@ namespace Tsavorite.core
             dst.version = src.version;
             dst.threadStateMachine = src.threadStateMachine;
             dst.markers = src.markers;
-            dst.serialNum = src.serialNum;
             dst.sessionName = src.sessionName;
-            dst.excludedSerialNos = new List<long>();
-
-            foreach (var v in src.ioPendingRequests.Values)
-            {
-                dst.excludedSerialNos.Add(v.serialNum);
-            }
         }
 
         internal bool InternalCompletePending<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, bool wait = false,
