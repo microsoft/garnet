@@ -1767,10 +1767,16 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterSlots");
+                logger?.LogError(ex, "An error has occurred; ClusterSlots");
                 Assert.Fail(ex.Message);
                 return null;
             }
+        }
+
+        public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, ILogger logger = null)
+        {
+            var primaryId = ClusterMyId(primaryNodeIndex, logger: logger);
+            return ClusterReplicate(replicaNodeIndex, primaryId, logger: logger);
         }
 
         public string ClusterReplicate(int sourceNodeIndex, string primaryNodeId, bool async = false, bool failEx = true, ILogger logger = null)

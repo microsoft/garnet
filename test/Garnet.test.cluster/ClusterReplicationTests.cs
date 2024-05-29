@@ -1007,5 +1007,59 @@ namespace Garnet.test.cluster
             else
                 context.ValidateNodeObjects(ref context.kvPairsObj, nodeIndex: newPrimaryIndex, set: set);
         }
+
+        [Test, Order(21)]
+        [Category("REPLICATION")]
+        public void ClusterMultipleConsecutiveFailoversTest()
+        {
+            context.CreateInstances(2, tryRecover: true, disableObjects: true, enableAOF: true, useTLS: useTLS);
+            context.CreateConnection(useTLS: useTLS);
+
+            context.clusterTestUtils.SetConfigEpoch(0, 1, logger: context.logger);
+            var resp = context.clusterTestUtils.AddSlotsRange(0, [(0, 16383)], logger: context.logger);
+            Assert.AreEqual("OK", resp);
+
+            var keyLength = 32;
+            var kvpairCount = keyCount;
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
+
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var iterations = 10;
+            while (iterations-- > 0)
+            {
+                // Introduce nodes
+                context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+                context.clusterTestUtils.WaitUntilNodeIsKnown(replicaIndex, primaryIndex, logger: context.logger);
+
+                // Attach replica
+                resp = context.clusterTestUtils.ClusterReplicate(replicaIndex, primaryIndex, logger: context.logger);
+                Assert.AreEqual("OK", resp);
+
+                context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex);
+                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, primaryIndex);
+                context.nodes[primaryIndex].Dispose(deleteDir: true);
+
+                resp = context.clusterTestUtils.ClusterFailover(replicaIndex, "TAKEOVER", logger: context.logger);
+                Assert.AreEqual("OK", resp);
+
+                // Restart failed node
+                context.nodes[primaryIndex] = context.CreateInstance(
+                    context.clusterTestUtils.GetEndPoint(primaryIndex).Port,
+                    disableObjects: true,
+                    tryRecover: false,
+                    enableAOF: true,
+                    timeout: timeout,
+                    useTLS: useTLS,
+                    cleanClusterConfig: true);
+                context.nodes[primaryIndex].Start();
+                context.CreateConnection(useTLS: useTLS);
+
+                // Swap indices
+                (replicaIndex, primaryIndex) = (primaryIndex, replicaIndex);
+            }
+
+        }
     }
 }
