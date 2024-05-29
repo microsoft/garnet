@@ -33,11 +33,29 @@ namespace Garnet.server.TLS
         readonly string CertSubjectName;
         readonly int CertificateRefreshFrequency;
 
+        /// <summary>
+        /// Whether server requires a valid client certificate
+        /// </summary>
         readonly bool ClientCertificateRequired;
-        readonly bool ValidateClusterCertificate;
+
+        /// <summary>
+        /// Whether client requires a valid server certificate
+        /// </summary>
+        readonly bool ServerCertificateRequired;
+
+        /// <summary>
+        /// Certificate revocation mode (shared by client and server)
+        /// </summary>
         readonly X509RevocationMode CertificateRevocationCheckMode;
 
-        string ClusterTlsClientTargetHost;
+        /// <summary>
+        /// Target (server) host name used by the client
+        /// </summary>
+        string ClientTargetHost;
+
+        /// <summary>
+        /// Issuer certificate path
+        /// </summary>
         string IssuerCertificatePath = string.Empty;
 
         ServerCertificateSelector serverCertificateSelector;
@@ -52,8 +70,8 @@ namespace Garnet.server.TLS
             bool clientCertificateRequired, X509RevocationMode certificateRevocationCheckMode, string issuerCertificatePath,
             string certSubjectName, int certificateRefreshFrequency,
             bool enableCluster,
-            string clusterTlsClientTargetHost,
-            bool validateClusterCertificate = false,
+            string clientTargetHost,
+            bool serverCertificateRequired = false,
             SslServerAuthenticationOptions tlsServerOptionsOverride = null,
             SslClientAuthenticationOptions clusterTlsClientOptionsOverride = null,
             ILogger logger = null)
@@ -65,8 +83,8 @@ namespace Garnet.server.TLS
             this.CertSubjectName = certSubjectName;
             this.CertificateRefreshFrequency = certificateRefreshFrequency;
 
-            this.ValidateClusterCertificate = validateClusterCertificate;
-            this.ClusterTlsClientTargetHost = clusterTlsClientTargetHost;
+            this.ServerCertificateRequired = serverCertificateRequired;
+            this.ClientTargetHost = clientTargetHost;
             this.IssuerCertificatePath = issuerCertificatePath;
 
             this.logger = logger;
@@ -125,7 +143,7 @@ namespace Garnet.server.TLS
             if (CertificateRefreshFrequency < 0)
             {
                 logger?.LogError("CertificateRefreshFrequency should not be less than 0.");
-                throw new Exception("CertificateRefreshFrequency should not be less than 0.");
+                throw new GarnetException("CertificateRefreshFrequency should not be less than 0.");
             }
 
             // End timer associated with old certificate selector, if any
@@ -151,11 +169,17 @@ namespace Garnet.server.TLS
 
         SslClientAuthenticationOptions GetSslClientAuthenticationOptions()
         {
+            if (ServerCertificateRequired && string.IsNullOrEmpty(ClientTargetHost))
+            {
+                logger?.LogError("ClientTargetHost should be provided when ServerCertificateRequired is enabled");
+                throw new GarnetException("ClientTargetHost should be provided when ServerCertificateRequired is enabled");
+            }
             return new SslClientAuthenticationOptions
             {
-                TargetHost = ClusterTlsClientTargetHost,
+                TargetHost = ClientTargetHost,
                 AllowRenegotiation = false,
-                RemoteCertificateValidationCallback = ValidateServerCertificateCallback(ClusterTlsClientTargetHost, IssuerCertificatePath),
+                CertificateRevocationCheckMode = CertificateRevocationCheckMode,
+                RemoteCertificateValidationCallback = ValidateServerCertificateCallback(ClientTargetHost, IssuerCertificatePath),
                 // We use the same server certificate selector for the server's own client as well
                 LocalCertificateSelectionCallback = (object sender, string targetHost, X509CertificateCollection localCertificates, X509Certificate remoteCertificate, string[] acceptableIssuers) =>
                 {
@@ -171,10 +195,11 @@ namespace Garnet.server.TLS
         /// <returns></returns>
         RemoteCertificateValidationCallback ValidateServerCertificateCallback(string targetHostName, string issuerCertificatePath)
         {
-            if (!ValidateClusterCertificate)
+            if (!ServerCertificateRequired)
             {
-                logger?.LogWarning("Server certificate validation is disabled. Remote certificate validation will always succeed.");
-                return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors) => true;
+                logger?.LogWarning("ServerCertificateRequired is false. Remote certificate validation will always succeed.");
+                return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)
+                    => true;
             }
             var issuer = GetCertificateIssuer(issuerCertificatePath);
             return (object _, X509Certificate certificate, X509Chain __, SslPolicyErrors sslPolicyErrors)

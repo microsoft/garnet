@@ -460,8 +460,8 @@ namespace Garnet.test
                     certSubjectName: null,
                     certificateRefreshFrequency: 0,
                     enableCluster: true,
-                    clusterTlsClientTargetHost: null,
-                    validateClusterCertificate: true,
+                    clientTargetHost: null,
+                    serverCertificateRequired: true,
                     tlsServerOptionsOverride: null,
                     clusterTlsClientOptionsOverride: new SslClientAuthenticationOptions
                     {

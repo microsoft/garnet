@@ -224,8 +224,9 @@ namespace Garnet
         [Option("cluster-tls-client-target-host", Required = false, HelpText = "Name for the client target host when using TLS connections in cluster mode.")]
         public string ClusterTlsClientTargetHost { get; set; }
 
-        [Option("validate-cluster-certificate", Required = false, HelpText = "whether to validate the server cluster certificate - for example - during gossip - or bypass this check. Should be default but needed for backward compatibility for users who may not be using this validation.")]
-        public bool? ValidateClusterCertificate { get; set; }
+        [OptionValidation]
+        [Option("server-certificate-required", Required = false, HelpText = "Whether server TLS certificate is required by clients on the server side, e.g., for cluster gossip and replication.")]
+        public bool? ServerCertificateRequired { get; set; }
 
         [OptionValidation]
         [Option("tls", Required = false, HelpText = "Enable TLS.")]
@@ -246,7 +247,7 @@ namespace Garnet
         public int CertificateRefreshFrequency { get; set; }
 
         [OptionValidation]
-        [Option("client-certificate-required", Required = false, HelpText = "Whether TLS client certificate required.")]
+        [Option("client-certificate-required", Required = false, HelpText = "Whether client TLS certificate is required by the server.")]
         public bool? ClientCertificateRequired { get; set; }
 
         [Option("certificate-revocation-check-mode", Required = false, HelpText = "Certificate revocation check mode for certificate validation (NoCheck, Online, Offline).")]
@@ -583,7 +584,7 @@ namespace Garnet
                     CertificateRefreshFrequency,
                     EnableCluster.GetValueOrDefault(),
                     ClusterTlsClientTargetHost,
-                    ValidateClusterCertificate.GetValueOrDefault(),
+                    ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
                 MetricsSamplingFrequency = MetricsSamplingFrequency,
