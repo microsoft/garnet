@@ -90,12 +90,6 @@ namespace Tsavorite.core
                         store._activeSessions.Remove(key);
                 }
             }
-
-            // Make sure previous recoverable sessions are re-checkpointed
-            foreach (var item in store.RecoverableSessions)
-            {
-                store._hybridLogCheckpoint.info.checkpointTokens.TryAdd(item.Item1, (item.Item2, item.Item3));
-            }
         }
 
         /// <inheritdoc />
@@ -114,20 +108,15 @@ namespace Tsavorite.core
             CancellationToken token = default)
             where TsavoriteSession : ITsavoriteSession
         {
-            if (current.Phase != Phase.PERSISTENCE_CALLBACK) return;
-
-            if (ctx is not null)
-            {
-                if (!ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
-                {
-                    TsavoriteKV<Key, Value>.IssueCompletionCallback(ctx, storeSession);
-                    ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
-                }
-            }
+            if (current.Phase != Phase.PERSISTENCE_CALLBACK)
+                return;
 
             store.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
             if (store.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
+            {
+                // TODO: store.CheckpointCompletionCallback();
                 store.GlobalStateMachineStep(current);
+            }
         }
     }
 

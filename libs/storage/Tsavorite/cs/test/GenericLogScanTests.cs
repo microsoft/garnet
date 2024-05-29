@@ -109,7 +109,7 @@ namespace Tsavorite.test
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                session.Upsert(ref _key, ref _value, Empty.Default, 0);
+                session.Upsert(ref _key, ref _value, Empty.Default);
                 if (i % 100 == 0)
                     store.Log.FlushAndEvict(true);
             }
@@ -189,7 +189,7 @@ namespace Tsavorite.test
                 }
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref value, Empty.Default);
             }
 
             using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress);

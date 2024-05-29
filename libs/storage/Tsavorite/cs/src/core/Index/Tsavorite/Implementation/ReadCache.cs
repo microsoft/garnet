@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Threading;
 using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
@@ -103,62 +102,9 @@ namespace Tsavorite.core
                         $"{nameof(VerifyInMemoryAddresses)} should have ensured LowestReadCacheLogicalAddress ({stackCtx.recSrc.LowestReadCacheLogicalAddress}) >= readcache.ClosedUntilAddress ({readcache.ClosedUntilAddress})");
 
             // If the LockTable is enabled, then we either have an exclusive lock and thus cannot have a competing insert to the readcache, or we are doing a
-            // Read() so we allow a momentary overlap of records because they're the same value (no update is being done). Otherwise, we must do a more expensive
-            // detach-and-restore operation.
-            if (LockTable.IsEnabled)
-            {
-                ref RecordInfo rcri = ref readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
-                return rcri.TryUpdateAddress(stackCtx.recSrc.LatestLogicalAddress, newLogicalAddress);
-            }
-            return DetachAndReattachReadCacheChain(ref key, ref stackCtx, newLogicalAddress);
-        }
-
-        private bool DetachAndReattachReadCacheChain(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long newLogicalAddress)
-        {
-            // We are not doing LockTable-based locking, so the only place non-ReadCacheEvict codes updates the chain membership is at the HashBucketEntry;
-            // no thread will try to splice at the readcache/log boundary. hei.Address is the highest readcache address.
-            long highestRcAddress = stackCtx.hei.Address, lowestRcAddress = highestRcAddress;
-            Debug.Assert(IsReadCache(highestRcAddress), "Expected highestRcAddress to be .ReadCache");
-
-            // First detach the chain by CAS'ing in the new log record (whose .PreviousAddress = recSrc.LatestLogicalAddress).
-            if (!stackCtx.hei.TryCAS(newLogicalAddress))
-                return false;
-            if (AbsoluteAddress(highestRcAddress) < readcache.HeadAddress)
-                goto Success;
-
-            // Traverse from highestRcAddress to the splice point, invalidating any record matching the key.
-            for (bool foundKey = false; /* tested in loop */; /* incremented in loop */)
-            {
-                var physicalAddress = readcache.GetPhysicalAddress(AbsoluteAddress(lowestRcAddress));
-                ref RecordInfo recordInfo = ref readcache.GetInfo(physicalAddress);
-                if (!foundKey && !recordInfo.Invalid && comparer.Equals(ref key, ref readcache.GetKey(physicalAddress)))
-                {
-                    foundKey = true;
-                    recordInfo.SetInvalidAtomic();      // Atomic needed due to other threads (e.g. ReadCacheEvict) possibly being in this chain before we detached it.
-                }
-
-                // See if we're at the last entry in the readcache prefix.
-                if (!IsReadCache(recordInfo.PreviousAddress) || AbsoluteAddress(recordInfo.PreviousAddress) < readcache.HeadAddress)
-                {
-                    // Splice the new recordInfo into the local chain. Use atomic due to other threads (e.g. ReadCacheEvict) possibly being in this
-                    // before we detached it, and setting the record to Invalid (no other thread will be updating anything else in the chain, though;
-                    // we own the chain by virtue of the CAS above, and nobody else can change recordInfo.PreviousAddress).
-                    while (!recordInfo.TryUpdateAddress(recordInfo.PreviousAddress, newLogicalAddress))
-                        Thread.Yield();
-
-                    // Now try to CAS the chain into the HashBucketEntry. Ignore the result; if it fails, we just lose these readcache records.
-                    // Conflict handling would require evaluating whether other threads had inserted keys in our chain, and it's too rare to worry about.
-                    // We have ensured all records in this readcache prefix chain are >= readcache.HeadAddress, so even if readcache.HeadAddress changes,
-                    // ReadCacheEvict will not be called for any records in this readcache prefix chain until we return from here and release the epoch.
-                    stackCtx.hei.TryCAS(highestRcAddress);
-                    goto Success;
-                }
-                lowestRcAddress = recordInfo.PreviousAddress;
-            }
-
-        Success:
-            stackCtx.UpdateRecordSourceToCurrentHashEntry(hlog);
-            return true;
+            // Read() so we allow a momentary overlap of records because they're the same value (no update is being done).
+            ref RecordInfo rcri = ref readcache.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
+            return rcri.TryUpdateAddress(stackCtx.recSrc.LatestLogicalAddress, newLogicalAddress);
         }
 
         // Skip over all readcache records in this key's chain, advancing stackCtx.recSrc to the first non-readcache record we encounter.
@@ -257,13 +203,7 @@ namespace Tsavorite.core
         }
 
         // Called to check if another session added a readcache entry from a pending read while we were inserting a record at the tail of the log.
-        // If so, then it must be invalidated, and its *read* locks must be transferred to the new record. Why not X locks?
-        //      - There can be only one X lock so we optimize its handling in CompleteUpdate, rather than transfer them like S locks (because there
-        //        can be multiple S locks).
-        //      - The thread calling this has "won the CAS" if it has gotten this far; that is, it has CAS'd in a new record at the tail of the log
-        //        (or spliced it at the end of the readcache prefix chain).
-        //          - It is still holding its "tentative" X lock on the newly-inserted log-tail record while calling this.
-        //          - If there is another thread holding an X lock on this readcache record, it will fail its CAS, give up its X lock, and RETRY_LATER.
+        // If so, the new readcache record must be invalidated.
         // Note: The caller will do no epoch-refreshing operations after re-verifying the readcache chain following record allocation, so it is not
         // possible for the chain to be disrupted and the new insertion lost, even if readcache.HeadAddress is raised above hei.Address.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

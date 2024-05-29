@@ -559,7 +559,7 @@ namespace Tsavorite.test.Expiration
                     valueSpan[j] = GetValue(i);
                 var valueSpanByte = valueSpan.AsSpanByte();
 
-                session.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default, 0);
+                session.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
         }
 
@@ -570,7 +570,7 @@ namespace Tsavorite.test.Expiration
             var keySpanByte = keySpan.AsSpanByte();
             ExpirationOutput output = new();
 
-            var status = session.Read(ref keySpanByte, ref output, Empty.Default, 0);
+            var status = session.Read(ref keySpanByte, ref output, Empty.Default);
             if (status.IsPending)
             {
                 Assert.AreNotEqual(FlushMode.NoFlush, flushMode);

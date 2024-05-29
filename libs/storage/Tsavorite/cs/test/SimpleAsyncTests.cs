@@ -68,7 +68,7 @@ namespace Tsavorite.test.async
             }
         }
 
-        // Test that does .ReadAsync with minimum parameters but no default (ref key, userContext, serialNo, token)
+        // Test that does .ReadAsync with minimum parameters but no default (ref key, userContext, token)
         [Test]
         [Category("TsavoriteKV")]
         public async Task ReadAsyncMinParamTestNoDefaultTest()
@@ -84,7 +84,7 @@ namespace Tsavorite.test.async
 
             for (long key = 0; key < numOps; key++)
             {
-                var (status, output) = (await s1.ReadAsync(ref key, Empty.Default, 99, cancellationToken)).Complete();
+                var (status, output) = (await s1.ReadAsync(ref key, Empty.Default, cancellationToken)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
@@ -105,7 +105,7 @@ namespace Tsavorite.test.async
 
             for (long key = 0; key < numOps; key++)
             {
-                var (status, output) = (await s1.ReadAsync(key, Empty.Default, 99)).Complete();
+                var (status, output) = (await s1.ReadAsync(key, Empty.Default)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
@@ -177,7 +177,7 @@ namespace Tsavorite.test.async
             (await t1).Complete();
             (await t2).Complete(); // should trigger RMW re-do
 
-            (status, output) = (await s1.ReadAsync(key, output, Empty.Default, 129)).Complete();
+            (status, output) = (await s1.ReadAsync(key, output, Empty.Default)).Complete();
             Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
@@ -249,7 +249,7 @@ namespace Tsavorite.test.async
         }
 
         // Test that uses StartAddress parameter
-        // (ref key, ref input, StartAddress,  userContext, serialNo, CancellationToken)
+        // (ref key, ref input, StartAddress,  userContext, CancellationToken)
         [Test]
         [Category("TsavoriteKV")]
         public async Task AsyncStartAddressParamTest()
@@ -295,7 +295,7 @@ namespace Tsavorite.test.async
             addresses[key] = store.Log.TailAddress - recordSize;
 
             readOptions = default;
-            (status, output) = (await s1.ReadAtAddressAsync(addresses[key], ref key, ref output, ref readOptions, Empty.Default, 129)).Complete();
+            (status, output) = (await s1.ReadAtAddressAsync(addresses[key], ref key, ref output, ref readOptions, Empty.Default)).Complete();
             Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }

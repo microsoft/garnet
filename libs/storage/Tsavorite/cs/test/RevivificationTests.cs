@@ -249,7 +249,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void SimpleFixedLenTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -289,7 +289,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void UnelideTest([Values] RecordElision elision, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -333,7 +333,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "revivifiableFraction and concurrencyControlMode are used by Setup")]
         public void SimpleMinAddressAddTest([Values] RevivifiableFraction revivifiableFraction,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -351,7 +351,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "revivifiableFraction and concurrencyControlMode are used by Setup")]
         public void SimpleMinAddressTakeTest([Values] RevivifiableFraction revivifiableFraction, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -698,7 +698,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void SpanByteNoRevivLengthTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values] Growth growth,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -767,7 +767,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void SpanByteSimpleTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -810,7 +810,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void SpanByteIPUGrowAndRevivifyTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -887,7 +887,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void SpanByteReadOnlyMinAddressTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -1073,7 +1073,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void SimpleRevivifyTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -1120,7 +1120,7 @@ namespace Tsavorite.test.Revivification
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void DeleteEntireChainAndRevivifyTest([Values(CollisionRange.Ten)] CollisionRange collisionRange,
                                                      [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                                                     [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                                                     [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -1178,7 +1178,7 @@ namespace Tsavorite.test.Revivification
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void DeleteAllRecordsAndRevivifyTest([Values(CollisionRange.None)] CollisionRange collisionRange,
                                                     [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                                                    [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                                                    [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -1251,7 +1251,7 @@ namespace Tsavorite.test.Revivification
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
-        public void DeleteAllRecordsAndTakeSnapshotTest([Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+        public void DeleteAllRecordsAndTakeSnapshotTest([Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -1276,7 +1276,7 @@ namespace Tsavorite.test.Revivification
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
-        public void DeleteAllRecordsAndIterateTest([Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+        public void DeleteAllRecordsAndIterateTest([Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -1305,7 +1305,7 @@ namespace Tsavorite.test.Revivification
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
-        public void BinSelectionTest([Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+        public void BinSelectionTest([Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             FreeRecordPool<SpanByte, SpanByte> pool = store.RevivificationManager.FreeRecordPool;
             int expectedBin = 0, recordSize = RevivificationTestUtils.GetMaxRecordSize(pool, expectedBin);
@@ -1333,7 +1333,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         //[Repeat(30)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
-        public unsafe void ArtificialBinWrappingTest([Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+        public unsafe void ArtificialBinWrappingTest([Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             FreeRecordPool<SpanByte, SpanByte> pool = store.RevivificationManager.FreeRecordPool;
 
@@ -1385,7 +1385,7 @@ namespace Tsavorite.test.Revivification
         //[Repeat(3000)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public unsafe void LiveBinWrappingTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values] WaitMode waitMode, [Values] DeleteDest deleteDest,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
@@ -1474,7 +1474,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void LiveBinWrappingNoRevivTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp, [Values(RevivificationEnabled.NoReviv)] RevivificationEnabled revivEnabled,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             // For a comparison to the reviv version above.
             Populate();
@@ -1521,7 +1521,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void SimpleOversizeRevivifyTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -1582,7 +1582,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void SimplePendingOpsRevivifyTest([Values(CollisionRange.None)] CollisionRange collisionRange, [Values] PendingOp pendingOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             byte delAboveRO = numRecords - 2;   // Will be sent to free list
             byte targetRO = numRecords / 2 - 15;
@@ -1713,7 +1713,7 @@ namespace Tsavorite.test.Revivification
         [Category(SmokeTestCategory)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void SimpleObjectTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             Populate();
 
@@ -2211,7 +2211,7 @@ namespace Tsavorite.test.Revivification
         //[Repeat(3000)]
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void LiveThreadContentionOnOneRecordTest([Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
@@ -2298,7 +2298,7 @@ namespace Tsavorite.test.Revivification
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void LiveFreeListThreadStressTest([Values] CollisionRange collisionRange,
                                              [Values] ThreadingPattern threadingPattern, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                                             [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                                             [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
@@ -2382,7 +2382,7 @@ namespace Tsavorite.test.Revivification
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0060:Remove unused parameter", Justification = "concurrencyControlMode is used by Setup")]
         public void LiveInChainThreadStressTest([Values(CollisionRange.Ten)] CollisionRange collisionRange,
                                                 [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp,
-                                                [Values(ConcurrencyControlMode.LockTable, ConcurrencyControlMode.RecordIsolation)] ConcurrencyControlMode concurrencyControlMode)
+                                                [Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");

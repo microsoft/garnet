@@ -476,6 +476,18 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
+            // ZSCAN without key
+            try
+            {
+                db.Execute("ZSCAN");
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(SortedSetOperation.ZSCAN));
+                Assert.AreEqual(expectedErrorMessage, e.Message);
+            }
+
             // Use sortedsetscan on non existing key
             var items = db.SortedSetScan(new RedisKey("foo"), new RedisValue("*"), pageSize: 10);
             Assert.IsEmpty(items, "Failed to use SortedSetScan on non existing key");
@@ -808,7 +820,7 @@ namespace Garnet.test
         public void CanDoZRangeByScoreWithLimitLC(int bytesSent)
         {
             // ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
-            using var lightClientRequest = TestUtils.CreateRequest(countResponseLength: true);
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
 
             var expectedResponse = ":3\r\n";
             var response = lightClientRequest.Execute("ZADD mysales 1556 Samsung 2000 Nokia 1800 Micromax", expectedResponse.Length, bytesSent);
@@ -934,7 +946,7 @@ namespace Garnet.test
         [TestCase(100)]
         public void CanValidateInvalidParamentersZCountLC(int bytesSent)
         {
-            using var lightClientRequest = TestUtils.CreateRequest(countResponseLength: true);
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
 
             var expectedResponse = ":1\r\n";
             var response = lightClientRequest.Execute("ZADD board 400 Kendra", expectedResponse.Length, bytesSent);

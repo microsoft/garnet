@@ -179,23 +179,23 @@ namespace Tsavorite.benchmark
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
-                            uContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default, 1);
+                            uContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
                             ++reads_done;
                             continue;
                         }
                         if (r < upsertPercent)
                         {
-                            uContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default, 1);
+                            uContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
                             ++writes_done;
                             continue;
                         }
                         if (r < rmwPercent)
                         {
-                            uContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default, 1);
+                            uContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
                             ++writes_done;
                             continue;
                         }
-                        uContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default, 1);
+                        uContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
                         ++deletes_done;
                     }
 
@@ -293,23 +293,23 @@ namespace Tsavorite.benchmark
                     int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
                     {
-                        session.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default, 1);
+                        session.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
                     if (r < upsertPercent)
                     {
-                        session.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default, 1);
+                        session.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
                         ++writes_done;
                         continue;
                     }
                     if (r < rmwPercent)
                     {
-                        session.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default, 1);
+                        session.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
                         ++writes_done;
                         continue;
                     }
-                    session.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default, 1);
+                    session.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
                     ++deletes_done;
                 }
 
@@ -514,7 +514,7 @@ namespace Tsavorite.benchmark
                             }
                         }
 
-                        uContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default, 1);
+                        uContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
                     }
 #if DASHBOARD
                 count += (int)kChunkSize;
@@ -572,7 +572,7 @@ namespace Tsavorite.benchmark
                         }
                     }
 
-                    session.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default, 1);
+                    session.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
                 }
             }
 

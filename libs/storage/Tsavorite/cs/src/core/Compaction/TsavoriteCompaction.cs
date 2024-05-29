@@ -143,7 +143,7 @@ namespace Tsavorite.core
             using var iter = Log.Scan(untilAddress, scanUntil);
             while (iter.GetNext(out var _))
             {
-                tempKvSession.Delete(ref iter.GetKey(), default, 0);
+                tempKvSession.Delete(ref iter.GetKey(), default);
                 untilAddress = iter.NextAddress;
             }
         }

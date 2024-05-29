@@ -81,11 +81,20 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput(ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        void CopyRespToWithInput(ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending)
         {
             var inputPtr = input.ToPointer();
             switch ((RespCommand)(*inputPtr))
             {
+                case RespCommand.ASYNC:
+                    // If the GET is expected to complete continuations asynchronously, we should not write anything
+                    // to the network buffer in case the operation does go pending (latter is indicated by isFromPending)
+                    // This is accomplished by calling ConvertToHeap on the destination SpanByteAndMemory
+                    if (isFromPending)
+                        dst.ConvertToHeap();
+                    CopyRespTo(ref value, ref dst);
+                    break;
+
                 case RespCommand.MIGRATE:
                     long expiration = value.ExtraMetadata;
                     if (value.Length <= dst.Length)

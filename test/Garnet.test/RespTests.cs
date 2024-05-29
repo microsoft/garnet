@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -404,14 +405,16 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out var ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out var ttl));
+            Assert.AreEqual(-2, ttl);
 
             // px
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000");
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // keepttl
             Assert.IsTrue(db.StringSet(key, 1, TimeSpan.FromMinutes(1)));
@@ -426,7 +429,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // ex .. nx, existing key
             Assert.IsTrue(db.StringSet(key, value));
@@ -444,7 +448,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // px .. nx, non-existing key
             Assert.IsTrue(db.KeyDelete(key));
@@ -452,7 +457,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
 
             // px .. nx, existing key
             Assert.IsTrue(db.StringSet(key, value));
@@ -470,7 +476,8 @@ namespace Garnet.test
             Assert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
             resp = (string)db.Execute($"{ttlCommand}", key);
-            Assert.IsTrue(int.TryParse(resp, out ttl) && ttl == -1);
+            Assert.IsTrue(int.TryParse(resp, out ttl));
+            Assert.AreEqual(-2, ttl);
         }
 
         [Test]
@@ -518,7 +525,7 @@ namespace Garnet.test
         [TestCase(100)]
         public void SingleIncr(int bytesPerSend)
         {
-            using var lightClientRequest = TestUtils.CreateRequest(countResponseLength: true);
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
 
             // Key storing integer
             var nVal = -100000;
@@ -547,7 +554,7 @@ namespace Garnet.test
         [TestCase(9999, 100)]
         public void SingleIncrBy(long nIncr, int bytesSent)
         {
-            using var lightClientRequest = TestUtils.CreateRequest(countResponseLength: true);
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
 
             // Key storing integer
             var nVal = 1000;
@@ -1099,7 +1106,7 @@ namespace Garnet.test
         [Test]
         public void CanSelectCommandLC()
         {
-            using var lightClientRequest = TestUtils.CreateRequest(countResponseLength: true);
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
 
             var expectedResponse = "-ERR invalid database index.\r\n+PONG\r\n";
             var response = lightClientRequest.Execute("SELECT 1", "PING", expectedResponse.Length);
@@ -1113,7 +1120,7 @@ namespace Garnet.test
         public void CanDoCommandsInChunks(int bytesSent)
         {
             // SETEX
-            using var lightClientRequest = TestUtils.CreateRequest(countResponseLength: true);
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
 
             var expectedResponse = "+OK\r\n";
             var response = lightClientRequest.Execute("SETEX mykey 1 abcdefghij", expectedResponse.Length, bytesSent);
@@ -1181,7 +1188,7 @@ namespace Garnet.test
         [TestCase(100)]
         public void CanSetGetCommandsChunks(int bytesSent)
         {
-            using var lightClientRequest = TestUtils.CreateRequest(countResponseLength: true);
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Bytes);
             var sb = new StringBuilder();
 
             for (int i = 1; i <= 100; i++)
@@ -1220,7 +1227,13 @@ namespace Garnet.test
             var val = "expireValue";
             var expire = 2;
 
+            var ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-2, (int)ttl);
+
             db.StringSet(key, val);
+            ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-1, (int)ttl);
+
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
             var time = db.KeyTimeToLive(key);
@@ -1247,7 +1260,13 @@ namespace Garnet.test
             var key = "expireKey";
             var expire = 2;
 
+            var ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-2, (int)ttl);
+
             db.SortedSetAdd(key, key, 1.0);
+            ttl = db.Execute("TTL", key);
+            Assert.AreEqual(-1, (int)ttl);
+
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
 
             var time = db.KeyTimeToLive(key);
@@ -1511,7 +1530,7 @@ namespace Garnet.test
             string value = "0123456789";
 
             var resp = (string)db.StringGetRange(key, 2, 10);
-            Assert.AreEqual(null, resp);
+            Assert.AreEqual(string.Empty, resp);
             Assert.AreEqual(true, db.StringSet(key, value));
 
             //0,0
@@ -1770,11 +1789,17 @@ namespace Garnet.test
             var val = "myKeyValue";
             var expireTimeInMilliseconds = 3000;
 
+            var pttl = db.Execute("PTTL", key);
+            Assert.AreEqual(-2, (int)pttl);
+
             db.StringSet(key, val);
+            pttl = db.Execute("PTTL", key);
+            Assert.AreEqual(-1, (int)pttl);
+
             db.KeyExpire(key, TimeSpan.FromMilliseconds(expireTimeInMilliseconds));
 
             //check TTL of the key in milliseconds
-            var pttl = db.Execute("PTTL", key);
+            pttl = db.Execute("PTTL", key);
 
             Assert.IsTrue(long.TryParse(pttl.ToString(), out var pttlInMs));
             Assert.IsTrue(pttlInMs > 0);
@@ -1898,7 +1923,6 @@ namespace Garnet.test
             Assert.AreEqual(2, (int)resultDict["proto"]);
             Assert.AreEqual("master", (string)resultDict["role"]);
 
-            /*
             // Test "HELLO 3"
             result = db.Execute("HELLO", "3");
 
@@ -1909,7 +1933,83 @@ namespace Garnet.test
             Assert.IsNotNull(resultDict);
             Assert.AreEqual(3, (int)resultDict["proto"]);
             Assert.AreEqual("master", (string)resultDict["role"]);
-            */
+        }
+
+        [Test]
+        public void AsyncTest1()
+        {
+            // Set up low-memory database
+            TearDown();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, DisableObjects: true);
+            server.Start();
+
+            string firstKey = null, firstValue = null, lastKey = null, lastValue = null;
+
+            // Load the data so that it spills to disk
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                int keyCount = 5;
+                int valLen = 256;
+                int keyLen = 8;
+
+                List<Tuple<string, string>> data = [];
+                for (int i = 0; i < keyCount; i++)
+                {
+                    lastKey = GetRandomString(keyLen);
+                    lastValue = GetRandomString(valLen);
+                    if (firstKey == null)
+                    {
+                        firstKey = lastKey;
+                        firstValue = lastValue;
+                    }
+                    data.Add(new Tuple<string, string>(lastKey, lastValue));
+                    var pair = data.Last();
+                    db.StringSet(pair.Item1, pair.Item2);
+                }
+            }
+
+            // We use newline counting for HELLO response as the exact length can vary slightly across versions
+            using var lightClientRequest = TestUtils.CreateRequest(countResponseType: CountResponseType.Newlines);
+
+            var expectedNewlineCount = 32; // 32 '\n' characters expected in response
+            var response = lightClientRequest.Execute($"hello 3", expectedNewlineCount);
+            Assert.IsTrue(response.Length is > 180 and < 190);
+
+            // Switch to byte counting in response
+            lightClientRequest.countResponseType = CountResponseType.Bytes;
+
+            // Turn on async
+            var expectedResponse = "+OK\r\n";
+            response = lightClientRequest.Execute($"async on", expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, response);
+
+            // Get in-memory data item
+            expectedResponse = $"${lastValue.Length}\r\n{lastValue}\r\n";
+            response = lightClientRequest.Execute($"GET {lastKey}", expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, response);
+
+            // Get disk data item with async on
+            expectedResponse = $"-ASYNC 0\r\n>3\r\n$5\r\nasync\r\n$1\r\n0\r\n${firstValue.Length}\r\n{firstValue}\r\n";
+            response = lightClientRequest.Execute($"GET {firstKey}", expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, response);
+
+            // Issue barrier command for async
+            expectedResponse = "+OK\r\n";
+            response = lightClientRequest.Execute($"async barrier", expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, response);
+
+            // Turn off async
+            expectedResponse = "+OK\r\n";
+            response = lightClientRequest.Execute($"async off", expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, response);
+
+            // Get disk data item with async off
+            expectedResponse = $"${firstValue.Length}\r\n{firstValue}\r\n";
+            response = lightClientRequest.Execute($"GET {firstKey}", expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, response);
         }
     }
 }

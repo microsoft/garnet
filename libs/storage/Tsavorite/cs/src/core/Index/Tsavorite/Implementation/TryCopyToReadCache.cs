@@ -57,10 +57,15 @@ namespace Tsavorite.core
             OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
             if (success && stackCtx.recSrc.LowestReadCacheLogicalAddress != Constants.kInvalidAddress)
             {
-                // If someone added a main-log entry for this key from an update or CTT while we were inserting the new readcache record, then the new
+                // If someone added a main-log entry for this key from a CTT while we were inserting the new readcache record, then the new
                 // readcache record is obsolete and must be Invalidated. (If LowestReadCacheLogicalAddress == kInvalidAddress, then the CAS would have
                 // failed in this case.) If this was the first readcache record in the chain, then once we CAS'd it in someone could have spliced into
                 // it, but then that splice will call ReadCacheCheckTailAfterSplice and invalidate it if it's the same key.
+                // Consistency Notes:
+                //  - This is only a concern for CTT; an update would take an XLock which means the ReadCache insert could not be done until that XLock was released.
+                //    a. Therefore there is no "momentary inconsistency", because the value inserted at the splice would not be changed.
+                //    b. It is not possible for another thread to update the "at tail" value to introduce inconsistency until we have released the current SLock.
+                //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
                 success = EnsureNoNewMainLogRecordWasSpliced(ref key, stackCtx.recSrc, pendingContext.InitialLatestLogicalAddress, ref failStatus);
             }
 

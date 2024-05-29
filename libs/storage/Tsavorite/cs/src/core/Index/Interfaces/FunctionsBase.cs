@@ -65,8 +65,6 @@ namespace Tsavorite.core
         public virtual void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
         /// <inheritdoc/>
         public virtual void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata) { }
-        /// <inheritdoc/>
-        public virtual void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint) { }
 
         /// <inheritdoc/>
         public virtual int GetRMWModifiedValueLength(ref Value value, ref Input input) => throw new TsavoriteException("GetRMWModifiedValueLength is only available for SpanByte Functions");
