@@ -70,6 +70,7 @@ namespace Tsavorite.core
             ReadInfo readInfo = new()
             {
                 Version = tsavoriteSession.Ctx.version,
+                IsFromPending = pendingContext.type != OperationType.NONE,
             };
 
             try
@@ -310,6 +311,7 @@ namespace Tsavorite.core
                 {
                     Version = tsavoriteSession.Ctx.version,
                     Address = stackCtx.recSrc.LogicalAddress,
+                    IsFromPending = pendingContext.type != OperationType.NONE,
                 };
                 readInfo.SetRecordInfo(ref srcRecordInfo);
 

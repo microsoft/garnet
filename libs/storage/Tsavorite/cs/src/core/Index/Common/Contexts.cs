@@ -15,6 +15,7 @@ namespace Tsavorite.core
 {
     internal enum OperationType
     {
+        NONE = 0,
         READ,
         RMW,
         UPSERT,

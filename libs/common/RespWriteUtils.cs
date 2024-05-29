@@ -30,6 +30,21 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write push type length
+        /// </summary>
+        public static bool WritePushLength(int len, ref byte* curr, byte* end)
+        {
+            int numDigits = NumUtils.NumDigits(len);
+            int totalLen = 1 + numDigits + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+            *curr++ = (byte)'>';
+            NumUtils.IntToBytes(len, numDigits, ref curr);
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
         /// Write array length
         /// </summary>
         public static bool WriteArrayLength(int len, ref byte* curr, byte* end)

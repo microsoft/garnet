@@ -104,8 +104,14 @@ namespace Garnet.server
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
 
+        /// <summary>
+        /// RESP protocol version (RESP2 is the default)
+        /// </summary>
+        byte respProtocolVersion = 2;
 
-        int respProtocolVersion = 2;
+        /// <summary>
+        /// Client name for the session
+        /// </summary>
         string clientName = null;
 
         public RespServerSession(
@@ -167,6 +173,10 @@ namespace Garnet.server
 
             subscribeBroker?.RemoveSubscription(this);
 
+            // Cancel the async processor, if any
+            asyncWaiterCancel?.Cancel();
+            asyncWaiter?.Signal();
+
             storageSession.Dispose();
         }
 
@@ -214,7 +224,7 @@ namespace Garnet.server
                 latencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
-                networkSender.GetResponseObject();
+                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                 ProcessMessages();
                 recvBufferPtr = null;
             }
@@ -228,7 +238,9 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
                     SendAndReset();
 
-                Send(networkSender.GetResponseObjectHead());
+                // Send message and dispose the network sender to end the session
+                if (dcurr > networkSender.GetResponseObjectHead())
+                    Send(networkSender.GetResponseObjectHead());
                 networkSender.Dispose();
             }
             catch (Exception ex)
@@ -240,7 +252,7 @@ namespace Garnet.server
             }
             finally
             {
-                networkSender.ReturnResponseObject();
+                networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
 
             }
@@ -274,9 +286,6 @@ namespace Garnet.server
             // #if DEBUG
             // logger?.LogTrace("RECV: [{recv}]", Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", ""));
             // #endif
-
-            dcurr = networkSender.GetResponseObjectHead();
-            dend = networkSender.GetResponseObjectTail();
 
             var _origReadHead = readHead;
 
@@ -424,6 +433,20 @@ namespace Garnet.server
             // Continue reading from the current read head.
             byte* ptr = recvBufferPtr + readHead;
 
+            // If async mode, we want to make sure all arguments are received up front
+            // Otherwise, there might be interleaving of network output between sync
+            // ProcessMessages and AsyncProcessor. We protect this with useAsync for now, but
+            // this should be the standard approach in future after changing the subsequent
+            // logic to avoid re-parsing overheads, and verifying perf impact
+            if (useAsync)
+            {
+                byte* endPtr = ptr;
+                for (int i = 0; i < count; i++)
+                {
+                    if (!RespReadUtils.SkipByteArrayWithLengthHeader(ref endPtr, recvBufferPtr + bytesRead))
+                        return false;
+                }
+            }
             if (!_authenticator.IsAuthenticated) return ProcessOtherCommands(cmd, subcmd, count, ref storageApi);
 
             var success = (cmd, subcmd) switch
