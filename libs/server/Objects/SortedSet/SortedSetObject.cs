@@ -212,7 +212,7 @@ namespace Garnet.server
                         SortedSetIncrement(_input, input.Length, ref output);
                         break;
                     case SortedSetOperation.ZRANK:
-                        SortedSetRank(_input, input.Length, _output);
+                        SortedSetRank(_input, input.Length, ref output);
                         break;
                     case SortedSetOperation.ZRANGE:
                         SortedSetRange(_input, input.Length, ref output);
@@ -239,7 +239,7 @@ namespace Garnet.server
                         SortedSetReverseRange(_input, input.Length, ref output);
                         break;
                     case SortedSetOperation.ZREVRANK:
-                        SortedSetReverseRank(_input, input.Length, _output);
+                        SortedSetReverseRank(_input, input.Length, ref output);
                         break;
                     case SortedSetOperation.ZREMRANGEBYLEX:
                         SortedSetRemoveRangeByLex(_input, input.Length, _output);

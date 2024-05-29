@@ -1181,8 +1181,18 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
+            response = lightClientRequest.SendCommandChunks("ZRANK board Tom INVALIDOPTION", bytesSent);
+            expectedResponse = "-ERR syntax error\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
             response = lightClientRequest.SendCommandChunks("ZRANK board Tom", bytesSent);
             expectedResponse = ":2\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommandChunks("ZRANK board Tom withscore", bytesSent);
+            expectedResponse = "*2\r\n:2\r\n$3\r\n560\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -1204,6 +1214,11 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
+            response = lightClientRequest.SendCommandChunks("ZREVRANK board Tom INVALIDOPTION", bytesSent);
+            expectedResponse = "-ERR syntax error\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
             response = lightClientRequest.SendCommandChunks("ZREVRANK board Tom", bytesSent);
             expectedResponse = ":0\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
@@ -1219,6 +1234,10 @@ namespace Garnet.test
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
+            response = lightClientRequest.SendCommandChunks("ZREVRANK board Dave WITHSCORE", bytesSent);
+            expectedResponse = "*2\r\n:2\r\n$3\r\n340\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]

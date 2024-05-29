@@ -136,10 +136,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRank(key, input, out output);
+            return garnetApi.SortedSetRank(key, input, ref outputFooter);
         }
 
         /// <inheritdoc />
