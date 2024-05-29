@@ -225,7 +225,7 @@ namespace Garnet
         public string ClusterTlsClientTargetHost { get; set; }
 
         [OptionValidation]
-        [Option("server-certificate-required", Required = false, HelpText = "Whether server TLS certificate is required by clients on the server side, e.g., for cluster gossip and replication.")]
+        [Option("server-certificate-required", Required = false, HelpText = "Whether server TLS certificate is required by clients established on the server side, e.g., for cluster gossip and replication.")]
         public bool? ServerCertificateRequired { get; set; }
 
         [OptionValidation]
