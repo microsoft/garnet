@@ -111,7 +111,7 @@ namespace Garnet.server
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
             var status = storageApi.ObjectScan(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
 
-            //restore input buffer
+            // Restore input buffer
             *inputPtr = save;
             *ptrToInt = savePtrToInt;
 
