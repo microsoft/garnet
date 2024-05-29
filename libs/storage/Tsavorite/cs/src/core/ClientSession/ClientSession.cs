@@ -1178,12 +1178,7 @@ namespace Tsavorite.core
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            {
-                // RecordIsolation locking is done at Transient scope, in stackCtx. For reads either an SLock or XLock is valid.
-                Debug.Assert(!_clientSession.store.DoRecordIsolation || readInfo.RecordInfo.IsLocked, "Expected Lock in ConcurrentReader");
-
-                return _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo, ref recordInfo);
-            }
+                => _clientSession.functions.ConcurrentReader(ref key, ref input, ref value, ref dst, ref readInfo, ref recordInfo);
 
             public void ReadCompletionCallback(ref Key key, ref Input input, ref Output output, Context ctx, Status status, RecordMetadata recordMetadata)
                 => _clientSession.functions.ReadCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
@@ -1198,39 +1193,13 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
             {
-                if (_clientSession.store.DoRecordIsolation)
-                    PostSingleWriterRecordIsolation(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
-                else
-                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleWriterNoLock(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-            {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostSingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason);
-            }
-
-            public void PostSingleWriterRecordIsolation(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-            {
-                // Note: RecordIsolation XLock was taken by CASRecordIntoChain() (if not readcache), separate from the Transient-scope stackCtx.recSrc lock.
-                try
-                {
-                    PostSingleWriterNoLock(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
-                }
-                finally
-                {
-                    if (reason != WriteReason.CopyToReadCache)  // readcache records are readonly so are not XLocked
-                        recordInfo.UnlockExclusive();
-                }
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentWriter(long physicalAddress, ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
             {
-                // RecordIsolation locking is done at Transient scope, in stackCtx.
-                Debug.Assert(!_clientSession.store.DoRecordIsolation || upsertInfo.RecordInfo.IsLockedExclusive, "Expected XLock in ConcurrentWriter");
-
                 (upsertInfo.UsedValueLength, upsertInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref dst, ref recordInfo);
                 if (!_clientSession.functions.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo))
                     return false;
@@ -1253,31 +1222,8 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
-                if (_clientSession.store.DoRecordIsolation)
-                    PostInitialUpdaterRecordIsolation(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
-                else
-                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PostInitialUpdaterNoLock(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void PostInitialUpdaterRecordIsolation(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            {
-                // Note: RecordIsolation XLock was taken by CASRecordIntoChain(), separate from the Transient-scope stackCtx.recSrc lock.
-                try
-                {
-                    PostInitialUpdaterNoLock(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
             }
             #endregion InitialUpdater
 
@@ -1293,31 +1239,8 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
             {
-                if (_clientSession.store.DoRecordIsolation)
-                    PostCopyUpdaterRecordIsolation(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
-                else
-                    PostCopyUpdaterNoLock(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyUpdaterNoLock(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostCopyUpdaterRecordIsolation(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            {
-                // Note: RecordIsolation XLock was taken by CASRecordIntoChain(), separate from the Transient-scope stackCtx.recSrc lock.
-                try
-                {
-                    PostCopyUpdaterNoLock(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo, ref recordInfo);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
             }
             #endregion CopyUpdater
 
@@ -1325,9 +1248,6 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool InPlaceUpdater(long physicalAddress, ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, out OperationStatus status, ref RecordInfo recordInfo)
             {
-                // RecordIsolation locking is done at Transient scope, in stackCtx.
-                Debug.Assert(!_clientSession.store.DoRecordIsolation || rmwInfo.RecordInfo.IsLockedExclusive, "Expected XLock in InPlaceUpdater");
-
                 (rmwInfo.UsedValueLength, rmwInfo.FullValueLength, _) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
                 if (!_clientSession.InPlaceUpdater(ref key, ref input, ref value, ref output, ref recordInfo, ref rmwInfo, out status))
                     return false;
@@ -1350,39 +1270,13 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void PostSingleDeleter(ref Key key, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
             {
-                if (_clientSession.store.DoRecordIsolation)
-                    PostSingleDeleterRecordIsolation(ref key, ref deleteInfo, ref recordInfo);
-                else
-                    PostSingleDeleterNoLock(ref key, ref deleteInfo, ref recordInfo);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleterNoLock(ref Key key, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
-            {
                 recordInfo.SetDirtyAndModified();
                 _clientSession.functions.PostSingleDeleter(ref key, ref deleteInfo);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public void PostSingleDeleterRecordIsolation(ref Key key, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
-            {
-                // Note: RecordIsolation XLock was taken by CASRecordIntoChain(), separate from the Transient-scope stackCtx.recSrc lock.
-                try
-                {
-                    PostSingleDeleterNoLock(ref key, ref deleteInfo, ref recordInfo);
-                }
-                finally
-                {
-                    recordInfo.UnlockExclusive();
-                }
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool ConcurrentDeleter(long physicalAddress, ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo, out int allocatedSize)
             {
-                // RecordIsolation locking is done at Transient scope, in stackCtx.
-                Debug.Assert(!_clientSession.store.DoRecordIsolation || deleteInfo.RecordInfo.IsLockedExclusive, "Expected XLock in ConcurrentDeleter");
-
                 (deleteInfo.UsedValueLength, deleteInfo.FullValueLength, allocatedSize) = _clientSession.store.GetRecordLengths(physicalAddress, ref value, ref recordInfo);
                 if (!_clientSession.functions.ConcurrentDeleter(ref key, ref value, ref deleteInfo, ref recordInfo))
                     return false;
@@ -1416,9 +1310,10 @@ namespace Tsavorite.core
             #endregion IFunctions - Checkpointing
 
             #region Transient locking
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!Store.DoTransientLocking)
+                if (!Store.IsLocking)
                     return true;
                 if (!Store.LockTable.TryLockTransientExclusive(ref key, ref stackCtx.hei))
                     return false;
@@ -1426,9 +1321,10 @@ namespace Tsavorite.core
                 return true;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!Store.DoTransientLocking)
+                if (!Store.IsLocking)
                     return true;
                 if (!Store.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
                     return false;
@@ -1436,17 +1332,19 @@ namespace Tsavorite.core
                 return true;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!Store.DoTransientLocking)
+                if (!Store.IsLocking)
                     return;
                 Store.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.ClearHasTransientXLock();
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
             {
-                if (!Store.DoTransientLocking)
+                if (!Store.IsLocking)
                     return;
                 Store.LockTable.UnlockShared(ref key, ref stackCtx.hei);
                 stackCtx.recSrc.ClearHasTransientSLock();

@@ -164,12 +164,11 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                if (!TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx))
-                    stackCtx.recSrc.UnlockShared(ref srcRecordInfo, hlog.HeadAddress);
+                TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
             }
         }
 
-        // No AggressiveInlining; this is a less-common function and it may imnprove inlining of InternalRead to have this be a virtcall.
+        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
         private OperationStatus CopyFromImmutable<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, Context userContext, long lsn,
                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, Value recordValue)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
@@ -191,7 +190,7 @@ namespace Tsavorite.core
             return OperationStatus.SUCCESS;
         }
 
-        // No AggressiveInlining; this is a less-common function and it may imnprove inlining of InternalRead to have this be a virtcall.
+        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
         private static OperationStatus CheckFalseActionStatus(ReadInfo readInfo)
         {
             if (readInfo.Action == ReadAction.CancelOperation)
@@ -263,10 +262,6 @@ namespace Tsavorite.core
             // We're in-memory, so it is safe to get the address now.
             var physicalAddress = hlog.GetPhysicalAddress(readAtAddress);
 
-            // See if we are doing Transient-only locking (LockTable with a non-LockableContext).
-            bool doTransientLocking = DoTransientLocking && !tsavoriteSession.IsManualLocking;
-
-        Retry:
             Key defaultKey = default;
             if (readOptions.KeyHash.HasValue)
                 pendingContext.keyHash = readOptions.KeyHash.Value;
@@ -309,25 +304,6 @@ namespace Tsavorite.core
                     return OperationStatus.NOTFOUND;
                 // We do not check for Tombstone here; we return the record to the caller.
 
-                // We *do* return RETRY_LATER if there is a locking conflict.
-                if (DoRecordIsolation && !stackCtx.recSrc.TryLock(ref srcRecordInfo, exclusive: false))
-                    return OperationStatus.RETRY_LATER;
-
-                // If we are doing FreeList revivification verify the record is still in the same tag chain. This is similar to the lock-then-verify logic
-                // in TryMatchFirstRecordWithRecordIsolationAndReviv, but does not use the key since we may have NoKey. For ReadAtAddress, the key and keyHash
-                // are merely hints for bucket locking.
-                if (RevivificationManager.UseFreeRecordPool)
-                {
-                    var bucketIndex = OverflowBucketLockTable<Key, Value>.GetBucketIndex(pendingContext.keyHash, this);
-                    if (bucketIndex != stackCtx.hei.bucketIndex)
-                    {
-                        // If the key and/or keyHash were passed in, they do not match what is in the record so ignore them on the retry.
-                        pendingContext.keyHash = default;
-                        pendingContext.NoKey = true;
-                        goto Retry;
-                    }
-                }
-
                 stackCtx.recSrc.SetHasMainLogSrc();
                 pendingContext.recordInfo = srcRecordInfo;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
@@ -355,8 +331,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                if (!TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx))
-                    stackCtx.recSrc.UnlockShared(ref srcRecordInfo, hlog.HeadAddress);
+                TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
             }
             return status;
         }

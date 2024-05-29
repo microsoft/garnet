@@ -35,12 +35,7 @@ namespace Tsavorite.core
         LockTable,
 
         /// <summary>
-        /// Records are locked only for the duration of a concurrent IFunctions call (one that operates on data in the mutable region of the log), using the RecordInfo header.
-        /// </summary>
-        RecordIsolation,
-
-        /// <summary>
-        /// Record locking is not done in Tsavorite.
+        /// No Locking is done in Tsavorite.
         /// </summary>
         None
     }
