@@ -105,11 +105,9 @@ If the FreeList is not active, all Tombstoned records are left in the hash chain
 In-Chain revivification is always active if `RevivificationSettings.EnableRevivification` is true. It functions as follows:
 - `Delete()` is done in the normal way; the Tombstone is set. If the Tombstoned record is at the tail of the tag chain (i.e. is the record in the `HashBucketEntry`) and the FreeList is enabled, then it will be moved to the FreeList. Otherwise (or if this move fails), it remains in the tag chain.
 - `Upsert()` and `RMW()` will try to revivify a Tombstoned record:
-    - If doing `RecordIsolation` concurrency control, we Seal the record so no other thread can access it; they will see the Seal and retry (so will not insert another record while this is going on).
     - If the record is large enough, we Reinitialize its Value by:
         - Clearing the extra value length and filler and calls `DisposeForRevivification` as described in [Maintaining Extra Value Length](#maintaining-extra-value-length).
         - Removing the Tombstone.
-    - If doing `RecordIsolation` concurrency control, we Unseal the record.
 
 ## FreeList Revivification
 If `RevivificationSettings.FreeBinList` is not null, this creates the freelist according to the `RevivificationBin` elements of the array. If the data types are fixed, then there must be one element of the array; otherwise there can be many.
@@ -139,21 +137,7 @@ FreeList Revivification requires `ConcurrencyControlMode` not be `ConcurrencyCon
     - Thread1: Follows the *former* .PreviousAddress and is now on an entirely different tag chain.
 This is *only* possible for the first record in the tag chain (the tail-most record, in the `HashBucketEntry`); we do not elide records in the middle of the tag chain.
 
-The tag chain is stabilized by each of the `ConcurrencyControlMode`s in the following way:
-- `ConcurrencyControlMode.LockTable`: Since the only current LockTable implementation is via the `HashBucket`s, and locking at the `HashBucket` level is higher than the tag chain, we get a stable tag chain *almost* for free. The cost is that the `HashBucket` must be locked *before* calling TracebackForKeyMatch.
-- `ConcurrencyControlMode.RecordIsolation`: This locks only a record at a time, and only after we have verified it is above the HeadAddress. Because of this, there is no way to prevent the first record from being swapped out while we are traversing it, so we must do a delayed check for validity. This is done in `TryMatcheWithRecordIsolationAndReviv`:
-    - If the key matches:
-        - Try to lock. 
-            - If the record has been put on the FreeList, it has been Sealed, so the lock will fail and we will RETRY_LATER.
-            - It may have been otherwise invalidated; again, return RETRY_LATER.
-            - Otherwise, it is a valid record for some key
-        - If the key does not match, the record has been revivified with a different key; Unlock and return RETRY_LATER.
-        - If we are here, the key matches and we have the record-level lock, so we are successful.
-    - Otherwise (the key did not match), save the record's .PreviousAddress.
-        - If this is >= BeginAddress, then we know the record cannot be elided, and can proceed as normally.
-        - Otherwise, we obtain the hash bucket entry to see if the record's address is still the first one in the chain.
-            - If not, return RETRY_NOW to restart the operation.
-            - Otherwise, the saved .PreviousAddress is good, and we can continue as normally.
+For `ConcurrencyControlMode.LockTable`, because the only current LockTable implementation is via the `HashBucket`s and locking at the `HashBucket` level is higher than the tag chain, we get a stable tag chain *almost* for free. The cost is that the `HashBucket` must be locked *before* calling TracebackForKeyMatch.
 
 ### `FreeRecordPool` Design
 The FreeList hierarchy consists of:

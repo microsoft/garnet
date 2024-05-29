@@ -183,7 +183,7 @@ namespace Tsavorite.test.LockTests
         [Category(TsavoriteKVTestCategory)]
         [Category(LockTestCategory)]
         //[Repeat(100)]
-        public async ValueTask SameKeyInsertAndCTTTest([Values(ConcurrencyControlMode.None, ConcurrencyControlMode.RecordIsolation /* Standard will hang */)] ConcurrencyControlMode concurrencyControlMode,
+        public async ValueTask SameKeyInsertAndCTTTest([Values(ConcurrencyControlMode.None /* Do not use LockTable; it will hang */)] ConcurrencyControlMode concurrencyControlMode,
                                                        [Values(ReadCopyTo.ReadCache, ReadCopyTo.MainLog)] ReadCopyTo readCopyTo, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
