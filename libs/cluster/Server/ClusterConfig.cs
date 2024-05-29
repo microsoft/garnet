@@ -1014,7 +1014,7 @@ namespace Garnet.cluster
             var slots = GetLocalPrimarySlots();
             var newSlotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
             Array.Copy(slotMap, newSlotMap, slotMap.Length);
-            foreach (int slot in slots)
+            foreach (var slot in slots)
             {
                 newSlotMap[slot]._workerId = 1;
                 newSlotMap[slot]._state = SlotState.STABLE;
