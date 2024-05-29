@@ -173,6 +173,10 @@ namespace Garnet.server
 
             subscribeBroker?.RemoveSubscription(this);
 
+            // Cancel the async processor, if any
+            asyncWaiterCancel?.Cancel();
+            asyncWaiter?.Signal();
+
             storageSession.Dispose();
         }
 

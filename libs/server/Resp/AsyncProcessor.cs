@@ -30,6 +30,11 @@ namespace Garnet.server
         SingleWaiterAutoResetEvent asyncWaiter = null;
 
         /// <summary>
+        /// Cancellation token source for async waiter
+        /// </summary>
+        CancellationTokenSource asyncWaiterCancel = null;
+
+        /// <summary>
         /// Semaphore for barrier command to wait for async operations to complete
         /// </summary>
         SemaphoreSlim asyncDone = null;
@@ -51,6 +56,7 @@ namespace Garnet.server
 
             if (++asyncStarted == 1) // first async operation on the session, create the IO continuation processor
             {
+                asyncWaiterCancel = new();
                 asyncWaiter = new()
                 {
                     RunContinuationsAsynchronously = true
@@ -131,6 +137,9 @@ namespace Garnet.server
                 // Wait for next async operation
                 // We do not need to cancel the wait - it should get garbage collected when the session ends
                 await asyncWaiter.WaitAsync();
+
+                if (asyncWaiterCancel.Token.IsCancellationRequested)
+                    break;
             }
         }
     }
