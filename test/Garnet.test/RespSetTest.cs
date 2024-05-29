@@ -194,6 +194,18 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
+            // SSCAN without key
+            try
+            {
+                db.Execute("SSCAN");
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(Garnet.server.SetOperation.SSCAN));
+                Assert.AreEqual(expectedErrorMessage, e.Message);
+            }
+
             // Use setscan on non existing key
             var items = db.SetScan(new RedisKey("foo"), new RedisValue("*"), pageSize: 10);
             Assert.IsEmpty(items, "Failed to use SetScan on non existing key");
@@ -707,48 +719,58 @@ namespace Garnet.test
         {
             var myset = new HashSet<string> { "one", "two", "three", "four", "five" };
 
+            // Check SRANDMEMBER with non-existing key
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("SRANDMEMBER myset");
+            var expectedResponse = "$-1\r\n";
+            var strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
+            // Check SRANDMEMBER with non-existing key and count
+            response = lightClientRequest.SendCommand("SRANDMEMBER myset 3");
+            expectedResponse = "*0\r\n";
+            strResponse = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, strResponse);
+
             CreateLongSet();
 
-            using (var lightClientRequest = TestUtils.CreateRequest())
+            response = lightClientRequest.SendCommand("SRANDMEMBER myset", 1);
+            var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
+            var item = Encoding.ASCII.GetString(response).Substring(4, Int32.Parse(strLen));
+            Assert.IsTrue(myset.Contains(item));
+
+            // Get three random members
+            response = lightClientRequest.SendCommand("SRANDMEMBER myset 3", 3);
+            strResponse = Encoding.ASCII.GetString(response);
+            Assert.AreEqual('*', strResponse[0]);
+
+            var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+            Assert.IsTrue(arrLenEndIdx > 1);
+
+            var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            Assert.IsTrue(int.TryParse(strArrLen, out var arrLen));
+            Assert.AreEqual(3, arrLen);
+
+            // Get 6 random members and verify that at least two elements are the same
+            response = lightClientRequest.SendCommand("SRANDMEMBER myset -6", 6);
+            arrLenEndIdx = Encoding.ASCII.GetString(response).IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
+            strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
+            Assert.IsTrue(int.TryParse(strArrLen, out arrLen));
+
+            var members = new HashSet<string>();
+            var repeatedMembers = false;
+            for (int i = 0; i < arrLen; i++)
             {
-                var response = lightClientRequest.SendCommand("SRANDMEMBER myset", 1);
-                var strLen = Encoding.ASCII.GetString(response).Substring(1, 1);
-                var item = Encoding.ASCII.GetString(response).Substring(4, Int32.Parse(strLen));
-                Assert.IsTrue(myset.Contains(item));
-
-                // Get three random members
-                response = lightClientRequest.SendCommand("SRANDMEMBER myset 3", 3);
-                var strResponse = Encoding.ASCII.GetString(response);
-                Assert.AreEqual('*', strResponse[0]);
-
-                var arrLenEndIdx = strResponse.IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
-                Assert.IsTrue(arrLenEndIdx > 1);
-
-                var strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
-                Assert.IsTrue(int.TryParse(strArrLen, out var arrLen));
-                Assert.AreEqual(3, arrLen);
-
-                // Get 6 random members and verify that at least two elements are the same
-                response = lightClientRequest.SendCommand("SRANDMEMBER myset -6", 6);
-                arrLenEndIdx = Encoding.ASCII.GetString(response).IndexOf("\r\n", StringComparison.InvariantCultureIgnoreCase);
-                strArrLen = Encoding.ASCII.GetString(response).Substring(1, arrLenEndIdx - 1);
-                Assert.IsTrue(int.TryParse(strArrLen, out arrLen));
-
-                var members = new HashSet<string>();
-                var repeatedMembers = false;
-                for (int i = 0; i < arrLen; i++)
+                var member = Encoding.ASCII.GetString(response).Substring(arrLenEndIdx + 2, response.Length - arrLenEndIdx - 5);
+                if (members.Contains(member))
                 {
-                    var member = Encoding.ASCII.GetString(response).Substring(arrLenEndIdx + 2, response.Length - arrLenEndIdx - 5);
-                    if (members.Contains(member))
-                    {
-                        repeatedMembers = true;
-                        break;
-                    }
-                    members.Add(member);
+                    repeatedMembers = true;
+                    break;
                 }
-
-                Assert.IsTrue(repeatedMembers, "At least two members are repeated.");
+                members.Add(member);
             }
+
+            Assert.IsTrue(repeatedMembers, "At least two members are repeated.");
         }
 
         [Test]
