@@ -267,8 +267,8 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
         public void VersionedReadSyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
@@ -379,8 +379,8 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
         public async Task VersionedReadAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
@@ -419,8 +419,8 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
         public void ReadAtAddressSyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
@@ -464,8 +464,8 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
         public async Task ReadAtAddressAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
@@ -503,8 +503,8 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
         public async Task ReadAtAddressAsyncCopyOptNoRcTest(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
@@ -542,8 +542,8 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
         public void ReadNoKeySyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
@@ -588,8 +588,8 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.RecordIsolation)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
+        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
         public async Task ReadNoKeyAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, ConcurrencyControlMode concurrencyControlMode)
         {

@@ -68,12 +68,8 @@ namespace Tsavorite.core
             try
             {
                 // Search the entire in-memory region.
-                if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlog.HeadAddress, out status, wantLock: DoRecordIsolation))
+                if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlog.HeadAddress, out status))
                     return status;
-
-                // Need the extra 'if' to set this here as there are several places it would have to be set otherwise if it has a RecordIsolation lock.
-                if (stackCtx.recSrc.HasInMemorySrc)
-                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
 
                 // These track the latest main-log address in the tag chain; InternalContinuePendingRMW uses them to check for new inserts.
                 pendingContext.InitialEntryAddress = stackCtx.hei.Address;
@@ -81,7 +77,10 @@ namespace Tsavorite.core
 
                 // If there is a readcache record, use it as the CopyUpdater source.
                 if (stackCtx.recSrc.HasReadCacheSrc)
+                {
+                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
                     goto CreateNewRecord;
+                }
 
                 // Check for CPR consistency after checking if source is readcache.
                 if (tsavoriteSession.Ctx.phase != Phase.REST)
@@ -104,6 +103,8 @@ namespace Tsavorite.core
 
                 if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
                 {
+                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
+
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     RMWInfo rmwInfo = new()
                     {
@@ -134,7 +135,7 @@ namespace Tsavorite.core
                         goto CreateNewRecord;
                     }
 
-                    // rmwInfo's lengths are filled in and GetValueLengths and SetLength are called inside InPlaceUpdater, in RecordIsolation if needed.
+                    // rmwInfo's lengths are filled in and GetValueLengths and SetLength are called inside InPlaceUpdater.
                     if (tsavoriteSession.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref rmwInfo, out status, ref srcRecordInfo)
                         || (rmwInfo.Action == RMWAction.ExpireAndStop))
                     {
@@ -148,7 +149,6 @@ namespace Tsavorite.core
                         goto LatchRelease;
                     }
 
-                    // Note: stackCtx.recSrc.recordIsolationResult == Failed was already handled by 'out status' above
                     if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                         goto LatchRelease;
 
@@ -163,7 +163,8 @@ namespace Tsavorite.core
                 }
                 if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
                 {
-                    // Safe Read-Only Region: CopyUpdate to create a record in the mutable region. RecordIsolation does not lock here as we cannot modify the record in-place.
+                    // Safe Read-Only Region: CopyUpdate to create a record in the mutable region.
+                    srcRecordInfo = ref stackCtx.recSrc.GetInfo();
                     goto CreateNewRecord;
                 }
                 if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
@@ -177,7 +178,7 @@ namespace Tsavorite.core
                     goto LatchRelease;
                 }
 
-                // No record exists - drop through to create new record. RecordIsolation does not lock in ReadOnly as we cannot modify the record in-place.
+                // No record exists - drop through to create new record.
                 Debug.Assert(!tsavoriteSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
@@ -200,8 +201,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                if (!TransientXUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx))
-                    stackCtx.recSrc.UnlockExclusive(ref srcRecordInfo, hlog.HeadAddress);
+                TransientXUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
             }
 
         LatchRelease:
@@ -222,7 +222,7 @@ namespace Tsavorite.core
             return status;
         }
 
-        // No AggressiveInlining; this is a less-common function and it may imnprove inlining of InternalUpsert to have this be a virtcall.
+        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalUpsert if the compiler decides not to inline this.
         private void CreatePendingRMWContext<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, Output output, Context userContext,
                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long lsn, ref OperationStackContext<Key, Value> stackCtx)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
@@ -301,7 +301,7 @@ namespace Tsavorite.core
 
         private LatchDestination CheckCPRConsistencyRMW(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
-            if (!DoTransientLocking)
+            if (!IsLocking)
                 return AcquireCPRLatchRMW(phase, ref stackCtx, ref status, ref latchOperation);
 
             // This is AcquireCPRLatchRMW without the bucket latching, since we already have a latch on either the bucket or the recordInfo.
@@ -586,7 +586,7 @@ namespace Tsavorite.core
                     if (allocOptions.IgnoreHeiAddress)
                     {
                         // Success should always Seal the old record. This may be readcache, readonly, or the temporary recordInfo, which is OK and saves the cost of an "if".
-                        stackCtx.recSrc.UnlockExclusiveAndSealInvalidate(ref srcRecordInfo);    // The record was elided, so Invalidate
+                        srcRecordInfo.SealAndInvalidate();    // The record was elided, so Invalidate
 
                         if (stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                         {
@@ -596,7 +596,7 @@ namespace Tsavorite.core
                         }
                     }
                     else
-                        stackCtx.recSrc.UnlockExclusiveAndSeal(ref srcRecordInfo);              // The record was not elided, so do not Invalidate
+                        srcRecordInfo.Seal();              // The record was not elided, so do not Invalidate
                 }
 
                 stackCtx.ClearNewRecord();

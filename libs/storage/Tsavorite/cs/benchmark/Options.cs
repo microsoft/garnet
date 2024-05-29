@@ -36,8 +36,7 @@ namespace Tsavorite.benchmark
         [Option('z', "locking", Required = false, Default = ConcurrencyControlMode.None,
              HelpText = "Locking Implementation:" +
                        $"\n    {nameof(ConcurrencyControlMode.None)} = No Locking (default)" +
-                       $"\n    {nameof(ConcurrencyControlMode.LockTable)} = Locking using main HashTable buckets" +
-                       $"\n    {nameof(ConcurrencyControlMode.RecordIsolation)} = RecordInfo locking only within concurrent IFunctions callbacks")]
+                       $"\n    {nameof(ConcurrencyControlMode.LockTable)} = Locking using main HashTable buckets")]
         public ConcurrencyControlMode ConcurrencyControlMode { get; set; }
 
         [Option('i', "iterations", Required = false, Default = 1,
@@ -118,7 +117,7 @@ namespace Tsavorite.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"-b: {Benchmark}; d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
+            return $"b: {Benchmark}; d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
                         + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; z: {ConcurrencyControlMode}; i: {IterationCount}; hp: {HashPacking};"
                         + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(UseSyntheticData)}; safectx: {boolStr(UseSafeContext)};"
                         + $" chkptms: {PeriodicCheckpointMilliseconds}; chkpttype: {(PeriodicCheckpointMilliseconds > 0 ? PeriodicCheckpointType.ToString() : "None")};"

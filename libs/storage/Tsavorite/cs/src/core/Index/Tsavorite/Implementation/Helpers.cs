@@ -151,11 +151,6 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CASRecordIntoChain(ref Key key, ref OperationStackContext<Key, Value> stackCtx, long newLogicalAddress, ref RecordInfo newRecordInfo)
         {
-            // If RecordIsolation, we consider this insertion to the mutable portion of the log as a "concurrent" operation, and
-            // we don't want other threads accessing this record until we complete Post* (which unlock if doing RecordIsolation).
-            if (DoRecordIsolation)
-                newRecordInfo.InitializeLockExclusive();
-
             var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == Constants.kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
                 : SpliceIntoHashChainAtReadCacheBoundary(ref key, ref stackCtx, newLogicalAddress);
@@ -176,13 +171,17 @@ namespace Tsavorite.core
                 return;
 
             if (stackCtx.recSrc.HasReadCacheSrc)
+            {
+                // If we already have a readcache source, there will not be another inserted, so we can just invalidate the source directly.
                 srcRecordInfo.SetInvalidAtomic();
-
-            // If we are not using the LockTable, then ElideAndReinsertReadCacheChain ensured no conflict between the readcache and the newly-inserted
-            // record. Otherwise we spliced it in directly, in which case a competing readcache record may have been inserted; if so, invalidate it.
-            // highestReadCacheAddressChecked is hei.Address unless we are from ConditionalCopyToTail, which may have skipped the readcache before this.
-            if (LockTable.IsEnabled)
+            }
+            else
+            {
+                // We did not have a readcache source, so while we spliced a new record into the readcache/mainlog gap a competing readcache record may have been inserted at the tail.
+                // If so, invalidate it. highestReadCacheAddressChecked is hei.Address unless we are from ConditionalCopyToTail, which may have skipped the readcache before this.
+                // See "Consistency Notes" in TryCopyToReadCache for a discussion of why there ie no "momentary inconsistency" possible here.
                 ReadCacheCheckTailAfterSplice(ref key, ref stackCtx.hei, highestReadCacheAddressChecked);
+            }
         }
 
         // Called after BlockAllocate or anything else that could shift HeadAddress, to adjust addresses or return false for RETRY as needed.
@@ -208,20 +207,14 @@ namespace Tsavorite.core
                 out OperationStatus internalStatus)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
-            if (RevivificationManager.UseFreeRecordPool)
-                stackCtx.recSrc.InitialMinRevivifiableAddress = GetMinRevivifiableAddress();
-
-            FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
-
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
+            FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
             if (!TryTransientXLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
             stackCtx.hei.SetToCurrent();
-
             stackCtx.SetRecordSourceToHashEntry(hlog);
-            internalStatus = OperationStatus.SUCCESS;
             return true;
         }
 
@@ -230,24 +223,14 @@ namespace Tsavorite.core
                 out OperationStatus internalStatus)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
-            if (RevivificationManager.UseFreeRecordPool)
-                stackCtx.recSrc.InitialMinRevivifiableAddress = GetMinRevivifiableAddress();
-
-            if (!FindTag(ref stackCtx.hei))
-            {
-                internalStatus = OperationStatus.NOTFOUND;
-                return false;
-            }
-
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
-            if (!TryTransientXLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out internalStatus))
+            internalStatus = OperationStatus.NOTFOUND;
+            if (!FindTag(ref stackCtx.hei) || !TryTransientXLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
             stackCtx.hei.SetToCurrent();
-
             stackCtx.SetRecordSourceToHashEntry(hlog);
-            internalStatus = OperationStatus.SUCCESS;
             return true;
         }
 
@@ -256,24 +239,14 @@ namespace Tsavorite.core
                 out OperationStatus internalStatus)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
-            if (RevivificationManager.UseFreeRecordPool)
-                stackCtx.recSrc.InitialMinRevivifiableAddress = GetMinRevivifiableAddress();
-
-            if (!FindTag(ref stackCtx.hei))
-            {
-                internalStatus = OperationStatus.NOTFOUND;
-                return false;
-            }
-
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
-            if (!TryTransientSLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out internalStatus))
+            internalStatus = OperationStatus.NOTFOUND;
+            if (!FindTag(ref stackCtx.hei) || !TryTransientSLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out internalStatus))
                 return false;
 
             // Between the time we found the tag and the time we locked the bucket the record in hei.entry may have been elided, so make sure we don't have a stale address in hei.entry.
             stackCtx.hei.SetToCurrent();
-
             stackCtx.SetRecordSourceToHashEntry(hlog);
-            internalStatus = OperationStatus.SUCCESS;
             return true;
         }
     }
