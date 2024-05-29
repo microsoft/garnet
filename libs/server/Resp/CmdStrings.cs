@@ -73,6 +73,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> REGISTERCS => "REGISTERCS"u8;
         public static ReadOnlySpan<byte> registercs => "registercs"u8;
         public static ReadOnlySpan<byte> ASYNC => "ASYNC"u8;
+        public static ReadOnlySpan<byte> async => "async"u8;
         public static ReadOnlySpan<byte> ON => "ON"u8;
         public static ReadOnlySpan<byte> on => "on"u8;
         public static ReadOnlySpan<byte> OFF => "OFF"u8;

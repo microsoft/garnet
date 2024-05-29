@@ -604,7 +604,7 @@ namespace Garnet.test
             return new GarnetClientSession(Address, Port, sslOptions);
         }
 
-        public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, bool countResponseLength = false)
+        public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -617,7 +617,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new LightClientRequest(Address, Port, 0, onReceive, sslOptions, countResponseLength);
+            return new LightClientRequest(Address, Port, 0, onReceive, sslOptions, countResponseType);
         }
 
         public static EndPointCollection GetEndPoints(int shards, int port = default)

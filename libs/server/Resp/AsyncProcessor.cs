@@ -99,7 +99,7 @@ namespace Garnet.server
 
                                 // We write async push response as an array: [ "async", "<token_id>", "<result_string>" ]
                                 RespWriteUtils.WritePushLength(3, ref dcurr, dend);
-                                RespWriteUtils.WriteBulkString("async"u8, ref dcurr, dend);
+                                RespWriteUtils.WriteBulkString(CmdStrings.async, ref dcurr, dend);
                                 RespWriteUtils.WriteIntegerAsBulkString((int)completedOutputs.Current.Context, ref dcurr, dend);
                                 if (completedOutputs.Current.Status.Found)
                                 {
@@ -114,14 +114,13 @@ namespace Garnet.server
                                         SendAndReset();
                                 }
                             }
-                            completedOutputs.Dispose();
-
                             if (dcurr > networkSender.GetResponseObjectHead())
                                 Send(networkSender.GetResponseObjectHead());
                         }
                     }
                     finally
                     {
+                        completedOutputs.Dispose();
                         networkSender.ExitAndReturnResponseObject();
                     }
                 }
