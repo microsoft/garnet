@@ -410,16 +410,12 @@ namespace Garnet.server
 
             while (leftTokens > 0)
             {
-                byte* firstTokenPtr = null;
-                var firstTokenSize = 0;
-
                 // Read first token of current sub-command or path
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref firstTokenPtr, ref firstTokenSize, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var tokenSpan, ref ptr, recvBufferPtr + bytesRead))
                     return false;
                 leftTokens--;
 
                 // Check if first token defines the start of a new sub-command (cmdType) or a path
-                var tokenSpan = new ReadOnlySpan<byte>(firstTokenPtr, firstTokenSize);
                 if (!readPathsOnly && (tokenSpan.SequenceEqual(CmdStrings.READ) ||
                                        tokenSpan.SequenceEqual(CmdStrings.read)))
                 {
@@ -468,7 +464,7 @@ namespace Garnet.server
                     // Read only binary paths from this point forth
                     if (readPathsOnly)
                     {
-                        var path = Encoding.ASCII.GetString(firstTokenPtr, firstTokenSize);
+                        var path = Encoding.ASCII.GetString(tokenSpan);
                         binaryPaths.Add(path);
                     }
 
@@ -530,10 +526,7 @@ namespace Garnet.server
             // If ended before reading command, drain tokens not read from pipe
             while (leftTokens > 0)
             {
-                byte* firstTokenPtr = null;
-                int firstTokenSize = 0;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref firstTokenPtr, ref firstTokenSize, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out _, ref ptr, recvBufferPtr + bytesRead))
                     return false;
                 leftTokens--;
             }
@@ -694,7 +687,6 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                var key = new Span<byte>(keyPtr, ksize);
                 keyPtr -= sizeof(int);
 
                 if (c < opsDone)

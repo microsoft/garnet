@@ -595,24 +595,13 @@ namespace Garnet.server
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
 
-            byte* startParam = null;
-            int pstartsize = 0;
-
-            byte* stopParam = null;
-            int pstopsize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref startParam, ref pstartsize, ref input_currptr, input + length))
+            if (!RespReadUtils.ReadIntWithLengthHeader(out int start, ref input_currptr, input + length) ||
+                !RespReadUtils.ReadIntWithLengthHeader(out int stop, ref input_currptr, input + length))
+            {
                 return;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref stopParam, ref pstopsize, ref input_currptr, input + length))
-                return;
+            }
 
             _output->bytesDone = (int)(input_currptr - input_startptr);
-            _output->countDone = int.MaxValue;
-
-            if (!NumUtils.TryBytesToInt(startParam, pstartsize, out int start) || !NumUtils.TryBytesToInt(stopParam, pstopsize, out int stop))
-                return;
-
             _output->countDone = 0;
 
             if (start > sortedSetDict.Count - 1)
