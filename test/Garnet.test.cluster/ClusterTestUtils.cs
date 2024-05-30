@@ -1099,7 +1099,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured");
+                logger?.LogError(ex, "An error has occurred");
                 Assert.Fail(ex.Message);
             }
         }
@@ -1117,7 +1117,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured");
+                logger?.LogError(ex, "An error has occurred");
                 Assert.Fail(ex.Message);
             }
         }
@@ -1135,7 +1135,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured");
+                logger?.LogError(ex, "An error has occurred");
                 Assert.Fail(ex.Message);
                 return null;
             }
