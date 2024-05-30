@@ -214,7 +214,7 @@ namespace Garnet.common
         /// <summary>
         /// Encodes the <paramref name="span"/> as ASCII to <paramref name="curr"/>
         /// </summary>
-        /// <returns><see langword="true"/> if the the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
+        /// <returns><see langword="true"/> if the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
         public static bool WriteAsciiDirect(ReadOnlySpan<char> span, ref byte* curr, byte* end)
         {
             if (span.Length > (int)(end - curr))
@@ -437,8 +437,12 @@ namespace Garnet.common
             return 1 + integerLenSize + 2 + sign + integerLen + 2;
         }
 
+        /// <summary>
+        /// Try to write a double-precision floating-point <paramref name="value"/> as bulk string.
+        /// </summary>
+        /// <returns><see langword="true"/> if the <paramref name="value"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
         [SkipLocalsInit]
-        public static bool WriteDoubleBulkString(double value, ref byte* curr, byte* end)
+        public static bool TryWriteDoubleBulkString(double value, ref byte* curr, byte* end)
         {
             if (double.IsInfinity(value))
             {
@@ -458,8 +462,8 @@ namespace Garnet.common
                 return true;
             }
 
-            Span<byte> stackBuffer = stackalloc byte[32];
-            if (!Utf8Formatter.TryFormat(value, stackBuffer, out var bytesWritten, format: default))
+            Span<byte> buffer = stackalloc byte[32];
+            if (!Utf8Formatter.TryFormat(value, buffer, out var bytesWritten, format: default))
                 return false;
 
             var itemDigits = NumUtils.NumDigits(bytesWritten);
@@ -470,7 +474,7 @@ namespace Garnet.common
             *curr++ = (byte)'$';
             NumUtils.IntToBytes(bytesWritten, itemDigits, ref curr);
             WriteNewline(ref curr);
-            stackBuffer.Slice(0, bytesWritten).CopyTo(new Span<byte>(curr, bytesWritten));
+            buffer.Slice(0, bytesWritten).CopyTo(new Span<byte>(curr, bytesWritten));
             curr += bytesWritten;
             WriteNewline(ref curr);
             return true;

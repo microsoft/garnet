@@ -1233,7 +1233,7 @@ namespace Garnet.server
 
                             if (withscoresInclude)
                             {
-                                while (!RespWriteUtils.WriteDoubleBulkString(score, ref dcurr, dend))
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
                                     SendAndReset();
                             }
                         }

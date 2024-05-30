@@ -33,7 +33,7 @@ namespace BDN.benchmark.Resp
         public bool WriteDoubleAsBulkString(double value)
         {
             var startPtr = _bufferPtr;
-            return RespWriteUtils.WriteDoubleBulkString(value, ref startPtr, _bufferPtr + _buffer.Length);
+            return RespWriteUtils.TryWriteDoubleBulkString(value, ref startPtr, _bufferPtr + _buffer.Length);
         }
 
         [Benchmark]
