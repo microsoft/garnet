@@ -94,27 +94,42 @@ namespace Garnet.server
             if (list.Count > 0)
             {
                 // figure out where to insert BEFORE or AFTER
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var position, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var position, ref ptr, end))
                     return;
 
                 // get the source string
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var pivot, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var pivot, ref ptr, end))
                     return;
 
                 // get the string to INSERT into the list
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var insertitem, ref ptr, end))
                     return;
 
-                bool fBefore = CmdStrings.BEFORE.SequenceEqual(position);
+                bool insertBefore = position.SequenceEqual(CmdStrings.BEFORE);
+
+                _output->opsDone = -1;
 
                 // find the first ocurrence of the pivot element
-                current = list.Nodes().DefaultIfEmpty(null).FirstOrDefault(i => i.Value.AsSpan().SequenceEqual(pivot));
-                var newNode = current != default ? (fBefore ? list.AddBefore(current, insertitem) : list.AddAfter(current, insertitem)) : default;
-                if (current != null)
-                    this.UpdateSize(insertitem);
-                _output->opsDone = current != default ? list.Count : -1;
+                var currentNode = list.First;
+                do
+                {
+                    if (currentNode.Value.AsSpan().SequenceEqual(pivot))
+                    {
+                        if (insertBefore)
+                            list.AddBefore(currentNode, insertitem);
+                        else
+                            list.AddAfter(currentNode, insertitem);
+
+                        this.UpdateSize(insertitem);
+                        _output->opsDone = list.Count;
+                        break;
+                    }
+                }
+                while ((currentNode = currentNode.Next) != null);
+
                 _output->countDone = _output->opsDone;
             }
+
             // Write bytes parsed from input and count done, into output footer
             _output->bytesDone = (int)(ptr - startptr);
         }
