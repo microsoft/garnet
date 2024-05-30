@@ -85,7 +85,6 @@ namespace Garnet.server
             byte* startptr = input + sizeof(ObjectInputHeader);
             byte* ptr = startptr;
             byte* end = input + length;
-            LinkedListNode<byte[]> current = null;
 
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
