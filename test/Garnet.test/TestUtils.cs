@@ -461,8 +461,13 @@ namespace Garnet.test
                     clientCertificateRequired: true,
                     certificateRevocationCheckMode: X509RevocationMode.NoCheck,
                     issuerCertificatePath: null,
-                    null, 0, true, null, null,
-                    new SslClientAuthenticationOptions
+                    certSubjectName: null,
+                    certificateRefreshFrequency: 0,
+                    enableCluster: true,
+                    clientTargetHost: null,
+                    serverCertificateRequired: true,
+                    tlsServerOptionsOverride: null,
+                    clusterTlsClientOptionsOverride: new SslClientAuthenticationOptions
                     {
                         ClientCertificates = certificates ?? [new X509Certificate2(certFile, certPassword)],
                         TargetHost = "GarnetTest",
