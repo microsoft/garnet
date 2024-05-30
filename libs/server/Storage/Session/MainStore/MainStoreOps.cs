@@ -833,6 +833,51 @@ namespace Garnet.server
             output.length = _output.Length;
             return GarnetStatus.OK;
         }
+        
+        public unsafe GarnetStatus Increment<TContext>(ArgSlice key, long increment, out OperationError operationError, out long output, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+        {
+            var cmd = RespCommand.INCRBY;
+            if (increment < 0)
+            {
+                cmd = RespCommand.DECRBY;
+                increment = -increment;
+            }
+            
+            var incrementNumDigits = NumUtils.NumDigitsInLong(increment);
+            var inputByteSize = RespInputHeader.Size + incrementNumDigits;
+            var input = stackalloc byte[inputByteSize];
+            ((RespInputHeader*)input)->cmd = cmd;
+            ((RespInputHeader*)input)->flags = 0;
+            var longOutput = input + RespInputHeader.Size;
+            NumUtils.LongToBytes(increment, incrementNumDigits, ref longOutput);
+            
+            const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
+            byte* outputBuffer = stackalloc byte[outputBufferLength];
+
+            var _key = key.SpanByte;
+            var _input = SpanByte.FromPinnedPointer(input, inputByteSize);
+            var _output = new SpanByteAndMemory(outputBuffer, outputBufferLength);
+
+            var status = context.RMW(ref _key, ref _input, ref _output);
+            if (status.IsPending)
+                CompletePendingForSession(ref status, ref _output, ref context);
+            Debug.Assert(_output.IsSpanByte);
+            
+            var errorFlag = _output.Length == outputBufferLength
+                ? (OperationError) (*outputBuffer)
+                : OperationError.SUCCESS;
+            if (errorFlag != OperationError.SUCCESS)
+            {
+                output = 0;
+                operationError = errorFlag;
+                return GarnetStatus.OK;
+            }
+            
+            output = NumUtils.BytesToLong(_output.Length, outputBuffer);
+            operationError = OperationError.SUCCESS;
+            return GarnetStatus.OK;
+        }
 
         public void WATCH(ArgSlice key, StoreType type)
         {

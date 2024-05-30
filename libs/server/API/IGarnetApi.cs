@@ -185,6 +185,16 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output);
+        
+        /// <summary>
+        /// Increment (INCR, INCRBY, DECR, DECRBY)
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="incrementCount"></param>
+        /// <param name="operationError"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus Increment(ArgSlice key, long incrementCount, out OperationError operationError, out long output);
         #endregion
 
         #region DELETE
@@ -1089,6 +1099,17 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus SortedSetRank(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
+        /// <summary>
+        /// ZRANK: Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
+        /// ZREVRANK: Returns the rank of member in the sorted set, with the scores ordered from high to low
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="member"></param>
+        /// <param name="reverse"></param>
+        /// <param name="rank"></param>
+        /// <returns></returns>
+        GarnetStatus SortedSetRank(ArgSlice key, ArgSlice member, bool reverse, out long? rank);
+        
         /// <summary>
         /// Returns a random element from the sorted set key.
         /// </summary>

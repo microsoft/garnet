@@ -115,6 +115,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.SortedSetRank(key, input, ref outputFooter, ref objectContext);
+        
+        /// <inheritdoc />
+        public GarnetStatus SortedSetRank(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
+            => storageSession.SortedSetRank(key, member, reverse, out rank, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)

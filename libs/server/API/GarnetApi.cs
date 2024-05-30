@@ -181,6 +181,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public unsafe GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output)
             => storageSession.Increment(key, input, ref output, ref context);
+
+        /// <inheritdoc />
+        public GarnetStatus Increment(ArgSlice key, long increment, out OperationError operationError, out long output) 
+            => storageSession.Increment(key, increment, out operationError, out output, ref context);
         #endregion
 
         #region DELETE
