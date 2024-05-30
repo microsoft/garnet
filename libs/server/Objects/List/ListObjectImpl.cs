@@ -43,6 +43,7 @@ namespace Garnet.server
                 var currentNode = list.First;
                 do
                 {
+                    var nextNode = currentNode.Next;
                     if (currentNode.Value.AsSpan().SequenceEqual(itemSpan))
                     {
                         list.Remove(currentNode);
@@ -50,8 +51,9 @@ namespace Garnet.server
 
                         removedCount++;
                     }
+                    currentNode = nextNode;
                 }
-                while ((currentNode = currentNode.Next) != null);
+                while (currentNode != null);
             }
             else
             {
