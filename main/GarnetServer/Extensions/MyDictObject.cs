@@ -22,8 +22,6 @@ namespace Garnet
 
     class MyDict : CustomObjectBase
     {
-        public override int Count => dict.Count;
-
         readonly Dictionary<byte[], byte[]> dict;
 
         public MyDict(byte type)
@@ -68,7 +66,7 @@ namespace Garnet
             }
         }
 
-        public override void Operate(byte subCommand, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output)
+        public override void Operate(byte subCommand, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output, out bool removeKey)
         {
             switch (subCommand)
             {
@@ -95,6 +93,8 @@ namespace Garnet
                     WriteError(ref output, "Unexpected command");
                     break;
             }
+
+            removeKey = dict.Count == 0;
         }
 
         public override void Dispose() { }

@@ -41,8 +41,6 @@ namespace Garnet.server
     public unsafe partial class SetObject : GarnetObjectBase
     {
         /// <inheritdoc />
-        public override int Count => set.Count;
-
         readonly HashSet<byte[]> set;
 
         /// <summary>
@@ -107,7 +105,7 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SetObject(set, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange)
+        public override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
             fixed (byte* _input = input.AsSpan())
             fixed (byte* _output = output.SpanByte.AsSpan())
@@ -150,6 +148,8 @@ namespace Garnet.server
                 }
                 sizeChange = this.Size - prevSize;
             }
+
+            removeKey = set.Count == 0;
             return true;
         }
 

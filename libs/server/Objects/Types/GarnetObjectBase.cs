@@ -27,9 +27,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public long Size { get; set; }
 
-        /// <inheritdoc />
-        public abstract int Count { get; }
-
         protected GarnetObjectBase(long expiration, long size)
         {
             Debug.Assert(size >= 0);
@@ -119,7 +116,7 @@ namespace Garnet.server
         public abstract GarnetObjectBase Clone();
 
         /// <inheritdoc />
-        public abstract bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange);
+        public abstract bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey);
 
         /// <inheritdoc />
         public abstract void Dispose();

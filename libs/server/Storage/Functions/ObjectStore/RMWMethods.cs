@@ -27,7 +27,7 @@ namespace Garnet.server
                 byte objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
                 value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
             }
-            value.Operate(ref input, ref output.spanByteAndMemory, out _);
+            value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
             return true;
         }
 
@@ -74,7 +74,7 @@ namespace Garnet.server
             switch (header->type)
             {
                 case GarnetObjectType.Expire:
-                    ExpireOption optionType = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
+                    var optionType = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
                     bool expiryExists = (value.Expiration > 0);
                     return EvaluateObjectExpireInPlace(optionType, expiryExists, ref input, ref value, ref output);
                 case GarnetObjectType.Persist:
@@ -87,8 +87,9 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     return true;
                 default:
-                    var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange);
-                    if (value.Count == 0)
+                    var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
+                        out var removeKey);
+                    if (removeKey)
                     {
                         rmwInfo.Action = RMWAction.ExpireAndStop;
                         return false;
@@ -119,16 +120,21 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostCopyUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject oldValue, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
+            // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
+            // the record was CASed into the hash chain before it gets modified
             oldValue.CopyUpdate(ref oldValue, ref value, rmwInfo.RecordInfo.IsInNewVersion);
 
             var header = (RespInputHeader*)input.ToPointer();
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+
+            var expireInPlace = false;
+            var expireOption = ExpireOption.None;
+
             switch (header->type)
             {
                 case GarnetObjectType.Expire:
-                    ExpireOption optionType = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
-                    bool expiryExists = (value.Expiration > 0);
-                    EvaluateObjectExpireInPlace(optionType, expiryExists, ref input, ref value, ref output);
+                    expireOption = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
+                    expireInPlace = true;
                     break;
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
@@ -140,9 +146,15 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     break;
                 default:
-                    value.Operate(ref input, ref output.spanByteAndMemory, out _);
-
+                    value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
+                    expireInPlace = removeKey;
                     break;
+            }
+
+            if (expireInPlace)
+            {
+                var expiryExists = (value.Expiration > 0);
+                EvaluateObjectExpireInPlace(expireOption, expiryExists, ref input, ref value, ref output);
             }
 
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));

@@ -57,10 +57,11 @@ namespace Garnet.test
             string popval = db.ListLeftPop(key);
             Assert.AreEqual(val, popval);
 
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(result.IsNull);
         }
 
         [Test]
@@ -395,12 +396,13 @@ namespace Garnet.test
 
             // list is empty, the code should return (nil)
             popval = db.ListLeftPop(key);
-            Assert.AreEqual(null, popval);
+            Assert.IsNull(popval);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(result.IsNull);
         }
 
         [Test]
@@ -470,19 +472,15 @@ namespace Garnet.test
                     break;
             }
 
-            result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
-
             // list is empty, the code should return (nil)
             popval = db.ListLeftPop(key);
-            Assert.AreEqual(null, popval);
+            Assert.IsNull(popval);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(result.IsNull);
         }
 
         [Test]

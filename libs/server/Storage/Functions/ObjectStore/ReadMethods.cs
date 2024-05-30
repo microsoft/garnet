@@ -28,7 +28,7 @@ namespace Garnet.server
                 return true;
             }
 
-            return value.Operate(ref input, ref dst.spanByteAndMemory, out _);
+            return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
         }
 
         /// <inheritdoc />
@@ -52,7 +52,7 @@ namespace Garnet.server
                     CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
                     return true;
                 }
-                return value.Operate(ref input, ref dst.spanByteAndMemory, out _);
+                return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
             }
 
             dst.garnetObject = value;

@@ -58,11 +58,15 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var key = new RedisKey("user1:set");
             var db = redis.GetDatabase(0);
-            var result = db.SetAdd(key, ["Hello", "World"]);
+            var members = new[] { new RedisValue("Hello"), new RedisValue("World") };
+            var result = db.SetAdd(key, members);
             Assert.AreEqual(2, result);
 
-            var result1 = db.SetPop(key, 2);
-            var result2 = db.KeyExists(key);
+            var actualMembers = db.SetPop(key, 2);
+            Assert.AreEqual(members.Length, actualMembers.Length);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
         }
 
         [Test]

@@ -29,18 +29,14 @@ namespace Garnet.server
         long Size { get; set; }
 
         /// <summary>
-        /// Item count in the collection
-        /// </summary>
-        int Count { get; }
-
-        /// <summary>
         /// Operator on object
         /// </summary>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <param name="sizeChange"></param>
+        /// <param name="removeKey"></param>
         /// <returns></returns>
-        bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange);
+        bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey);
 
         /// <summary>
         /// Serializer
