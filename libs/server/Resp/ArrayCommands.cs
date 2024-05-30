@@ -734,7 +734,7 @@ namespace Garnet.server
         private bool NetworkSELECT(byte* ptr)
         {
             // Read index
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var result, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadIntWithLengthHeader(out var result, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             readHead = (int)(ptr - recvBufferPtr);
@@ -748,7 +748,7 @@ namespace Garnet.server
             else
             {
 
-                if (string.Equals(result, "0"))
+                if (result == 0)
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();

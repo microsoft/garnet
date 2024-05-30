@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -273,9 +274,9 @@ namespace Garnet.server
 
             if (count > 3)
             {
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var offsetType, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var offsetType, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                bitOffsetType = offsetType.Equals("BIT", StringComparison.OrdinalIgnoreCase) ? (byte)0x1 : (byte)0x0;
+                bitOffsetType = AsciiUtils.EqualsIgnoreCase(offsetType, "BIT"u8) ? (byte)0x1 : (byte)0x0;
             }
 
             readHead = (int)(ptr - recvBufferPtr);
@@ -374,9 +375,9 @@ namespace Garnet.server
 
             if (count > 4)
             {
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var offsetType, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var offsetType, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                bitOffsetType = offsetType.Equals("BIT", StringComparison.OrdinalIgnoreCase) ? (byte)0x1 : (byte)0x0;
+                bitOffsetType = AsciiUtils.EqualsIgnoreCase(offsetType, "BIT"u8) ? (byte)0x1 : (byte)0x0;
             }
 
             readHead = (int)(ptr - recvBufferPtr);
@@ -505,25 +506,25 @@ namespace Garnet.server
             while (currCount < endCount)
             {
                 //Get subcommand
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var command, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var command, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
                 //process overflow command
-                if (command.Equals("OVERFLOW", StringComparison.OrdinalIgnoreCase))
+                if (AsciiUtils.EqualsIgnoreCase(command, "OVERFLOW"u8))
                 {
                     //Get overflow parameter
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out var overflowArg, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var overflowArg, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    if (overflowArg.Equals("WRAP", StringComparison.OrdinalIgnoreCase))
+                    if (AsciiUtils.EqualsIgnoreCase(overflowArg, "WRAP"u8))
                         overFlowType = (byte)BitFieldOverflow.WRAP;
-                    else if (overflowArg.Equals("SAT", StringComparison.OrdinalIgnoreCase))
+                    else if (AsciiUtils.EqualsIgnoreCase(overflowArg, "SAT"u8))
                         overFlowType = (byte)BitFieldOverflow.SAT;
-                    else if (overflowArg.Equals("FAIL", StringComparison.OrdinalIgnoreCase))
+                    else if (AsciiUtils.EqualsIgnoreCase(overflowArg, "FAIL"u8))
                         overFlowType = (byte)BitFieldOverflow.FAIL;
                     //At this point processed two arguments
                     else
                     {
-                        while (!RespWriteUtils.WriteError($"ERR Overflow type {overflowArg} not supported", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError($"ERR Overflow type {Encoding.ASCII.GetString(overflowArg)} not supported", ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -541,7 +542,7 @@ namespace Garnet.server
                         return false;
 
                     //Subcommand takes 2 args, encoding and offset
-                    if (command.Equals("GET", StringComparison.OrdinalIgnoreCase))
+                    if (AsciiUtils.EqualsIgnoreCase(command, "GET"u8))
                     {
                         secondaryOPcode = (byte)RespCommand.GET;
                         currCount += 3;// Skip 3 args including subcommand
@@ -549,21 +550,20 @@ namespace Garnet.server
                     else
                     {
                         //SET and INCRBY take 3 args, encoding, offset, and valueArg
-                        if (command.Equals("SET", StringComparison.OrdinalIgnoreCase))
+                        if (AsciiUtils.EqualsIgnoreCase(command, "SET"u8))
                             secondaryOPcode = (byte)RespCommand.SET;
-                        else if (command.Equals("INCRBY", StringComparison.OrdinalIgnoreCase))
+                        else if (AsciiUtils.EqualsIgnoreCase(command, "INCRBY"u8))
                             secondaryOPcode = (byte)RespCommand.INCRBY;
                         else
                         {
-                            while (!RespWriteUtils.WriteError($"ERR Bitfield command {command} not supported", ref dcurr, dend))
+                            while (!RespWriteUtils.WriteError($"ERR Bitfield command {Encoding.ASCII.GetString(command)} not supported", ref dcurr, dend))
                                 SendAndReset();
                             return true;
                         }
 
-                        if (!RespReadUtils.ReadStringWithLengthHeader(out var valueArg, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadUtils.ReadLongWithLengthHeader(out value, ref ptr, recvBufferPtr + bytesRead))
                             return false;
 
-                        value = long.Parse(valueArg);
                         currCount += 4;// Skip 4 args including subcommand
                     }
 
@@ -691,7 +691,7 @@ namespace Garnet.server
                     while (currCount < endCount)
                     {
                         //Extract bitfield subcommand
-                        if (!RespReadUtils.ReadStringWithLengthHeader(out var errorCommand, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadUtils.TrySliceWithLengthHeader(out _, ref ptr, recvBufferPtr + bytesRead))
                             return false;
                         currCount++;
                     }
@@ -699,24 +699,24 @@ namespace Garnet.server
                 }
 
                 //process overflow command
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var command, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var command, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
                 //Process overflow subcommand
-                if (command.Equals("OVERFLOW", StringComparison.OrdinalIgnoreCase))
+                if (AsciiUtils.EqualsIgnoreCase(command, "OVERFLOW"u8))
                 {
                     //Get overflow parameter
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out var overflowArg, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var overflowArg, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    if (overflowArg.Equals("WRAP", StringComparison.OrdinalIgnoreCase))
+                    if (AsciiUtils.EqualsIgnoreCase(overflowArg, "WRAP"u8))
                         overFlowType = (byte)BitFieldOverflow.WRAP;
-                    else if (overflowArg.Equals("SAT", StringComparison.OrdinalIgnoreCase))
+                    else if (AsciiUtils.EqualsIgnoreCase(overflowArg, "SAT"u8))
                         overFlowType = (byte)BitFieldOverflow.SAT;
-                    else if (overflowArg.Equals("FAIL", StringComparison.OrdinalIgnoreCase))
+                    else if (AsciiUtils.EqualsIgnoreCase(overflowArg, "FAIL"u8))
                         overFlowType = (byte)BitFieldOverflow.FAIL;
                     else
                     {
-                        while (!RespWriteUtils.WriteError($"ERR Overflow type {overflowArg} not supported", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError($"ERR Overflow type {Encoding.ASCII.GetString(overflowArg)} not supported", ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -735,7 +735,7 @@ namespace Garnet.server
                         return false;
 
                     //Subcommand takes 2 args, encoding and offset
-                    if (command.Equals("GET", StringComparison.OrdinalIgnoreCase))
+                    if (AsciiUtils.EqualsIgnoreCase(command, "GET"u8))
                     {
                         secondaryOPcode = (byte)RespCommand.GET;
                         currCount += 3;// Skip 3 args including subcommand
@@ -744,10 +744,9 @@ namespace Garnet.server
                     {
                         //SET and INCRBY take 3 args, encoding, offset, and valueArg
                         writeError = true;
-                        if (!RespReadUtils.ReadStringWithLengthHeader(out var valueArg, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadUtils.ReadLongWithLengthHeader(out value, ref ptr, recvBufferPtr + bytesRead))
                             return false;
 
-                        value = Int64.Parse(valueArg);
                         currCount += 4;// Skip 4 args including subcommand
                     }
 
