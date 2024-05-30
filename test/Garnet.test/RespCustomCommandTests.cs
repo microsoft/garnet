@@ -11,9 +11,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Text;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -23,7 +20,6 @@ namespace Garnet.test
     public class RespCustomCommandTests
     {
         GarnetServer server;
-        private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
         private string _extTestDir1;
         private string _extTestDir2;
 
@@ -32,9 +28,6 @@ namespace Garnet.test
         {
             _extTestDir1 = Path.Combine(TestUtils.MethodTestDir, "test1");
             _extTestDir2 = Path.Combine(TestUtils.MethodTestDir, "test2");
-
-            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
-            Assert.IsNotNull(respCustomCommandsInfo);
 
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
@@ -56,7 +49,7 @@ namespace Garnet.test
         public void CustomCommandTest1()
         {
             // Register sample custom command (SETIFPM = "set if prefix match")
-            int x = server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), respCustomCommandsInfo["SETIFPM"]);
+            int x = server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -101,8 +94,7 @@ namespace Garnet.test
         public void CustomCommandTest2()
         {
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
-                respCustomCommandsInfo["SETWPIFPGT"]);
+            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -182,8 +174,7 @@ namespace Garnet.test
         public void CustomCommandTest3()
         {
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
-                respCustomCommandsInfo["SETWPIFPGT"]);
+            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -213,8 +204,7 @@ namespace Garnet.test
         public void CustomCommandTest4()
         {
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
-                respCustomCommandsInfo["SETWPIFPGT"]);
+            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -244,8 +234,7 @@ namespace Garnet.test
         public void CustomCommandTest5()
         {
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
-                respCustomCommandsInfo["SETWPIFPGT"]);
+            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -284,7 +273,7 @@ namespace Garnet.test
         public void CustomCommandTest6()
         {
             // Register sample custom command (SETIFPM = "set if prefix match")
-            server.Register.NewCommand("DELIFM", 1, CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand(), respCustomCommandsInfo["DELIFM"]);
+            server.Register.NewCommand("DELIFM", 1, CommandType.ReadModifyWrite, new DeleteIfMatchCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -314,8 +303,8 @@ namespace Garnet.test
         {
             // Register sample custom command on object
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, respCustomCommandsInfo["MYDICTSET"]);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, respCustomCommandsInfo["MYDICTGET"]);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -351,8 +340,7 @@ namespace Garnet.test
         public void CustomCommandSetWhileKeyHasTtlTest()
         {
             // Register sample custom command (SETWPIFPGT = "set if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
-                respCustomCommandsInfo["SETWPIFPGT"]);
+            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -385,8 +373,7 @@ namespace Garnet.test
         public void CustomCommandSetAfterKeyDeletedWithTtlTest()
         {
             // Register sample custom command (SETWPIFPGT = "set if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
-                respCustomCommandsInfo["SETWPIFPGT"]);
+            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -417,8 +404,8 @@ namespace Garnet.test
         {
             // Register sample custom command on object
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, respCustomCommandsInfo["MYDICTSET"]);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, respCustomCommandsInfo["MYDICTGET"]);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -454,8 +441,7 @@ namespace Garnet.test
         public async Task CustomCommandSetFollowedByTtlTestAsync()
         {
             // Register sample custom command (SETWPIFPGT = "set if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
-                respCustomCommandsInfo["SETWPIFPGT"]);
+            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -485,7 +471,6 @@ namespace Garnet.test
         {
             // Register sample custom command (SETWPIFPGT = "set if prefix greater than")
             server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
-                respCustomCommandsInfo["SETWPIFPGT"],
                 expirationTicks: TimeSpan.FromSeconds(4).Ticks); // provide default expiration at registration time
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -512,55 +497,6 @@ namespace Garnet.test
             // should be expired now
             retValue = db.StringGet(key);
             Assert.AreEqual(null, retValue);
-        }
-
-        public static void CreateTestLibrary(string[] namespaces, string[] referenceFiles, string[] filesToCompile, string dstFilePath)
-        {
-            if (File.Exists(dstFilePath))
-            {
-                File.Delete(dstFilePath);
-            }
-
-            foreach (var referenceFile in referenceFiles)
-            {
-                Assert.IsTrue(File.Exists(referenceFile), $"File '{Path.GetFullPath(referenceFile)}' does not exist.");
-            }
-
-            var references = referenceFiles.Select(f => MetadataReference.CreateFromFile(f));
-
-            foreach (var fileToCompile in filesToCompile)
-            {
-                Assert.IsTrue(File.Exists(fileToCompile), $"File '{Path.GetFullPath(fileToCompile)}' does not exist.");
-            }
-
-            var parseFunc = new Func<string, SyntaxTree>(filePath =>
-            {
-                var source = File.ReadAllText(filePath);
-                var stringText = SourceText.From(source, Encoding.UTF8);
-                return SyntaxFactory.ParseSyntaxTree(stringText,
-                    CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest), string.Empty);
-            });
-
-            var syntaxTrees = filesToCompile.Select(f => parseFunc(f));
-
-            var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-                .WithAllowUnsafe(true)
-                .WithOverflowChecks(true)
-                .WithOptimizationLevel(OptimizationLevel.Release)
-                .WithUsings(namespaces);
-
-
-            var compilation = CSharpCompilation.Create(Path.GetFileName(dstFilePath), syntaxTrees, references, compilationOptions);
-
-            try
-            {
-                var result = compilation.Emit(dstFilePath);
-                Assert.IsTrue(result.Success);
-            }
-            catch (Exception ex)
-            {
-                Assert.Fail(ex.Message);
-            }
         }
 
         private string[] CreateTestLibraries()
@@ -621,7 +557,7 @@ namespace Garnet.test
 
             foreach (var ltf in libPathToFiles)
             {
-                CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
+                TestUtils.CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
             }
 
             var notAllowedPath = Path.Combine(TestUtils.MethodTestDir, "testLib1.dll");
