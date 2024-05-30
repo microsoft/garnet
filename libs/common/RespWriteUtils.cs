@@ -443,6 +443,8 @@ namespace Garnet.common
             if (double.IsInfinity(value))
             {
                 var infinityOutput = new Span<byte>(curr, (int)(end - curr));
+                curr += 10;
+
                 if (double.IsPositiveInfinity(value))
                 {
                     if (!"$4\r\n+inf\r\n"u8.TryCopyTo(infinityOutput))
@@ -454,7 +456,6 @@ namespace Garnet.common
                         return false;
                 }
 
-                curr += infinityOutput.Length;
                 return true;
             }
 
