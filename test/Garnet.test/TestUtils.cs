@@ -11,12 +11,16 @@ using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Threading;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -43,7 +47,7 @@ namespace Garnet.test
         static readonly bool useTestLogger = false;
 
         private static int procId = Process.GetCurrentProcess().Id;
-        private static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
+        internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
 
         private static bool CustomCommandsInfoInitialized;
         private static IReadOnlyDictionary<string, RespCommandsInfo> RespCustomCommandsInfo;
@@ -735,6 +739,55 @@ namespace Garnet.test
                 }
             }
             throw new Exception($"Certicate errors found {sslPolicyErrors}!");
+        }
+
+        public static void CreateTestLibrary(string[] namespaces, string[] referenceFiles, string[] filesToCompile, string dstFilePath)
+        {
+            if (File.Exists(dstFilePath))
+            {
+                File.Delete(dstFilePath);
+            }
+
+            foreach (var referenceFile in referenceFiles)
+            {
+                Assert.IsTrue(File.Exists(referenceFile), $"File '{Path.GetFullPath(referenceFile)}' does not exist.");
+            }
+
+            var references = referenceFiles.Select(f => MetadataReference.CreateFromFile(f));
+
+            foreach (var fileToCompile in filesToCompile)
+            {
+                Assert.IsTrue(File.Exists(fileToCompile), $"File '{Path.GetFullPath(fileToCompile)}' does not exist.");
+            }
+
+            var parseFunc = new Func<string, SyntaxTree>(filePath =>
+            {
+                var source = File.ReadAllText(filePath);
+                var stringText = SourceText.From(source, Encoding.UTF8);
+                return SyntaxFactory.ParseSyntaxTree(stringText,
+                    CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest), string.Empty);
+            });
+
+            var syntaxTrees = filesToCompile.Select(f => parseFunc(f));
+
+            var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+                .WithAllowUnsafe(true)
+                .WithOverflowChecks(true)
+                .WithOptimizationLevel(OptimizationLevel.Release)
+                .WithUsings(namespaces);
+
+
+            var compilation = CSharpCompilation.Create(Path.GetFileName(dstFilePath), syntaxTrees, references, compilationOptions);
+
+            try
+            {
+                var result = compilation.Emit(dstFilePath);
+                Assert.IsTrue(result.Success);
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail(ex.Message);
+            }
         }
     }
 }
