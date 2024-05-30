@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common.Parsing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Garnet.common
 {
@@ -481,6 +482,36 @@ namespace Garnet.common
         public static bool ReadByteArrayWithLengthHeader(out byte[] result, ref byte* ptr, byte* end)
         {
             result = null;
+            if (!TrySliceWithLengthHeader(out var resultSpan, ref ptr, end))
+                return false;
+
+            result = resultSpan.ToArray();
+            return true;
+        }
+
+        /// <summary>
+        /// Try slice a byte array with length header.
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: Because this hands out a span over the underlying buffer to the caller, 
+        /// it must be aware that any changes in the memory where <paramref name="ptr"/> pointed to 
+        /// will be reflected in the <paramref name="result"/> span. i.e.
+        /// <code>
+        /// byte[] buffer = "$2\r\nAB\r\n"u8.ToArray();
+        /// fixed (byte* ptr = buffer)
+        /// {
+        ///     TrySliceWithLengthHeader(out var result, ref ptr, ptr + buffer.Length);
+        ///     Debug.Assert(result.SequenceEquals("AB"u8)); // True
+        ///     
+        ///     *(ptr - 4) = (byte)'C';
+        ///     *(ptr - 3) = (byte)'D';
+        ///     Debug.Assert(result.SequenceEquals("CD"u8)); // True
+        /// }
+        /// </code>
+        /// </remarks>
+        public static bool TrySliceWithLengthHeader(out ReadOnlySpan<byte> result, scoped ref byte* ptr, byte* end)
+        {
+            result = default;
 
             // Parse RESP string header
             if (!ReadLengthHeader(out var length, ref ptr, end))
@@ -500,8 +531,7 @@ namespace Garnet.common
                 RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
             }
 
-            result = new Span<byte>(keyPtr, length).ToArray();
-
+            result = new ReadOnlySpan<byte>(keyPtr, length);
             return true;
         }
 
