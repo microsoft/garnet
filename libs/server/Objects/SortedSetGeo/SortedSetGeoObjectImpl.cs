@@ -377,7 +377,7 @@ namespace Garnet.server
             {
                 var opts = new GeoSearchOptions();
                 byte[] fromMember = null;
-                ReadOnlySpan<byte> byBoxUnits = "M"u8;
+                var byBoxUnits = "M"u8;
                 var byRadiusUnits = byBoxUnits;
                 double width = 0, height = 0;
                 int countValue = 0;
