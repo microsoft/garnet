@@ -30,7 +30,7 @@ namespace Garnet.server
             Debug.Assert(_output.spanByteAndMemory.IsSpanByte);
 
 
-            if (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated)
+            if (status.NotFound || (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated))
                 return GarnetStatus.NOTFOUND;
 
             return GarnetStatus.OK;
@@ -57,7 +57,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
 
-            if (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated)
+            if (status.NotFound || (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated))
                 return GarnetStatus.NOTFOUND;
 
             return GarnetStatus.OK;

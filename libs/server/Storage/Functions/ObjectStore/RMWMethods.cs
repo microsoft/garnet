@@ -127,14 +127,13 @@ namespace Garnet.server
             var header = (RespInputHeader*)input.ToPointer();
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
-            var expireInPlace = false;
-            var expireOption = ExpireOption.None;
 
             switch (header->type)
             {
                 case GarnetObjectType.Expire:
-                    expireOption = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
-                    expireInPlace = true;
+                    var expireOption = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
+                    var expiryExists = (value.Expiration > 0);
+                    EvaluateObjectExpireInPlace(expireOption, expiryExists, ref input, ref value, ref output);
                     break;
                 case GarnetObjectType.Persist:
                     if (value.Expiration > 0)
@@ -147,14 +146,7 @@ namespace Garnet.server
                     break;
                 default:
                     value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
-                    expireInPlace = removeKey;
                     break;
-            }
-
-            if (expireInPlace)
-            {
-                var expiryExists = (value.Expiration > 0);
-                EvaluateObjectExpireInPlace(expireOption, expiryExists, ref input, ref value, ref output);
             }
 
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));
