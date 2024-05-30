@@ -666,16 +666,15 @@ namespace Garnet.server
             // command could be partially executed
             _output->countDone = int.MinValue;
 
-            // read min
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamByteArray, ref input_currptr, input + length))
+            // read min and max
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamBytes, ref input_currptr, input + length) ||
+                !RespReadUtils.TrySliceWithLengthHeader(out var maxParamBytes, ref input_currptr, input + length))
+            {
                 return;
+            }
 
-            // read max
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, input + length))
-                return;
-
-            if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) ||
-                !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
+            if (!TryParseParameter(minParamBytes, out var minValue, out var minExclusive) ||
+                !TryParseParameter(maxParamBytes, out var maxValue, out var maxExclusive))
             {
                 _output->countDone = int.MaxValue;
             }
@@ -792,15 +791,14 @@ namespace Garnet.server
             //using minValue for partial execution detection
             _output->countDone = int.MinValue;
 
-            // read min
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamByteArray, ref input_currptr, end))
+            // read min and max
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamBytes, ref input_currptr, end) ||
+                !RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamBytes, ref input_currptr, end))
+            {
                 return;
+            }
 
-            // read max
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, end))
-                return;
-
-            var rem = GetElementsInRangeByLex(minParamByteArray, maxParamByteArray, false, false, op != SortedSetOperation.ZLEXCOUNT, out int count);
+            var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, op != SortedSetOperation.ZLEXCOUNT, out int count);
 
             _output->countDone = count;
             _output->opsDone = rem.Count;

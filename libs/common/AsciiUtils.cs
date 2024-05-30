@@ -10,13 +10,25 @@ namespace Garnet.common;
 /// <summary>
 /// Utilites for ASCII parsing and manipulation.
 /// </summary>
+/// <remarks>
+/// This class polyfills various <see cref="char"/> and <see cref="Ascii"/> methods for .NET 6.
+/// </remarks>
 public static class AsciiUtils
 {
-    public static byte ToLower(byte value)
+    public static bool IsBetween(byte c, char minInclusive, char maxInclusive) =>
+            (uint)(c - minInclusive) <= (uint)(maxInclusive - minInclusive);
+
+    public static byte ToLower(byte c)
     {
-        if ((uint)(value - 'A') <= (uint)('Z' - 'A')) // Is in [A-Z]
-            value = (byte)(value | 0x20);
-        return value;
+        if (IsBetween(c, 'A', 'Z'))
+            c = (byte)(c | 0x20);
+        return c;
+    }
+    public static byte ToUpper(byte c)
+    {
+        if (IsBetween(c, 'a', 'z'))
+            c = (byte)(c & ~0x20);
+        return c;
     }
 
     /// <summary>
