@@ -50,32 +50,66 @@ namespace Garnet.test
             var existingCombinations = new HashSet<RespCommand>();
             foreach (var commandInfo in respCommandsInfo.Values)
             {
-                if (!existingCombinations.Contains(commandInfo.Command))
-                    existingCombinations.Add(commandInfo.Command);
+                existingCombinations.Add(commandInfo.Command);
+
+                if (commandInfo.SubCommands != null)
+                {
+                    foreach (var subCommandInfo in commandInfo.SubCommands)
+                    {
+                        existingCombinations.Add(subCommandInfo.SubCommand.Value);
+                    }
+                }
             }
 
             // RespCommands that can be ignored
             var ignoreCommands = new HashSet<RespCommand>()
             {
+                // Implementation details
                 RespCommand.NONE,
+                RespCommand.INVALID,
+
+                // Custom commands
                 RespCommand.COSCAN,
                 RespCommand.CustomCmd,
                 RespCommand.CustomObjCmd,
                 RespCommand.CustomTxn,
-                RespCommand.INVALID,
+                RespCommand.LATENCY_HELP,
+                RespCommand.CLUSTER_HELP,
+                
+                // SET EX weirdness
                 RespCommand.SETEXNX,
                 RespCommand.SETEXXX,
                 RespCommand.SETKEEPTTL,
                 RespCommand.SETKEEPTTLXX,
+
+                // Cluster internal commands which shouldn't be documented
+                RespCommand.CLUSTER_AOFSYNC,
+                RespCommand.CLUSTER_APPENDLOG,
+                RespCommand.CLUSTER_BANLIST,
+                RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER,
+                RespCommand.CLUSTER_DELKEYSINSLOT,
+                RespCommand.CLUSTER_DELKEYSINSLOTRANGE,
+                RespCommand.CLUSTER_ENDPOINT,
+                RespCommand.CLUSTER_FAILREPLICATIONOFFSET,
+                RespCommand.CLUSTER_FAILSTOPWRITES,
+                RespCommand.CLUSTER_GOSSIP,
+                RespCommand.CLUSTER_INITIATE_REPLICA_SYNC,
+                RespCommand.CLUSTER_MIGRATE,
+                RespCommand.CLUSTER_MTASKS,
+                RespCommand.CLUSTER_MYPARENTID,
+                RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT,
+                RespCommand.CLUSTER_SEND_CKPT_METADATA,
+                RespCommand.CLUSTER_SETSLOTSRANGE,
+                RespCommand.CLUSTER_SLOTSTATE,
             };
 
-            var missingCombinations = new List<(RespCommand, byte)>();
+            var missingCombinations = new List<RespCommand>();
             foreach (var respCommand in Enum.GetValues<RespCommand>())
             {
                 if (ignoreCommands.Contains(respCommand)) continue;
 
                 if (!existingCombinations.Contains(respCommand))
-                    missingCombinations.Add((respCommand, 0));
+                    missingCombinations.Add(respCommand);
             }
 
             // Verify that there are no missing combinations
