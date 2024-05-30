@@ -27,7 +27,7 @@ else()
 set (FNATIVE_DEVICE_HEADERS ${NATIVE_DEVICE_HEADERS}
   device/file_linux.h
 )
-endif() 
+endif()
 
 set (NATIVE_DEVICE_SOURCES
   device/lss_allocator.cc
@@ -49,3 +49,6 @@ add_library(native_device SHARED ${NATIVE_DEVICE_SOURCES} ${NATIVE_DEVICE_HEADER
 if (UNIX)
    target_link_libraries(native_device PRIVATE stdc++fs aio)
 endif()
+
+
+
