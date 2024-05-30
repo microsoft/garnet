@@ -113,8 +113,8 @@ namespace Garnet.server
             => storageSession.SortedSetRemoveRange(key, input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SortedSetRank(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetRank(key, input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
