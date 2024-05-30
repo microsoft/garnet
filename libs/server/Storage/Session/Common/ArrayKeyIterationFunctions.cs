@@ -38,7 +38,7 @@ namespace Garnet.server
         /// <param name="count">size of every block or keys to return</param>
         /// <param name="typeObject">The type object to filter out</param>
         /// <returns></returns>
-        internal unsafe bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> keys, long count = 10, Span<byte> typeObject = default)
+        internal unsafe bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> keys, long count = 10, ReadOnlySpan<byte> typeObject = default)
         {
             const long IsObjectStoreCursor = 1L << 49;
             Keys ??= new();

@@ -617,7 +617,7 @@ namespace Garnet.common
                 RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
             }
 
-            result = Encoding.UTF8.GetString(new Span<byte>(keyPtr, length));
+            result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(keyPtr, length));
 
             return true;
         }
@@ -861,7 +861,7 @@ namespace Garnet.common
         /// </summary>
         public static bool ReadDoubleWithLengthHeader(out double result, out bool parsed, ref byte* ptr, byte* end)
         {
-            if (!ReadByteArrayWithLengthHeader(out var resultBytes, ref ptr, end))
+            if (!TrySliceWithLengthHeader(out var resultBytes, ref ptr, end))
             {
                 result = 0;
                 parsed = false;
@@ -870,42 +870,6 @@ namespace Garnet.common
 
             parsed = Utf8Parser.TryParse(resultBytes, out result, out var bytesConsumed, default) &&
                 bytesConsumed == resultBytes.Length;
-            return true;
-        }
-
-        /// <summary>
-        /// Read Span of byte with length header
-        /// </summary>
-        public static bool ReadSpanByteWithLengthHeader(ref Span<byte> result, ref byte* ptr, byte* end)
-        {
-            // Parse RESP string header
-            if (!ReadLengthHeader(out var len, ref ptr, end))
-            {
-                return false;
-            }
-
-            if (len < 0)
-            {
-                // NULL value ('$-1\r\n')
-                result = null;
-                return true;
-            }
-
-            var keyPtr = ptr;
-
-            // Parse content: ensure that input contains key + '\r\n'
-            ptr += len + 2;
-            if (ptr > end)
-            {
-                return false;
-            }
-
-            if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
-            }
-
-            result = new Span<byte>(keyPtr, len);
             return true;
         }
 

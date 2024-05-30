@@ -816,60 +816,55 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SCAN", count);
 
             // Scan cursor [MATCH pattern] [COUNT count] [TYPE type]
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var cursorParameterByte, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var cursorParameterBytes, ref ptr, recvBufferPtr + bytesRead) ||
+                !Utf8Parser.TryParse(cursorParameterBytes, out long cursorFromInput, out var cursorBytesConsumed, default) ||
+                cursorBytesConsumed != cursorParameterBytes.Length)
+            {
                 return false;
+            }
 
             int leftTokens = count - 1;
 
-            int psize = 1;
-            byte* pattern = stackalloc byte[psize];
-            *pattern = (byte)'*';
+            ReadOnlySpan<byte> pattern = "*"u8;
             var allKeys = true;
-
             long countValue = 10;
-
-            int parameterLength = 0;
-            byte* parameterWord = null;
-
-            Span<byte> typeParameterValue = default;
+            ReadOnlySpan<byte> typeParameterValue = default;
 
             while (leftTokens > 0)
             {
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref parameterWord, ref parameterLength, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var parameterWord, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                var parameterSB = new ReadOnlySpan<byte>(parameterWord, parameterLength);
 
-                if (parameterSB.SequenceEqual(CmdStrings.MATCH) || parameterSB.SequenceEqual(CmdStrings.match))
+                if (parameterWord.SequenceEqual(CmdStrings.MATCH) || parameterWord.SequenceEqual(CmdStrings.match))
                 {
                     // Read pattern for keys filter
-                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref pattern, ref psize, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out pattern, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    allKeys = psize == 1 && *pattern == '*';
+                    allKeys = pattern.Length == 1 && pattern[0] == '*';
                     leftTokens--;
                 }
-                else if (parameterSB.SequenceEqual(CmdStrings.COUNT) || parameterSB.SequenceEqual(CmdStrings.count))
+                else if (parameterWord.SequenceEqual(CmdStrings.COUNT) || parameterWord.SequenceEqual(CmdStrings.count))
                 {
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterValue, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterValue, ref ptr, recvBufferPtr + bytesRead) || 
+                        !Utf8Parser.TryParse(countParameterValue, out countValue, out var countBytesConsumed, default) ||
+                        countBytesConsumed != countParameterValue.Length)
+                    {
                         return false;
-                    _ = Utf8Parser.TryParse(countParameterValue, out countValue, out var countBytesConsumed, default) &&
-                        countBytesConsumed == countParameterValue.Length;
+                    }
                     leftTokens--;
                 }
-                else if (parameterSB.SequenceEqual(CmdStrings.TYPE) || parameterSB.SequenceEqual(CmdStrings.type))
+                else if (parameterWord.SequenceEqual(CmdStrings.TYPE) || parameterWord.SequenceEqual(CmdStrings.type))
                 {
-                    if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref typeParameterValue, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out typeParameterValue, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                     leftTokens--;
                 }
                 leftTokens--;
             }
 
-            _ = Utf8Parser.TryParse(cursorParameterByte, out long cursorFromInput, out var cursorBytesConsumed, default) &&
-                cursorBytesConsumed == cursorParameterByte.Length;
+            var patternArgSlice = ArgSlice.FromPinnedSpan(pattern);
 
-            var patternAS = new ArgSlice(pattern, psize);
-
-            storageApi.DbScan(patternAS, allKeys, cursorFromInput, out var cursor, out var keys, typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
+            storageApi.DbScan(patternArgSlice, allKeys, cursorFromInput, out var cursor, out var keys, typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
 
             // Prepare values for output
             if (keys.Count == 0)

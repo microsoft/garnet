@@ -74,7 +74,7 @@ namespace Garnet.server
 
                 while (count > 0)
                 {
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input + length))
                         break;
 
                     if (countDone < prevDone) // Skip processing previously done entries
@@ -84,9 +84,8 @@ namespace Garnet.server
                         continue;
                     }
 
-                    if (hash.TryGetValue(key, out var _value))
+                    if (hash.TryGetValue(key.ToArray(), out var _value))
                     {
-
                         while (!RespWriteUtils.WriteBulkString(_value, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }

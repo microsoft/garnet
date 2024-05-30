@@ -183,14 +183,13 @@ namespace Garnet.cluster
             }
 
             var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var ipaddress, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadStringWithLengthHeader(out var ipaddressStr, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             if (!RespReadUtils.ReadIntWithLengthHeader(out var port, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            var ipaddressStr = Encoding.ASCII.GetString(ipaddress);
             logger?.LogTrace("CLUSTER MEET {ipaddressStr} {port}", ipaddressStr, port);
             clusterProvider.clusterManager.RunMeetTask(ipaddressStr, port);
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -403,14 +402,14 @@ namespace Garnet.cluster
             var gossipWithMeet = false;
             if (count > 1)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var withMeet, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var withMeetSpan, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                Debug.Assert(withMeet.SequenceEqual(CmdStrings.WITHMEET.ToArray()));
-                if (withMeet.SequenceEqual(CmdStrings.WITHMEET.ToArray()))
+                Debug.Assert(withMeetSpan.SequenceEqual(CmdStrings.WITHMEET));
+                if (withMeetSpan.SequenceEqual(CmdStrings.WITHMEET))
                     gossipWithMeet = true;
             }
 
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var gossipMessage, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var gossipMessage, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
@@ -420,7 +419,7 @@ namespace Garnet.cluster
             // Try merge if not just a ping message
             if (gossipMessage.Length > 0)
             {
-                var other = ClusterConfig.FromByteArray(gossipMessage);
+                var other = ClusterConfig.FromByteArray(gossipMessage.ToArray());
                 // Accept gossip message if it is a gossipWithMeet or node from node that is already known and trusted
                 // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
                 if (gossipWithMeet || current.IsKnown(other.LocalNodeId))

@@ -1077,8 +1077,7 @@ namespace Garnet.server
                 }
 
                 var paramCount = 0;
-                ReadOnlySpan<byte> withScoresSpan = "WITHSCORES"u8;
-                Byte[] includeWithScores = default;
+                ReadOnlySpan<byte> includeWithScores = default;
 
                 bool includedCount = false;
 
@@ -1093,10 +1092,14 @@ namespace Garnet.server
                     // Read withscores
                     if (count == 3)
                     {
-                        if (!RespReadUtils.ReadByteArrayWithLengthHeader(out includeWithScores, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadUtils.TrySliceWithLengthHeader(out includeWithScores, ref ptr, recvBufferPtr + bytesRead))
                             return false;
                     }
                 }
+
+                // It is invalid to access the sliced span after this statement,
+                // as we stuff the object input header into its underlying memory.
+                bool done = includeWithScores.SequenceEqual("WITHSCORES"u8);
 
                 // Prepare input
                 var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
@@ -1112,7 +1115,7 @@ namespace Garnet.server
                 inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZRANDMEMBER;
                 inputPtr->count = count == 1 ? 1 : paramCount;
-                inputPtr->done = withScoresSpan.SequenceEqual(includeWithScores) ? 1 : 0;
+                inputPtr->done = done ? 1 : 0;
 
                 GarnetStatus status = GarnetStatus.NOTFOUND;
                 GarnetObjectStoreOutput outputFooter = default;

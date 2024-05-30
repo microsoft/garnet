@@ -234,16 +234,16 @@ namespace Garnet.server
             _output->countDone = Int32.MinValue;
 
             // read min
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamByteArray, ref input_currptr, end))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamSpan, ref input_currptr, end))
                 return;
 
             // read max
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, end))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var maxParamSpan, ref input_currptr, end))
                 return;
 
             //check if parameters are valid
-            if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) ||
-                !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
+            if (!TryParseParameter(minParamSpan, out var minValue, out var minExclusive) ||
+                !TryParseParameter(maxParamSpan, out var maxValue, out var maxExclusive))
             {
                 count = int.MaxValue;
             }
