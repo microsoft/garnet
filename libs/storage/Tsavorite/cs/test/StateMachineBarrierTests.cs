@@ -74,8 +74,6 @@ namespace Tsavorite.test.statemachine
                 SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState)
                 );
 
-            f.checkpointCallbackExpectation = 1;
-
             // Forward the rest of the state machine
             while (!SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState))
             {
@@ -83,15 +81,11 @@ namespace Tsavorite.test.statemachine
                 s2.Refresh();
             }
 
-            Assert.AreEqual(0, f.checkpointCallbackExpectation);
-
             // Dispose session s2; does not move state machine forward
             s2.Dispose();
 
             uc1.EndUnsafe();
             s1.Dispose();
-
-            RecoverAndTest(log);
         }
 
         void Prepare(out SimpleFunctions f,
@@ -120,7 +114,7 @@ namespace Tsavorite.test.statemachine
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
+                s1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             // Ensure state machine needs no I/O wait during WAIT_FLUSH
@@ -140,48 +134,6 @@ namespace Tsavorite.test.statemachine
 
             // We should be in PREPARE, 1
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PREPARE, 1), store.SystemState));
-        }
-
-        void RecoverAndTest(IDevice log)
-        {
-            NumClicks inputArg = default;
-            NumClicks output = default;
-            var f = new SimpleFunctions();
-
-            var store = new TsavoriteKV<AdId, NumClicks>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = Path.Join(TestUtils.MethodTestDir, "statemachinetest") }
-                );
-
-            store.Recover(); // sync, does not require session
-
-            using (var s3 = store.ResumeSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo", out CommitPoint lsn))
-            {
-                Assert.AreEqual(numOps - 1, lsn.UntilSerialNo);
-
-                // Expect checkpoint completion callback
-                f.checkpointCallbackExpectation = 1;
-
-                s3.Refresh();
-
-                // Completion callback should have been called once
-                Assert.AreEqual(0, f.checkpointCallbackExpectation);
-
-                for (var key = 0; key < numOps; key++)
-                {
-                    var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, s3.SerialNo);
-
-                    if (status.IsPending)
-                        s3.CompletePending(true);
-                    else
-                    {
-                        Assert.AreEqual(key, output.numClicks);
-                    }
-                }
-            }
-
-            store.Dispose();
         }
     }
 }

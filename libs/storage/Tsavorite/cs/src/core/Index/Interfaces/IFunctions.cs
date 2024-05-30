@@ -299,16 +299,6 @@ namespace Tsavorite.core
         /// <param name="newKeySize">If > 0, this is a record from the freelist and we are disposing the key as well as value (it is -1 when revivifying a record in the hash chain or when doing a RETRY; for these the key does not change)</param>
         void DisposeForRevivification(ref Key key, ref Value value, int newKeySize);
         #endregion Dispose
-
-        #region Checkpointing
-        /// <summary>
-        /// Checkpoint completion callback (called per client session)
-        /// </summary>
-        /// <param name="sessionID">ID of session reporting persistence</param>
-        /// <param name="sessionName">Name of session reporting persistence</param>
-        /// <param name="commitPoint">Commit point descriptor</param>
-        void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint);
-        #endregion Checkpointing
     }
 
     /// <summary>

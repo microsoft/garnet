@@ -54,7 +54,7 @@ namespace Tsavorite.test.largeobjects
             {
                 var mykey = new MyKey { key = key };
                 var value = new MyLargeValue(1 + r.Next(maxSize));
-                session1.Upsert(ref mykey, ref value, Empty.Default, 0);
+                session1.Upsert(ref mykey, ref value, Empty.Default);
             }
             session1.Dispose();
 
@@ -80,7 +80,7 @@ namespace Tsavorite.test.largeobjects
             for (int keycnt = 0; keycnt < numOps; keycnt++)
             {
                 var key = new MyKey { key = keycnt };
-                var status = session2.Read(ref key, ref input, ref output, Empty.Default, 0);
+                var status = session2.Read(ref key, ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
                     session2.CompletePending(true);

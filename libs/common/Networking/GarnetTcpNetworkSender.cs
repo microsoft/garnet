@@ -51,6 +51,11 @@ namespace Garnet.common
         readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
+        /// NOTE: This variable should not be marked as readonly as it is a mutable struct
+        /// </summary>
+        SpinLock spinLock;
+
+        /// <summary>
         /// 
         /// </summary>
         /// <param name="socket"></param>
@@ -67,6 +72,7 @@ namespace Garnet.common
             this.saeaStack = new(2 * ThrottleMax);
             this.responseObject = null;
             this.ThrottleMax = throttleMax;
+            this.spinLock = new();
 
             var endpoint = socket.RemoteEndPoint as IPEndPoint;
             if (endpoint != null)
@@ -78,6 +84,49 @@ namespace Garnet.common
 
         /// <inheritdoc />
         public override string RemoteEndpointName => remoteEndpoint;
+
+        /// <inheritdoc />
+        public override void Enter()
+        {
+            var lockTaken = false;
+            spinLock.Enter(ref lockTaken);
+            Debug.Assert(lockTaken);
+        }
+
+        /// <inheritdoc />
+        public override unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail)
+        {
+            var lockTaken = false;
+            spinLock.Enter(ref lockTaken);
+            Debug.Assert(lockTaken);
+            Debug.Assert(responseObject == null);
+            if (!saeaStack.TryPop(out responseObject, out bool disposed))
+            {
+                if (disposed)
+                    ThrowDisposed();
+                responseObject = new GarnetSaeaBuffer(SeaaBuffer_Completed, networkPool);
+            }
+            head = responseObject.buffer.entryPtr;
+            tail = responseObject.buffer.entryPtr + responseObject.buffer.entry.Length;
+        }
+
+        /// <inheritdoc />
+        public override void Exit()
+        {
+            spinLock.Exit();
+        }
+
+        /// <inheritdoc />
+        public override unsafe void ExitAndReturnResponseObject()
+        {
+            if (responseObject != null)
+            {
+                ReturnBuffer(responseObject);
+                responseObject = null;
+            }
+            spinLock.Exit();
+        }
+
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

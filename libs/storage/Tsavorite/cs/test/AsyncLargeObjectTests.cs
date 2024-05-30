@@ -55,7 +55,7 @@ namespace Tsavorite.test.async
                 {
                     var mykey = new MyKey { key = key };
                     var value = new MyLargeValue(1 + r.Next(maxSize));
-                    s.Upsert(ref mykey, ref value, Empty.Default, 0);
+                    s.Upsert(ref mykey, ref value, Empty.Default);
                 }
             }
 
@@ -81,7 +81,7 @@ namespace Tsavorite.test.async
                 for (int keycnt = 0; keycnt < numOps; keycnt++)
                 {
                     var key = new MyKey { key = keycnt };
-                    var status = s2.Read(ref key, ref input, ref output, Empty.Default, 0);
+                    var status = s2.Read(ref key, ref input, ref output, Empty.Default);
 
                     if (status.IsPending)
                         await s2.CompletePendingAsync();

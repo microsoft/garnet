@@ -8,19 +8,30 @@ using Garnet.networking;
 
 namespace Garnet.common
 {
+    public enum CountResponseType
+    {
+        Bytes,
+        Tokens,
+        Newlines
+    }
+
     public unsafe class LightClientRequest : IDisposable
     {
         readonly LightClient client;
         byte[] responseBuffer;
         int bytesReceived = 0;
-        readonly bool countResponseLength;
+
+        /// <summary>
+        /// How to count the response length
+        /// </summary>
+        public CountResponseType countResponseType;
 
         public string Address { get; set; }
         public int Port { get; set; }
 
-        public LightClientRequest(string address, int port, int optType, LightClient.OnResponseDelegateUnsafe onReceive = null, SslClientAuthenticationOptions sslOptions = null, bool countResponseLength = false)
+        public LightClientRequest(string address, int port, int optType, LightClient.OnResponseDelegateUnsafe onReceive = null, SslClientAuthenticationOptions sslOptions = null, CountResponseType countResponseType = CountResponseType.Tokens)
         {
-            this.countResponseLength = countResponseLength;
+            this.countResponseType = countResponseType;
             client = new LightClient(address, port, optType, onReceive == null ? LightReceive : onReceive, sslOptions: sslOptions);
             client.Connect();
             Address = address;
@@ -103,26 +114,33 @@ namespace Garnet.common
             int count = 0;
             for (int i = 0; i < bytesRead; i++)
             {
-                if (countResponseLength)
+                switch (countResponseType)
                 {
-                    count++;
-                }
-                else
-                {
-                    // check for null value '$-1'
-                    if (buf[i] == '$' && buf[i + 1] == '-' && buf[i + 2] == '1')
-                    {
+                    case CountResponseType.Bytes:
                         count++;
-                    }
-                    // check for error
-                    else if (buf[i] == '-' && i == 0)
-                    {
-                        count++;
-                    }
-                    else if (buf[i] == '$' || buf[i] == '+' || buf[i] == ':' || buf[i] == '*')
-                    {
-                        count++;
-                    }
+                        break;
+                    case CountResponseType.Newlines:
+                        if (buf[i] == '\n')
+                            count++;
+                        break;
+                    case CountResponseType.Tokens:
+                        // check for null value '$-1'
+                        if (buf[i] == '$' && buf[i + 1] == '-' && buf[i + 2] == '1')
+                        {
+                            count++;
+                        }
+                        // check for error
+                        else if (buf[i] == '-' && i == 0)
+                        {
+                            count++;
+                        }
+                        else if (buf[i] == '$' || buf[i] == '+' || buf[i] == ':' || buf[i] == '*')
+                        {
+                            count++;
+                        }
+                        break;
+                    default:
+                        break;
                 }
 
                 // Appending value to accumulated buffer

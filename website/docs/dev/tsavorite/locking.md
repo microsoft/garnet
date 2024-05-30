@@ -9,8 +9,7 @@ title: Locking
 There are three modes of locking in Tsavorite, set by a `ConcurrencyControlMode` value on the Tsavorite constructor:
   - `LockTable`: Tsavorite's hash index buckets are used to hold the lock state. Locktable locking is either manual or transient:
     - **Manual**: Garnet calls a `Lock` method on `LockableContext` or `LockableUnsafeContext` (hereafter referred to collectively as `Lockable*Context`) at the beginning of a transaction, passing an ordered array of keys, and must call `Unlock` when the transaction is complete. Tsavorite does not try to lock during individual operations on these session contexts.
-    - **Transient**: Tsavorite acquires and releases locks for individual keys as it performs individual operations.
-  - `RecordIsolation`: This locks in-memory records as needed for the duration of a data operation: Upsert, RMW, Read, or Delete. Collectively, these are referred to here as `InternalXxx` for the internal methods that implement them.
+    - **Transient**: Tsavorite acquires and releases locks for individual keys for the duration of a data operation: Upsert, RMW, Read, or Delete. Collectively, these are referred to here as `InternalXxx` for the internal methods that implement them.
   - `None`: No locking is done by Tsavorite. 
 
 All locks are obtained via spinning on `Interlocked.CompareExchange` and `Thread.Yield()` and have limited spin count, to avoid deadlocks; if they fail to acquire the desired lock in this time, the operation retries.
@@ -37,9 +36,7 @@ Lock spinning is limited in order to avoid deadlocks such as the following:
     - Because BC1 holds the epoch, the OnPagesClosed() call is never drained, so we have deadlock
 By ensuring that locks are limited in spins, we force one or both of the above sessions to release any locks it has already aquired and return up the callstack to retry the operation via RETRY_LATER (which refreshes the epoch, allowing other operations such as the OnPagesClosed() mentioned above to complete).
 
-`RecordIsolation` and Transient locks are never held across pending I/O or other Wait operations. All the data operations' low-level implementors (`InternalRead`, `InternalUpsert`, `InternalRMW`, and `InternalDelete`--collectively known as `InternalXxx`) release these locks when the call is exited; if the operations must be retried, the locks are reacquired as part of the normal operation there.
-
-`RecordIsolation` locks, including those in the ReadCache, operate under epoch protection, so locked records will not be evicted until they are unlocked and the context has released the epoch.
+Transient locks are never held across pending I/O or other Wait operations. All the data operations' low-level implementors (`InternalRead`, `InternalUpsert`, `InternalRMW`, and `InternalDelete`--collectively known as `InternalXxx`) release these locks when the call is exited; if the operations must be retried, the locks are reacquired as part of the normal operation there.
 
 ## Example
 Here is an example of the above two use cases, condensed from the unit tests in `LockableUnsafeContextTests.cs`:
@@ -76,7 +73,7 @@ Here is an example of the above two use cases, condensed from the unit tests in 
 This section covers the internal design and implementation of Tsavorite's locking.
 
 ### Operation Data Structures
-There are a number of variables necessary to track the main hash table entry information, the 'source' record as defined above (including `RecordIsolation` locks if applicable), and other stack-based data relevant to the operation. These variables are placed within structs that live on the stack at the `InternalXxx` level.
+There are a number of variables necessary to track the main hash table entry information, the 'source' record as defined above, and other stack-based data relevant to the operation. These variables are placed within structs that live on the stack at the `InternalXxx` level.
 
 #### HashEntryInfo
 This is used for hash-chain traversal and CAS updates. It consists primarily of:
@@ -121,11 +118,9 @@ For the first bucket, the tag bits of its overflow entry are used for locking; s
 Thus, a key is locked indirectly, by having its `HashBucket` locked. This may result in multiple keys being locked (all keys that hash to that bucket) rather than just the required key.
 
 #### RecordInfo
-For RecordIsolation locking, the RecordInfo header is used. It has one Exclusive Lock bit and 6 Shared Lock bits, allowing 64 shared locks. Because locking does not affect data, even `RecordInfo`s in the ReadOnly region may be locked and unlocked directly. Additionally, records in the ReadCache may be locked, as they are encountered first by other threads searching for the key.
-
-Other relevant `RecordInfo` bits:
+Some relevant `RecordInfo` bits:
   - **Sealed**: A record marked Sealed has been superseded by an update (and the record may be in the Revivification FreeList). Sealing is necessary because otherwise one thread could do an RCU (Read, Copy, Update) with a value too large to be an IPU (In-Place Update), while at the same time another thread could do an IPU with a value small enough to fit. A thread encountering a Sealed record should immediately return RETRY_LATER (it must be RETRY_LATER instead of RETRY_NOW, because the thread owning the Seal must do another operation, such as an Insert to tail, to bring things into a consistent state; this operation may require epoch refresh). 
-    - Sealing is done via `RecordInfo.Seal`. This is only done when the `LockTable` entry or `RecordInfo` is already exclusively locked, so `Seal()` does a simple bitwise operation. RecordIsolation `Lock` checks the `Sealed` bit and fails if it is found; a Sealed record should never be operated on.
+    - Sealing is done via `RecordInfo.Seal`. This is only done when the `LockTable` entry is already exclusively locked, so `Seal()` does a simple bitwise operation.
   - **Invalid**: This indicates that the record is to be skipped, using its `.PreviousAddress` to move along the chain, rather than restarted. This "skipping" semantic is primarily relevant to the readcache; we should not have invalid records in the main log's hash chain. Indeed, any main-log record that is not in the hash chain *must* be marked Invalid.
     - In the `ReadCache` we do not Seal records; the semantics of Seal are that the operation is restarted when a Sealed record is found. For non-`readcache` records, this causes the execution to restart at the tail of the main-log records. However, `readcache` records are at the beginning of the hash chain, *before* the main-log records; thus, restarting would start again at the hash bucket, traverse the readcache records, and hit the Sealed record again, ad infinitum. 
     - Thus, we instead set `readcache` records to Invalid when they are no longer current; this allows the traversal to continue until the readcache chain links to the first main-log record.
@@ -139,15 +134,13 @@ Other relevant `RecordInfo` bits:
 
 ### Locking Flow
 
-When `Internalxxx` executes it locks in the following way, depending on the `TsavoriteKV`'s `ConcurrencyControlMode`:
-  - `LockTable`: We obtain the key hash at the start of the operation, so we lock its bucket if we are not in a `Lockable*Context` (if we are, we later Assert that the key is already locked).
-  - `RecordIsolation`: once we have populated the `HashEntryInfo` with the logicalAddress of the key's record and determined it is in-memory, we lock its `RecordInfo`. 
-    - If the record is `Closed`, which means `Sealed` or `Invalid`, the lock attempt fails immediately upon detecting this.
-    - Due to FreeList Revivification, the record may have been elided from the tag chain while we were locking it; we check for this and update the `HashEntryInfo` to be the current `HashBucketEntry`.
+When `Internalxxx` when `ConcurrencyControlMode` is `LockTable`:
 
-Following this, the requested operation is performed within a try/finally block whose 'finally' unlocks as appropriate for the `ConcurrencyControlMode`.
+We obtain the key hash at the start of the operation, so we lock its bucket if we are not in a `Lockable*Context` (if we are, we later Assert that the key is already locked).
 
-For RCU-like operations such as RMW or Upsert of an in-memory (including in-ReadCache) record, `RecordIsolation` mode seals the source record (and may invalidate it to allow it to be freelisted for Revivification) as part of releasing its exclusive lock, to ensure atomicity.
+Following this, the requested operation is performed within a try/finally block whose 'finally' releases the lock.
+
+For RCU-like operations such as RMW or Upsert of an in-memory (including in-ReadCache) record, the source record is sealed (and may invalidate it to allow it to be freelisted for Revivification).
 
 Similar locking logic applies to the pending IO completion routines: `ContinuePendingRead`, `ContinuePendingRMW`, and `ContinuePendingConditionalCopyToTail`.
 
@@ -160,9 +153,7 @@ When the `ReadCache` is enabled, records from the `ReadCache` are inserted into 
 
 As a terminology note, the sub-chain of r#### records is referred to as the `ReadCache` prefix chain of that hash chain.
 
-ReadCache records are locked only in `RecordIsolation` mode. `LockTable` locking handles both main log and readcache cases. 
-
-Records in the readcache participate in `RecordIsolation` locking, either because they are the record to be read, or because they are the 'source' of an update. If the key is found in the readcache, then the `RecordSource<TKey, TValue>.Log` is set to the readcache, and the logicalAddress is set to the readcache record's logicalAddress (which has the ReadCache bit). If the operation is a successful update (which will always be an RCU; readcache records are never themselves updated), the following steps happen:
+If the key is found in the readcache, then the `RecordSource<TKey, TValue>.Log` is set to the readcache, and the logicalAddress is set to the readcache record's logicalAddress (which has the ReadCache bit). If the operation is a successful update (which will always be an RCU; readcache records are never themselves updated), the following steps happen:
 - The new version of the record is "spliced in" to the tag chain after the readcache prefix
 - The readcache "source" record is invalidated.
 

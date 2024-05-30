@@ -932,15 +932,8 @@ namespace Garnet.server
         private bool NetworkMODULE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 1)
-                return AbortWithWrongNumberOfArguments("MODULE", count);
-
-            // MODULE nameofmodule
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var nameofmodule, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
             // TODO: pending implementation for module support.
-            while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();
 
             // Advance pointers

@@ -143,7 +143,7 @@ namespace Tsavorite.test.recovery.sumstore
             // Process the batch of input data
             for (int i = 0; i < numOps; i++)
             {
-                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default, i);
+                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default);
 
                 checkpointAction(i);
 
@@ -183,7 +183,7 @@ namespace Tsavorite.test.recovery.sumstore
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default, i);
+                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
                 inputArray[i].numClicks = output.value;
             }
@@ -193,44 +193,6 @@ namespace Tsavorite.test.recovery.sumstore
 
             // Release
             session.Dispose();
-
-            // Test outputs
-            var checkpointInfo = default(HybridLogRecoveryInfo);
-            checkpointInfo.Recover(logToken,
-                new DeviceLogCommitCheckpointManager(
-                    new LocalStorageNamedDeviceFactory(),
-                        new DefaultCheckpointNamingScheme(
-                          new DirectoryInfo(TestUtils.MethodTestDir).FullName)));
-
-            // Compute expected array
-            long[] expected = new long[numUniqueKeys];
-            foreach (var guid in checkpointInfo.continueTokens.Keys)
-            {
-                var cp = checkpointInfo.continueTokens[guid].Item2;
-                for (long i = 0; i <= cp.UntilSerialNo; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            int threadCount = 1; // single threaded test
-            int numCompleted = threadCount - checkpointInfo.continueTokens.Count;
-            for (int t = 0; t < numCompleted; t++)
-            {
-                var sno = numOps;
-                for (long i = 0; i < sno; i++)
-                {
-                    var id = i % numUniqueKeys;
-                    expected[id]++;
-                }
-            }
-
-            // Assert if expected is same as found
-            for (long i = 0; i < numUniqueKeys; i++)
-            {
-                Assert.AreEqual(expected[i], inputArray[i].numClicks.numClicks, $"At keyIndex {i}, AdId {inputArray[i].adId.adId}");
-            }
         }
     }
 
@@ -399,7 +361,7 @@ namespace Tsavorite.test.recovery.sumstore
                     valueSpan[j] = i;
                 var valueSpanByte = valueSpan.Slice(0, len).AsSpanByte();
 
-                session.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default, 0);
+                session.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
             session.CompletePending(true);
         }
@@ -473,7 +435,7 @@ namespace Tsavorite.test.recovery.sumstore
                 var len = GetRandomLength(rng);
 
                 int[] output = null;
-                var status = session.Read(ref keySpanByte, ref output, Empty.Default, 0);
+                var status = session.Read(ref keySpanByte, ref output, Empty.Default);
 
                 Assert.IsTrue(status.Found);
                 for (int j = 0; j < len; j++)

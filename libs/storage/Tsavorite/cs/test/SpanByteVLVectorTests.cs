@@ -45,7 +45,7 @@ namespace Tsavorite.test
                     valueSpan[j] = len;
                 var valueSpanByte = valueSpan.Slice(0, len).AsSpanByte();
 
-                s.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default, 0);
+                s.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
 
             // Reset rng to get the same sequence of value lengths
@@ -57,7 +57,7 @@ namespace Tsavorite.test
 
                 var valueLen = GetRandomLength(rng);
                 int[] output = null;
-                var status = s.Read(ref keySpanByte, ref output, Empty.Default, 0);
+                var status = s.Read(ref keySpanByte, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
@@ -107,7 +107,7 @@ namespace Tsavorite.test
                     valueSpan[j] = valueLen;
                 var valueSpanByte = valueSpan.Slice(0, valueLen).AsSpanByte();
 
-                s.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default, 0);
+                s.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
 
             // Reset rng to get the same sequence of key and value lengths
@@ -121,7 +121,7 @@ namespace Tsavorite.test
 
                 var valueLen = GetRandomLength(rng);
                 int[] output = null;
-                var status = s.Read(ref keySpanByte, ref output, Empty.Default, 0);
+                var status = s.Read(ref keySpanByte, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {

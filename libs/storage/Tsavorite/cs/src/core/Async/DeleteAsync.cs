@@ -32,7 +32,7 @@ namespace Tsavorite.core
                 var keyHash = deleteOptions.KeyHash ?? tsavoriteKV.comparer.GetHashCode64(ref key);
                 do
                 {
-                    internalStatus = tsavoriteKV.InternalDelete(ref key, keyHash, ref pendingContext.userContext, ref pendingContext, tsavoriteSession, pendingContext.serialNum);
+                    internalStatus = tsavoriteKV.InternalDelete(ref key, keyHash, ref pendingContext.userContext, ref pendingContext, tsavoriteSession);
                 } while (tsavoriteKV.HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pendingContext));
                 output = default;
                 return TranslateStatus(internalStatus);
@@ -85,7 +85,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<DeleteAsyncResult<Input, Output, Context>> DeleteAsync<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
-                ref Key key, ref DeleteOptions deleteOptions, Context userContext, long serialNo, CancellationToken token = default)
+                ref Key key, ref DeleteOptions deleteOptions, Context userContext, CancellationToken token = default)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
@@ -97,7 +97,7 @@ namespace Tsavorite.core
                 var keyHash = deleteOptions.KeyHash ?? comparer.GetHashCode64(ref key);
                 do
                 {
-                    internalStatus = InternalDelete(ref key, keyHash, ref userContext, ref pcontext, tsavoriteSession, serialNo);
+                    internalStatus = InternalDelete(ref key, keyHash, ref userContext, ref pcontext, tsavoriteSession);
                 } while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 
                 if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
@@ -106,8 +106,6 @@ namespace Tsavorite.core
             }
             finally
             {
-                Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-                tsavoriteSession.Ctx.serialNum = serialNo;
                 tsavoriteSession.UnsafeSuspendThread();
             }
 

@@ -1085,9 +1085,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="output"></param>
+        /// <param name="outputFooter"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRank(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetRank(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns a random element from the sorted set key.

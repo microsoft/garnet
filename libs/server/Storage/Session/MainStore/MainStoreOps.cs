@@ -44,7 +44,7 @@ namespace Garnet.server
             long ctx = default;
 
             epochChanged = false;
-            var status = context.Read(ref _key, ref Unsafe.AsRef(in input), ref output, ctx, 0);
+            var status = context.Read(ref _key, ref Unsafe.AsRef(in input), ref output, ctx);
 
             if (status.IsPending)
             {
