@@ -123,7 +123,7 @@ namespace Garnet.cluster
             {
                 _ = meetLock.TryWriteLock();
                 UpdateGossipSend();
-                var resp = gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).GetAwaiter().GetResult();
+                var resp = gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token).GetAwaiter().GetResult();
                 return resp;
             }
             finally

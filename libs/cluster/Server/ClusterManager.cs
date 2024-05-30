@@ -280,7 +280,6 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
-            clusterProvider.replicationManager.Reset();
             FlushConfig();
         }
 
@@ -303,17 +302,21 @@ namespace Garnet.cluster
         /// <summary>
         /// Takeover as new primary but forcefully claim ownership of old primary's slots.
         /// </summary>
-        public void TryTakeOverForPrimary()
+        public bool TryTakeOverForPrimary()
         {
             while (true)
             {
                 var current = currentConfig;
-                var newConfig = current.TakeOverFromPrimary();
-                newConfig = newConfig.BumpLocalNodeConfigEpoch();
+
+                if (!current.IsReplica || current.LocalNodePrimaryId == null)
+                    return false;
+
+                var newConfig = current.TakeOverFromPrimary().BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
             FlushConfig();
+            return true;
         }
     }
 }
