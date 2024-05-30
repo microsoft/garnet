@@ -172,7 +172,7 @@ namespace Garnet.common
         /// <param name="result">Byte pointer, will updated to point after the written number</param>
         public static unsafe void IntToBytes(int value, int length, ref byte* result)
         {
-            byte sign = (byte)(value < 0 ? 1 : 0);
+            bool isNegative = value < 0;
             if (value == 0)
             {
                 *result++ = (byte)'0';
@@ -180,9 +180,9 @@ namespace Garnet.common
             }
 
             long v = value;
-            if (sign == 0x1)
+            if (isNegative)
             {
-                *result++ = 0x2d;
+                *result++ = (byte)'-';
                 v = -value;
             }
 

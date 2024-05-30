@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -434,6 +435,45 @@ namespace Garnet.common
 
             //$size\r\ninteger\r\n
             return 1 + integerLenSize + 2 + sign + integerLen + 2;
+        }
+
+        [SkipLocalsInit]
+        public static bool WriteDoubleBulkString(double value, ref byte* curr, byte* end)
+        {
+            if (double.IsInfinity(value))
+            {
+                var infinityOutput = new Span<byte>(curr, (int)(end - curr));
+                if (double.IsPositiveInfinity(value))
+                {
+                    if (!"$4\r\n+inf\r\n"u8.TryCopyTo(infinityOutput))
+                        return false;
+                }
+                else
+                {
+                    if (!"$4\r\n-inf\r\n"u8.TryCopyTo(infinityOutput))
+                        return false;
+                }
+
+                curr += infinityOutput.Length;
+                return true;
+            }
+
+            Span<byte> stackBuffer = stackalloc byte[32];
+            if (!Utf8Formatter.TryFormat(value, stackBuffer, out var bytesWritten, format: default))
+                return false;
+
+            var itemDigits = NumUtils.NumDigits(bytesWritten);
+            int totalLen = 1 + itemDigits + 2 + bytesWritten + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'$';
+            NumUtils.IntToBytes(bytesWritten, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            stackBuffer.Slice(0, bytesWritten).CopyTo(new Span<byte>(curr, bytesWritten));
+            curr += bytesWritten;
+            WriteNewline(ref curr);
+            return true;
         }
 
 
