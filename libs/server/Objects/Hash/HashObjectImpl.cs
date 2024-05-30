@@ -244,14 +244,6 @@ namespace Garnet.server
                     if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterByteArray, ref input_currptr, input + length))
                         return;
 
-                    if (!Utf8Parser.TryParse(countParameterByteArray, out int countParameter, out var bytesConsumed, default) ||
-                        bytesConsumed != countParameterByteArray.Length)
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        return;
-                    }
-
                     if (count == 4)
                     {
                         // Advance to read the withvalues flag
@@ -268,45 +260,54 @@ namespace Garnet.server
                     countDone = count;
 
                     // Prepare response
-                    if (countParameter == 0)
+                    if (!Utf8Parser.TryParse(countParameterByteArray, out int countParameter, out var bytesConsumed, default) ||
+                        bytesConsumed != countParameterByteArray.Length)
                     {
-                        while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
-                    else if (countParameter > 0)
+                    else
                     {
-                        // No repeated fields are returned.
-                        // If count is bigger than the number of fields in the hash, the command will only return the whole hash without additional fields.
-                        // The order of fields in the reply is not truly random, so it is up to the client to shuffle them if needed.
-                        countParameter = countParameter > hash.Count ? hash.Count : countParameter;
-                        indexes = Enumerable.Range(0, hash.Count).OrderBy(x => Guid.NewGuid()).Take(countParameter).ToArray();
-                    }
-                    else if (countParameter < 0)
-                    {
-                        // Repeating fields are possible.
-                        // Exactly count fields, or an empty array if the hash is empty(non - existing key), are always returned.
-                        // The order of fields in the reply is truly random.
-                        // The number of returned fields is the absolute value of the specified count.
-                        countParameter = Math.Abs(countParameter);
-                        indexes = new int[countParameter];
-                        for (int i = 0; i < countParameter; i++)
-                            indexes[i] = RandomNumberGenerator.GetInt32(0, hash.Count);
-                    }
-
-                    // Write the size of the array reply
-                    while (!RespWriteUtils.WriteArrayLength(withValues ? countParameter * 2 : countParameter, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    foreach (var index in indexes)
-                    {
-                        var pair = hash.ElementAt(index);
-                        while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                        if (withValues)
+                        if (countParameter == 0)
                         {
-                            while (!RespWriteUtils.WriteBulkString(pair.Value, ref curr, end))
+                            while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+                        else if (countParameter > 0)
+                        {
+                            // No repeated fields are returned.
+                            // If count is bigger than the number of fields in the hash, the command will only return the whole hash without additional fields.
+                            // The order of fields in the reply is not truly random, so it is up to the client to shuffle them if needed.
+                            countParameter = countParameter > hash.Count ? hash.Count : countParameter;
+                            indexes = Enumerable.Range(0, hash.Count).OrderBy(x => Guid.NewGuid()).Take(countParameter).ToArray();
+                        }
+                        else if (countParameter < 0)
+                        {
+                            // Repeating fields are possible.
+                            // Exactly count fields, or an empty array if the hash is empty(non - existing key), are always returned.
+                            // The order of fields in the reply is truly random.
+                            // The number of returned fields is the absolute value of the specified count.
+                            countParameter = Math.Abs(countParameter);
+                            indexes = new int[countParameter];
+                            for (int i = 0; i < countParameter; i++)
+                                indexes[i] = RandomNumberGenerator.GetInt32(0, hash.Count);
+                        }
+
+                        // Write the size of the array reply
+                        while (!RespWriteUtils.WriteArrayLength(withValues ? countParameter * 2 : countParameter, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                        foreach (var index in indexes)
+                        {
+                            var pair = hash.ElementAt(index);
+                            while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                            if (withValues)
+                            {
+                                while (!RespWriteUtils.WriteBulkString(pair.Value, ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                            }
                         }
                     }
                 }

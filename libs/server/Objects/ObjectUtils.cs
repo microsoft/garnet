@@ -63,9 +63,6 @@ namespace Garnet.server
             // Largest number of items to print 
             int limitCountInOutput = *(int*)(input + ObjectInputHeader.Size);
 
-            int parameterLength = 0;
-            byte* parameterWord = null;
-
             // Cursor
             cursorInput = _input->done;
 
@@ -83,10 +80,8 @@ namespace Garnet.server
 
             while (leftTokens > 0)
             {
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref parameterWord, ref parameterLength, ref input_currptr, input + length))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var parameterSB, ref input_currptr, input + length))
                     return false;
-
-                var parameterSB = new ReadOnlySpan<byte>(parameterWord, parameterLength);
 
                 if (parameterSB.SequenceEqual(CmdStrings.MATCH) || parameterSB.SequenceEqual(CmdStrings.match))
                 {
@@ -97,11 +92,12 @@ namespace Garnet.server
                 }
                 else if (parameterSB.SequenceEqual(CmdStrings.COUNT) || parameterSB.SequenceEqual(CmdStrings.count))
                 {
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterValue, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterValue, ref input_currptr, input + length) ||
+                        !Utf8Parser.TryParse(countParameterValue, out countInInput, out var bytesConsumed, default) ||
+                        bytesConsumed != countParameterValue.Length)
+                    {
                         return false;
-
-                    _ = Utf8Parser.TryParse(countParameterValue, out countInInput, out var bytesConsumed, default) &&
-                        bytesConsumed == countParameterValue.Length;
+                    }
 
                     // Limiting number of items to send to the output
                     if (countInInput > limitCountInOutput)

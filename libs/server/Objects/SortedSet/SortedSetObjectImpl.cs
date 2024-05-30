@@ -48,7 +48,7 @@ namespace Garnet.server
             {
                 if (!RespReadUtils.ReadDoubleWithLengthHeader(out var score, out var parsed, ref ptr, end))
                     return;
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref ptr, end))
                     return;
 
                 if (c < _input->done)
@@ -58,20 +58,21 @@ namespace Garnet.server
 
                 if (parsed)
                 {
-                    if (!sortedSetDict.TryGetValue(member, out var _scoreStored))
+                    var memberArray = member.ToArray();
+                    if (!sortedSetDict.TryGetValue(memberArray, out var _scoreStored))
                     {
                         _output->opsDone++;
-                        sortedSetDict.Add(member, score);
-                        sortedSet.Add((score, member));
+                        sortedSetDict.Add(memberArray, score);
+                        sortedSet.Add((score, memberArray));
 
                         this.UpdateSize(member);
                     }
                     else if (_scoreStored != score)
                     {
-                        sortedSetDict[member] = score;
-                        var success = sortedSet.Remove((_scoreStored, member));
+                        sortedSetDict[memberArray] = score;
+                        var success = sortedSet.Remove((_scoreStored, memberArray));
                         Debug.Assert(success);
-                        success = sortedSet.Add((score, member));
+                        success = sortedSet.Add((score, memberArray));
                         Debug.Assert(success);
                     }
                 }
@@ -93,7 +94,7 @@ namespace Garnet.server
 
             for (int c = 0; c < count; c++)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var value, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var value, ref ptr, end))
                     return;
 
                 if (c < _input->done)
@@ -101,11 +102,12 @@ namespace Garnet.server
 
                 _output->countDone++;
 
-                if (sortedSetDict.TryGetValue(value, out var _key))
+                var valueArray = value.ToArray();
+                if (sortedSetDict.TryGetValue(valueArray, out var _key))
                 {
                     _output->opsDone++;
-                    sortedSetDict.Remove(value);
-                    sortedSet.Remove((_key, value));
+                    sortedSetDict.Remove(valueArray);
+                    sortedSet.Remove((_key, valueArray));
 
                     this.UpdateSize(value, false);
                 }
@@ -287,7 +289,7 @@ namespace Garnet.server
             try
             {
                 // read increment
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var incrementByteArray, ref input_currptr, input + length))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var incrementBytes, ref input_currptr, input + length))
                     return;
 
                 // read member
@@ -295,8 +297,8 @@ namespace Garnet.server
                     return;
 
                 //check if increment value is valid
-                if (!Utf8Parser.TryParse(incrementByteArray, out double incrValue, out var incrBytesConsumed, default) ||
-                    incrBytesConsumed != incrementByteArray.Length)
+                if (!Utf8Parser.TryParse(incrementBytes, out double incrValue, out var incrBytesConsumed, default) ||
+                    incrBytesConsumed != incrementBytes.Length)
                 {
                     countDone = int.MaxValue;
                 }
@@ -362,11 +364,11 @@ namespace Garnet.server
             try
             {
                 // read min
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamByteArray, ref input_currptr, input + length))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamBytes, ref input_currptr, input + length))
                     return;
 
                 // read max
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, input + length))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var maxParamBytes, ref input_currptr, input + length))
                     return;
 
                 int countDone = 2;
@@ -381,38 +383,41 @@ namespace Garnet.server
                     int i = 0;
                     while (i < count - 2)
                     {
-                        if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var token, ref input_currptr, input + length))
+                        if (!RespReadUtils.TrySliceWithLengthHeader(out var token, ref input_currptr, input + length))
                             return;
-                        switch (Encoding.ASCII.GetString(token).ToUpperInvariant())
+
+                        if (AsciiUtils.EqualsIgnoreCase(token, "BYSCORE"u8))
                         {
-                            case "BYSCORE":
-                                options.ByScore = true;
-                                break;
-                            case "BYLEX":
-                                options.ByLex = true;
-                                break;
-                            case "REV":
-                                options.Reverse = true;
-                                break;
-                            case "LIMIT":
-                                // read the next two tokens
-                                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var offset, ref input_currptr, input + length))
-                                    return;
-                                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countLimit, ref input_currptr, input + length))
-                                    return;
-                                if (TryParseParameter(offset, out var offsetLimit, out _) &&
-                                    TryParseParameter(countLimit, out var countLimitNumber, out _))
-                                {
-                                    options.Limit = ((int)offsetLimit, (int)countLimitNumber);
-                                    options.ValidLimit = true;
-                                    i += 2;
-                                }
-                                break;
-                            case "WITHSCORES":
-                                options.WithScores = true;
-                                break;
-                            default:
-                                break;
+                            options.ByScore = true;
+                        }
+                        else if (AsciiUtils.EqualsIgnoreCase(token, "BYLEX"u8))
+                        {
+                            options.ByLex = true;
+                        }
+                        else if (AsciiUtils.EqualsIgnoreCase(token, "REV"u8))
+                        {
+                            options.Reverse = true;
+                        }
+                        else if (AsciiUtils.EqualsIgnoreCase(token, "LIMIT"u8))
+                        {
+                            // read the next two tokens
+                            if (!RespReadUtils.TrySliceWithLengthHeader(out var offset, ref input_currptr, input + length) ||
+                                !RespReadUtils.TrySliceWithLengthHeader(out var countLimit, ref input_currptr, input + length))
+                            {
+                                return;
+                            }
+
+                            if (TryParseParameter(offset, out var offsetLimit, out _) &&
+                                TryParseParameter(countLimit, out var countLimitNumber, out _))
+                            {
+                                options.Limit = ((int)offsetLimit, (int)countLimitNumber);
+                                options.ValidLimit = true;
+                                i += 2;
+                            }
+                        }
+                        else if (AsciiUtils.EqualsIgnoreCase(token, "WITHSCORES"u8))
+                        {
+                            options.WithScores = true;
                         }
                         i++;
                     }
@@ -420,8 +425,8 @@ namespace Garnet.server
 
                 if (count >= 2 && ((!options.ByScore && !options.ByLex) || options.ByScore))
                 {
-                    if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) |
-                        !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
+                    if (!TryParseParameter(minParamBytes, out var minValue, out var minExclusive) |
+                        !TryParseParameter(maxParamBytes, out var maxValue, out var maxExclusive))
                     {
                         while (!RespWriteUtils.WriteError("ERR max or min value is not a float value."u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -512,7 +517,7 @@ namespace Garnet.server
                 // by Lex
                 if (count >= 2 && options.ByLex)
                 {
-                    var elementsInLex = GetElementsInRangeByLex(minParamByteArray, maxParamByteArray, options.Reverse, options.ValidLimit, false, out int errorCode, options.Limit);
+                    var elementsInLex = GetElementsInRangeByLex(minParamBytes, maxParamBytes, options.Reverse, options.ValidLimit, false, out int errorCode, options.Limit);
 
                     if (errorCode == int.MaxValue)
                     {
@@ -913,7 +918,14 @@ namespace Garnet.server
         /// <param name="errorCode">errorCode</param>
         /// <param name="limit">offset and count values</param>
         /// <returns></returns>
-        private List<(double, byte[])> GetElementsInRangeByLex(byte[] minParamByteArray, byte[] maxParamByteArray, bool doReverse, bool validLimit, bool rem, out int errorCode, (int, int) limit = default)
+        private List<(double, byte[])> GetElementsInRangeByLex(
+            ReadOnlySpan<byte> minParamByteArray,
+            ReadOnlySpan<byte> maxParamByteArray,
+            bool doReverse,
+            bool validLimit,
+            bool rem,
+            out int errorCode,
+            (int, int) limit = default)
         {
             var elementsInLex = new List<(double, byte[])>();
 
