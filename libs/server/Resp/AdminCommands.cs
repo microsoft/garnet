@@ -300,7 +300,7 @@ namespace Garnet.server
                         var param = GetCommand(bufSpan, out bool success1);
                         if (!success1) return false;
                         count--;
-                        if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AUTH))
+                        if (AsciiUtils.EqualsIgnoreCase(param, CmdStrings.AUTH))
                         {
                             if (count < 2)
                             {
@@ -318,7 +318,7 @@ namespace Garnet.server
                             if (!success1) return false;
                             count--;
                         }
-                        else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETNAME))
+                        else if (AsciiUtils.EqualsIgnoreCase(param, CmdStrings.SETNAME))
                         {
                             if (count < 1)
                             {
