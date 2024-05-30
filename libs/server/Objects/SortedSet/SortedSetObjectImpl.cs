@@ -833,10 +833,10 @@ namespace Garnet.server
 
                 if (_input->count == 3) // ZRANK key member WITHSCORE
                 {
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var token, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var token, ref input_currptr, input + length))
                         return;
 
-                    if (Encoding.ASCII.GetString(token).ToUpperInvariant() == "WITHSCORE")
+                    if (AsciiUtils.EqualsIgnoreCase(token, "WITHSCORE"u8))
                     {
                         withScore = true;
                     }

@@ -845,7 +845,7 @@ namespace Garnet.server
                 }
                 else if (parameterWord.SequenceEqual(CmdStrings.COUNT) || parameterWord.SequenceEqual(CmdStrings.count))
                 {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterValue, ref ptr, recvBufferPtr + bytesRead) || 
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterValue, ref ptr, recvBufferPtr + bytesRead) ||
                         !Utf8Parser.TryParse(countParameterValue, out countValue, out var countBytesConsumed, default) ||
                         countBytesConsumed != countParameterValue.Length)
                     {

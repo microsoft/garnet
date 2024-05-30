@@ -367,7 +367,7 @@ namespace Garnet.server
                     this.UpdateSize(key, value);
                     _output->opsDone++;
                 }
-                else if ((_input->header.HashOp == HashOperation.HSET || _input->header.HashOp == HashOperation.HMSET) && _value != default && !_value.SequenceEqual(value))
+                else if ((_input->header.HashOp == HashOperation.HSET || _input->header.HashOp == HashOperation.HMSET) && _value != default && !_value.AsSpan().SequenceEqual(value))
                 {
                     hash[key] = value;
                     this.Size += Utility.RoundUp(value.Length, IntPtr.Size) - Utility.RoundUp(_value.Length, IntPtr.Size); // Skip overhead as existing item is getting replaced.
@@ -403,7 +403,7 @@ namespace Garnet.server
             try
             {
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input + length) ||
-                    !RespReadUtils.ReadByteArrayWithLengthHeader(out var incr, ref input_currptr, input + length))
+                    !RespReadUtils.TrySliceWithLengthHeader(out var incr, ref input_currptr, input + length))
                     return;
 
                 if (hash.TryGetValue(key, out var value))
@@ -455,7 +455,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        hash.Add(key, incr);
+                        hash.Add(key, incr.ToArray());
                         UpdateSize(key, incr);
                         if (op == HashOperation.HINCRBY)
                         {

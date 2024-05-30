@@ -30,39 +30,51 @@ namespace Garnet.server
             _output->countDone = Int32.MinValue;
 
             // get the source string to remove
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var item, ref ptr, end))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var itemSpan, ref ptr, end))
                 return;
 
             var count = _input->count;
-            var rem_count = 0;
+            var removedCount = 0;
             _output->countDone = 0;
 
             //remove all equals to item
             if (count == 0)
             {
-                var elements = list.Count;
-                list.Where(i => i.SequenceEqual(item)).ToList().ForEach(i => { list.Remove(i); this.UpdateSize(i, false); });
-                rem_count = elements - list.Count;
+                var currentNode = list.First;
+                do
+                {
+                    if (currentNode.Value.AsSpan().SequenceEqual(itemSpan))
+                    {
+                        list.Remove(currentNode);
+                        this.UpdateSize(currentNode.Value, false);
+
+                        removedCount++;
+                    }
+                }
+                while ((currentNode = currentNode.Next) != null);
             }
             else
             {
-                while (rem_count < Math.Abs(count) && list.Count > 0)
+                bool fromHeadToTail = count > 0;
+                var currentNode = fromHeadToTail ? list.First : list.Last;
+
+                count = Math.Abs(count);
+                while (removedCount < count && currentNode != null)
                 {
-                    var node = count > 0 ? list.FirstOrDefault(i => i.SequenceEqual(item)) : list.LastOrDefault(i => i.SequenceEqual(item));
-                    if (node != null)
+                    var nextNode = fromHeadToTail ? currentNode.Next : currentNode.Previous;
+
+                    if (currentNode.Value.AsSpan().SequenceEqual(itemSpan))
                     {
-                        list.Remove(node);
-                        this.UpdateSize(node, false);
-                        rem_count++;
+                        list.Remove(currentNode);
+                        this.UpdateSize(currentNode.Value, false);
+                        removedCount++;
                     }
-                    else
-                    {
-                        break;
-                    }
+
+                    currentNode = nextNode;
                 }
             }
             _output->bytesDone = (int)(ptr - startptr);
-            _output->opsDone = rem_count;
+            _output->opsDone = removedCount;
         }
 
         private void ListInsert(byte* input, int length, byte* output)
@@ -96,7 +108,7 @@ namespace Garnet.server
                 bool fBefore = CmdStrings.BEFORE.SequenceEqual(position);
 
                 // find the first ocurrence of the pivot element
-                current = list.Nodes().DefaultIfEmpty(null).FirstOrDefault(i => i.Value.SequenceEqual(pivot));
+                current = list.Nodes().DefaultIfEmpty(null).FirstOrDefault(i => i.Value.AsSpan().SequenceEqual(pivot));
                 var newNode = current != default ? (fBefore ? list.AddBefore(current, insertitem) : list.AddAfter(current, insertitem)) : default;
                 if (current != null)
                     this.UpdateSize(insertitem);
