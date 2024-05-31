@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.IO;
 using Garnet.common;
 using Tsavorite.core;
@@ -62,8 +63,9 @@ namespace Garnet.server
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                // Safe to write response into rented buffer without boundary checks
-                _ = RespWriteUtils.WriteSimpleString(bytes, ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteSimpleString(bytes, ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;
         }
@@ -80,8 +82,9 @@ namespace Garnet.server
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                // Safe to write response into rented buffer without boundary checks
-                _ = RespWriteUtils.WriteBulkString(bulkString, ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteBulkString(bulkString, ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
         }
 
@@ -97,8 +100,9 @@ namespace Garnet.server
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                // Safe to write response without boundary checks
-                _ = RespWriteUtils.WriteNull(ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteNull(ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
         }
 
@@ -114,8 +118,9 @@ namespace Garnet.server
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                // Safe to write response into rented buffer without boundary checks
-                _ = RespWriteUtils.WriteError(bytes, ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteError(bytes, ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;
         }
