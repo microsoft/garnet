@@ -362,11 +362,11 @@ namespace Garnet.server
             try
             {
                 // read min
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamBytes, ref input_currptr, input + length))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamByteArray, ref input_currptr, input + length))
                     return;
 
                 // read max
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var maxParamBytes, ref input_currptr, input + length))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, input + length))
                     return;
 
                 int countDone = 2;
@@ -423,8 +423,8 @@ namespace Garnet.server
 
                 if (count >= 2 && ((!options.ByScore && !options.ByLex) || options.ByScore))
                 {
-                    if (!TryParseParameter(minParamBytes, out var minValue, out var minExclusive) |
-                        !TryParseParameter(maxParamBytes, out var maxValue, out var maxExclusive))
+                    if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) |
+                        !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
                     {
                         while (!RespWriteUtils.WriteError("ERR max or min value is not a float value."u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -515,7 +515,7 @@ namespace Garnet.server
                 // by Lex
                 if (count >= 2 && options.ByLex)
                 {
-                    var elementsInLex = GetElementsInRangeByLex(minParamBytes, maxParamBytes, options.Reverse, options.ValidLimit, false, out int errorCode, options.Limit);
+                    var elementsInLex = GetElementsInRangeByLex(minParamByteArray, maxParamByteArray, options.Reverse, options.ValidLimit, false, out int errorCode, options.Limit);
 
                     if (errorCode == int.MaxValue)
                     {
@@ -787,8 +787,8 @@ namespace Garnet.server
             _output->countDone = int.MinValue;
 
             // read min and max
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamBytes, ref input_currptr, end) ||
-                !RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamBytes, ref input_currptr, end))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamBytes, ref input_currptr, end) ||
+                !RespReadUtils.TrySliceWithLengthHeader(out var maxParamBytes, ref input_currptr, end))
             {
                 return;
             }

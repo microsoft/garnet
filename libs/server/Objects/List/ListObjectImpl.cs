@@ -103,10 +103,10 @@ namespace Garnet.server
                     return;
 
                 // get the string to INSERT into the list
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var insertitem, ref ptr, end))
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var item, ref ptr, end))
                     return;
 
-                bool insertBefore = position.SequenceEqual(CmdStrings.BEFORE);
+                var insertBefore = position.SequenceEqual(CmdStrings.BEFORE);
 
                 _output->opsDone = -1;
 
@@ -117,11 +117,11 @@ namespace Garnet.server
                     if (currentNode.Value.AsSpan().SequenceEqual(pivot))
                     {
                         if (insertBefore)
-                            list.AddBefore(currentNode, insertitem);
+                            list.AddBefore(currentNode, item);
                         else
-                            list.AddAfter(currentNode, insertitem);
+                            list.AddAfter(currentNode, item);
 
-                        this.UpdateSize(insertitem);
+                        this.UpdateSize(item);
                         _output->opsDone = list.Count;
                         break;
                     }

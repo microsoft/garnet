@@ -158,11 +158,11 @@ namespace Garnet.server
             byte* ptr = startptr;
 
             *_output = default;
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref ptr, input + length))
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, input + length))
                 return;
 
             _output->opsDone = 1;
-            _output->countDone = hash.TryGetValue(key.ToArray(), out var _value) ? _value.Length : 0;
+            _output->countDone = hash.TryGetValue(key, out var _value) ? _value.Length : 0;
             _output->bytesDone = (int)(ptr - startptr);
         }
 
@@ -178,11 +178,11 @@ namespace Garnet.server
             byte* ptr = startptr;
             byte* end = input + length;
 
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var field, ref ptr, end))
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var field, ref ptr, end))
                 return;
 
             _output->countDone = 1;
-            _output->opsDone = hash.ContainsKey(field.ToArray()) ? 1 : 0;
+            _output->opsDone = hash.ContainsKey(field) ? 1 : 0;
             _output->bytesDone = (int)(ptr - startptr);
         }
 
