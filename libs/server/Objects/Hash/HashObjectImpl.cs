@@ -241,7 +241,7 @@ namespace Garnet.server
                 if (count > 2)
                 {
                     // Get the value for the count parameter
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterByteArray, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterBytes, ref input_currptr, input + length))
                         return;
 
                     if (count == 4)
@@ -260,8 +260,7 @@ namespace Garnet.server
                     countDone = count;
 
                     // Prepare response
-                    if (!Utf8Parser.TryParse(countParameterByteArray, out int countParameter, out var bytesConsumed, default) ||
-                        bytesConsumed != countParameterByteArray.Length)
+                    if (!NumUtils.TryParse(countParameterBytes, out int countParameter))
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -409,10 +408,8 @@ namespace Garnet.server
 
                 if (hash.TryGetValue(key, out var value))
                 {
-                    if (Utf8Parser.TryParse(value, out float result, out var valueBytesConsumed, default) &&
-                        valueBytesConsumed == value.Length &&
-                        Utf8Parser.TryParse(incr, out float resultIncr, out var incrBytesConsumed, default) &&
-                        incrBytesConsumed == incr.Length)
+                    if (NumUtils.TryParse(value, out float result) &&
+                        NumUtils.TryParse(incr, out float resultIncr))
                     {
                         result += resultIncr;
 
@@ -448,8 +445,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (!Utf8Parser.TryParse(incr, out float resultIncr, out var incrBytesConsumed, default) ||
-                        incrBytesConsumed != incr.Length)
+                    if (!NumUtils.TryParse(incr, out float resultIncr))
                     {
                         while (!RespWriteUtils.WriteError("ERR field value is not a number"u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);

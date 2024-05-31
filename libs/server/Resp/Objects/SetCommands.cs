@@ -2,9 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Text;
-using System.Linq;
-using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -680,13 +677,11 @@ namespace Garnet.server
             if (count == 2)
             {
                 // Get the value for the count parameter
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterByteArray, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterBytes, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
                 // Prepare response
-                if (!Utf8Parser.TryParse(countParameterByteArray, out countParameter, out var bytesConsumed, default) ||
-                    bytesConsumed != countParameterByteArray.Length ||
-                    countParameter < 0)
+                if (!NumUtils.TryParse(countParameterBytes, out countParameter) || countParameter < 0)
                 {
                     while (!RespWriteUtils.WriteError("ERR value is not an integer or out of range"u8, ref dcurr, dend))
                         SendAndReset();
@@ -868,8 +863,7 @@ namespace Garnet.server
                     return false;
 
                 // Prepare response
-                if (!Utf8Parser.TryParse(countParameterBytes, out countParameter, out var bytesConsumed, default) ||
-                    bytesConsumed != countParameterBytes.Length)
+                if (!NumUtils.TryParse(countParameterBytes, out countParameter))
                 {
                     while (!RespWriteUtils.WriteError("ERR value is not an integer or out of range\r\n"u8, ref dcurr, dend))
                         SendAndReset();

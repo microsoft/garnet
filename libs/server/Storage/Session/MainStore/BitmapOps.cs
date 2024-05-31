@@ -34,7 +34,7 @@ namespace Garnet.server
             pcurr += RespInputHeader.Size;
 
             //offset
-            *(long*)pcurr = NumUtils.BytesToLong(offset.ToArray());
+            *(long*)pcurr = NumUtils.BytesToLong(offset.ReadOnlySpan);
             pcurr += sizeof(long);
 
             //bit value
@@ -68,7 +68,7 @@ namespace Garnet.server
             pcurr += RespInputHeader.Size;
 
             //offset
-            *(long*)pcurr = NumUtils.BytesToLong(offset.ToArray());
+            *(long*)pcurr = NumUtils.BytesToLong(offset.ReadOnlySpan);
             pcurr += sizeof(long);
 
             SpanByteAndMemory output = new(null);

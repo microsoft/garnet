@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Text;
 using System.Collections.Generic;
 using Garnet.common;
 using Tsavorite.core;
@@ -92,9 +91,7 @@ namespace Garnet.server
                 }
                 else if (parameterSB.SequenceEqual(CmdStrings.COUNT) || parameterSB.SequenceEqual(CmdStrings.count))
                 {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterValue, ref input_currptr, input + length) ||
-                        !Utf8Parser.TryParse(countParameterValue, out countInInput, out var bytesConsumed, default) ||
-                        bytesConsumed != countParameterValue.Length)
+                    if (!RespReadUtils.ReadIntWithLengthHeader(out countInInput, ref input_currptr, input + length))
                     {
                         return false;
                     }

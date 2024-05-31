@@ -432,14 +432,11 @@ namespace Garnet.server
                 byte* input_currptr = input_startptr;
                 byte* input_end = input + length;
 
-                byte* indexParam = default;
-                var indexParamSize = 0;
-
                 // index
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref indexParam, ref indexParamSize, ref input_currptr, input_end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var indexParamBytes, ref input_currptr, input_end))
                     return;
 
-                if (NumUtils.TryBytesToInt(indexParam, indexParamSize, out var index) == false)
+                if (!NumUtils.TryParse(indexParamBytes, out int index))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref output_currptr, output_end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -808,9 +807,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SCAN", count);
 
             // Scan cursor [MATCH pattern] [COUNT count] [TYPE type]
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var cursorParameterBytes, ref ptr, recvBufferPtr + bytesRead) ||
-                !Utf8Parser.TryParse(cursorParameterBytes, out long cursorFromInput, out var cursorBytesConsumed, default) ||
-                cursorBytesConsumed != cursorParameterBytes.Length)
+            if (!RespReadUtils.ReadLongWithLengthHeader(out var cursorFromInput, ref ptr, recvBufferPtr + bytesRead))
             {
                 return false;
             }
@@ -837,9 +834,7 @@ namespace Garnet.server
                 }
                 else if (parameterWord.SequenceEqual(CmdStrings.COUNT) || parameterWord.SequenceEqual(CmdStrings.count))
                 {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterValue, ref ptr, recvBufferPtr + bytesRead) ||
-                        !Utf8Parser.TryParse(countParameterValue, out countValue, out var countBytesConsumed, default) ||
-                        countBytesConsumed != countParameterValue.Length)
+                    if (!RespReadUtils.ReadLongWithLengthHeader(out countValue, ref ptr, recvBufferPtr + bytesRead))
                     {
                         return false;
                     }

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -46,9 +45,7 @@ namespace Garnet.server
             if (!RespReadUtils.TrySliceWithLengthHeader(out var cursorBytes, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
-            if (!Utf8Parser.TryParse(cursorBytes, out int cursorValue, out var bytesConsumed, default) ||
-                bytesConsumed != cursorBytes.Length ||
-                cursorValue < 0)
+            if (!NumUtils.TryParse(cursorBytes, out int cursorValue) || cursorValue < 0)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
                     SendAndReset();

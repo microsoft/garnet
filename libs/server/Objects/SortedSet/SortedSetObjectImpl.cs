@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -297,8 +296,7 @@ namespace Garnet.server
                     return;
 
                 //check if increment value is valid
-                if (!Utf8Parser.TryParse(incrementBytes, out double incrValue, out var incrBytesConsumed, default) ||
-                    incrBytesConsumed != incrementBytes.Length)
+                if (!NumUtils.TryParse(incrementBytes, out double incrValue))
                 {
                     countDone = int.MaxValue;
                 }
@@ -595,13 +593,21 @@ namespace Garnet.server
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
 
-            if (!RespReadUtils.ReadIntWithLengthHeader(out int start, ref input_currptr, input + length) ||
-                !RespReadUtils.ReadIntWithLengthHeader(out int stop, ref input_currptr, input + length))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var startBytes, ref input_currptr, input + length) ||
+                !RespReadUtils.TrySliceWithLengthHeader(out var stopBytes, ref input_currptr, input + length))
             {
                 return;
             }
 
             _output->bytesDone = (int)(input_currptr - input_startptr);
+            _output->countDone = int.MaxValue;
+
+            if (!NumUtils.TryParse(startBytes, out int start) ||
+                !NumUtils.TryParse(stopBytes, out int stop))
+            {
+                return;
+            }
+
             _output->countDone = 0;
 
             if (start > sortedSetDict.Count - 1)
@@ -1120,8 +1126,7 @@ namespace Garnet.server
                 exclusive = true;
             }
 
-            if (Utf8Parser.TryParse(val, out valueDouble, out int bytesConsumed, default) &&
-                bytesConsumed == val.Length)
+            if (NumUtils.TryParse(val, out valueDouble))
             {
                 return true;
             }
