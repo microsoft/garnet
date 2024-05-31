@@ -62,9 +62,6 @@ public static class AsciiUtils
     /// </summary>
     public static bool EqualsIgnoreCase(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
     {
-#if NET8_0_OR_GREATER
-        return Ascii.EqualsIgnoreCase(left, right);
-#else
         if (left.SequenceEqual(right))
             return true;
         if (left.Length != right.Length)
@@ -82,6 +79,5 @@ public static class AsciiUtils
             return false;
         }
         return true;
-#endif
     }
 }

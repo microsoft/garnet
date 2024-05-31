@@ -359,25 +359,25 @@ namespace Garnet.common
         }
 
         /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out int, out int, char)"/>
-        public static unsafe bool TryParse(ReadOnlySpan<byte> source, out int value)
+        public static bool TryParse(ReadOnlySpan<byte> source, out int value)
         {
             return Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
                 bytesConsumed == source.Length;
         }
         /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out long, out int, char)"/>
-        public static unsafe bool TryParse(ReadOnlySpan<byte> source, out long value)
+        public static bool TryParse(ReadOnlySpan<byte> source, out long value)
         {
             return Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
                 bytesConsumed == source.Length;
         }
         /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out float, out int, char)"/>
-        public static unsafe bool TryParse(ReadOnlySpan<byte> source, out float value)
+        public static bool TryParse(ReadOnlySpan<byte> source, out float value)
         {
             return Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
                 bytesConsumed == source.Length;
         }
         /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out double, out int, char)"/>
-        public static unsafe bool TryParse(ReadOnlySpan<byte> source, out double value)
+        public static bool TryParse(ReadOnlySpan<byte> source, out double value)
         {
             return Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
                 bytesConsumed == source.Length;
