@@ -248,7 +248,7 @@ namespace Garnet.cluster
                 return false;
             if (!RespReadUtils.ReadStringWithLengthHeader(out var primary_replid, ref ptr, recvBufferPtr + bytesRead))
                 return false;
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var checkpointEntryBytes, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var checkpointEntryBytes, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             if (!RespReadUtils.ReadLongWithLengthHeader(out var replicaAofBeginAddress, ref ptr, recvBufferPtr + bytesRead))
                 return false;
@@ -256,7 +256,7 @@ namespace Garnet.cluster
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            var remoteEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes.ToArray());
+            var remoteEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
             if (!clusterProvider.replicationManager.TryBeginReplicaSyncSession(
                 nodeId, primary_replid, remoteEntry, replicaAofBeginAddress, replicaAofTailAddress, out var errorMessage))
@@ -295,13 +295,13 @@ namespace Garnet.cluster
                 return false;
             if (!RespReadUtils.ReadIntWithLengthHeader(out var fileTypeInt, ref ptr, recvBufferPtr + bytesRead))
                 return false;
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var checkpointMetadata, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var checkpointMetadata, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
             var fileToken = new Guid(fileTokenBytes);
             var fileType = (CheckpointFileType)fileTypeInt;
-            clusterProvider.replicationManager.ProcessCheckpointMetadata(fileToken, fileType, checkpointMetadata.ToArray());
+            clusterProvider.replicationManager.ProcessCheckpointMetadata(fileToken, fileType, checkpointMetadata);
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
@@ -375,7 +375,7 @@ namespace Garnet.cluster
                 return false;
             if (!RespReadUtils.ReadStringWithLengthHeader(out var primary_replid, ref ptr, recvBufferPtr + bytesRead))
                 return false;
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var checkpointEntryBytes, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var checkpointEntryBytes, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             if (!RespReadUtils.ReadLongWithLengthHeader(out var beginAddress, ref ptr, recvBufferPtr + bytesRead))
                 return false;
@@ -383,7 +383,7 @@ namespace Garnet.cluster
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes.ToArray());
+            var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
             var replicationOffset = clusterProvider.replicationManager.BeginReplicaRecover(
                 recoverMainStoreFromToken,
                 recoverObjectStoreFromToken,

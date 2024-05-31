@@ -409,7 +409,7 @@ namespace Garnet.cluster
                     gossipWithMeet = true;
             }
 
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var gossipMessage, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var gossipMessage, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
@@ -419,7 +419,7 @@ namespace Garnet.cluster
             // Try merge if not just a ping message
             if (gossipMessage.Length > 0)
             {
-                var other = ClusterConfig.FromByteArray(gossipMessage.ToArray());
+                var other = ClusterConfig.FromByteArray(gossipMessage);
                 // Accept gossip message if it is a gossipWithMeet or node from node that is already known and trusted
                 // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
                 if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
