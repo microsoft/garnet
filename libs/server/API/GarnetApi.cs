@@ -183,7 +183,7 @@ namespace Garnet.server
             => storageSession.Increment(key, input, ref output, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus Increment(ArgSlice key, long increment, out OperationError operationError, out long output) 
+        public GarnetStatus Increment(ArgSlice key, long increment, out OperationError operationError, out long output)
             => storageSession.Increment(key, increment, out operationError, out output, ref context);
         #endregion
 

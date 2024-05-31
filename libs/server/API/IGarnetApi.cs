@@ -185,7 +185,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output);
-        
+
         /// <summary>
         /// Increment (INCR, INCRBY, DECR, DECRBY)
         /// </summary>
@@ -1109,7 +1109,7 @@ namespace Garnet.server
         /// <param name="rank"></param>
         /// <returns></returns>
         GarnetStatus SortedSetRank(ArgSlice key, ArgSlice member, bool reverse, out long? rank);
-        
+
         /// <summary>
         /// Returns a random element from the sorted set key.
         /// </summary>

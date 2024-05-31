@@ -675,7 +675,7 @@ namespace Garnet.server
             return status;
 
         }
-        
+
         /// <summary>
         /// Returns the rank of member in the sorted set, the scores in the sorted set are ordered from high to low
         /// </summary>
@@ -697,7 +697,7 @@ namespace Garnet.server
             const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
             var outputContainer = stackalloc byte[outputContainerSize];
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
-            
+
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), inputSlice, ref objectStoreContext, ref outputFooter);
 
             if (status == GarnetStatus.OK)
