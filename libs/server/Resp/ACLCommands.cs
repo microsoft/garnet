@@ -236,6 +236,34 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
+            // Subcommand: SAVE
+            else if (subcommand.Equals("SAVE", StringComparison.OrdinalIgnoreCase) && (count == 1))
+            {
+                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                {
+                    return success;
+                }
+
+                // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
+                Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
+                Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
+                var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
+
+                try
+                {
+                    storeWrapper.accessControlList.Save(aclAuthenticationSettings.AclConfigurationFile);
+                    logger?.LogInformation("ACL configuration file '{filepath}' saved!", aclAuthenticationSettings.AclConfigurationFile);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "ACL SAVE faulted");
+                    while (!RespWriteUtils.WriteError($"ERR {ex.Message}", ref dcurr, dend))
+                        SendAndReset();
+                }
+
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+            }
             // Unknown or invalidly specified ACL subcommand
             else
             {
