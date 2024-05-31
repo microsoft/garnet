@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 
@@ -76,7 +77,9 @@ namespace Garnet.server.ACL
                 return false;
             }
 
-            int index = (int)command;
+            RespCommand effectiveCommand = command.NormalizeForACLs();
+
+            int index = (int)effectiveCommand;
             int ulongIndex = index / 64;
             int bitIndex = index % 64;
 
@@ -116,6 +119,8 @@ namespace Garnet.server.ACL
         /// </summary>
         public void AddCommand(RespCommand command)
         {
+            Debug.Assert(command.NormalizeForACLs() == command, "Cannot control access to this command, it's an implementation detail");
+
             this._all = AllState.PerCommand;
 
             int index = (int)command;
@@ -134,6 +139,8 @@ namespace Garnet.server.ACL
         /// </summary>
         public void RemoveCommand(RespCommand command)
         {
+            Debug.Assert(command.NormalizeForACLs() == command, "Cannot control access to this command, it's an implementation detail");
+
             this._all = AllState.PerCommand;
 
             int index = (int)command;

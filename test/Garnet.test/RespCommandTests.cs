@@ -82,6 +82,12 @@ namespace Garnet.test
                 RespCommand.SETKEEPTTL,
                 RespCommand.SETKEEPTTLXX,
 
+                // BITOP is parsed as if it has subcommands, but they aren't really
+                RespCommand.BITOP_AND,
+                RespCommand.BITOP_NOT,
+                RespCommand.BITOP_OR,
+                RespCommand.BITOP_XOR,
+
                 // Cluster internal commands which shouldn't be documented
                 RespCommand.CLUSTER_AOFSYNC,
                 RespCommand.CLUSTER_APPENDLOG,

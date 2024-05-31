@@ -79,7 +79,6 @@ namespace Garnet.server
         // Write commands
         APPEND,
         BITFIELD,
-        BITOP,
         DECR,
         DECRBY,
         DEL,
@@ -140,6 +139,13 @@ namespace Garnet.server
         ZREMRANGEBYLEX,
         ZREMRANGEBYRANK,
         ZREMRANGEBYSCORE,
+
+        // BITOP is the true command, AND|OR|XOR|NOT are psuedo-subcommands
+        BITOP,
+        BITOP_AND,
+        BITOP_OR,
+        BITOP_XOR,
+        BITOP_NOT,
 
         // Neither read nor write commands
         PING,
@@ -270,6 +276,25 @@ namespace Garnet.server
     public static class RespCommandExtensions
     {
         /// <summary>
+        /// Turns any not-quite-a-real-command entries in <see cref="RespCommand"/> into the equivalent command
+        /// for ACL'ing purposes.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static RespCommand NormalizeForACLs(this RespCommand cmd)
+        {
+            return 
+                cmd switch
+                {
+                    RespCommand.SETEXNX => RespCommand.SET,
+                    RespCommand.SETEXXX => RespCommand.SET,
+                    RespCommand.SETKEEPTTL => RespCommand.SET,
+                    RespCommand.SETKEEPTTLXX => RespCommand.SET,
+                    RespCommand.BITOP_AND or RespCommand.BITOP_NOT or RespCommand.BITOP_OR or RespCommand.BITOP_XOR => RespCommand.BITOP,
+                    _ => cmd
+                };
+        }
+
+        /// <summary>
         /// Returns 1 if <paramref name="cmd"/> is a write command.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -279,7 +304,7 @@ namespace Garnet.server
             uint test = (uint)((int)cmd - (int)RespCommand.APPEND);
 
             // force to be branchless for same reasons as OneIfRead
-            bool inRange = test <= (RespCommand.ZREMRANGEBYSCORE - RespCommand.APPEND);
+            bool inRange = test <= (RespCommand.BITOP_NOT - RespCommand.APPEND);
             return Unsafe.As<bool, byte>(ref inRange);
         }
 
@@ -647,8 +672,52 @@ namespace Garnet.server
                                     case 'B':
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBITOP\r\n"u8))
                                         {
-                                            // todo: restore parsing the AND|OR|XOR|NOT "subcommand" here
-                                            return RespCommand.BITOP;
+                                            // Check for matching bit-operation
+                                            if (remainingBytes > length + 6 + 8)
+                                            {
+                                                // TODO: AND|OR|XOR|NOT may not correctly handle mixed cases?
+
+                                                // 2-character operations
+                                                if (*(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("$2\r\n"u8))
+                                                {
+                                                    if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nOR\r\n"u8) || *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nor\r\n"u8))
+                                                    {
+                                                        readHead += 8;
+                                                        count -= 1;
+                                                        return RespCommand.BITOP_OR;
+                                                    }
+                                                }
+                                                // 3-character operations
+                                                else if (remainingBytes > length + 6 + 9)
+                                                {
+                                                    if (*(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("$3\r\n"u8))
+                                                    {
+                                                        // Optimistically adjust read head and count
+                                                        readHead += 9;
+                                                        count -= 1;
+
+                                                        if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nAND\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nand\r\n"u8))
+                                                        {
+                                                            return RespCommand.BITOP_AND;
+                                                        }
+                                                        else if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nXOR\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nxor\r\n"u8))
+                                                        {
+                                                            return RespCommand.BITOP_XOR;
+                                                        }
+                                                        else if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nNOT\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nnot\r\n"u8))
+                                                        {
+                                                            return RespCommand.BITOP_NOT;
+                                                        }
+
+                                                        // Reset read head and count if we didn't match operator.
+                                                        readHead -= 9;
+                                                        count += 1;
+                                                    }
+                                                }
+
+                                                // Although we recognize BITOP, the pseudo-subcommand isn't recognized so fail early
+                                                return RespCommand.NONE;
+                                            }
                                         }
                                         break;
 

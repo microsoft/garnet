@@ -2302,7 +2302,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("ERR syntax error", ex.Message);
+                Assert.AreEqual("ERR unknown command", ex.Message);
             }
         }
 

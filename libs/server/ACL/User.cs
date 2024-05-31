@@ -42,7 +42,7 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
-        /// Check whether the user can access the given command.
+        /// Checks whether the user can access the given command.
         /// </summary>
         public bool CanAccessCommand(RespCommand command)
         => this._enabledCommands.CanRunCommand(command);

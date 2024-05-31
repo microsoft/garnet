@@ -644,20 +644,7 @@ namespace Garnet.server
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
 
-            // todo: SETEXNX is parsed separately from SET and then turned into these other commands
-            //       we _could_ refactor SET to handle these options, but perf is tricky enough there
-            //       that it should be a different command
-            RespCommand effectiveCommand =
-                    cmd switch
-                    {
-                        RespCommand.SETEXNX => RespCommand.SET,
-                        RespCommand.SETEXXX => RespCommand.SET,
-                        RespCommand.SETKEEPTTL => RespCommand.SET,
-                        RespCommand.SETKEEPTTLXX => RespCommand.SET,
-                        _ => cmd
-                    };
-
-            if (!effectiveCommand.IsNoAuth() && (!_authenticator.IsAuthenticated || !_user.CanAccessCommand(effectiveCommand)))
+            if (!cmd.IsNoAuth() && (!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd)))
             {
                 if (!DrainCommands(bufSpan, count))
                 {

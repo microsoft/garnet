@@ -211,7 +211,7 @@ namespace Garnet.server.ACL
             }
             else if (op.StartsWith("-", StringComparison.Ordinal) || op.StartsWith("+", StringComparison.Ordinal))
             {
-                // individual commands or command|subcommand pairs
+                // Individual commands or command|subcommand pairs
                 string commandName = op.Substring(1);
 
                 if (!TryParseCommandForAcl(commandName, out RespCommand command))
@@ -241,7 +241,7 @@ namespace Garnet.server.ACL
                 throw new ACLUnknownOperationException(op);
             }
 
-            // there's some fixup that has to be done when parsing a command
+            // There's some fixup that has to be done when parsing a command
             static bool TryParseCommandForAcl(string commandName, out RespCommand command)
             {
                 if (!Enum.TryParse(commandName.Replace("|", "_"), ignoreCase: true, out command))
@@ -259,9 +259,9 @@ namespace Garnet.server.ACL
                 return !IsInvalidCommandToAcl(command);
             }
 
-            // some commands aren't really commands, so ACLs shouldn't accept their names
+            // Some commands aren't really commands, so ACLs shouldn't accept their names
             static bool IsInvalidCommandToAcl(RespCommand command)
-            => command == RespCommand.INVALID || command == RespCommand.NONE || command == RespCommand.SETEXNX || command == RespCommand.SETEXXX || command == RespCommand.SETKEEPTTL || command == RespCommand.SETKEEPTTLXX;
+            => command == RespCommand.INVALID || command == RespCommand.NONE || command.NormalizeForACLs() != command;
         }
 
         /// <summary>
