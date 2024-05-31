@@ -1103,7 +1103,8 @@ namespace Garnet.server
                 // Handle COMMAND INFO with command names - return all commands specified
                 else
                 {
-                    RespWriteUtils.WriteArrayLength(count - 1, ref dcurr, dend);
+                    while (!RespWriteUtils.WriteArrayLength(count - 1, ref dcurr, dend))
+                        SendAndReset();
 
                     for (var i = 0; i < count - 1; i++)
                     {
