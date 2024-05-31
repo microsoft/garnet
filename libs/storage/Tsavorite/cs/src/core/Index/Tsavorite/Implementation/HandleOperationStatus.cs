@@ -15,7 +15,7 @@ namespace Tsavorite.core
             OperationStatus internalStatus,
             TsavoriteSession tsavoriteSession,
             ref PendingContext<Input, Output, Context> pendingContext)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
                 && HandleRetryStatus(internalStatus, tsavoriteSession, ref pendingContext);
 
@@ -24,7 +24,7 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(OperationStatus internalStatus, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
@@ -45,7 +45,7 @@ namespace Tsavorite.core
             OperationStatus internalStatus,
             TsavoriteSession tsavoriteSession,
             ref PendingContext<Input, Output, Context> pendingContext)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)

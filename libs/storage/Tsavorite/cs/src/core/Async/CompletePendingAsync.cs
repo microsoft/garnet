@@ -29,7 +29,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         internal async ValueTask CompletePendingAsync<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
                                       CancellationToken token, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             while (true)
             {

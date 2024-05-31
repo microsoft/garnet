@@ -49,7 +49,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
                 ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out OperationStatus internalStatus, out bool needIO)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             internalStatus = OperationStatus.SUCCESS;
             if (RevivificationManager.UseFreeRecordPool)

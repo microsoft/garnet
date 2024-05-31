@@ -24,7 +24,7 @@ namespace Tsavorite.core
             public UpsertAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
 
             /// <inheritdoc/>
-            public Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+            public Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
                                             out Output output)
             {
                 output = default;
@@ -40,7 +40,7 @@ namespace Tsavorite.core
             }
 
             /// <inheritdoc/>
-            public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+            public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
                 => SlowUpsertAsync(tsavoriteKV, tsavoriteSession, pendingContext, upsertOptions, token);
 
@@ -72,14 +72,14 @@ namespace Tsavorite.core
                 updateAsyncInternal = default;
             }
 
-            internal UpsertAsyncResult(TsavoriteKV<Key, Value> tsavoriteKV, ITsavoriteSession<Key, Value, Input, TOutput, Context> tsavoriteSession,
+            internal UpsertAsyncResult(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, TOutput, Context> sessionFunctions,
                 PendingContext<Input, TOutput, Context> pendingContext, ref UpsertOptions upsertOptions, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 Status = new(StatusCode.Pending);
                 Output = default;
                 RecordMetadata = default;
                 updateAsyncInternal = new AsyncOperationInternal<Input, TOutput, Context, UpsertAsyncOperation<Input, TOutput, Context>, UpsertAsyncResult<Input, TOutput, Context>>(
-                                        tsavoriteKV, tsavoriteSession, pendingContext, exceptionDispatchInfo, new(ref upsertOptions));
+                                        tsavoriteKV, sessionFunctions, pendingContext, exceptionDispatchInfo, new(ref upsertOptions));
             }
 
             /// <summary>Complete the Upsert operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
@@ -111,7 +111,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<UpsertAsyncResult<Input, Output, Context>> UpsertAsync<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
                 ref Key key, ref Input input, ref Value value, ref UpsertOptions upsertOptions, Context userContext, CancellationToken token = default)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
             Output output = default;
@@ -139,7 +139,7 @@ namespace Tsavorite.core
         }
 
         private static async ValueTask<UpsertAsyncResult<Input, Output, Context>> SlowUpsertAsync<Input, Output, Context>(
-            TsavoriteKV<Key, Value> @this, ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+            TsavoriteKV<Key, Value> @this, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
             PendingContext<Input, Output, Context> pcontext, UpsertOptions upsertOptions, CancellationToken token = default)
         {
             ExceptionDispatchInfo exceptionDispatchInfo = await WaitForFlushCompletionAsync(@this, pcontext.flushEvent, token).ConfigureAwait(false);

@@ -47,6 +47,7 @@ namespace Tsavorite.test
         public void ObjectInMemWriteRead()
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             MyKey key1 = new() { key = 9999999 };
             MyValue value = new() { value = 23 };
@@ -54,8 +55,8 @@ namespace Tsavorite.test
             MyInput input = null;
             MyOutput output = new();
 
-            session.Upsert(ref key1, ref value, Empty.Default);
-            session.Read(ref key1, ref input, ref output, Empty.Default);
+            bContext.Upsert(ref key1, ref value, Empty.Default);
+            bContext.Read(ref key1, ref input, ref output, Empty.Default);
             Assert.AreEqual(value.value, output.value.value);
         }
 
@@ -64,22 +65,23 @@ namespace Tsavorite.test
         public void ObjectInMemWriteRead2()
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             MyKey key1 = new() { key = 8999998 };
             MyInput input1 = new() { value = 23 };
             MyOutput output = new();
 
-            session.RMW(ref key1, ref input1, Empty.Default);
+            bContext.RMW(ref key1, ref input1, Empty.Default);
 
             MyKey key2 = new() { key = 8999999 };
             MyInput input2 = new() { value = 24 };
-            session.RMW(ref key2, ref input2, Empty.Default);
+            bContext.RMW(ref key2, ref input2, Empty.Default);
 
-            session.Read(ref key1, ref input1, ref output, Empty.Default);
+            bContext.Read(ref key1, ref input1, ref output, Empty.Default);
 
             Assert.AreEqual(input1.value, output.value.value);
 
-            session.Read(ref key2, ref input2, ref output, Empty.Default);
+            bContext.Read(ref key2, ref input2, ref output, Empty.Default);
             Assert.AreEqual(input2.value, output.value.value);
 
         }
@@ -91,23 +93,24 @@ namespace Tsavorite.test
         public void ObjectDiskWriteRead()
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             for (int i = 0; i < 2000; i++)
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key, ref value, Empty.Default);
+                bContext.Upsert(ref key, ref value, Empty.Default);
                 // store.ShiftReadOnlyAddress(store.LogTailAddress);
             }
 
             MyKey key2 = new() { key = 23 };
             MyInput input = new();
             MyOutput g1 = new();
-            var status = session.Read(ref key2, ref input, ref g1, Empty.Default);
+            var status = bContext.Read(ref key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
             {
-                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, g1) = GetSinglePendingResult(outputs);
             }
 
@@ -115,11 +118,11 @@ namespace Tsavorite.test
             Assert.AreEqual(23, g1.value.value);
 
             key2 = new MyKey { key = 99999 };
-            status = session.Read(ref key2, ref input, ref g1, Empty.Default);
+            status = bContext.Read(ref key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
             {
-                session.CompletePending(true);
+                bContext.CompletePending(true);
             }
             else
             {
@@ -131,9 +134,9 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                status = session.RMW(ref key1, ref input, Empty.Default);
+                status = bContext.RMW(ref key1, ref input, Empty.Default);
                 if (status.IsPending)
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
             }
 
             for (int i = 0; i < 2000; i++)
@@ -142,9 +145,9 @@ namespace Tsavorite.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
+                if (bContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                 }
                 else
                 {
@@ -168,33 +171,34 @@ namespace Tsavorite.test
         public async Task ReadAsyncObjectDiskWriteRead()
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             for (int i = 0; i < 2000; i++)
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var r = await session.UpsertAsync(ref key, ref value);
+                var r = await bContext.UpsertAsync(ref key, ref value);
                 while (r.Status.IsPending)
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
             var key1 = new MyKey { key = 1989 };
             var input = new MyInput();
-            var readResult = await session.ReadAsync(ref key1, ref input, Empty.Default);
+            var readResult = await bContext.ReadAsync(ref key1, ref input, Empty.Default);
             var result = readResult.Complete();
             Assert.IsTrue(result.status.Found);
             Assert.AreEqual(1989, result.output.value.value);
 
             var key2 = new MyKey { key = 23 };
-            readResult = await session.ReadAsync(ref key2, ref input, Empty.Default);
+            readResult = await bContext.ReadAsync(ref key2, ref input, Empty.Default);
             result = readResult.Complete();
 
             Assert.IsTrue(result.status.Found);
             Assert.AreEqual(23, result.output.value.value);
 
             var key3 = new MyKey { key = 9999 };
-            readResult = await session.ReadAsync(ref key3, ref input, Empty.Default);
+            readResult = await bContext.ReadAsync(ref key3, ref input, Empty.Default);
             result = readResult.Complete();
 
             Assert.IsFalse(result.status.Found);
@@ -204,7 +208,7 @@ namespace Tsavorite.test
             {
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                var r = await session.RMWAsync(ref key, ref input, Empty.Default);
+                var r = await bContext.RMWAsync(ref key, ref input, Empty.Default);
                 while (r.Status.IsPending)
                 {
                     r = await r.CompleteAsync(); // test async version of RMW completion
@@ -216,7 +220,7 @@ namespace Tsavorite.test
             {
                 var key = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                (await session.RMWAsync(ref key, ref input, Empty.Default)).Complete();
+                (await bContext.RMWAsync(ref key, ref input, Empty.Default)).Complete();
             }
 
             for (int i = 0; i < 2000; i++)
@@ -225,7 +229,7 @@ namespace Tsavorite.test
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                readResult = await session.ReadAsync(ref key, ref input, Empty.Default);
+                readResult = await bContext.ReadAsync(ref key, ref input, Empty.Default);
                 result = readResult.Complete();
                 Assert.IsTrue(result.status.Found);
                 if (i < 100 || i >= 1900)

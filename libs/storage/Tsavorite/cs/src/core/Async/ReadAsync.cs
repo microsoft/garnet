@@ -28,7 +28,7 @@ namespace Tsavorite.core
 
             /// <inheritdoc/>
             public Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext,
-                                          ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession, out Output output)
+                                          ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession, out Output output)
             {
                 Status status = !diskRequest.IsDefault()
                     ? tsavoriteKV.InternalCompletePendingRequestFromContext(tsavoriteSession, diskRequest, ref pendingContext, out var newDiskRequest)
@@ -40,7 +40,7 @@ namespace Tsavorite.core
             }
 
             /// <inheritdoc/>
-            public ValueTask<ReadAsyncResult<Input, Output, Context>> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+            public ValueTask<ReadAsyncResult<Input, Output, Context>> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
                 => SlowReadAsync(tsavoriteKV, tsavoriteSession, pendingContext, readAtAddress, readOptions, diskRequest, token);
 
@@ -72,14 +72,14 @@ namespace Tsavorite.core
                 updateAsyncInternal = default;
             }
 
-            internal ReadAsyncResult(TsavoriteKV<Key, Value> tsavoriteKV, ITsavoriteSession<Key, Value, Input, TOutput, Context> tsavoriteSession, PendingContext<Input, TOutput, Context> pendingContext,
+            internal ReadAsyncResult(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, TOutput, Context> sessionFunctions, PendingContext<Input, TOutput, Context> pendingContext,
                     long readAtAddress, ref ReadOptions readOptions, AsyncIOContext<Key, Value> diskRequest, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 Status = new(StatusCode.Pending);
                 Output = default;
                 RecordMetadata = default;
                 updateAsyncInternal = new AsyncOperationInternal<Input, TOutput, Context, ReadAsyncOperation<Input, TOutput, Context>, ReadAsyncResult<Input, TOutput, Context>>(
-                                        tsavoriteKV, tsavoriteSession, pendingContext, exceptionDispatchInfo, new ReadAsyncOperation<Input, TOutput, Context>(diskRequest, readAtAddress, ref readOptions));
+                                        tsavoriteKV, sessionFunctions, pendingContext, exceptionDispatchInfo, new ReadAsyncOperation<Input, TOutput, Context>(diskRequest, readAtAddress, ref readOptions));
             }
 
             /// <summary>Complete the RMW operation, issuing additional (rare) I/O synchronously if needed.</summary>
@@ -103,7 +103,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAsync<Input, Output, Context>(ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+        internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAsync<Input, Output, Context>(ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
             ref Key key, ref Input input, ref ReadOptions readOptions, Context context, CancellationToken token, bool noKey = false)
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions, isAsync: true, noKey: noKey);
@@ -126,7 +126,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync<Input, Output, Context>(ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+        internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync<Input, Output, Context>(ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
             long readAtAddress, ref Key key, ref Input input, ref ReadOptions readOptions, Context context, CancellationToken token, bool noKey = false)
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions, isAsync: true, noKey: noKey);
@@ -149,7 +149,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status CallInternalRead<Input, Output, Context>(ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+        private Status CallInternalRead<Input, Output, Context>(ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
                 ref PendingContext<Input, Output, Context> pcontext, long readAtAddress, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context context,
                 out AsyncIOContext<Key, Value> diskRequest)
         {
@@ -168,7 +168,7 @@ namespace Tsavorite.core
         }
 
         private static async ValueTask<ReadAsyncResult<Input, Output, Context>> SlowReadAsync<Input, Output, Context>(
-            TsavoriteKV<Key, Value> @this, ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+            TsavoriteKV<Key, Value> @this, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
             PendingContext<Input, Output, Context> pcontext, long readAtAddress, ReadOptions readOptions, AsyncIOContext<Key, Value> diskRequest, CancellationToken token = default)
         {
             ExceptionDispatchInfo exceptionDispatchInfo;

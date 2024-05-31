@@ -176,6 +176,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             { // Write the values first (single-threaded, all keys)
                 var session = store.NewSession<SpanByte, SpanByteAndMemory, Context, Functions>(new Functions());
+                var bContext = session.BasicContext;
                 for (int i = 0; i < MaxKeys; i++)
                 {
                     var keyString = $"{i}";
@@ -186,7 +187,7 @@ namespace Tsavorite.test.ReadCacheTests
                     {
                         var sbKey = SpanByte.FromPinnedSpan(key);
                         var sbValue = SpanByte.FromPinnedSpan(value);
-                        var status = session.Upsert(sbKey, sbValue);
+                        var status = bContext.Upsert(sbKey, sbValue);
                         Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                     }
                 }

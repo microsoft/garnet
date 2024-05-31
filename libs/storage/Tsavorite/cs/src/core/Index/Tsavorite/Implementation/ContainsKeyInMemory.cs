@@ -10,7 +10,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status InternalContainsKeyInMemory<Input, Output, Context, TsavoriteSession>(
             ref Key key, TsavoriteSession tsavoriteSession, out long logicalAddress, long fromAddress = -1)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 

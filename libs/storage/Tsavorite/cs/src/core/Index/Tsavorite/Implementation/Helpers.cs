@@ -76,7 +76,7 @@ namespace Tsavorite.core
         // Also, it cannot be elided if it is frozen due to checkpointing.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CanElide<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call CanElide() for readcache records");
             return stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlog.BeginAddress
@@ -87,7 +87,7 @@ namespace Tsavorite.core
         // if it is a new record.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsFrozen<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
             return tsavoriteSession.Ctx.IsInV1
@@ -98,7 +98,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private (bool elided, bool added) TryElideAndTransferToFreeList<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
                 ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, (int usedValueLength, int fullValueLength, int fullRecordLength) recordLengths)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // Try to CAS out of the hashtable and if successful, add it to the free list.
             Debug.Assert(srcRecordInfo.IsSealed, "Expected a Sealed record in TryElideAndTransferToFreeList");
@@ -112,7 +112,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryTransferToFreeList<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx,
                 ref RecordInfo srcRecordInfo, (int usedValueLength, int fullValueLength, int fullRecordLength) recordLengths)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // The record has been CAS'd out of the hashtable or elided from the chain, so add it to the free list.
             Debug.Assert(srcRecordInfo.IsSealed, "Expected a Sealed record in TryTransferToFreeList");
@@ -204,7 +204,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool FindOrCreateTagAndTryTransientXLock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx,
                 out OperationStatus internalStatus)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
             FindOrCreateTag(ref stackCtx.hei, hlog.BeginAddress);
@@ -220,7 +220,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool FindTagAndTryTransientXLock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx,
                 out OperationStatus internalStatus)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
             internalStatus = OperationStatus.NOTFOUND;
@@ -236,7 +236,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool FindTagAndTryTransientSLock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx,
                 out OperationStatus internalStatus)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // Transient must lock the bucket before traceback, to prevent revivification from yanking the record out from underneath us. Manual locking already automatically locks the bucket.
             internalStatus = OperationStatus.NOTFOUND;

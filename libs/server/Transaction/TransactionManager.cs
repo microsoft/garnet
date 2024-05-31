@@ -24,6 +24,11 @@ namespace Garnet.server
         readonly ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> session;
 
         /// <summary>
+        /// Basic context for main store
+        /// </summary>
+        readonly BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> basicContext;
+
+        /// <summary>
         /// Lockable context for main store
         /// </summary>
         readonly LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> lockableContext;
@@ -32,6 +37,11 @@ namespace Garnet.server
         /// Session for object store
         /// </summary>
         readonly ClientSession<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreSession;
+
+        /// <summary>
+        /// Basic context for object store
+        /// </summary>
+        readonly BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreBasicContext;
 
         /// <summary>
         /// Lockable context for object store
@@ -87,11 +97,15 @@ namespace Garnet.server
             ILogger logger = null)
         {
             this.session = storageSession.session;
+            basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
 
             this.objectStoreSession = storageSession.objectStoreSession;
             if (objectStoreSession != null)
+            {
+                objectStoreBasicContext = objectStoreSession.BasicContext;
                 objectStoreLockableContext = objectStoreSession.LockableContext;
+            }
 
             this.functionsState = storageSession.functionsState;
             this.appendOnlyFile = functionsState.appendOnlyFile;
@@ -232,9 +246,9 @@ namespace Garnet.server
             watchContainer.AddWatch(key, type);
 
             if (type == StoreType.Main || type == StoreType.All)
-                session.ResetModified(key.SpanByte);
-            if (type == StoreType.Object || type == StoreType.All)
-                objectStoreSession?.ResetModified(key.ToArray());
+                basicContext.ResetModified(key.SpanByte);
+            if ((type == StoreType.Object || type == StoreType.All) && objectStoreSession != null)
+                objectStoreBasicContext.ResetModified(key.ToArray());
         }
 
         void UpdateTransactionStoreType(StoreType type)

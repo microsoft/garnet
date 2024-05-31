@@ -17,9 +17,10 @@ namespace Tsavorite.test.InputOutputParameterTests
 
         private TsavoriteKV<int, int> store;
         private ClientSession<int, int, int, int, Empty, UpsertInputFunctions> session;
+        private BasicContext<int, int, int, int, Empty, UpsertInputFunctions> bContext;
         private IDevice log;
 
-        internal class UpsertInputFunctions : FunctionsBase<int, int, int, int, Empty>
+        internal class UpsertInputFunctions : SessionFunctionsBase<int, int, int, int, Empty>
         {
             internal long lastWriteAddress;
 
@@ -84,6 +85,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             store = new TsavoriteKV<int, int>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
             session = store.NewSession<int, int, Empty, UpsertInputFunctions>(new UpsertInputFunctions());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -119,7 +121,7 @@ namespace Tsavorite.test.InputOutputParameterTests
                     {
                         if (useRMW)
                         {
-                            var r = await session.RMWAsync(ref key, ref input);
+                            var r = await bContext.RMWAsync(ref key, ref input);
                             if ((key & 0x1) == 0)
                             {
                                 while (r.Status.IsPending)
@@ -135,7 +137,7 @@ namespace Tsavorite.test.InputOutputParameterTests
                         }
                         else
                         {
-                            var r = await session.UpsertAsync(ref key, ref input, ref key);
+                            var r = await bContext.UpsertAsync(ref key, ref input, ref key);
                             if ((key & 0x1) == 0)
                             {
                                 while (r.Status.IsPending)
@@ -153,8 +155,8 @@ namespace Tsavorite.test.InputOutputParameterTests
                     else
                     {
                         status = useRMW
-                            ? session.RMW(ref key, ref input, ref output, out recordMetadata)
-                            : session.Upsert(ref key, ref input, ref key, ref output, out recordMetadata);
+                            ? bContext.RMW(ref key, ref input, ref output, out recordMetadata)
+                            : bContext.Upsert(ref key, ref input, ref key, ref output, out recordMetadata);
                     }
                     if (loading)
                     {
@@ -176,7 +178,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             {
                 for (int key = 0; key < NumRecs; ++key)
                 {
-                    session.Read(ref key, ref input, ref output);
+                    bContext.Read(ref key, ref input, ref output);
                     Assert.AreEqual(key * input + AddValue, output);
                 }
             }

@@ -170,7 +170,7 @@ namespace Tsavorite.test.Revivification
     [TestFixture]
     class RevivificationFixedLenTests
     {
-        internal class RevivificationFixedLenFunctions : SimpleFunctions<int, int>
+        internal class RevivificationFixedLenFunctions : SimpleSimpleFunctions<int, int>
         {
         }
 
@@ -181,6 +181,7 @@ namespace Tsavorite.test.Revivification
 
         private TsavoriteKV<int, int> store;
         private ClientSession<int, int, int, int, Empty, RevivificationFixedLenFunctions> session;
+        private BasicContext<int, int, int, int, Empty, RevivificationFixedLenFunctions> bContext;
         private IDevice log;
 
         [SetUp]
@@ -220,6 +221,7 @@ namespace Tsavorite.test.Revivification
                                             concurrencyControlMode: concurrencyControlMode, revivificationSettings: revivificationSettings);
             functions = new RevivificationFixedLenFunctions();
             session = store.NewSession<int, int, Empty, RevivificationFixedLenFunctions>(functions);
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -239,7 +241,7 @@ namespace Tsavorite.test.Revivification
         {
             for (int key = 0; key < numRecords; key++)
             {
-                var status = session.Upsert(key, key * valueMult);
+                var status = bContext.Upsert(key, key * valueMult);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
         }
@@ -262,7 +264,7 @@ namespace Tsavorite.test.Revivification
                 RevivificationTestUtils.AssertElidable(store, deleteKey);
             var tailAddress = store.Log.TailAddress;
 
-            session.Delete(deleteKey);
+            bContext.Delete(deleteKey);
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
 
             var updateKey = deleteDest == DeleteDest.InChain ? deleteKey : numRecords + 1;
@@ -275,9 +277,9 @@ namespace Tsavorite.test.Revivification
             }
 
             if (updateOp == UpdateOp.Upsert)
-                session.Upsert(updateKey, updateValue);
+                bContext.Upsert(updateKey, updateValue);
             else if (updateOp == UpdateOp.RMW)
-                session.RMW(updateKey, updateValue);
+                bContext.RMW(updateKey, updateValue);
 
             if (!stayInChain)
                 RevivificationTestUtils.WaitForRecords(store, want: false);
@@ -298,7 +300,7 @@ namespace Tsavorite.test.Revivification
             // First delete all keys. This will overflow the bin.
             for (var key = 0; key < numRecords; ++key)
             {
-                session.Delete(key);
+                bContext.Delete(key);
                 Assert.AreEqual(tailAddress, store.Log.TailAddress);
             }
 
@@ -310,9 +312,9 @@ namespace Tsavorite.test.Revivification
             {
                 var value = key + valueMult;
                 if (updateOp == UpdateOp.Upsert)
-                    session.Upsert(key, value);
+                    bContext.Upsert(key, value);
                 else if (updateOp == UpdateOp.RMW)
-                    session.RMW(key, value);
+                    bContext.RMW(key, value);
             }
 
             // Now re-add the keys. For the elision case, we should see tailAddress grow sharply as only the records in the bin are available
@@ -338,11 +340,11 @@ namespace Tsavorite.test.Revivification
             Populate();
 
             // This should not go to FreeList because it's below the RevivifiableFraction
-            Assert.IsTrue(session.Delete(2).Found);
+            Assert.IsTrue(bContext.Delete(2).Found);
             Assert.AreEqual(0, RevivificationTestUtils.GetFreeRecordCount(store));
 
             // This should go to FreeList because it's above the RevivifiableFraction
-            Assert.IsTrue(session.Delete(numRecords - 1).Found);
+            Assert.IsTrue(bContext.Delete(numRecords - 1).Found);
             Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
         }
 
@@ -356,7 +358,7 @@ namespace Tsavorite.test.Revivification
             Populate();
 
             // This should go to FreeList because it's above the RevivifiableFraction
-            Assert.IsTrue(session.Delete(numRecords - 1).Found);
+            Assert.IsTrue(bContext.Delete(numRecords - 1).Found);
             Assert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
@@ -367,7 +369,7 @@ namespace Tsavorite.test.Revivification
             int maxRecord = numRecords * 2;
             for (int key = numRecords; key < maxRecord; key++)
             {
-                var status = session.Upsert(key, key * valueMult);
+                var status = bContext.Upsert(key, key * valueMult);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
 
@@ -377,9 +379,9 @@ namespace Tsavorite.test.Revivification
             var tailAddress = store.Log.TailAddress;
 
             if (updateOp == UpdateOp.Upsert)
-                session.Upsert(maxRecord, maxRecord * valueMult);
+                bContext.Upsert(maxRecord, maxRecord * valueMult);
             else if (updateOp == UpdateOp.RMW)
-                session.RMW(maxRecord, maxRecord * valueMult);
+                bContext.RMW(maxRecord, maxRecord * valueMult);
 
             Assert.Less(tailAddress, store.Log.TailAddress, "Expected tail address to grow (record was not revivified)");
         }
@@ -608,6 +610,7 @@ namespace Tsavorite.test.Revivification
 
         private TsavoriteKV<SpanByte, SpanByte> store;
         private ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions> session;
+        private BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions> bContext;
         private IDevice log;
 
         [SetUp]
@@ -650,6 +653,7 @@ namespace Tsavorite.test.Revivification
 
             functions = new RevivificationSpanByteFunctions(store);
             session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions>(functions);
+            bContext = session.BasicContext;
             functions.session = session;
         }
 
@@ -685,7 +689,7 @@ namespace Tsavorite.test.Revivification
                 keyVec.Fill((byte)ii);
                 inputVec.Fill((byte)ii);
                 functions.expectedUsedValueLengths.Enqueue(input.TotalSize);
-                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                var status = bContext.Upsert(ref key, ref input, ref input, ref output);
                 Assert.IsTrue(status.Record.Created, status.ToString());
                 Assert.IsEmpty(functions.expectedUsedValueLengths);
             }
@@ -734,9 +738,9 @@ namespace Tsavorite.test.Revivification
             SpanByteAndMemory output = new();
 
             if (updateOp == UpdateOp.Upsert)
-                session.Upsert(ref key, ref input, ref input, ref output);
+                bContext.Upsert(ref key, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
-                session.RMW(ref key, ref input);
+                bContext.RMW(ref key, ref input);
             Assert.IsEmpty(functions.expectedUsedValueLengths);
 
             if (growth == Growth.Shrink)
@@ -755,9 +759,9 @@ namespace Tsavorite.test.Revivification
                 functions.expectedUsedValueLengths.Enqueue(input.TotalSize);
 
                 if (updateOp == UpdateOp.Upsert)
-                    session.Upsert(ref key, ref input, ref input, ref output);
+                    bContext.Upsert(ref key, ref input, ref input, ref output);
                 else if (updateOp == UpdateOp.RMW)
-                    session.RMW(ref key, ref input);
+                    bContext.RMW(ref key, ref input);
                 Assert.IsEmpty(functions.expectedUsedValueLengths);
             }
         }
@@ -779,7 +783,7 @@ namespace Tsavorite.test.Revivification
             var key = SpanByte.FromPinnedSpan(keyVec);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-            var status = session.Delete(ref key);
+            var status = bContext.Delete(ref key);
             Assert.IsTrue(status.Found, status.ToString());
 
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
@@ -799,9 +803,9 @@ namespace Tsavorite.test.Revivification
             RevivificationTestUtils.WaitForRecords(store, want: true);
 
             if (updateOp == UpdateOp.Upsert)
-                session.Upsert(ref key, ref input, ref input, ref output);
+                bContext.Upsert(ref key, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
-                session.RMW(ref key, ref input);
+                bContext.RMW(ref key, ref input);
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
         }
 
@@ -839,12 +843,12 @@ namespace Tsavorite.test.Revivification
             // Get a free record from a failed IPU.
             if (updateOp == UpdateOp.Upsert)
             {
-                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                var status = bContext.Upsert(ref key, ref input, ref input, ref output);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
             else if (updateOp == UpdateOp.RMW)
             {
-                var status = session.RMW(ref key, ref input);
+                var status = bContext.RMW(ref key, ref input);
                 Assert.IsTrue(status.Record.CopyUpdated, status.ToString());
             }
 
@@ -868,12 +872,12 @@ namespace Tsavorite.test.Revivification
 
             if (updateOp == UpdateOp.Upsert)
             {
-                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                var status = bContext.Upsert(ref key, ref input, ref input, ref output);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
             else if (updateOp == UpdateOp.RMW)
             {
-                var status = session.RMW(ref key, ref input);
+                var status = bContext.RMW(ref key, ref input);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
 
@@ -899,7 +903,7 @@ namespace Tsavorite.test.Revivification
             var key = SpanByte.FromPinnedSpan(keyVec);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-            var status = session.Delete(ref key);
+            var status = bContext.Delete(ref key);
             Assert.IsTrue(status.Found, status.ToString());
 
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
@@ -918,9 +922,9 @@ namespace Tsavorite.test.Revivification
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
             if (updateOp == UpdateOp.Upsert)
-                session.Upsert(ref key, ref input, ref input, ref output);
+                bContext.Upsert(ref key, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
-                session.RMW(ref key, ref input);
+                bContext.RMW(ref key, ref input);
             Assert.Greater(store.Log.TailAddress, tailAddress);
         }
 
@@ -944,7 +948,7 @@ namespace Tsavorite.test.Revivification
             var delKeyBelowRO = SpanByte.FromPinnedSpan(keyVecDelBelowRO);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-            var status = session.Delete(ref delKeyBelowRO);
+            var status = bContext.Delete(ref delKeyBelowRO);
             Assert.IsTrue(status.Found, status.ToString());
 
             if (flushMode == FlushMode.ReadOnly)
@@ -966,7 +970,7 @@ namespace Tsavorite.test.Revivification
                 RevivificationTestUtils.AssertElidable(store, ref delKeyAboveRO);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-            status = session.Delete(ref delKeyAboveRO);
+            status = bContext.Delete(ref delKeyAboveRO);
             Assert.IsTrue(status.Found, status.ToString());
 
             if (stayInChain)
@@ -1058,9 +1062,9 @@ namespace Tsavorite.test.Revivification
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
             if (updateOp == UpdateOp.Upsert)
-                session.Upsert(ref keyToTest, ref input, ref input, ref output);
+                bContext.Upsert(ref keyToTest, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
-                session.RMW(ref keyToTest, ref input);
+                bContext.RMW(ref keyToTest, ref input);
 
             if (expectReviv)
                 Assert.AreEqual(tailAddress, store.Log.TailAddress);
@@ -1090,7 +1094,7 @@ namespace Tsavorite.test.Revivification
                 RevivificationTestUtils.AssertElidable(store, ref key);
 
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-            var status = session.Delete(ref key);
+            var status = bContext.Delete(ref key);
             Assert.IsTrue(status.Found, status.ToString());
 
             var tailAddress = store.Log.TailAddress;
@@ -1107,9 +1111,9 @@ namespace Tsavorite.test.Revivification
             // Revivify in the chain. Because this stays in the chain, the expectedFullValueLength is roundup(InitialLength)
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
             if (updateOp == UpdateOp.Upsert)
-                session.Upsert(ref key, ref input, ref input, ref output);
+                bContext.Upsert(ref key, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
-                session.RMW(ref key, ref input);
+                bContext.RMW(ref key, ref input);
 
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
         }
@@ -1139,7 +1143,7 @@ namespace Tsavorite.test.Revivification
                     continue;
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-                var status = session.Delete(ref key);
+                var status = bContext.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
                 if (ii > RevivificationTestUtils.GetMinRevivifiableKey(store, numRecords))
                     deletedSlots.Add((byte)ii);
@@ -1165,9 +1169,9 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 if (updateOp == UpdateOp.Upsert)
-                    session.Upsert(ref key, ref input, ref input, ref output);
+                    bContext.Upsert(ref key, ref input, ref input, ref output);
                 else if (updateOp == UpdateOp.RMW)
-                    session.RMW(ref key, ref input);
+                    bContext.RMW(ref key, ref input);
                 Assert.AreEqual(tailAddress, store.Log.TailAddress);
             }
         }
@@ -1196,7 +1200,7 @@ namespace Tsavorite.test.Revivification
                 keyVec.Fill((byte)ii);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-                var status = session.Delete(ref key);
+                var status = bContext.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
             }
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
@@ -1223,15 +1227,15 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
                 if (updateOp == UpdateOp.Upsert)
-                    session.Upsert(ref key, ref input, ref input, ref output);
+                    bContext.Upsert(ref key, ref input, ref input, ref output);
                 else if (updateOp == UpdateOp.RMW)
-                    session.RMW(ref key, ref input);
+                    bContext.RMW(ref key, ref input);
                 if (ii < revivifiableKeyCount)
                     Assert.AreEqual(tailAddress, store.Log.TailAddress, $"unexpected new record for key {ii}");
                 else
                     Assert.Less(tailAddress, store.Log.TailAddress, $"unexpected revivified record for key {ii}");
 
-                var status = session.Read(ref key, ref output);
+                var status = bContext.Read(ref key, ref output);
                 Assert.IsTrue(status.Found, $"Expected to find key {ii}; status == {status}");
             }
 
@@ -1242,7 +1246,7 @@ namespace Tsavorite.test.Revivification
             for (var ii = 0; ii < numRecords; ++ii)
             {
                 keyVec.Fill((byte)ii);
-                var status = session.Read(ref key, ref output);
+                var status = bContext.Read(ref key, ref output);
                 Assert.IsTrue(status.Found, $"Expected to find key {ii}; status == {status}");
             }
         }
@@ -1264,7 +1268,7 @@ namespace Tsavorite.test.Revivification
                 keyVec.Fill((byte)ii);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-                var status = session.Delete(ref key);
+                var status = bContext.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
             }
             Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, numRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({numRecords}) free records");
@@ -1291,7 +1295,7 @@ namespace Tsavorite.test.Revivification
                 RevivificationTestUtils.AssertElidable(store, ref key);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-                var status = session.Delete(ref key);
+                var status = bContext.Delete(ref key);
                 Assert.IsTrue(status.Found, status.ToString());
             }
             Assert.AreEqual(RevivificationTestUtils.GetRevivifiableRecordCount(store, numRecords), RevivificationTestUtils.GetFreeRecordCount(store), $"Expected numRecords ({numRecords}) free records");
@@ -1418,7 +1422,7 @@ namespace Tsavorite.test.Revivification
                 inputVec.Fill((byte)ii);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-                var status = session.Delete(ref key);
+                var status = bContext.Delete(ref key);
                 Assert.IsTrue(status.Found, $"{status} for key {ii}");
                 //Assert.AreEqual(ii + 1, RevivificationTestUtils.GetFreeRecordCount(store), $"mismatched free record count for key {ii}, pt 1");
             }
@@ -1443,9 +1447,9 @@ namespace Tsavorite.test.Revivification
 
                 SpanByteAndMemory output = new();
                 if (updateOp == UpdateOp.Upsert)
-                    session.Upsert(ref key, ref input, ref input, ref output);
+                    bContext.Upsert(ref key, ref input, ref input, ref output);
                 else if (updateOp == UpdateOp.RMW)
-                    session.RMW(ref key, ref input);
+                    bContext.RMW(ref key, ref input);
                 output.Memory?.Dispose();
 
                 if (deleteDest == DeleteDest.FreeList && waitMode == WaitMode.Wait && tailAddress != store.Log.TailAddress)
@@ -1495,7 +1499,7 @@ namespace Tsavorite.test.Revivification
                     inputVec.Fill((byte)ii);
 
                     functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(iter == 0 ? InitialLength : InitialLength));
-                    var status = session.Delete(ref key);
+                    var status = bContext.Delete(ref key);
                     Assert.IsTrue(status.Found, $"{status} for key {ii}, iter {iter}");
                 }
 
@@ -1508,9 +1512,9 @@ namespace Tsavorite.test.Revivification
 
                     SpanByteAndMemory output = new();
                     if (updateOp == UpdateOp.Upsert)
-                        session.Upsert(ref key, ref input, ref input, ref output);
+                        bContext.Upsert(ref key, ref input, ref input, ref output);
                     else if (updateOp == UpdateOp.RMW)
-                        session.RMW(ref key, ref input);
+                        bContext.RMW(ref key, ref input);
                     output.Memory?.Dispose();
                 }
             }
@@ -1552,13 +1556,13 @@ namespace Tsavorite.test.Revivification
 
             // Initial insert of the oversize record
             if (updateOp == UpdateOp.Upsert)
-                session.Upsert(ref key, ref input, ref input, ref output);
+                bContext.Upsert(ref key, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
-                session.RMW(ref key, ref input);
+                bContext.RMW(ref key, ref input);
 
             // Delete it
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(OversizeLength));
-            var status = session.Delete(ref key);
+            var status = bContext.Delete(ref key);
             Assert.IsTrue(status.Found, status.ToString());
             if (!stayInChain)
                 RevivificationTestUtils.WaitForRecords(store, want: true);
@@ -1568,9 +1572,9 @@ namespace Tsavorite.test.Revivification
             // Revivify in the chain. Because this is oversize, the expectedFullValueLength remains the same
             functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(OversizeLength));
             if (updateOp == UpdateOp.Upsert)
-                session.Upsert(ref key, ref input, ref input, ref output);
+                bContext.Upsert(ref key, ref input, ref input, ref output);
             else if (updateOp == UpdateOp.RMW)
-                session.RMW(ref key, ref input);
+                bContext.RMW(ref key, ref input);
 
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
         }
@@ -1620,9 +1624,9 @@ namespace Tsavorite.test.Revivification
                 var inputSlice = SpanByte.FromPinnedSpan(spanSlice);
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
-                var status = session.Read(ref key, ref inputSlice, ref output);
+                var status = bContext.Read(ref key, ref inputSlice, ref output);
                 Assert.IsTrue(status.IsPending, status.ToString());
-                session.CompletePending(wait: true);
+                bContext.CompletePending(wait: true);
                 Assert.IsTrue(functions.readCcCalled);
             }
             else if (pendingOp == PendingOp.RMW)
@@ -1635,8 +1639,8 @@ namespace Tsavorite.test.Revivification
 
                 functions.expectedUsedValueLengths.Enqueue(SpanByteTotalSize(InitialLength));
 
-                session.RMW(ref key, ref input);
-                session.CompletePending(wait: true);
+                bContext.RMW(ref key, ref input);
+                bContext.CompletePending(wait: true);
                 Assert.IsTrue(functions.rmwCcCalled);
             }
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
@@ -1652,6 +1656,7 @@ namespace Tsavorite.test.Revivification
         private MyFunctions functions;
         private TsavoriteKV<MyKey, MyValue> store;
         private ClientSession<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> session;
+        private BasicContext<MyKey, MyValue, MyInput, MyOutput, Empty, MyFunctions> bContext;
         private IDevice log;
         private IDevice objlog;
 
@@ -1680,6 +1685,7 @@ namespace Tsavorite.test.Revivification
 
             functions = new MyFunctions();
             session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(functions);
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -1703,7 +1709,7 @@ namespace Tsavorite.test.Revivification
             {
                 var keyObj = new MyKey { key = key };
                 var valueObj = new MyValue { value = key + valueMult };
-                var status = session.Upsert(keyObj, valueObj);
+                var status = bContext.Upsert(keyObj, valueObj);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
         }
@@ -1719,7 +1725,7 @@ namespace Tsavorite.test.Revivification
 
             var deleteKey = RevivificationTestUtils.GetMinRevivifiableKey(store, numRecords);
             var tailAddress = store.Log.TailAddress;
-            session.Delete(new MyKey { key = deleteKey });
+            bContext.Delete(new MyKey { key = deleteKey });
             Assert.AreEqual(tailAddress, store.Log.TailAddress);
 
             var updateKey = deleteDest == DeleteDest.InChain ? deleteKey : numRecords + 1;
@@ -1732,9 +1738,9 @@ namespace Tsavorite.test.Revivification
             Assert.IsTrue(RevivificationTestUtils.HasRecords(store.RevivificationManager.FreeRecordPool), "Expected a free record after delete and WaitForRecords");
 
             if (updateOp == UpdateOp.Upsert)
-                session.Upsert(key, value);
+                bContext.Upsert(key, value);
             else if (updateOp == UpdateOp.RMW)
-                session.RMW(key, input);
+                bContext.RMW(key, input);
 
             RevivificationTestUtils.WaitForRecords(store, want: false);
             Assert.AreEqual(tailAddress, store.Log.TailAddress, "Expected tail address not to grow (record was revivified)");
@@ -1826,6 +1832,7 @@ namespace Tsavorite.test.Revivification
 
         private TsavoriteKV<SpanByte, SpanByte> store;
         private ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions> session;
+        private BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions> bContext;
         private IDevice log;
 
         [SetUp]
@@ -1856,6 +1863,7 @@ namespace Tsavorite.test.Revivification
 
             functions = new RevivificationStressFunctions(keyComparer: null);
             session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(functions);
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -1886,7 +1894,7 @@ namespace Tsavorite.test.Revivification
                 keyVec.Fill((byte)ii);
                 inputVec.Fill((byte)ii);
 
-                var status = session.Upsert(ref key, ref input, ref input, ref output);
+                var status = bContext.Upsert(ref key, ref input, ref input, ref output);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
         }
@@ -2225,6 +2233,7 @@ namespace Tsavorite.test.Revivification
                 Random rng = new(tid * 101);
 
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(new RevivificationStressFunctions(keyComparer: null));
+                var localbContext = localSession.BasicContext;
 
                 Span<byte> keyVec = stackalloc byte[KeyLength];
                 var key = SpanByte.FromPinnedSpan(keyVec);
@@ -2235,7 +2244,7 @@ namespace Tsavorite.test.Revivification
                     {
                         var kk = rng.Next(keyRange);
                         keyVec.Fill((byte)kk);
-                        localSession.Delete(key);
+                        localbContext.Delete(key);
                     }
                 }
             }
@@ -2252,6 +2261,7 @@ namespace Tsavorite.test.Revivification
 
                 RevivificationStressFunctions localFunctions = new(keyComparer: store.comparer);
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(localFunctions);
+                var localbContext = localSession.BasicContext;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -2263,15 +2273,15 @@ namespace Tsavorite.test.Revivification
 
                         localSession.functions.expectedKey = key;
                         if (updateOp == UpdateOp.Upsert)
-                            localSession.Upsert(key, input);
+                            localbContext.Upsert(key, input);
                         else
-                            localSession.RMW(key, input);
+                            localbContext.RMW(key, input);
                         localSession.functions.expectedKey = default;
                     }
 
                     // Clear keyComparer so it does not try to validate during CompletePending (when it doesn't have an expectedKey)
                     localFunctions.keyComparer = null;
-                    localSession.CompletePending(wait: true);
+                    localbContext.CompletePending(wait: true);
                     localFunctions.keyComparer = store.comparer;
                 }
             }
@@ -2311,6 +2321,7 @@ namespace Tsavorite.test.Revivification
                 Random rng = new(tid * 101);
 
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(new RevivificationStressFunctions(keyComparer: null));
+                var localbContext = localSession.BasicContext;
 
                 Span<byte> keyVec = stackalloc byte[KeyLength];
                 var key = SpanByte.FromPinnedSpan(keyVec);
@@ -2321,7 +2332,7 @@ namespace Tsavorite.test.Revivification
                     {
                         var kk = threadingPattern == ThreadingPattern.RandomKeys ? rng.Next(numRecords) : ii;
                         keyVec.Fill((byte)kk);
-                        localSession.Delete(key);
+                        localbContext.Delete(key);
                     }
                 }
             }
@@ -2338,6 +2349,7 @@ namespace Tsavorite.test.Revivification
 
                 RevivificationStressFunctions localFunctions = new(keyComparer: store.comparer);
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(localFunctions);
+                var localbContext = localSession.BasicContext;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -2349,15 +2361,15 @@ namespace Tsavorite.test.Revivification
 
                         localSession.functions.expectedKey = key;
                         if (updateOp == UpdateOp.Upsert)
-                            localSession.Upsert(key, input);
+                            localbContext.Upsert(key, input);
                         else
-                            localSession.RMW(key, input);
+                            localbContext.RMW(key, input);
                         localSession.functions.expectedKey = default;
                     }
 
                     // Clear keyComparer so it does not try to validate during CompletePending (when it doesn't have an expectedKey)
                     localFunctions.keyComparer = null;
-                    localSession.CompletePending(wait: true);
+                    localbContext.CompletePending(wait: true);
                     localFunctions.keyComparer = store.comparer;
                 }
             }
@@ -2396,6 +2408,7 @@ namespace Tsavorite.test.Revivification
             unsafe void runDeleteThread(int tid)
             {
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(new RevivificationStressFunctions(keyComparer: null));
+                var localbContext = localSession.BasicContext;
 
                 Span<byte> keyVec = stackalloc byte[KeyLength];
                 var key = SpanByte.FromPinnedSpan(keyVec);
@@ -2405,7 +2418,7 @@ namespace Tsavorite.test.Revivification
                     for (var ii = tid; ii < numRecords; ii += numDeleteThreads)
                     {
                         keyVec.Fill((byte)ii);
-                        localSession.Delete(key);
+                        localbContext.Delete(key);
                     }
                 }
             }
@@ -2420,6 +2433,7 @@ namespace Tsavorite.test.Revivification
 
                 RevivificationStressFunctions localFunctions = new RevivificationStressFunctions(keyComparer: null);
                 using var localSession = store.NewSession<SpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions>(localFunctions);
+                var localbContext = localSession.BasicContext;
 
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
@@ -2430,15 +2444,15 @@ namespace Tsavorite.test.Revivification
 
                         localSession.functions.expectedKey = key;
                         if (updateOp == UpdateOp.Upsert)
-                            localSession.Upsert(key, input);
+                            localbContext.Upsert(key, input);
                         else
-                            localSession.RMW(key, input);
+                            localbContext.RMW(key, input);
                         localSession.functions.expectedKey = default;
                     }
 
                     // Clear keyComparer so it does not try to validate during CompletePending (when it doesn't have an expectedKey)
                     localFunctions.keyComparer = null;
-                    localSession.CompletePending(wait: true);
+                    localbContext.CompletePending(wait: true);
                     localFunctions.keyComparer = store.comparer;
                 }
             }

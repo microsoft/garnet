@@ -49,12 +49,14 @@ namespace Tsavorite.test.largeobjects
             int numOps = 5000;
 
             var session1 = store1.NewSession<MyInput, MyLargeOutput, Empty, MyLargeFunctions>(new MyLargeFunctions());
+            var bContext1 = session1.BasicContext;
+
             Random r = new Random(33);
             for (int key = 0; key < numOps; key++)
             {
                 var mykey = new MyKey { key = key };
                 var value = new MyLargeValue(1 + r.Next(maxSize));
-                session1.Upsert(ref mykey, ref value, Empty.Default);
+                bContext1.Upsert(ref mykey, ref value, Empty.Default);
             }
             session1.Dispose();
 
@@ -77,13 +79,15 @@ namespace Tsavorite.test.largeobjects
             store2.Recover(token);
 
             var session2 = store2.NewSession<MyInput, MyLargeOutput, Empty, MyLargeFunctions>(new MyLargeFunctions());
+            var bContext2 = session2.BasicContext;
+
             for (int keycnt = 0; keycnt < numOps; keycnt++)
             {
                 var key = new MyKey { key = keycnt };
-                var status = session2.Read(ref key, ref input, ref output, Empty.Default);
+                var status = bContext2.Read(ref key, ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
-                    session2.CompletePending(true);
+                    bContext2.CompletePending(true);
                 else
                 {
                     for (int i = 0; i < output.value.value.Length; i++)

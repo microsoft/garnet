@@ -27,7 +27,7 @@ namespace Tsavorite.core
         internal OperationStatus TryCopyToTail<Input, Output, Context, TsavoriteSession>(ref PendingContext<Input, Output, Context> pendingContext,
                                     ref Key key, ref Input input, ref Value value, ref Output output, ref OperationStackContext<Key, Value> stackCtx,
                                     ref RecordInfo srcRecordInfo, TsavoriteSession tsavoriteSession, WriteReason reason)
-        where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);
             if (!TryAllocateRecord(tsavoriteSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, new AllocateOptions() { Recycle = true },

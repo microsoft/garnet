@@ -156,7 +156,7 @@ namespace Garnet.server
                     var localSrcBitmapPtr = (byte*)((IntPtr)(*(long*)outputBitmapPtr));
                     var len = *(int*)(outputBitmapPtr + 8);
 
-                    // Keep track of pointers returned from IFunctions
+                    // Keep track of pointers returned from ISessionFunctions
                     srcBitmapStartPtrs[keysFound] = localSrcBitmapPtr;
                     srcBitmapEndPtrs[keysFound] = localSrcBitmapPtr + len;
                     keysFound++;

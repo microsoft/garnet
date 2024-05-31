@@ -50,12 +50,13 @@ namespace Tsavorite.test.async
 
             using (var s = store1.NewSession<MyInput, MyLargeOutput, Empty, MyLargeFunctions>(functions))
             {
+                var bContext = s.BasicContext;
                 Random r = new Random(33);
                 for (int key = 0; key < numOps; key++)
                 {
                     var mykey = new MyKey { key = key };
                     var value = new MyLargeValue(1 + r.Next(maxSize));
-                    s.Upsert(ref mykey, ref value, Empty.Default);
+                    bContext.Upsert(ref mykey, ref value, Empty.Default);
                 }
             }
 
@@ -78,13 +79,14 @@ namespace Tsavorite.test.async
             store2.Recover(token);
             using (var s2 = store2.NewSession<MyInput, MyLargeOutput, Empty, MyLargeFunctions>(functions))
             {
+                var bContext = s2.BasicContext;
                 for (int keycnt = 0; keycnt < numOps; keycnt++)
                 {
                     var key = new MyKey { key = keycnt };
-                    var status = s2.Read(ref key, ref input, ref output, Empty.Default);
+                    var status = bContext.Read(ref key, ref input, ref output, Empty.Default);
 
                     if (status.IsPending)
-                        await s2.CompletePendingAsync();
+                        await bContext.CompletePendingAsync();
                     else
                     {
                         for (int i = 0; i < output.value.value.Length; i++)

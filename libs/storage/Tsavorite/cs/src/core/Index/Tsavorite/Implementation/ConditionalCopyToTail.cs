@@ -28,7 +28,7 @@ namespace Tsavorite.core
                 ref PendingContext<Input, Output, Context> pendingContext,
                 ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
                 ref OperationStackContext<Key, Value> stackCtx, WriteReason writeReason, bool wantIO = true)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             bool callerHasTransientLock = stackCtx.recSrc.HasTransientSLock;
 
@@ -89,7 +89,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status CompactionConditionalCopyToTail<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref Input input, ref Value value,
                 ref Output output, long minAddress)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<Input, Output, Context> pendingContext = new();
@@ -117,7 +117,7 @@ namespace Tsavorite.core
                                         ref PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
                                         ref OperationStackContext<Key, Value> stackCtx, long minAddress, WriteReason writeReason, OperationType opType = OperationType.CONDITIONAL_INSERT)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;

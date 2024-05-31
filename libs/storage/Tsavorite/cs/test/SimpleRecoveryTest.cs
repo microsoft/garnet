@@ -113,10 +113,12 @@ namespace Tsavorite.test.recovery.sumstore.simple
             Output output = default;
 
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var bContext1 = session1.BasicContext;
+
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                session1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             if (testCommitCookie)
@@ -136,15 +138,16 @@ namespace Tsavorite.test.recovery.sumstore.simple
                 Assert.Null(store2.RecoveredCommitCookie);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var bContext2 = session2.BasicContext;
             Assert.AreEqual(1, session2.ID);    // This is the first session on the recovered store
 
             for (int key = 0; key < numOps; key++)
             {
-                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default);
+                var status = bContext2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
-                    session2.CompletePendingWithOutputs(out var outputs, wait: true);
+                    bContext2.CompletePendingWithOutputs(out var outputs, wait: true);
                     Assert.IsTrue(outputs.Next());
                     output = outputs.Current.Output;
                     Assert.IsFalse(outputs.Next());
@@ -180,10 +183,12 @@ namespace Tsavorite.test.recovery.sumstore.simple
             Output output = default;
 
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var bContext1 = session1.BasicContext;
+
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                session1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
             store1.TryInitiateFullCheckpoint(out Guid token, checkpointType);
             store1.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
@@ -195,12 +200,14 @@ namespace Tsavorite.test.recovery.sumstore.simple
                 store2.Recover(token);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var bContext2 = session1.BasicContext;
+
             for (int key = 0; key < numOps; key++)
             {
-                var status = session2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default);
+                var status = bContext2.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default);
 
                 if (status.IsPending)
-                    session2.CompletePending(true);
+                    bContext2.CompletePending(true);
                 else
                 {
                     Assert.AreEqual(key, output.value.numClicks);
@@ -229,11 +236,13 @@ namespace Tsavorite.test.recovery.sumstore.simple
             NumClicks value;
 
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(new AdSimpleFunctions());
+            var bContext1 = session1.BasicContext;
+
             var address = 0L;
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                session1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
 
                 if (key == 2999)
                     address = store1.Log.TailAddress;
@@ -278,15 +287,17 @@ namespace Tsavorite.test.recovery.sumstore.simple
             AdSimpleFunctions functions2 = new(2);
 
             var session1 = store1.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(functions1);
+            var bContext1 = session1.BasicContext;
+
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
                 if ((key & 1) > 0)
-                    session1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                    bContext1.Upsert(ref inputArray[key], ref value, Empty.Default);
                 else
                 {
                     AdInput input = new() { adId = inputArray[key], numClicks = value };
-                    session1.RMW(ref inputArray[key], ref input);
+                    bContext1.RMW(ref inputArray[key], ref input);
                 }
             }
             store1.TryInitiateFullCheckpoint(out Guid token, CheckpointType.FoldOver);
@@ -296,18 +307,19 @@ namespace Tsavorite.test.recovery.sumstore.simple
             store2.Recover(token);
 
             var session2 = store2.NewSession<AdInput, Output, Empty, AdSimpleFunctions>(functions2);
+            var bContext2 = session2.BasicContext;
 
             // Just need one operation here to verify readInfo/upsertInfo in the functions
             var lastKey = inputArray.Length - 1;
-            var status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
+            var status = bContext2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
             Assert.IsFalse(status.IsPending, status.ToString());
 
             value.numClicks = lastKey;
-            status = session2.Upsert(ref inputArray[lastKey], ref value, Empty.Default);
+            status = bContext2.Upsert(ref inputArray[lastKey], ref value, Empty.Default);
             Assert.IsFalse(status.IsPending, status.ToString());
 
             inputArg = new() { adId = inputArray[lastKey], numClicks = new NumClicks { numClicks = 0 } }; // CopyUpdater adds, so make this 0
-            status = session2.RMW(ref inputArray[lastKey], ref inputArg);
+            status = bContext2.RMW(ref inputArray[lastKey], ref inputArg);
             Assert.IsFalse(status.IsPending, status.ToString());
 
             // Now verify Pending
@@ -315,25 +327,25 @@ namespace Tsavorite.test.recovery.sumstore.simple
 
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
-            status = session2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
+            status = bContext2.Read(ref inputArray[lastKey], ref inputArg, ref output, Empty.Default);
             Assert.IsTrue(status.IsPending, status.ToString());
-            session2.CompletePending(wait: true);
+            bContext2.CompletePending(wait: true);
 
             // Upsert does not go pending so is skipped here
 
             --lastKey;
             output.value = new() { numClicks = lastKey };
             inputArg.numClicks = new() { numClicks = lastKey };
-            status = session2.RMW(ref inputArray[lastKey], ref inputArg);
+            status = bContext2.RMW(ref inputArray[lastKey], ref inputArg);
             Assert.IsTrue(status.IsPending, status.ToString());
-            session2.CompletePending(wait: true);
+            bContext2.CompletePending(wait: true);
 
             session2.Dispose();
         }
 
     }
 
-    public class AdSimpleFunctions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
+    public class AdSimpleFunctions : SessionFunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
         long expectedVersion;
 

@@ -13,6 +13,7 @@ namespace Tsavorite.test
     {
         private TsavoriteKV<MyKey, MyValue> store;
         private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> session;
+        private BasicContext<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -49,6 +50,7 @@ namespace Tsavorite.test
                     );
             }
             session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -84,7 +86,7 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0);
+                bContext.Upsert(ref key1, ref value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
@@ -99,10 +101,10 @@ namespace Tsavorite.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, 0);
+                var status = bContext.Read(ref key1, ref input, ref output, 0);
                 if (status.IsPending)
                 {
-                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     Assert.IsTrue(completedOutputs.Next());
                     Assert.IsTrue(completedOutputs.Current.Status.Found);
                     output = completedOutputs.Current.Output;
@@ -131,7 +133,7 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0);
+                bContext.Upsert(ref key1, ref value, 0);
             }
 
             // Put fresh entries for 1000 records
@@ -139,7 +141,7 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0);
+                bContext.Upsert(ref key1, ref value, 0);
             }
 
             store.Log.Flush(true);
@@ -157,9 +159,9 @@ namespace Tsavorite.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, 0);
+                var status = bContext.Read(ref key1, ref input, ref output, 0);
                 if (status.IsPending)
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                 else
                 {
                     Assert.IsTrue(status.Found);
@@ -186,13 +188,13 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0);
+                bContext.Upsert(ref key1, ref value, 0);
 
                 if (i % 8 == 0)
                 {
                     int j = i / 4;
                     key1 = new MyKey { key = j };
-                    session.Delete(ref key1);
+                    bContext.Delete(ref key1);
                 }
             }
 
@@ -209,9 +211,9 @@ namespace Tsavorite.test
 
                 int ctx = ((i < 500) && (i % 2 == 0)) ? 1 : 0;
 
-                var status = session.Read(ref key1, ref input, ref output, ctx);
+                var status = bContext.Read(ref key1, ref input, ref output, ctx);
                 if (status.IsPending)
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                 else
                 {
                     if (ctx == 0)
@@ -245,7 +247,7 @@ namespace Tsavorite.test
 
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value, 0);
+                bContext.Upsert(ref key1, ref value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType, default(EvenCompactionFunctions));
@@ -261,10 +263,10 @@ namespace Tsavorite.test
 
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
-                var status = session.Read(ref key1, ref input, ref output, ctx);
+                var status = bContext.Read(ref key1, ref input, ref output, ctx);
                 if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                 }
                 else
                 {
@@ -295,12 +297,12 @@ namespace Tsavorite.test
             var key = new MyKey { key = 100 };
             var value = new MyValue { value = 20 };
 
-            session.Upsert(ref key, ref value, 0);
+            bContext.Upsert(ref key, ref value, 0);
 
             store.Log.Flush(true);
 
             value = new MyValue { value = 21 };
-            session.Upsert(ref key, ref value, 0);
+            bContext.Upsert(ref key, ref value, 0);
 
             store.Log.Flush(true);
 
@@ -310,10 +312,10 @@ namespace Tsavorite.test
 
             var input = default(MyInput);
             var output = default(MyOutput);
-            var status = session.Read(ref key, ref input, ref output);
+            var status = bContext.Read(ref key, ref input, ref output);
             if (status.IsPending)
             {
-                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, output) = GetSinglePendingResult(outputs);
             }
             Assert.IsTrue(status.Found);

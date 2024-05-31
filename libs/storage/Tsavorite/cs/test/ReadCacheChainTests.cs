@@ -87,13 +87,14 @@ namespace Tsavorite.test.ReadCacheTests
 
         void PopulateAndEvict(RecordRegion recordRegion = RecordRegion.OnDisk)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             if (recordRegion != RecordRegion.Immutable)
             {
                 for (int key = 0; key < numKeys; key++)
-                    session.Upsert(key, key + valueAdd);
-                session.CompletePending(true);
+                    bContext.Upsert(key, key + valueAdd);
+                bContext.CompletePending(true);
                 if (recordRegion == RecordRegion.OnDisk)
                     store.Log.FlushAndEvict(true);
                 return;
@@ -101,19 +102,21 @@ namespace Tsavorite.test.ReadCacheTests
 
             // Two parts, so we can have some evicted (and bring them into the readcache), and some in immutable (readonly).
             for (int key = 0; key < immutableSplitKey; key++)
-                session.Upsert(key, key + valueAdd);
-            session.CompletePending(true);
+                bContext.Upsert(key, key + valueAdd);
+            bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
 
             for (long key = immutableSplitKey; key < numKeys; key++)
-                session.Upsert(key, key + valueAdd);
-            session.CompletePending(true);
+                bContext.Upsert(key, key + valueAdd);
+            bContext.CompletePending(true);
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
         }
 
         void CreateChain(RecordRegion recordRegion = RecordRegion.OnDisk)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
+
             long output = -1;
             bool expectPending(long key) => recordRegion == RecordRegion.OnDisk || (recordRegion == RecordRegion.Immutable && key < immutableSplitKey);
 
@@ -121,11 +124,11 @@ namespace Tsavorite.test.ReadCacheTests
             for (long ii = 0; ii < chainLen; ++ii)
             {
                 var key = lowChainKey + ii * mod;
-                var status = session.Read(key, out _);
+                var status = bContext.Read(key, out _);
                 if (expectPending(key))
                 {
                     Assert.IsTrue(status.IsPending, status.ToString());
-                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                     Assert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
                 }
@@ -137,7 +140,7 @@ namespace Tsavorite.test.ReadCacheTests
             // Pass2: non-PENDING reads from the cache
             for (var ii = 0; ii < chainLen; ++ii)
             {
-                var status = session.Read(lowChainKey + ii * mod, out _);
+                var status = bContext.Read(lowChainKey + ii * mod, out _);
                 Assert.IsTrue(!status.IsPending && status.Found, status.ToString());
             }
 
@@ -146,16 +149,16 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 if ((key % mod) != 0)
                 {
-                    var status = session.Read(key, out _);
+                    var status = bContext.Read(key, out _);
                     if (expectPending(key))
                     {
                         Assert.IsTrue(status.IsPending);
-                        session.CompletePendingWithOutputs(out var outputs, wait: true);
+                        bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                         (status, output) = GetSinglePendingResult(outputs);
                         Assert.IsTrue(status.Record.CopiedToReadCache, status.ToString());
                     }
                     Assert.IsTrue(status.Found, status.ToString());
-                    session.CompletePending(wait: true);
+                    bContext.CompletePending(wait: true);
                 }
             }
         }
@@ -267,7 +270,7 @@ namespace Tsavorite.test.ReadCacheTests
             Assert.AreEqual(expectedKey, storedKey);
         }
 
-        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, SimpleFunctions<long, long>> luContext)
+        static void ClearCountsOnError(ClientSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -296,14 +299,15 @@ namespace Tsavorite.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             void doTest(long key)
             {
-                var status = session.Delete(key);
+                var status = bContext.Delete(key);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
-                status = session.Read(key, out var value);
+                status = bContext.Read(key, out var value);
                 Assert.IsFalse(status.Found, status.ToString());
             }
 
@@ -324,14 +328,15 @@ namespace Tsavorite.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             void doTest(long key)
             {
-                var status = session.Delete(key);
+                var status = bContext.Delete(key);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
-                status = session.Read(key, out var value);
+                status = bContext.Read(key, out var value);
                 Assert.IsFalse(status.Found, status.ToString());
             }
 
@@ -390,17 +395,18 @@ namespace Tsavorite.test.ReadCacheTests
         {
             PopulateAndEvict();
             CreateChain();
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             void doTest(long key)
             {
-                var status = session.Read(key, out var value);
+                var status = bContext.Read(key, out var value);
                 Assert.IsTrue(status.Found, status.ToString());
 
                 if (useRMW)
                 {
                     // RMW will use the readcache entry for its source and then invalidate it.
-                    status = session.RMW(key, value + valueAdd);
+                    status = bContext.RMW(key, value + valueAdd);
                     Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
 
                     Assert.IsTrue(FindRecordInReadCache(key, out bool invalid, out _, out _));
@@ -408,11 +414,11 @@ namespace Tsavorite.test.ReadCacheTests
                 }
                 else
                 {
-                    status = session.Upsert(key, value + valueAdd);
+                    status = bContext.Upsert(key, value + valueAdd);
                     Assert.IsTrue(status.Record.Created, status.ToString());
                 }
 
-                status = session.Read(key, out value);
+                status = bContext.Read(key, out value);
                 Assert.IsTrue(status.Found, status.ToString());
                 Assert.AreEqual(key + valueAdd * 2, value);
             }
@@ -435,13 +441,15 @@ namespace Tsavorite.test.ReadCacheTests
             PopulateAndEvict();
             CreateChain();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
+
             long input = 0, output = 0, key = lowChainKey - mod; // key must be in evicted region for this test
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
 
-            var status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
+            var status = bContext.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending, status.ToString());
-            session.CompletePending(wait: true);
+            bContext.CompletePending(wait: true);
 
             VerifySplicedInKey(key);
         }
@@ -455,19 +463,21 @@ namespace Tsavorite.test.ReadCacheTests
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
+
             long key = -1;
 
             if (recordRegion == RecordRegion.Immutable || recordRegion == RecordRegion.OnDisk)
             {
                 key = spliceInExistingKey;
-                var status = session.Upsert(key, key + valueAdd);
+                var status = bContext.Upsert(key, key + valueAdd);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
                 key = spliceInNewKey;
-                var status = session.Upsert(key, key + valueAdd);
+                var status = bContext.Upsert(key, key + valueAdd);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
@@ -483,14 +493,15 @@ namespace Tsavorite.test.ReadCacheTests
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
             long key = -1, output = -1;
 
             if (recordRegion == RecordRegion.Immutable || recordRegion == RecordRegion.OnDisk)
             {
                 // Existing key
                 key = spliceInExistingKey;
-                var status = session.RMW(key, key + valueAdd);
+                var status = bContext.RMW(key, key + valueAdd);
 
                 // If OnDisk, this used the readcache entry for its source and then invalidated it.
                 Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
@@ -502,11 +513,11 @@ namespace Tsavorite.test.ReadCacheTests
 
                 { // New key
                     key = spliceInNewKey;
-                    status = session.RMW(key, key + valueAdd);
+                    status = bContext.RMW(key, key + valueAdd);
 
                     // This NOTFOUND key will return PENDING because we have to trace back through the collisions.
                     Assert.IsTrue(status.IsPending, status.ToString());
-                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                     Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
@@ -514,7 +525,7 @@ namespace Tsavorite.test.ReadCacheTests
             else
             {
                 key = spliceInNewKey;
-                var status = session.RMW(key, key + valueAdd);
+                var status = bContext.RMW(key, key + valueAdd);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
@@ -530,19 +541,20 @@ namespace Tsavorite.test.ReadCacheTests
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
             long key = -1;
 
             if (recordRegion == RecordRegion.Immutable || recordRegion == RecordRegion.OnDisk)
             {
                 key = spliceInExistingKey;
-                var status = session.Delete(key);
+                var status = bContext.Delete(key);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
             else
             {
                 key = spliceInNewKey;
-                var status = session.Delete(key);
+                var status = bContext.Delete(key);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             }
 
@@ -558,7 +570,7 @@ namespace Tsavorite.test.ReadCacheTests
             PopulateAndEvict();
             CreateChain();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             var keys = new[]
@@ -691,7 +703,7 @@ namespace Tsavorite.test.ReadCacheTests
             DeleteDirectory(MethodTestDir);
         }
 
-        internal class RmwLongFunctions : SimpleFunctions<long, long, Empty>
+        internal class RmwLongFunctions : SimpleSessionFunctions<long, long, Empty>
         {
             /// <inheritdoc/>
             public override bool ConcurrentWriter(ref long key, ref long input, ref long src, ref long dst, ref long output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
@@ -731,16 +743,17 @@ namespace Tsavorite.test.ReadCacheTests
 
         unsafe void PopulateAndEvict()
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long, Empty>>(new SimpleFunctions<long, long, Empty>());
+            using var session = store.NewSession<long, long, Empty, SimpleSessionFunctions<long, long, Empty>>(new SimpleSessionFunctions<long, long, Empty>());
+            var bContext = session.BasicContext;
 
             for (long ii = 0; ii < numKeys; ii++)
             {
                 long key = ii;
-                var status = session.Upsert(ref key, ref key);
+                var status = bContext.Upsert(ref key, ref key);
                 Assert.IsFalse(status.IsPending);
                 Assert.IsTrue(status.Record.Created, $"key {key}, status {status}");
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
         }
 
@@ -766,7 +779,8 @@ namespace Tsavorite.test.ReadCacheTests
             const int numIterations = 1;
             unsafe void runReadThread(int tid)
             {
-                using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long, Empty>>(new SimpleFunctions<long, long, Empty>());
+                using var session = store.NewSession<long, long, Empty, SimpleSessionFunctions<long, long, Empty>>(new SimpleSessionFunctions<long, long, Empty>());
+                var bContext = session.BasicContext;
 
                 Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
@@ -774,11 +788,11 @@ namespace Tsavorite.test.ReadCacheTests
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
                         long key = ii, output = 0;
-                        var status = session.Read(ref key, ref output);
+                        var status = bContext.Read(ref key, ref output);
                         bool wasPending = status.IsPending;
                         if (wasPending)
                         {
-                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
                             Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
                         }
@@ -791,6 +805,7 @@ namespace Tsavorite.test.ReadCacheTests
             unsafe void runUpdateThread(int tid)
             {
                 using var session = store.NewSession<long, long, Empty, RmwLongFunctions>(new RmwLongFunctions());
+                var bContext = session.BasicContext;
 
                 Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
@@ -799,13 +814,13 @@ namespace Tsavorite.test.ReadCacheTests
                     {
                         long key = ii, input = ii + valueAdd * tid, output = 0;
                         var status = updateOp == UpdateOp.RMW
-                                        ? session.RMW(ref key, ref input, ref output)
-                                        : session.Upsert(ref key, ref input, ref input, ref output);
+                                        ? bContext.RMW(ref key, ref input, ref output)
+                                        : bContext.Upsert(ref key, ref input, ref input, ref output);
                         bool wasPending = status.IsPending;
                         if (wasPending)
                         {
                             Assert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
-                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs);
 
                             // Record may have been updated in-place if a CTT was done during the pending operation.
@@ -945,6 +960,7 @@ namespace Tsavorite.test.ReadCacheTests
         unsafe void PopulateAndEvict()
         {
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+            var bContext = session.BasicContext;
 
             Span<byte> keyVec = stackalloc byte[sizeof(long)];
             var key = SpanByte.FromPinnedSpan(keyVec);
@@ -952,14 +968,14 @@ namespace Tsavorite.test.ReadCacheTests
             for (long ii = 0; ii < numKeys; ii++)
             {
                 Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                var status = session.Upsert(ref key, ref key);
+                var status = bContext.Upsert(ref key, ref key);
                 Assert.IsTrue(status.Record.Created, status.ToString());
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
         }
 
-        static void ClearCountsOnError(ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty>> luContext)
+        static void ClearCountsOnError(ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty>> luContext)
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -987,6 +1003,7 @@ namespace Tsavorite.test.ReadCacheTests
             unsafe void runReadThread(int tid)
             {
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                var bContext = session.BasicContext;
 
                 Span<byte> keyVec = stackalloc byte[sizeof(long)];
                 var key = SpanByte.FromPinnedSpan(keyVec);
@@ -999,11 +1016,11 @@ namespace Tsavorite.test.ReadCacheTests
                         SpanByteAndMemory output = default;
 
                         Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
-                        var status = session.Read(ref key, ref output);
+                        var status = bContext.Read(ref key, ref output);
                         bool wasPending = status.IsPending;
                         if (wasPending)
                         {
-                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
                             Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
                         }
@@ -1022,6 +1039,7 @@ namespace Tsavorite.test.ReadCacheTests
             unsafe void runUpdateThread(int tid)
             {
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new RmwSpanByteFunctions());
+                var bContext = session.BasicContext;
 
                 Span<byte> keyVec = stackalloc byte[sizeof(long)];
                 var key = SpanByte.FromPinnedSpan(keyVec);
@@ -1038,13 +1056,13 @@ namespace Tsavorite.test.ReadCacheTests
                         Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
                         Assert.IsTrue(BitConverter.TryWriteBytes(inputVec, ii + valueAdd));
                         var status = updateOp == UpdateOp.RMW
-                                        ? session.RMW(ref key, ref input, ref output)
-                                        : session.Upsert(ref key, ref input, ref input, ref output);
+                                        ? bContext.RMW(ref key, ref input, ref output)
+                                        : bContext.Upsert(ref key, ref input, ref input, ref output);
                         bool wasPending = status.IsPending;
                         if (wasPending)
                         {
                             Assert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
-                            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs);
 
                             // Record may have been updated in-place if a CTT was done during the pending operation.

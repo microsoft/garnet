@@ -208,6 +208,7 @@ namespace Tsavorite.core
             where TScanIterator : ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
         {
             using var session = store.NewSession<TInput, TOutput, Empty, LogScanCursorFunctions<TInput, TOutput>>(new LogScanCursorFunctions<TInput, TOutput>());
+            var bContext = session.BasicContext;
 
             if (cursor >= GetTailAddress())
                 goto IterationComplete;
@@ -226,13 +227,13 @@ namespace Tsavorite.core
                 {
                     ref var key = ref iter.GetKey();
                     ref var value = ref iter.GetValue();
-                    var status = session.ConditionalScanPush(scanCursorState, recordInfo, ref key, ref value, iter.NextAddress);
+                    var status = bContext.ConditionalScanPush(scanCursorState, recordInfo, ref key, ref value, iter.NextAddress);
                     if (status.IsPending)
                     {
                         ++numPending;
                         if (numPending == count - scanCursorState.acceptedCount || numPending > 256)
                         {
-                            session.CompletePending(wait: true);
+                            bContext.CompletePending(wait: true);
                             numPending = 0;
                         }
                     }
@@ -250,7 +251,7 @@ namespace Tsavorite.core
 
             // Drain any pending pushes. We have ended the iteration; there are no more records, so drop through to end it.
             if (numPending > 0)
-                session.CompletePending(wait: true);
+                bContext.CompletePending(wait: true);
 
             IterationComplete:
             cursor = 0;
@@ -259,7 +260,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ConditionalScanPush<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ScanCursorState<Key, Value> scanCursorState, RecordInfo recordInfo, ref Key key, ref Value value, long minAddress)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
             TsavoriteKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext = new(comparer.GetHashCode64(ref key));
@@ -310,7 +311,7 @@ namespace Tsavorite.core
                                         ref TsavoriteKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
                                         ref OperationStackContext<Key, Value> stackCtx, long minAddress, ScanCursorState<Key, Value> scanCursorState)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // WriteReason is not surfaced for this operation, so pick anything.
             var status = tsavoriteSession.Store.PrepareIOForConditionalOperation(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output,
@@ -319,7 +320,7 @@ namespace Tsavorite.core
             return status;
         }
 
-        internal struct LogScanCursorFunctions<Input, Output> : IFunctions<Key, Value, Input, Output, Empty>
+        internal struct LogScanCursorFunctions<Input, Output> : ISessionFunctions<Key, Value, Input, Output, Empty>
         {
             public bool SingleReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo) => true;
             public bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo) => true;

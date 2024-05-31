@@ -29,7 +29,8 @@ namespace Tsavorite.test
                 using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "hlog1.log"), deleteOnClose: true);
                 using var store = new TsavoriteKV<SpanByte, SpanByte>
                     (128, new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 12 });
-                using var s = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                var bContext = session.BasicContext;
 
                 var key1 = MemoryMarshal.Cast<char, byte>("key1".AsSpan());
                 var value1 = MemoryMarshal.Cast<char, byte>("value1".AsSpan());
@@ -41,8 +42,8 @@ namespace Tsavorite.test
                     var key1SpanByte = SpanByte.FromPinnedPointer(key1Ptr, key1.Length);
                     var value1SpanByte = SpanByte.FromPinnedPointer(value1Ptr, value1.Length);
 
-                    s.Upsert(key1SpanByte, value1SpanByte);
-                    s.Read(ref key1SpanByte, ref input, ref output1);
+                    bContext.Upsert(key1SpanByte, value1SpanByte);
+                    bContext.Read(ref key1SpanByte, ref input, ref output1);
                 }
 
                 Assert.IsTrue(output1.IsSpanByte);
@@ -58,8 +59,8 @@ namespace Tsavorite.test
                     var key2SpanByte = SpanByte.FromPinnedPointer(key2Ptr, key2.Length);
                     var value2SpanByte = SpanByte.FromPinnedPointer(value2Ptr, value2.Length);
 
-                    s.Upsert(key2SpanByte, value2SpanByte);
-                    s.Read(ref key2SpanByte, ref input, ref output2);
+                    bContext.Upsert(key2SpanByte, value2SpanByte);
+                    bContext.Read(ref key2SpanByte, ref input, ref output2);
                 }
 
                 Assert.IsTrue(!output2.IsSpanByte);
@@ -85,13 +86,14 @@ namespace Tsavorite.test
                     size: 1L << 10,
                     new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 12 });
                 using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
+                var bContext = session.BasicContext;
 
                 for (int i = 0; i < 200; i++)
                 {
                     var key = MemoryMarshal.Cast<char, byte>($"{i}".AsSpan());
                     var value = MemoryMarshal.Cast<char, byte>($"{i + 1000}".AsSpan());
                     fixed (byte* k = key, v = value)
-                        session.Upsert(SpanByte.FromPinnedSpan(key), SpanByte.FromPinnedSpan(value));
+                        bContext.Upsert(SpanByte.FromPinnedSpan(key), SpanByte.FromPinnedSpan(value));
                 }
 
                 // Read, evict all records to disk, read again
@@ -116,14 +118,14 @@ namespace Tsavorite.test
 
                     var keyBytes = MemoryMarshal.Cast<char, byte>($"{key}".AsSpan());
                     fixed (byte* _ = keyBytes)
-                        status = session.Read(key: SpanByte.FromPinnedSpan(keyBytes), out output);
+                        status = bContext.Read(key: SpanByte.FromPinnedSpan(keyBytes), out output);
                     Assert.AreEqual(evicted, status.IsPending, "evicted/pending mismatch");
 
                     if (!evicted)
                         Assert.IsTrue(status.Found, $"expected to find key; status = {status}");
                     else    // needs to be fetched from disk
                     {
-                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         using (completedOutputs)
                         {
                             for (var count = 0; completedOutputs.Next(); ++count)
@@ -210,6 +212,7 @@ namespace Tsavorite.test
                 new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page
                 null, null, null, concurrencyControlMode: ConcurrencyControlMode.None);
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
 
             const int PageSize = 1024;
             Span<long> keySpan = stackalloc long[1];
@@ -259,7 +262,7 @@ namespace Tsavorite.test
                 keySpan[0] = keyValue;
                 value.Length = valueLength;
                 valueSpan[0] = tag;
-                session.Upsert(ref key, ref value, Empty.Default);
+                bContext.Upsert(ref key, ref value, Empty.Default);
             }
         }
     }

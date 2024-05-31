@@ -15,7 +15,7 @@ namespace Tsavorite.test
         public long Value;
     }
 
-    public class RefCountedAdder : FunctionsBase<int, RefCountedValue, long, Empty, Empty>
+    public class RefCountedAdder : SessionFunctionsBase<int, RefCountedValue, long, Empty, Empty>
     {
         public int InitialCount;
         public int InPlaceCount;
@@ -49,7 +49,7 @@ namespace Tsavorite.test
         }
     }
 
-    public class RefCountedRemover : FunctionsBase<int, RefCountedValue, Empty, Empty, Empty>
+    public class RefCountedRemover : SessionFunctionsBase<int, RefCountedValue, Empty, Empty, Empty>
     {
         public int InitialCount;
         public int InPlaceCount;
@@ -86,7 +86,7 @@ namespace Tsavorite.test
         }
     }
 
-    public class RefCountedReader : FunctionsBase<int, RefCountedValue, Empty, RefCountedValue, Empty>
+    public class RefCountedReader : SessionFunctionsBase<int, RefCountedValue, Empty, RefCountedValue, Empty>
     {
         public override bool SingleReader(ref int key, ref Empty input, ref RefCountedValue value, ref RefCountedValue dst, ref ReadInfo readInfo)
         {
@@ -146,19 +146,19 @@ namespace Tsavorite.test
             var key = 101;
             var input = 1000L;
 
-            (await adderSession.RMWAsync(ref key, ref input)).Complete();
-            (await adderSession.RMWAsync(ref key, ref input)).Complete();
-            (await adderSession.RMWAsync(ref key, ref input)).Complete();
+            (await adderSession.BasicContext.RMWAsync(ref key, ref input)).Complete();
+            (await adderSession.BasicContext.RMWAsync(ref key, ref input)).Complete();
+            (await adderSession.BasicContext.RMWAsync(ref key, ref input)).Complete();
 
             Assert.AreEqual(1, _adder.InitialCount);
             Assert.AreEqual(2, _adder.InPlaceCount);
 
             var empty = default(Empty);
-            (await removerSession.RMWAsync(ref key, ref empty)).Complete();
+            (await removerSession.BasicContext.RMWAsync(ref key, ref empty)).Complete();
 
             Assert.AreEqual(1, _remover.InPlaceCount);
 
-            var read = await readerSession.ReadAsync(ref key, ref empty);
+            var read = await readerSession.BasicContext.ReadAsync(ref key, ref empty);
             var result = read.Complete();
 
             var actual = result.output;
@@ -167,8 +167,8 @@ namespace Tsavorite.test
 
             _tsavorite.Log.FlushAndEvict(true);
 
-            (await removerSession.RMWAsync(ref key, ref empty)).Complete();
-            read = await readerSession.ReadAsync(ref key, ref empty);
+            (await removerSession.BasicContext.RMWAsync(ref key, ref empty)).Complete();
+            read = await readerSession.BasicContext.ReadAsync(ref key, ref empty);
             result = read.Complete();
 
             actual = result.output;

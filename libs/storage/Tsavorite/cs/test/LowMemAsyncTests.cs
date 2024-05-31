@@ -38,12 +38,13 @@ namespace Tsavorite.test.async
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        private static async Task Populate(ClientSession<long, long, long, long, Empty, SimpleFunctions<long, long>> s1)
+        private static async Task Populate(ClientSession<long, long, long, long, Empty, SimpleSimpleFunctions<long, long>> s1)
         {
+            var bContext1 = s1.BasicContext;
             var tasks = new ValueTask<TsavoriteKV<long, long>.UpsertAsyncResult<long, long, Empty>>[numOps];
             for (long key = 0; key < numOps; key++)
             {
-                tasks[key] = s1.UpsertAsync(ref key, ref key);
+                tasks[key] = bContext1.UpsertAsync(ref key, ref key);
             }
 
             for (var done = false; !done; /* set in loop */)
@@ -61,7 +62,7 @@ namespace Tsavorite.test.async
             }
 
             // This should return immediately, if we have no async concurrency issues in pending count management.
-            s1.CompletePending(true);
+            bContext1.CompletePending(true);
         }
 
         [Test]
@@ -70,14 +71,15 @@ namespace Tsavorite.test.async
         public async Task LowMemConcurrentUpsertReadAsyncTest()
         {
             await Task.Yield();
-            using var s1 = store1.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>((a, b) => a + b));
+            using var s1 = store1.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>((a, b) => a + b));
+            var bContext1 = s1.BasicContext;
 
             await Populate(s1).ConfigureAwait(false);
 
             // Read all keys
             var readtasks = new ValueTask<TsavoriteKV<long, long>.ReadAsyncResult<long, long, Empty>>[numOps];
             for (long key = 0; key < numOps; key++)
-                readtasks[key] = s1.ReadAsync(ref key, ref key);
+                readtasks[key] = bContext1.ReadAsync(ref key, ref key);
 
             for (long key = 0; key < numOps; key++)
             {
@@ -93,14 +95,15 @@ namespace Tsavorite.test.async
         public async Task LowMemConcurrentUpsertRMWReadAsyncTest([Values] bool completeSync)
         {
             await Task.Yield();
-            using var s1 = store1.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>((a, b) => a + b));
+            using var s1 = store1.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>((a, b) => a + b));
+            var bContext1 = s1.BasicContext;
 
             await Populate(s1).ConfigureAwait(false);
 
             // RMW all keys
             var rmwtasks = new ValueTask<TsavoriteKV<long, long>.RmwAsyncResult<long, long, Empty>>[numOps];
             for (long key = 0; key < numOps; key++)
-                rmwtasks[key] = s1.RMWAsync(ref key, ref key);
+                rmwtasks[key] = bContext1.RMWAsync(ref key, ref key);
 
             for (var done = false; !done; /* set in loop */)
             {
@@ -124,7 +127,7 @@ namespace Tsavorite.test.async
             // Then Read all keys
             var readtasks = new ValueTask<TsavoriteKV<long, long>.ReadAsyncResult<long, long, Empty>>[numOps];
             for (long key = 0; key < numOps; key++)
-                readtasks[key] = s1.ReadAsync(ref key, ref key);
+                readtasks[key] = bContext1.ReadAsync(ref key, ref key);
 
             for (long key = 0; key < numOps; key++)
             {

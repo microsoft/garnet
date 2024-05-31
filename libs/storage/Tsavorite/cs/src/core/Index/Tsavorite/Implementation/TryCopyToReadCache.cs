@@ -19,7 +19,7 @@ namespace Tsavorite.core
         /// </returns>
         internal bool TryCopyToReadCache<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value recordValue, ref OperationStackContext<Key, Value> stackCtx)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocatedSize, _) = hlog.GetRecordSize(ref key, ref recordValue);
 

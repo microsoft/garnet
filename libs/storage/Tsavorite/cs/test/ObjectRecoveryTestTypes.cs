@@ -69,7 +69,7 @@ namespace Tsavorite.test.recovery.objectstore
         public NumClicks value;
     }
 
-    public class Functions : FunctionsBase<AdId, NumClicks, Input, Output, Empty>
+    public class Functions : SessionFunctionsBase<AdId, NumClicks, Input, Output, Empty>
     {
         // Read functions
         public override bool SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)

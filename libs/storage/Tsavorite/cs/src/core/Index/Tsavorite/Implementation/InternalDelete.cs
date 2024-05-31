@@ -40,7 +40,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalDelete<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Context userContext,
                             ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
 
@@ -223,7 +223,7 @@ namespace Tsavorite.core
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalDelete if the compiler decides not to inline this.
         private void CreatePendingDeleteContext<Input, Output, Context, TsavoriteSession>(ref Key key, Context userContext,
                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             pendingContext.type = OperationType.DELETE;
             if (pendingContext.key == default) pendingContext.key = hlog.GetKeyContainer(ref key);
@@ -250,7 +250,7 @@ namespace Tsavorite.core
         ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value}.LogicalAddress"/></param>
         private OperationStatus CreateNewRecordDelete<Input, Output, Context, TsavoriteSession>(ref Key key, ref PendingContext<Input, Output, Context> pendingContext,
                                                                                              TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var value = default(Value);
             var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);

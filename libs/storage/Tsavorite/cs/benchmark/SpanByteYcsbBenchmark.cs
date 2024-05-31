@@ -152,7 +152,7 @@ namespace Tsavorite.benchmark
             int count = 0;
 #endif
 
-            var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -223,8 +223,6 @@ namespace Tsavorite.benchmark
                 uContext.EndUnsafe();
             }
 
-            session.Dispose();
-
             sw.Stop();
 
 #if DASHBOARD
@@ -269,7 +267,8 @@ namespace Tsavorite.benchmark
             int count = 0;
 #endif
 
-            var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            var bContext = session.BasicContext;
 
             while (!done)
             {
@@ -286,30 +285,30 @@ namespace Tsavorite.benchmark
                     if (idx % 512 == 0)
                     {
                         if (!testLoader.Options.UseSafeContext)
-                            session.Refresh();
-                        session.CompletePending(false);
+                            bContext.Refresh();
+                        bContext.CompletePending(false);
                     }
 
                     int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
                     {
-                        session.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
+                        bContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
                     if (r < upsertPercent)
                     {
-                        session.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
+                        bContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
                         ++writes_done;
                         continue;
                     }
                     if (r < rmwPercent)
                     {
-                        session.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
+                        bContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
                         ++writes_done;
                         continue;
                     }
-                    session.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
+                    bContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
                     ++deletes_done;
                 }
 
@@ -330,8 +329,7 @@ namespace Tsavorite.benchmark
 #endif
             }
 
-            session.CompletePending(true);
-            session.Dispose();
+            bContext.CompletePending(true);
 
             sw.Stop();
 
@@ -482,7 +480,7 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -537,7 +535,6 @@ namespace Tsavorite.benchmark
             {
                 uContext.EndUnsafe();
             }
-            session.Dispose();
         }
 
         private void SetupYcsbSafeContext(int thread_idx)
@@ -551,7 +548,8 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            var bContext = session.BasicContext;
 
             Span<byte> value = stackalloc byte[kValueSize];
             ref SpanByte _value = ref SpanByte.Reinterpret(value);
@@ -564,20 +562,19 @@ namespace Tsavorite.benchmark
                 {
                     if (idx % 256 == 0)
                     {
-                        session.Refresh();
+                        bContext.Refresh();
 
                         if (idx % 65536 == 0)
                         {
-                            session.CompletePending(false);
+                            bContext.CompletePending(false);
                         }
                     }
 
-                    session.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
+                    bContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
                 }
             }
 
-            session.CompletePending(true);
-            session.Dispose();
+            bContext.CompletePending(true);
         }
 
 #if DASHBOARD

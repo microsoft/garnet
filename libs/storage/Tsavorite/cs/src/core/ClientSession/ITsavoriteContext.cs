@@ -71,7 +71,7 @@ namespace Tsavorite.core
         /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default);
 
         /// <summary>
@@ -82,7 +82,7 @@ namespace Tsavorite.core
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context userContext = default);
 
         /// <summary>
@@ -92,7 +92,7 @@ namespace Tsavorite.core
         /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(Key key, Input input, out Output output, Context userContext = default);
 
         /// <summary>
@@ -103,7 +103,7 @@ namespace Tsavorite.core
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(Key key, Input input, out Output output, ref ReadOptions readOptions, Context userContext = default);
 
         /// <summary>
@@ -112,7 +112,7 @@ namespace Tsavorite.core
         /// <param name="key">The key to look up</param>
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(ref Key key, ref Output output, Context userContext = default);
 
         /// <summary>
@@ -122,7 +122,7 @@ namespace Tsavorite.core
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(ref Key key, ref Output output, ref ReadOptions readOptions, Context userContext = default);
 
         /// <summary>
@@ -178,7 +178,7 @@ namespace Tsavorite.core
         ///         </list>
         /// </param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default);
 
         /// <summary>
@@ -190,7 +190,7 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation, including the address to read at in StartAddress</param>
         /// <param name="recordMetadata">On output, receives metadata about the record</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
         Status ReadAtAddress(long address, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default);
 
         /// <summary>
@@ -203,7 +203,7 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation, including the address to read at in StartAddress</param>
         /// <param name="recordMetadata">On output, receives metadata about the record</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
         Status ReadAtAddress(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default);
 
         /// <summary>
@@ -220,7 +220,7 @@ namespace Tsavorite.core
         ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
+        ///     <see cref="ISessionFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
         ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, Context userContext = default, CancellationToken cancellationToken = default);
 
         /// <summary>
@@ -238,7 +238,7 @@ namespace Tsavorite.core
         ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
+        ///     <see cref="ISessionFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
         ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, Context context = default, CancellationToken token = default);
 
         /// <summary>
@@ -257,7 +257,7 @@ namespace Tsavorite.core
         ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
+        ///     <see cref="ISessionFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
         ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, ref ReadOptions readOptions, Context context = default, CancellationToken token = default);
 
         /// <summary>
@@ -277,7 +277,7 @@ namespace Tsavorite.core
         ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record
+        ///     <see cref="ISessionFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record
         /// </remarks>
         ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, ref ReadOptions readOptions,
                                                                                                  Context userContext = default, CancellationToken cancellationToken = default);
@@ -295,7 +295,7 @@ namespace Tsavorite.core
         ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
+        ///     <see cref="ISessionFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
         ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, Context userContext = default, CancellationToken token = default);
 
         /// <summary>
@@ -312,7 +312,7 @@ namespace Tsavorite.core
         ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
+        ///     <see cref="ISessionFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
         ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref ReadOptions readOptions, Context userContext = default, CancellationToken token = default);
 
         /// <summary>
@@ -329,7 +329,7 @@ namespace Tsavorite.core
         ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
+        ///     <see cref="ISessionFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
         ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Context context = default, CancellationToken token = default);
 
         /// <summary>
@@ -347,7 +347,7 @@ namespace Tsavorite.core
         ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
+        ///     <see cref="ISessionFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
         ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, ref ReadOptions readOptions, Context context = default, CancellationToken token = default);
 
         /// <summary>
@@ -365,7 +365,7 @@ namespace Tsavorite.core
         ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
+        ///     <see cref="ISessionFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
         ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Input input, ref ReadOptions readOptions,
                                                                                                           Context userContext = default, CancellationToken cancellationToken = default);
 
@@ -385,7 +385,7 @@ namespace Tsavorite.core
         ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
         ///     </list>
         ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
+        ///     <see cref="ISessionFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
         ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Key key, ref Input input, ref ReadOptions readOptions,
                                                                                                           Context userContext = default, CancellationToken cancellationToken = default);
 

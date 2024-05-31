@@ -52,17 +52,19 @@ namespace Tsavorite.test.async
         [Category("Smoke")]
         public async Task ReadAsyncMinParamTest()
         {
-            using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bc1 = s1.BasicContext;
+
             for (long key = 0; key < numOps; key++)
             {
-                var r = await s1.UpsertAsync(ref key, ref key);
+                var r = await bc1.UpsertAsync(ref key, ref key);
                 while (r.Status.IsPending)
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
 
             for (long key = 0; key < numOps; key++)
             {
-                var (status, output) = (await s1.ReadAsync(ref key)).Complete();
+                var (status, output) = (await bc1.ReadAsync(ref key)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
@@ -75,16 +77,18 @@ namespace Tsavorite.test.async
         {
             CancellationToken cancellationToken = default;
 
-            using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bc1 = s1.BasicContext;
+
             for (long key = 0; key < numOps; key++)
             {
-                var r = await s1.UpsertAsync(ref key, ref key);
+                var r = await bc1.UpsertAsync(ref key, ref key);
                 r.Complete(); // test sync version of Upsert completion
             }
 
             for (long key = 0; key < numOps; key++)
             {
-                var (status, output) = (await s1.ReadAsync(ref key, Empty.Default, cancellationToken)).Complete();
+                var (status, output) = (await bc1.ReadAsync(ref key, Empty.Default, cancellationToken)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
@@ -96,16 +100,17 @@ namespace Tsavorite.test.async
         [Category("Smoke")]
         public async Task ReadAsyncNoRefKeyTest()
         {
-            using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bc1 = s1.BasicContext;
             for (long key = 0; key < numOps; key++)
             {
-                var r = await s1.UpsertAsync(ref key, ref key);
+                var r = await bc1.UpsertAsync(ref key, ref key);
                 r.Complete(); // test sync version of Upsert completion
             }
 
             for (long key = 0; key < numOps; key++)
             {
-                var (status, output) = (await s1.ReadAsync(key, Empty.Default)).Complete();
+                var (status, output) = (await bc1.ReadAsync(key, Empty.Default)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
@@ -119,28 +124,29 @@ namespace Tsavorite.test.async
             Status status;
             long key = default, input = default, output = default;
 
-            using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>((a, b) => a + b));
+            using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>((a, b) => a + b));
+            var bc1 = s1.BasicContext;
             for (key = 0; key < numOps; key++)
             {
-                (await s1.RMWAsync(ref key, ref key)).Complete();
+                (await bc1.RMWAsync(ref key, ref key)).Complete();
             }
 
             for (key = 0; key < numOps; key++)
             {
-                (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
+                (status, output) = (await bc1.ReadAsync(ref key, ref output)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
             key = 0;
             input = 35;
-            var t1 = s1.RMWAsync(ref key, ref input);
-            var t2 = s1.RMWAsync(ref key, ref input);
+            var t1 = bc1.RMWAsync(ref key, ref input);
+            var t2 = bc1.RMWAsync(ref key, ref input);
 
             (await t1).Complete();
             (await t2).Complete(); // should trigger RMW re-do
 
-            (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
+            (status, output) = (await bc1.ReadAsync(ref key, ref output)).Complete();
             Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
@@ -155,29 +161,30 @@ namespace Tsavorite.test.async
             long key = default, input = default, output = default;
 
             using var s1 = store.NewSession<long, long, Empty, RMWSimpleFunctions<long, long>>(new RMWSimpleFunctions<long, long>((a, b) => a + b));
+            var bc1 = s1.BasicContext;
             for (key = 0; key < numOps; key++)
             {
-                (status, output) = (await s1.RMWAsync(ref key, ref key, Empty.Default)).Complete();
+                (status, output) = (await bc1.RMWAsync(ref key, ref key, Empty.Default)).Complete();
                 Assert.IsFalse(status.IsPending);
                 Assert.AreEqual(key, output);
             }
 
             for (key = 0; key < numOps; key++)
             {
-                (status, output) = (await s1.ReadAsync(key, output)).Complete();
+                (status, output) = (await bc1.ReadAsync(key, output)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
             key = 0;
             input = 9912;
-            var t1 = s1.RMWAsync(ref key, ref input);
-            var t2 = s1.RMWAsync(ref key, ref input);
+            var t1 = bc1.RMWAsync(ref key, ref input);
+            var t2 = bc1.RMWAsync(ref key, ref input);
 
             (await t1).Complete();
             (await t2).Complete(); // should trigger RMW re-do
 
-            (status, output) = (await s1.ReadAsync(key, output, Empty.Default)).Complete();
+            (status, output) = (await bc1.ReadAsync(key, output, Empty.Default)).Complete();
             Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
@@ -188,10 +195,11 @@ namespace Tsavorite.test.async
         [Category("Smoke")]
         public async Task UpsertReadDeleteReadAsyncMinParamByRefTest()
         {
-            using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bc1 = s1.BasicContext;
             for (long key = 0; key < numOps; key++)
             {
-                var r = await s1.UpsertAsync(ref key, ref key);
+                var r = await bc1.UpsertAsync(ref key, ref key);
                 while (r.Status.IsPending)
                     r = await r.CompleteAsync(); // test async version of Upsert completion
             }
@@ -200,18 +208,18 @@ namespace Tsavorite.test.async
 
             for (long key = 0; key < numOps; key++)
             {
-                var (status, output) = (await s1.ReadAsync(ref key)).Complete();
+                var (status, output) = (await bc1.ReadAsync(ref key)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
             {   // Scope for variables
                 long deleteKey = 99;
-                var r = await s1.DeleteAsync(ref deleteKey);
+                var r = await bc1.DeleteAsync(ref deleteKey);
                 while (r.Status.IsPending)
                     r = await r.CompleteAsync(); // test async version of Delete completion
 
-                var (status, _) = (await s1.ReadAsync(ref deleteKey)).Complete();
+                var (status, _) = (await bc1.ReadAsync(ref deleteKey)).Complete();
                 Assert.IsFalse(status.Found);
             }
         }
@@ -222,10 +230,11 @@ namespace Tsavorite.test.async
         [Category("Smoke")]
         public async Task UpsertReadDeleteReadAsyncMinParamByValueTest()
         {
-            using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bc1 = s1.BasicContext;
             for (long key = 0; key < numOps; key++)
             {
-                var status = (await s1.UpsertAsync(key, key)).Complete();   // test sync version of Upsert completion
+                var status = (await bc1.UpsertAsync(key, key)).Complete();   // test sync version of Upsert completion
                 Assert.IsFalse(status.IsPending);
             }
 
@@ -233,17 +242,17 @@ namespace Tsavorite.test.async
 
             for (long key = 0; key < numOps; key++)
             {
-                var (status, output) = (await s1.ReadAsync(key)).Complete();
+                var (status, output) = (await bc1.ReadAsync(key)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
             {   // Scope for variables
                 long deleteKey = 99;
-                var status = (await s1.DeleteAsync(deleteKey)).Complete(); // test sync version of Delete completion
+                var status = (await bc1.DeleteAsync(deleteKey)).Complete(); // test sync version of Delete completion
                 Assert.IsFalse(status.IsPending);
 
-                (status, _) = (await s1.ReadAsync(deleteKey)).Complete();
+                (status, _) = (await bc1.ReadAsync(deleteKey)).Complete();
                 Assert.IsFalse(status.Found);
             }
         }
@@ -261,13 +270,15 @@ namespace Tsavorite.test.async
             long recordSize = store.Log.FixedRecordSize;
 
             using var s1 = store.NewSession<long, long, Empty, RMWSimpleFunctions<long, long>>(new RMWSimpleFunctions<long, long>((a, b) => a + b));
+            var bc1 = s1.BasicContext;
+
             for (key = 0; key < numOps; key++)
             {
                 // We can predict the address as TailAddress because we're single-threaded, *unless* a page was allocated;
                 // in that case the new address is at the start of the newly-allocated page. Since we can't predict that,
                 // we take advantage of knowing we have fixed-length records and that TailAddress is open-ended, so we
                 // subtract after the insert to get record start address.
-                (status, output) = (await s1.RMWAsync(ref key, ref key)).Complete();
+                (status, output) = (await bc1.RMWAsync(ref key, ref key)).Complete();
                 addresses[key] = store.Log.TailAddress - recordSize;
                 Assert.IsFalse(status.IsPending);
                 Assert.AreEqual(key, output);
@@ -277,15 +288,15 @@ namespace Tsavorite.test.async
             for (key = 0; key < numOps; key++)
             {
                 readOptions = default;
-                (status, output) = (await s1.ReadAtAddressAsync(addresses[key], ref key, ref output, ref readOptions)).Complete();
+                (status, output) = (await bc1.ReadAtAddressAsync(addresses[key], ref key, ref output, ref readOptions)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
             key = 0;
             input = 22;
-            var t1 = s1.RMWAsync(ref key, ref input);
-            var t2 = s1.RMWAsync(ref key, ref input);
+            var t1 = bc1.RMWAsync(ref key, ref input);
+            var t2 = bc1.RMWAsync(ref key, ref input);
 
             (await t1).Complete();
             (await t2).Complete(); // should trigger RMW re-do
@@ -295,7 +306,7 @@ namespace Tsavorite.test.async
             addresses[key] = store.Log.TailAddress - recordSize;
 
             readOptions = default;
-            (status, output) = (await s1.ReadAtAddressAsync(addresses[key], ref key, ref output, ref readOptions, Empty.Default)).Complete();
+            (status, output) = (await bc1.ReadAtAddressAsync(addresses[key], ref key, ref output, ref readOptions, Empty.Default)).Complete();
             Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
@@ -309,29 +320,31 @@ namespace Tsavorite.test.async
             long key = default, input = default, output = default;
 
             using var s1 = store.NewSession<long, long, Empty, RMWSimpleFunctions<long, long>>(new RMWSimpleFunctions<long, long>((a, b) => a + b));
+            var bc1 = s1.BasicContext;
+
             for (key = 0; key < numOps; key++)
             {
-                var asyncResult = await (await s1.RMWAsync(key, key)).CompleteAsync();
+                var asyncResult = await (await bc1.RMWAsync(key, key)).CompleteAsync();
                 Assert.IsFalse(asyncResult.Status.IsPending);
                 Assert.AreEqual(key, asyncResult.Output);
             }
 
             for (key = 0; key < numOps; key++)
             {
-                (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
+                (status, output) = (await bc1.ReadAsync(ref key, ref output)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
             key = 0;
             input = 35;
-            var t1 = s1.RMWAsync(key, input);
-            var t2 = s1.RMWAsync(key, input);
+            var t1 = bc1.RMWAsync(key, input);
+            var t2 = bc1.RMWAsync(key, input);
 
             (await t1).Complete();
             (await t2).Complete(); // should trigger RMW re-do
 
-            (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
+            (status, output) = (await bc1.ReadAsync(ref key, ref output)).Complete();
             Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
@@ -345,30 +358,31 @@ namespace Tsavorite.test.async
             Status status;
             long key = default, input = default, output = default;
 
-            using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>((a, b) => a + b));
+            using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>((a, b) => a + b));
+            var bc1 = s1.BasicContext;
             for (key = 0; key < numOps; key++)
             {
-                (await s1.RMWAsync(key, key)).Complete();
+                (await bc1.RMWAsync(key, key)).Complete();
 
                 await s1.ReadyToCompletePendingAsync();
             }
 
             for (key = 0; key < numOps; key++)
             {
-                (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
+                (status, output) = (await bc1.ReadAsync(ref key, ref output)).Complete();
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(key, output);
             }
 
             key = 0;
             input = 35;
-            var t1 = s1.RMWAsync(key, input);
-            var t2 = s1.RMWAsync(key, input);
+            var t1 = bc1.RMWAsync(key, input);
+            var t2 = bc1.RMWAsync(key, input);
 
             (await t1).Complete();
             (await t2).Complete(); // should trigger RMW re-do
 
-            (status, output) = (await s1.ReadAsync(ref key, ref output)).Complete();
+            (status, output) = (await bc1.ReadAsync(ref key, ref output)).Complete();
             Assert.IsTrue(status.Found);
             Assert.AreEqual(key + input + input, output);
         }
@@ -380,7 +394,8 @@ namespace Tsavorite.test.async
 
         public async Task UpsertAsyncAndRMWAsyncTest([Values] bool useRMW, [Values] bool doFlush, [Values] bool completeAsync)
         {
-            using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s1 = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bc1 = s1.BasicContext;
 
             async ValueTask completeRmw(TsavoriteKV<long, long>.RmwAsyncResult<long, long, Empty> ar)
             {
@@ -407,9 +422,9 @@ namespace Tsavorite.test.async
             for (long key = 0; key < numOps; key++)
             {
                 if (useRMW)
-                    await completeRmw(await s1.RMWAsync(key, key));
+                    await completeRmw(await bc1.RMWAsync(key, key));
                 else
-                    await completeUpsert(await s1.UpsertAsync(key, key));
+                    await completeUpsert(await bc1.UpsertAsync(key, key));
             }
 
             if (doFlush)
@@ -418,9 +433,9 @@ namespace Tsavorite.test.async
             for (long key = 0; key < numOps; key++)
             {
                 if (useRMW)
-                    await completeRmw(await s1.RMWAsync(key, key + numOps));
+                    await completeRmw(await bc1.RMWAsync(key, key + numOps));
                 else
-                    await completeUpsert(await s1.UpsertAsync(key, key + numOps));
+                    await completeUpsert(await bc1.UpsertAsync(key, key + numOps));
             }
         }
     }

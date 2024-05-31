@@ -50,7 +50,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRead<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Output output,
                                     Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             OperationStackContext<Key, Value> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
@@ -171,7 +171,7 @@ namespace Tsavorite.core
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
         private OperationStatus CopyFromImmutable<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, Context userContext,
                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, Value recordValue)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
             {
@@ -243,7 +243,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalReadAtAddress<Input, Output, Context, TsavoriteSession>(long readAtAddress, ref Key key, ref Input input, ref Output output,
                                     ref ReadOptions readOptions, Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             if (readAtAddress < hlog.BeginAddress)
                 return OperationStatus.NOTFOUND;
@@ -315,7 +315,7 @@ namespace Tsavorite.core
                 };
                 readInfo.SetRecordInfo(ref srcRecordInfo);
 
-                // Ignore the return value from the IFunctions calls; we're doing nothing else based on it.
+                // Ignore the return value from the ISessionFunctions calls; we're doing nothing else based on it.
                 status = OperationStatus.SUCCESS;
                 if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress)
                 {
@@ -339,7 +339,7 @@ namespace Tsavorite.core
         // No AggressiveInlining; this is called only for the pending case and may improve inlining of DoInternalRead in the normal case if the compiler decides not to inline this.
         private void CreatePendingReadContext<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, Output output, Context userContext,
                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long logicalAddress)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             pendingContext.type = OperationType.READ;
             if (!pendingContext.NoKey && pendingContext.key == default)    // If this is true, we don't have a valid key

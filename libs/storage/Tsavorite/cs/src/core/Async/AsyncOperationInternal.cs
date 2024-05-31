@@ -32,20 +32,20 @@ namespace Tsavorite.core
             /// </summary>
             /// <param name="tsavoriteKV">The <see cref="TsavoriteKV{Key, Value}"/> instance the async call was made on</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
-            /// <param name="tsavoriteSession">The <see cref="ITsavoriteSession{Key, Value, Input, Output, Context}"/> for this operation</param>
+            /// <param name="tsavoriteSession">The <see cref="ISessionFunctionsWrapper{Key, Value, Input, Output, Context}"/> for this operation</param>
             /// <param name="output">The output to be populated by this operation</param>
             /// <returns></returns>
-            Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+            Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
                                             out Output output);
             /// <summary>
             /// Performs the asynchronous operation. This may be a wait for either a page-flush or a disk-read IO.
             /// </summary>
             /// <param name="tsavoriteKV">The <see cref="TsavoriteKV{Key, Value}"/> instance the async call was made on</param>
-            /// <param name="tsavoriteSession">The <see cref="ITsavoriteSession{Key, Value, Input, Output, Context}"/> for this operation</param>
+            /// <param name="tsavoriteSession">The <see cref="ISessionFunctionsWrapper{Key, Value, Input, Output, Context}"/> for this operation</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
             /// <param name="token">The cancellation token, if any</param>
             /// <returns></returns>
-            ValueTask<TAsyncResult> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+            ValueTask<TAsyncResult> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token);
 
             /// <summary>
@@ -61,7 +61,7 @@ namespace Tsavorite.core
             const int Pending = 0;
             ExceptionDispatchInfo _exception;
             readonly TsavoriteKV<Key, Value> _tsavoriteKV;
-            readonly ITsavoriteSession<Key, Value, Input, Output, Context> _tsavoriteSession;
+            readonly ISessionFunctionsWrapper<Key, Value, Input, Output, Context> _tsavoriteSession;
 
 #pragma warning disable IDE0044 // Add readonly modifier
             // This cannot be readonly or it defensively copies and we will modify the internal state of the *temporary*
@@ -71,7 +71,7 @@ namespace Tsavorite.core
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 
-            internal AsyncOperationInternal(TsavoriteKV<Key, Value> tsavoriteKV, ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
+            internal AsyncOperationInternal(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
                                       PendingContext<Input, Output, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo, TAsyncOperation asyncOperation)
             {
                 _exception = exceptionDispatchInfo;

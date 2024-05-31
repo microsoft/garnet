@@ -139,7 +139,7 @@ namespace Tsavorite.benchmark
             int count = 0;
 #endif
 
-            var session = store.NewSession<Input, Output, Empty, Functions>(functions);
+            using var session = store.NewSession<Input, Output, Empty, Functions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -210,8 +210,6 @@ namespace Tsavorite.benchmark
                 uContext.EndUnsafe();
             }
 
-            session.Dispose();
-
             sw.Stop();
 
 #if DASHBOARD
@@ -245,7 +243,8 @@ namespace Tsavorite.benchmark
             long writes_done = 0;
             long deletes_done = 0;
 
-            var session = store.NewSession<Input, Output, Empty, Functions>(functions);
+            using var session = store.NewSession<Input, Output, Empty, Functions>(functions);
+            var bContext = session.BasicContext;
 
             while (!done)
             {
@@ -260,34 +259,33 @@ namespace Tsavorite.benchmark
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
                 {
                     if (idx % 512 == 0)
-                        session.CompletePending(false);
+                        bContext.CompletePending(false);
 
                     int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
                     {
-                        session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
+                        bContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
                     if (r < upsertPercent)
                     {
-                        session.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
+                        bContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
                         ++writes_done;
                         continue;
                     }
                     if (r < rmwPercent)
                     {
-                        session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
+                        bContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
                         ++writes_done;
                         continue;
                     }
-                    session.Delete(ref txn_keys_[idx], Empty.Default);
+                    bContext.Delete(ref txn_keys_[idx], Empty.Default);
                     ++deletes_done;
                 }
             }
 
-            session.CompletePending(true);
-            session.Dispose();
+            bContext.CompletePending(true);
 
             sw.Stop();
 
@@ -502,7 +500,8 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            var session = store.NewSession<Input, Output, Empty, Functions>(functions);
+            using var session = store.NewSession<Input, Output, Empty, Functions>(functions);
+            var bContext = session.BasicContext;
 
             Value value = default;
 
@@ -514,20 +513,19 @@ namespace Tsavorite.benchmark
                 {
                     if (idx % 256 == 0)
                     {
-                        session.Refresh();
+                        bContext.Refresh();
 
                         if (idx % 65536 == 0)
                         {
-                            session.CompletePending(false);
+                            bContext.CompletePending(false);
                         }
                     }
 
-                    session.Upsert(ref init_keys_[idx], ref value, Empty.Default);
+                    bContext.Upsert(ref init_keys_[idx], ref value, Empty.Default);
                 }
             }
 
-            session.CompletePending(true);
-            session.Dispose();
+            bContext.CompletePending(true);
         }
 
 #if DASHBOARD

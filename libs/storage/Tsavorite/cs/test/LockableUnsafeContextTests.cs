@@ -19,7 +19,7 @@ namespace Tsavorite.test.LockableUnsafeContext
     // Functions for the "Simple lock transaction" case, e.g.:
     //  - Lock key1, key2, key3, keyResult
     //  - Do some operation on value1, value2, value3 and write the result to valueResult
-    internal class LockableUnsafeFunctions : SimpleFunctions<long, long>
+    internal class LockableUnsafeFunctions : SimpleSimpleFunctions<long, long>
     {
         internal long recordAddress;
 
@@ -147,6 +147,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
         private TsavoriteKV<long, long> store;
         private ClientSession<long, long, long, long, Empty, LockableUnsafeFunctions> session;
+        private BasicContext<long, long, long, long, Empty, LockableUnsafeFunctions> bContext;
         private IDevice log;
 
         [SetUp]
@@ -184,6 +185,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                                             checkpointSettings: checkpointSettings, comparer: comparer,
                                             concurrencyControlMode: ConcurrencyControlMode.LockTable);
             session = store.NewSession<long, long, Empty, LockableUnsafeFunctions>(functions);
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -207,7 +209,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         void Populate()
         {
             for (int key = 0; key < numRecords; key++)
-                Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
+                Assert.IsFalse(bContext.Upsert(key, key * valueMult).IsPending);
         }
 
         void AssertIsLocked(FixedLengthLockableKeyStruct<long> key, bool xlock, bool slock)
@@ -233,7 +235,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         }
 
         static void ClearCountsOnError<TFunctions>(ClientSession<long, long, long, long, Empty, TFunctions> luContext)
-            where TFunctions : IFunctions<long, long, long, long, Empty>
+            where TFunctions : ISessionFunctions<long, long, long, long, Empty>
         {
             // If we already have an exception, clear these counts so "Run" will not report them spuriously.
             luContext.sharedLockCount = 0;
@@ -599,8 +601,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                 luContext.EndUnsafe();
             }
 
-            // Verify reading the destination from the full session.
-            status = session.Read(resultKey, out resultValue);
+            // Verify reading the destination from the BasicContext.
+            status = bContext.Read(resultKey, out resultValue);
             Assert.IsFalse(status.IsPending, status.ToString());
             Assert.AreEqual(expectedResult, resultValue);
             AssertTotalLockCounts(0, 0);
@@ -728,8 +730,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                 luContext.EndUnsafe();
             }
 
-            // Verify from the full session.
-            status = session.Read(resultKey, out resultValue);
+            // Verify from the full Basic Context
+            status = bContext.Read(resultKey, out resultValue);
             Assert.IsFalse(status.IsPending, status.ToString());
             Assert.AreEqual(expectedResult, resultValue);
             AssertTotalLockCounts(0, 0);
@@ -793,8 +795,8 @@ namespace Tsavorite.test.LockableUnsafeContext
                 luContext.EndUnsafe();
             }
 
-            // Verify reading the destination from the full session.
-            status = session.Read(resultKey, out var _);
+            // Verify reading the destination from the full Basic Context
+            status = bContext.Read(resultKey, out var _);
             Assert.IsFalse(status.Found, status.ToString());
             AssertTotalLockCounts(0, 0);
         }
@@ -889,7 +891,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         }
 
         FixedLengthLockableKeyStruct<long> AddLockTableEntry<TFunctions>(LockableUnsafeContext<long, long, long, long, Empty, TFunctions> luContext, long key)
-            where TFunctions : IFunctions<long, long, long, long, Empty>
+            where TFunctions : ISessionFunctions<long, long, long, long, Empty>
         {
             var keyVec = new[] { new FixedLengthLockableKeyStruct<long>(key, LockType.Exclusive, luContext) };
             luContext.Lock(keyVec);
@@ -905,7 +907,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         }
 
         void VerifyAndUnlockSplicedInKey<TFunctions>(LockableUnsafeContext<long, long, long, long, Empty, TFunctions> luContext, long expectedKey)
-            where TFunctions : IFunctions<long, long, long, long, Empty>
+            where TFunctions : ISessionFunctions<long, long, long, long, Empty>
         {
             // Scan to the end of the readcache chain and verify we inserted the value.
             var (_, pa) = ChainTests.SkipReadCacheChain(store, expectedKey);
@@ -924,7 +926,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             Populate();
             store.Log.FlushAndEvict(wait: true);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             long input = 0, output = 0, key = 24;
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
@@ -965,7 +967,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
             long key = 24;
@@ -1017,7 +1019,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
             luContext.BeginUnsafe();
@@ -1057,7 +1059,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
             luContext.BeginUnsafe();
@@ -1104,7 +1106,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             PopulateAndEvict(recordRegion == ChainTests.RecordRegion.Immutable);
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
             luContext.BeginUnsafe();
@@ -1152,7 +1154,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         public void LockAndUnlockInLockTableOnlyTest()
         {
             // For this, just don't load anything, and it will happen in lock table.
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
             BucketLockTracker blt = new();
 
@@ -1257,7 +1259,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             const int numNewRecords = 100;
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             int getValue(int key) => key + valueMult;
@@ -1266,7 +1268,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             if (updateOp == UpdateOp.Delete)
             {
                 for (var key = numRecords; key < numRecords + numNewRecords; ++key)
-                    Assert.IsFalse(this.session.Upsert(key, key * valueMult).IsPending);
+                    Assert.IsFalse(this.bContext.Upsert(key, key * valueMult).IsPending);
                 store.Log.FlushAndEvict(wait: true);
             }
 
@@ -1359,10 +1361,10 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             const int numNewRecords = 50;
 
-            using var lockSession = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var lockSession = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var lockLuContext = lockSession.LockableUnsafeContext;
 
-            using var updateSession = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var updateSession = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var basicContext = updateSession.BasicContext;
 
             int getValue(int key) => key + valueMult;
@@ -1371,7 +1373,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             if (updateOp == UpdateOp.Delete)
             {
                 for (var key = numRecords; key < numRecords + numNewRecords; ++key)
-                    Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
+                    Assert.IsFalse(bContext.Upsert(key, key * valueMult).IsPending);
                 store.Log.FlushAndEvict(wait: true);
             }
 
@@ -1498,7 +1500,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             const int key = 42;
@@ -1545,7 +1547,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1602,7 +1604,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1661,7 +1663,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             luContext.BeginUnsafe();
@@ -1704,7 +1706,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         {
             Populate();
 
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
             var luContext = session.LockableUnsafeContext;
 
             luContext.BeginUnsafe();

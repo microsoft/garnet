@@ -3,8 +3,8 @@
 
 namespace Tsavorite.core
 {
-    internal sealed class LogCompactionFunctions<Key, Value, Input, Output, Context, Functions> : IFunctions<Key, Value, Input, Output, Context>
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
+    internal sealed class LogCompactionFunctions<Key, Value, Input, Output, Context, Functions> : ISessionFunctions<Key, Value, Input, Output, Context>
+        where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
     {
         readonly Functions _functions;
 

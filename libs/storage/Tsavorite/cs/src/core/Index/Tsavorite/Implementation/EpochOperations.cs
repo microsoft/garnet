@@ -14,7 +14,7 @@ namespace Tsavorite.core
             TsavoriteExecutionContext<Input, Output, Context> sessionCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
             TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var version = sessionCtx.version;
             Debug.Assert(sessionCtx.version == version, $"sessionCtx.version ({sessionCtx.version}) should == version ({version})");

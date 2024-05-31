@@ -47,7 +47,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRMW<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Output output, ref Context userContext,
                                     ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
 
@@ -221,7 +221,7 @@ namespace Tsavorite.core
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalUpsert if the compiler decides not to inline this.
         private void CreatePendingRMWContext<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, Output output, Context userContext,
                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             pendingContext.type = OperationType.RMW;
             if (pendingContext.key == default)
@@ -239,7 +239,7 @@ namespace Tsavorite.core
 
         private bool TryRevivifyInChain<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, ref PendingContext<Input, Output, Context> pendingContext,
                         TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, ref RMWInfo rmwInfo, out OperationStatus status, ref Value recordValue)
-                    where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+                    where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             if (IsFrozen<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref stackCtx, ref srcRecordInfo))
                 goto NeedNewRecord;
@@ -401,7 +401,7 @@ namespace Tsavorite.core
         /// <param name="key">The record Key</param>
         /// <param name="input">Input to the operation</param>
         /// <param name="value">Old value</param>
-        /// <param name="output">The result of IFunctions.SingleWriter</param>
+        /// <param name="output">The result of ISessionFunctions.SingleWriter</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="tsavoriteSession">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
@@ -415,7 +415,7 @@ namespace Tsavorite.core
         private OperationStatus CreateNewRecordRMW<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref Output output,
                                                                                           ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession,
                                                                                           ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, bool doingCU)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             bool forExpiration = false;
 
@@ -615,7 +615,7 @@ namespace Tsavorite.core
 
         internal bool ReinitializeExpiredRecord<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo,
                                                                                        long logicalAddress, TsavoriteSession tsavoriteSession, bool isIpu, out OperationStatus status)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // This is called for InPlaceUpdater or CopyUpdater only; CopyUpdater however does not copy an expired record, so we return CreatedRecord.
             var advancedStatusCode = isIpu ? StatusCode.InPlaceUpdatedRecord : StatusCode.CreatedRecord;

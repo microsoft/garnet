@@ -99,12 +99,13 @@ namespace Tsavorite.test.recovery.objectstore
 
             // Register thread with Tsavorite
             var session = store.NewSession<Input, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Process the batch of input data
             bool first = true;
             for (int i = 0; i < numOps; i++)
             {
-                session.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default);
+                bContext.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default);
 
                 if ((i + 1) % checkpointInterval == 0)
                 {
@@ -120,13 +121,13 @@ namespace Tsavorite.test.recovery.objectstore
 
                 if (i % completePendingInterval == 0)
                 {
-                    session.CompletePending(false, false);
+                    bContext.CompletePending(false, false);
                 }
             }
 
 
             // Make sure operations are completed
-            session.CompletePending(true);
+            bContext.CompletePending(true);
             session.Dispose();
         }
 
@@ -144,17 +145,18 @@ namespace Tsavorite.test.recovery.objectstore
             }
 
             var session = store.NewSession<Input, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             Input input = default;
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
                 Output output = new();
-                session.Read(ref inputArray[i].Item1, ref input, ref output, Empty.Default);
+                bContext.Read(ref inputArray[i].Item1, ref input, ref output, Empty.Default);
             }
 
             // Complete all pending requests
-            session.CompletePending(true);
+            bContext.CompletePending(true);
 
             // Release
             session.Dispose();

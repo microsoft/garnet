@@ -145,7 +145,7 @@ namespace Tsavorite.core
         // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
         bool TryTakeFreeRecord<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress,
                     out long logicalAddress, out long physicalAddress)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // Caller checks for UseFreeRecordPool
             if (RevivificationManager.TryTake(allocatedSize, minRevivAddress, out logicalAddress, ref tsavoriteSession.Ctx.RevivificationStats))
@@ -207,7 +207,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal (bool ok, int usedValueLength) TryReinitializeTombstonedValue<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
                 ref RecordInfo srcRecordInfo, ref Key key, ref Value recordValue, int requiredSize, (int usedValueLength, int fullValueLength, int allocatedSize) recordLengths)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             if (RevivificationManager.IsFixedLength || recordLengths.allocatedSize < requiredSize)
                 return (false, recordLengths.usedValueLength);

@@ -540,7 +540,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, Context context, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
@@ -558,7 +558,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context,
                 TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
@@ -575,7 +575,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions, noKey: true);
             Key key = default;
@@ -584,7 +584,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions, noKey: false);
             return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, tsavoriteSession);
@@ -593,7 +593,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status ContextReadAtAddress<Input, Output, Context, TsavoriteSession>(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 Context context, ref PendingContext<Input, Output, Context> pcontext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             OperationStatus internalStatus;
             do
@@ -607,7 +607,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, Context context, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
@@ -623,7 +623,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
                                                                             Context context, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
@@ -640,7 +640,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Output output, out RecordMetadata recordMetadata,
                                                                           Context context, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
@@ -656,7 +656,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextDelete<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, Context context, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;

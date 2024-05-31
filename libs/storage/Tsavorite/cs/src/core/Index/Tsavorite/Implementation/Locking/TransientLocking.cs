@@ -11,7 +11,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool TryTransientXLock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx,
                                     out OperationStatus status)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             if (tsavoriteSession.TryLockTransientExclusive(ref key, ref stackCtx))
             {
@@ -24,7 +24,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static void TransientXUnlock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             if (stackCtx.recSrc.HasTransientXLock)
                 tsavoriteSession.UnlockTransientExclusive(ref key, ref stackCtx);
@@ -33,7 +33,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryTransientSLock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx,
                                     out OperationStatus status)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             if (tsavoriteSession.TryLockTransientShared(ref key, ref stackCtx))
             {
@@ -46,7 +46,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void TransientSUnlock<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref OperationStackContext<Key, Value> stackCtx)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             if (stackCtx.recSrc.HasTransientSLock)
                 tsavoriteSession.UnlockTransientShared(ref key, ref stackCtx);

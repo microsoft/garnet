@@ -12,7 +12,7 @@ namespace Tsavorite.core
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void InternalRefresh<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             epoch.ProtectAndDrain();
 
@@ -85,7 +85,7 @@ namespace Tsavorite.core
 
         internal bool InternalCompletePending<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, bool wait = false,
                                                                                      CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs = null)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             while (true)
             {
@@ -106,7 +106,7 @@ namespace Tsavorite.core
         #region Complete Pending Requests
         internal void InternalCompletePendingRequests<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
                                                                                              CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             hlog.TryComplete();
 
@@ -120,7 +120,7 @@ namespace Tsavorite.core
 
         internal void InternalCompletePendingRequest<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, AsyncIOContext<Key, Value> request,
                                                                                             CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // Get and Remove this request.id pending dictionary if it is there.
             if (tsavoriteSession.Ctx.ioPendingRequests.Remove(request.id, out var pendingContext))
@@ -141,7 +141,7 @@ namespace Tsavorite.core
         /// </summary>
         internal Status InternalCompletePendingRequestFromContext<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, AsyncIOContext<Key, Value> request,
                                                                     ref PendingContext<Input, Output, Context> pendingContext, out AsyncIOContext<Key, Value> newRequest)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquision");
             newRequest = default;

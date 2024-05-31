@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <typeparam name="Input"></typeparam>
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public interface IFunctions<Key, Value, Input, Output, Context>
+    public interface ISessionFunctions<Key, Value, Input, Output, Context>
     {
         #region Reads
         /// <summary>
@@ -306,7 +306,7 @@ namespace Tsavorite.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    public interface IFunctions<Key, Value> : IFunctions<Key, Value, Value, Value, Empty>
+    public interface ISessionFunctions<Key, Value> : ISessionFunctions<Key, Value, Value, Value, Empty>
     {
     }
 
@@ -316,7 +316,7 @@ namespace Tsavorite.core
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public interface IFunctions<Key, Value, Context> : IFunctions<Key, Value, Value, Value, Context>
+    public interface ISessionFunctions<Key, Value, Context> : ISessionFunctions<Key, Value, Value, Value, Context>
     {
     }
 }

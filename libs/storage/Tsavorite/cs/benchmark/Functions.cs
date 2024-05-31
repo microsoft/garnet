@@ -6,7 +6,7 @@ using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
-    public struct Functions : IFunctions<Key, Value, Input, Output, Empty>
+    public struct Functions : ISessionFunctions<Key, Value, Input, Output, Empty>
     {
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {

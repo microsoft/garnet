@@ -50,7 +50,7 @@ namespace Tsavorite.core
         bool TryAllocateRecord<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref PendingContext<Input, Output, Context> pendingContext,
                                                        ref OperationStackContext<Key, Value> stackCtx, int actualSize, ref int allocatedSize, int newKeySize, AllocateOptions options,
                                                        out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
 
@@ -161,7 +161,7 @@ namespace Tsavorite.core
         // Do not inline, to keep TryAllocateRecord lean
         bool GetAllocationForRetry<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref PendingContext<Input, Output, Context> pendingContext, long minAddress,
                 ref int allocatedSize, int newKeySize, out long newLogicalAddress, out long newPhysicalAddress)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // Use an earlier allocation from a failed operation, if possible.
             newLogicalAddress = pendingContext.retryNewLogicalAddress;

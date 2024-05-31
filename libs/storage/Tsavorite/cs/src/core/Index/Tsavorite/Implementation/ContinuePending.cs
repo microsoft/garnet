@@ -28,7 +28,7 @@ namespace Tsavorite.core
         /// </returns>
         internal OperationStatus ContinuePendingRead<Input, Output, Context, TsavoriteSession>(AsyncIOContext<Key, Value> request,
                                                         ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             ref RecordInfo srcRecordInfo = ref hlog.GetInfoFromBytePointer(request.record.GetValidPointer());
             srcRecordInfo.ClearBitsForDiskImages();
@@ -157,7 +157,7 @@ namespace Tsavorite.core
         /// </returns>
         internal OperationStatus ContinuePendingRMW<Input, Output, Context, TsavoriteSession>(AsyncIOContext<Key, Value> request,
                                                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             ref Key key = ref pendingContext.key.Get();
 
@@ -249,7 +249,7 @@ namespace Tsavorite.core
         /// </returns>
         internal OperationStatus ContinuePendingConditionalCopyToTail<Input, Output, Context, TsavoriteSession>(AsyncIOContext<Key, Value> request,
                                                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // If the key was found at or above minAddress, do nothing.
             if (request.logicalAddress >= pendingContext.minAddress)
@@ -305,7 +305,7 @@ namespace Tsavorite.core
         /// </returns>
         internal OperationStatus ContinuePendingConditionalScanPush<Input, Output, Context, TsavoriteSession>(AsyncIOContext<Key, Value> request,
                                                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // If the key was found at or above minAddress, do nothing; we'll push it when we get to it. If we flagged the iteration to stop, do nothing.
             if (request.logicalAddress >= pendingContext.minAddress || pendingContext.scanCursorState.stop)

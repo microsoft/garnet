@@ -39,7 +39,7 @@ namespace Tsavorite.test.recovery.sumstore
         public override string ToString() => value.ToString();
     }
 
-    public class Functions : FunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
+    public class Functions : SessionFunctionsBase<AdId, NumClicks, AdInput, Output, Empty>
     {
         // Read functions
         public override bool SingleReader(ref AdId key, ref AdInput input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)

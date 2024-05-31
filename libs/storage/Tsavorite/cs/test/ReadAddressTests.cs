@@ -58,7 +58,7 @@ namespace Tsavorite.test.readaddress
 
         public enum UseReadCache { NoReadCache, ReadCache }
 
-        internal class Functions : FunctionsBase<Key, Value, Value, Output, Empty>
+        internal class Functions : SessionFunctionsBase<Key, Value, Value, Output, Empty>
         {
             internal long lastWriteAddress = Constants.kInvalidAddress;
             readonly bool useReadCache;
@@ -190,6 +190,7 @@ namespace Tsavorite.test.readaddress
             {
                 var functions = new Functions(preserveCopyUpdaterSource);
                 using var session = store.NewSession<Value, Output, Empty, Functions>(functions);
+                var bContext = session.BasicContext;
 
                 var prevLap = 0;
                 for (int ii = 0; ii < numKeys; ii++)
@@ -208,19 +209,19 @@ namespace Tsavorite.test.readaddress
 
                     var status = useRMW
                         ? useAsync
-                            ? (await session.RMWAsync(ref key, ref value)).Complete().status
-                            : session.RMW(ref key, ref value)
-                        : session.Upsert(ref key, ref value);
+                            ? (await bContext.RMWAsync(ref key, ref value)).Complete().status
+                            : bContext.RMW(ref key, ref value)
+                        : bContext.Upsert(ref key, ref value);
 
                     if (status.IsPending)
-                        await session.CompletePendingAsync();
+                        await bContext.CompletePendingAsync();
 
                     InsertAddresses[ii] = functions.lastWriteAddress;
                     //Assert.IsTrue(session.ctx.HasNoPendingRequests);
 
                     // Illustrate that deleted records can be shown as well (unless overwritten by in-place operations, which are not done here)
                     if (lap == deleteLap)
-                        session.Delete(ref key);
+                        bContext.Delete(ref key);
                 }
 
                 await Flush();
@@ -277,6 +278,7 @@ namespace Tsavorite.test.readaddress
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
             testStore.Populate(updateOp == UpdateOp.RMW, useAsync: false).GetAwaiter().GetResult();
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
@@ -292,13 +294,13 @@ namespace Tsavorite.test.readaddress
                 {
                     // We need a non-AtAddress read to start the loop of returning the previous address to read at.
                     var status = readAtAddress == 0
-                        ? session.Read(ref key, ref input, ref output, ref readOptions, out _)
-                        : session.ReadAtAddress(readAtAddress, ref key, ref input, ref output, ref readOptions, out _);
+                        ? bContext.Read(ref key, ref input, ref output, ref readOptions, out _)
+                        : bContext.ReadAtAddress(readAtAddress, ref key, ref input, ref output, ref readOptions, out _);
 
                     if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
-                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
@@ -389,6 +391,7 @@ namespace Tsavorite.test.readaddress
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
             await testStore.Populate(updateOp == UpdateOp.RMW, useAsync: true);
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
@@ -403,8 +406,8 @@ namespace Tsavorite.test.readaddress
                 {
                     // We need a non-AtAddress read to start the loop of returning the previous address to read at.
                     var readAsyncResult = readAtAddress == 0
-                        ? await session.ReadAsync(ref key, ref input, ref readOptions, default)
-                        : await session.ReadAtAddressAsync(readAtAddress, ref key, ref input, ref readOptions, default);
+                        ? await bContext.ReadAsync(ref key, ref input, ref readOptions, default)
+                        : await bContext.ReadAtAddressAsync(readAtAddress, ref key, ref input, ref readOptions, default);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
@@ -429,6 +432,7 @@ namespace Tsavorite.test.readaddress
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
             testStore.Populate(updateOp == UpdateOp.RMW, useAsync: false).GetAwaiter().GetResult();
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
@@ -443,12 +447,12 @@ namespace Tsavorite.test.readaddress
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
                     var status = readAtAddress == 0
-                        ? session.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata)
-                        : session.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
+                        ? bContext.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata)
+                        : bContext.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
                     if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
-                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
 
@@ -474,6 +478,7 @@ namespace Tsavorite.test.readaddress
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
             await testStore.Populate(updateOp == UpdateOp.RMW, useAsync: true);
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
@@ -487,8 +492,8 @@ namespace Tsavorite.test.readaddress
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
                     var readAsyncResult = readAtAddress == 0
-                        ? await session.ReadAsync(ref key, ref input, ref readOptions, default)
-                        : await session.ReadAtAddressAsync(readAtAddress, ref input, ref readOptions, default);
+                        ? await bContext.ReadAsync(ref key, ref input, ref readOptions, default)
+                        : await bContext.ReadAtAddressAsync(readAtAddress, ref input, ref readOptions, default);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
@@ -513,6 +518,7 @@ namespace Tsavorite.test.readaddress
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
             await testStore.Populate(updateOp == UpdateOp.RMW, useAsync: true);
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
@@ -526,8 +532,8 @@ namespace Tsavorite.test.readaddress
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
                     var readAsyncResult = readAtAddress == 0
-                        ? await session.ReadAsync(ref key, ref input, ref readOptions, default)
-                        : await session.ReadAtAddressAsync(readAtAddress, ref input, ref readOptions, default);
+                        ? await bContext.ReadAsync(ref key, ref input, ref readOptions, default)
+                        : await bContext.ReadAtAddressAsync(readAtAddress, ref input, ref readOptions, default);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
@@ -552,6 +558,7 @@ namespace Tsavorite.test.readaddress
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
             testStore.Populate(updateOp == UpdateOp.RMW, useAsync: false).GetAwaiter().GetResult();
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
@@ -568,11 +575,11 @@ namespace Tsavorite.test.readaddress
                     {
                         CopyOptions = session.functions.readCopyOptions
                     };
-                    var status = session.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, ref readOptions, out RecordMetadata recordMetadata);
+                    var status = bContext.ReadAtAddress(testStore.InsertAddresses[keyOrdinal], ref input, ref output, ref readOptions, out RecordMetadata recordMetadata);
                     if (status.IsPending)
                     {
                         // This will wait for each retrieved record; not recommended for performance-critical code or when retrieving multiple records unless necessary.
-                        session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                        bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
 
@@ -598,6 +605,7 @@ namespace Tsavorite.test.readaddress
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
             await testStore.Populate(updateOp == UpdateOp.RMW, useAsync: true);
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Two iterations to ensure no issues due to read-caching or copying to tail.
             for (int iteration = 0; iteration < 2; ++iteration)
@@ -615,7 +623,7 @@ namespace Tsavorite.test.readaddress
                         CopyOptions = session.functions.readCopyOptions
                     };
 
-                    var readAsyncResult = await session.ReadAtAddressAsync(testStore.InsertAddresses[keyOrdinal], ref input, ref readOptions, default);
+                    var readAsyncResult = await bContext.ReadAtAddressAsync(testStore.InsertAddresses[keyOrdinal], ref input, ref readOptions, default);
                     var (status, output) = readAsyncResult.Complete(out recordMetadata);
 
                     TestStore.ProcessNoKeyRecord(updateOp == UpdateOp.RMW, status, recordMetadata.RecordInfo, ref output, keyOrdinal);
