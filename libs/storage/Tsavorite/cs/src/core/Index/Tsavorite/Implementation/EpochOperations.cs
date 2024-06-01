@@ -10,16 +10,16 @@ namespace Tsavorite.core
     public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SynchronizeEpoch<Input, Output, Context, TsavoriteSession>(
+        internal void SynchronizeEpoch<Input, Output, Context, TSessionFunctionsWrapper>(
             TsavoriteExecutionContext<Input, Output, Context> sessionCtx,
             ref PendingContext<Input, Output, Context> pendingContext,
-            TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var version = sessionCtx.version;
             Debug.Assert(sessionCtx.version == version, $"sessionCtx.version ({sessionCtx.version}) should == version ({version})");
             Debug.Assert(sessionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({sessionCtx.phase}) should == Phase.PREPARE");
-            InternalRefresh<Input, Output, Context, TsavoriteSession>(tsavoriteSession);
+            InternalRefresh<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions);
             Debug.Assert(sessionCtx.version > version, $"sessionCtx.version ({sessionCtx.version}) should be > version ({version})");
         }
 

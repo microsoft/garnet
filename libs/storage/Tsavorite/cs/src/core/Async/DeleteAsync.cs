@@ -24,7 +24,7 @@ namespace Tsavorite.core
             public DeleteAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new DeleteAsyncResult<Input, Output, Context>(status);
 
             /// <inheritdoc/>
-            public Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            public Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
                                             out Output output)
             {
                 OperationStatus internalStatus;
@@ -32,16 +32,16 @@ namespace Tsavorite.core
                 var keyHash = deleteOptions.KeyHash ?? tsavoriteKV.comparer.GetHashCode64(ref key);
                 do
                 {
-                    internalStatus = tsavoriteKV.InternalDelete(ref key, keyHash, ref pendingContext.userContext, ref pendingContext, tsavoriteSession);
-                } while (tsavoriteKV.HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pendingContext));
+                    internalStatus = tsavoriteKV.InternalDelete(ref key, keyHash, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
+                } while (tsavoriteKV.HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pendingContext));
                 output = default;
                 return TranslateStatus(internalStatus);
             }
 
             /// <inheritdoc/>
-            public ValueTask<DeleteAsyncResult<Input, Output, Context>> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            public ValueTask<DeleteAsyncResult<Input, Output, Context>> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
-                => SlowDeleteAsync(tsavoriteKV, tsavoriteSession, pendingContext, deleteOptions, token);
+                => SlowDeleteAsync(tsavoriteKV, sessionFunctions, pendingContext, deleteOptions, token);
 
             /// <inheritdoc/>
             public bool HasPendingIO => false;
@@ -63,12 +63,12 @@ namespace Tsavorite.core
                 updateAsyncInternal = default;
             }
 
-            internal DeleteAsyncResult(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            internal DeleteAsyncResult(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
                 PendingContext<Input, Output, Context> pendingContext, ref DeleteOptions deleteOptions, ExceptionDispatchInfo exceptionDispatchInfo)
             {
                 Status = new(StatusCode.Pending);
                 updateAsyncInternal = new AsyncOperationInternal<Input, Output, Context, DeleteAsyncOperation<Input, Output, Context>, DeleteAsyncResult<Input, Output, Context>>(
-                                        tsavoriteKV, tsavoriteSession, pendingContext, exceptionDispatchInfo, new(ref deleteOptions));
+                                        tsavoriteKV, sessionFunctions, pendingContext, exceptionDispatchInfo, new(ref deleteOptions));
             }
 
             /// <summary>Complete the Delete operation, issuing additional allocation asynchronously if needed. It is usually preferable to use Complete() instead of this.</summary>
@@ -84,21 +84,21 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<DeleteAsyncResult<Input, Output, Context>> DeleteAsync<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
+        internal ValueTask<DeleteAsyncResult<Input, Output, Context>> DeleteAsync<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref Key key, ref DeleteOptions deleteOptions, Context userContext, CancellationToken token = default)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
 
-            tsavoriteSession.UnsafeResumeThread();
+            sessionFunctions.UnsafeResumeThread();
             try
             {
                 OperationStatus internalStatus;
                 var keyHash = deleteOptions.KeyHash ?? comparer.GetHashCode64(ref key);
                 do
                 {
-                    internalStatus = InternalDelete(ref key, keyHash, ref userContext, ref pcontext, tsavoriteSession);
-                } while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
+                    internalStatus = InternalDelete(ref key, keyHash, ref userContext, ref pcontext, sessionFunctions);
+                } while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
                 if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
                     return new ValueTask<DeleteAsyncResult<Input, Output, Context>>(new DeleteAsyncResult<Input, Output, Context>(status));
@@ -106,20 +106,20 @@ namespace Tsavorite.core
             }
             finally
             {
-                tsavoriteSession.UnsafeSuspendThread();
+                sessionFunctions.UnsafeSuspendThread();
             }
 
-            return SlowDeleteAsync(this, tsavoriteSession, pcontext, deleteOptions, token);
+            return SlowDeleteAsync(this, sessionFunctions, pcontext, deleteOptions, token);
         }
 
         private static async ValueTask<DeleteAsyncResult<Input, Output, Context>> SlowDeleteAsync<Input, Output, Context>(
             TsavoriteKV<Key, Value> @this,
-            ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
             PendingContext<Input, Output, Context> pcontext, DeleteOptions deleteOptions, CancellationToken token = default)
         {
             ExceptionDispatchInfo exceptionDispatchInfo = await WaitForFlushCompletionAsync(@this, pcontext.flushEvent, token).ConfigureAwait(false);
             pcontext.flushEvent = default;
-            return new DeleteAsyncResult<Input, Output, Context>(@this, tsavoriteSession, pcontext, ref deleteOptions, exceptionDispatchInfo);
+            return new DeleteAsyncResult<Input, Output, Context>(@this, sessionFunctions, pcontext, ref deleteOptions, exceptionDispatchInfo);
         }
     }
 }

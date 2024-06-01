@@ -26,12 +26,12 @@ namespace Tsavorite.core
             public RmwAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new(status, output, recordMetadata);
 
             /// <inheritdoc/>
-            public Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            public Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
                                             out Output output)
             {
                 Status status = !diskRequest.IsDefault()
-                    ? tsavoriteKV.InternalCompletePendingRequestFromContext(tsavoriteSession, diskRequest, ref pendingContext, out AsyncIOContext<Key, Value> newDiskRequest)
-                    : tsavoriteKV.CallInternalRMW(tsavoriteSession, ref pendingContext, ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, ref rmwOptions,
+                    ? tsavoriteKV.InternalCompletePendingRequestFromContext(sessionFunctions, diskRequest, ref pendingContext, out AsyncIOContext<Key, Value> newDiskRequest)
+                    : tsavoriteKV.CallInternalRMW(sessionFunctions, ref pendingContext, ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, ref rmwOptions,
                                     pendingContext.userContext, out newDiskRequest);
                 output = pendingContext.output;
                 diskRequest = newDiskRequest;
@@ -39,9 +39,9 @@ namespace Tsavorite.core
             }
 
             /// <inheritdoc/>
-            public ValueTask<RmwAsyncResult<Input, Output, Context>> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            public ValueTask<RmwAsyncResult<Input, Output, Context>> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
-                => SlowRmwAsync(tsavoriteKV, tsavoriteSession, pendingContext, rmwOptions, diskRequest, token);
+                => SlowRmwAsync(tsavoriteKV, sessionFunctions, pendingContext, rmwOptions, diskRequest, token);
 
             /// <inheritdoc/>
             public bool HasPendingIO => !diskRequest.IsDefault();
@@ -110,50 +110,50 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<RmwAsyncResult<Input, Output, Context>> RmwAsync<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
+        internal ValueTask<RmwAsyncResult<Input, Output, Context>> RmwAsync<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref Key key, ref Input input, ref RMWOptions rmwOptions, Context context, CancellationToken token = default)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
             var diskRequest = default(AsyncIOContext<Key, Value>);
 
-            tsavoriteSession.UnsafeResumeThread();
+            sessionFunctions.UnsafeResumeThread();
             try
             {
                 Output output = default;
-                var status = CallInternalRMW(tsavoriteSession, ref pcontext, ref key, ref input, ref output, ref rmwOptions, context, out diskRequest);
+                var status = CallInternalRMW(sessionFunctions, ref pcontext, ref key, ref input, ref output, ref rmwOptions, context, out diskRequest);
                 if (!status.IsPending)
                     return new ValueTask<RmwAsyncResult<Input, Output, Context>>(new RmwAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally
             {
-                tsavoriteSession.UnsafeSuspendThread();
+                sessionFunctions.UnsafeSuspendThread();
             }
 
-            return SlowRmwAsync(this, tsavoriteSession, pcontext, rmwOptions, diskRequest, token);
+            return SlowRmwAsync(this, sessionFunctions, pcontext, rmwOptions, diskRequest, token);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Status CallInternalRMW<Input, Output, Context>(ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession, ref PendingContext<Input, Output, Context> pcontext,
+        private Status CallInternalRMW<Input, Output, Context>(ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions, ref PendingContext<Input, Output, Context> pcontext,
                     ref Key key, ref Input input, ref Output output, ref RMWOptions rmwOptions, Context context, out AsyncIOContext<Key, Value> diskRequest)
         {
             OperationStatus internalStatus;
             var keyHash = rmwOptions.KeyHash ?? comparer.GetHashCode64(ref key);
             do
-                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, tsavoriteSession);
-            while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
+                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            return HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus, out diskRequest);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus, out diskRequest);
         }
 
         private static async ValueTask<RmwAsyncResult<Input, Output, Context>> SlowRmwAsync<Input, Output, Context>(
-            TsavoriteKV<Key, Value> @this, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            TsavoriteKV<Key, Value> @this, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
             PendingContext<Input, Output, Context> pcontext, RMWOptions rmwOptions, AsyncIOContext<Key, Value> diskRequest, CancellationToken token = default)
         {
             ExceptionDispatchInfo exceptionDispatchInfo;
-            (diskRequest, exceptionDispatchInfo) = await WaitForFlushOrIOCompletionAsync(@this, tsavoriteSession.Ctx, pcontext.flushEvent, diskRequest, token);
+            (diskRequest, exceptionDispatchInfo) = await WaitForFlushOrIOCompletionAsync(@this, sessionFunctions.Ctx, pcontext.flushEvent, diskRequest, token);
             pcontext.flushEvent = default;
-            return new RmwAsyncResult<Input, Output, Context>(@this, tsavoriteSession, pcontext, ref rmwOptions, diskRequest, exceptionDispatchInfo);
+            return new RmwAsyncResult<Input, Output, Context>(@this, sessionFunctions, pcontext, ref rmwOptions, diskRequest, exceptionDispatchInfo);
         }
     }
 }

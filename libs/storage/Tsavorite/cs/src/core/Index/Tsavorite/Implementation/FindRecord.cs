@@ -47,15 +47,15 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
+        internal bool TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref Key key, ref OperationStackContext<Key, Value> stackCtx, long minAddress, out OperationStatus internalStatus, out bool needIO)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             internalStatus = OperationStatus.SUCCESS;
             if (RevivificationManager.UseFreeRecordPool)
             {
                 // The TransientSLock here is necessary only for the tag chain to avoid record elision/revivification during traceback.
-                if (!FindTagAndTryTransientSLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out internalStatus))
+                if (!FindTagAndTryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out internalStatus))
                     return needIO = false;
             }
             else
@@ -95,7 +95,7 @@ namespace Tsavorite.core
             }
             finally
             {
-                TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
+                TransientSUnlock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
         }
 

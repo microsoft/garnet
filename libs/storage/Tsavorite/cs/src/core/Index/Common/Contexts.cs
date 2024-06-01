@@ -2,10 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -79,7 +77,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Allocation failed, due to a need to flush pages. Clients do not see this status directly; they see <see cref="Status.IsPending"/>.
         /// <list type="bullet">
-        ///   <item>For Sync operations we retry this as part of <see cref="TsavoriteKV{Key, Value}.HandleImmediateRetryStatus{Input, Output, Context, TsavoriteSession}(OperationStatus, TsavoriteSession, ref TsavoriteKV{Key, Value}.PendingContext{Input, Output, Context})"/>.</item>
+        ///   <item>For Sync operations we retry this as part of <see cref="TsavoriteKV{Key, Value}.HandleImmediateRetryStatus{Input, Output, Context, TSessionFunctionsWrapper}(OperationStatus, TSessionFunctionsWrapper, ref TsavoriteKV{Key, Value}.PendingContext{Input, Output, Context})"/>.</item>
         ///   <item>For Async operations we retry this as part of the ".Complete(...)" or ".CompleteAsync(...)" operation on the appropriate "*AsyncResult{}" object.</item>
         /// </list>
         /// </summary>

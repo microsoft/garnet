@@ -11,20 +11,20 @@ namespace Tsavorite.core
     public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool HandleImmediateRetryStatus<Input, Output, Context, TsavoriteSession>(
+        private bool HandleImmediateRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(
             OperationStatus internalStatus,
-            TsavoriteSession tsavoriteSession,
+            TSessionFunctionsWrapper sessionFunctions,
             ref PendingContext<Input, Output, Context> pendingContext)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
-                && HandleRetryStatus(internalStatus, tsavoriteSession, ref pendingContext);
+                && HandleRetryStatus(internalStatus, sessionFunctions, ref pendingContext);
 
         /// <summary>
         /// Handle retry for operations that will not go pending (e.g., InternalLock)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(OperationStatus internalStatus, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+        internal bool HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(OperationStatus internalStatus, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
@@ -33,7 +33,7 @@ namespace Tsavorite.core
                     Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh<Input, Output, Context, TsavoriteSession>(tsavoriteSession);
+                    InternalRefresh<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions);
                     Thread.Yield();
                     return true;
                 default:
@@ -41,11 +41,11 @@ namespace Tsavorite.core
             }
         }
 
-        private bool HandleRetryStatus<Input, Output, Context, TsavoriteSession>(
+        private bool HandleRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(
             OperationStatus internalStatus,
-            TsavoriteSession tsavoriteSession,
+            TSessionFunctionsWrapper sessionFunctions,
             ref PendingContext<Input, Output, Context> pendingContext)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
@@ -54,12 +54,12 @@ namespace Tsavorite.core
                     Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
-                    InternalRefresh<Input, Output, Context, TsavoriteSession>(tsavoriteSession);
+                    InternalRefresh<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions);
                     Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:
                     // Retry as (v+1) Operation
-                    SynchronizeEpoch(tsavoriteSession.Ctx, ref pendingContext, tsavoriteSession);
+                    SynchronizeEpoch(sessionFunctions.Ctx, ref pendingContext, sessionFunctions);
                     return true;
                 case OperationStatus.ALLOCATE_FAILED:
                     // Async handles this in its own way, as part of the *AsyncResult.Complete*() sequence.

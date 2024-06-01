@@ -143,12 +143,12 @@ namespace Tsavorite.core
         }
 
         // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
-        bool TryTakeFreeRecord<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress,
+        bool TryTakeFreeRecord<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress,
                     out long logicalAddress, out long physicalAddress)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // Caller checks for UseFreeRecordPool
-            if (RevivificationManager.TryTake(allocatedSize, minRevivAddress, out logicalAddress, ref tsavoriteSession.Ctx.RevivificationStats))
+            if (RevivificationManager.TryTake(allocatedSize, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
             {
                 physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
                 ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
@@ -169,7 +169,7 @@ namespace Tsavorite.core
 
                     // Clear any no-longer-needed space, then call DisposeForRevivification again with newKeySize so SpanByte can be efficient about zeroinit.
                     ClearExtraValueSpace(ref recordInfo, ref recordValue, minValueLength, fullValueLength);
-                    tsavoriteSession.DisposeForRevivification(ref hlog.GetKey(physicalAddress), ref recordValue, newKeySize, ref recordInfo);
+                    sessionFunctions.DisposeForRevivification(ref hlog.GetKey(physicalAddress), ref recordValue, newKeySize, ref recordInfo);
 
                     Debug.Assert(fullRecordLength >= allocatedSize, $"TryTakeFreeRecord: fullRecordLength {fullRecordLength} should be >= allocatedSize {allocatedSize}");
                     allocatedSize = fullRecordLength;
@@ -205,9 +205,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (bool ok, int usedValueLength) TryReinitializeTombstonedValue<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
+        internal (bool ok, int usedValueLength) TryReinitializeTombstonedValue<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref RecordInfo srcRecordInfo, ref Key key, ref Value recordValue, int requiredSize, (int usedValueLength, int fullValueLength, int allocatedSize) recordLengths)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             if (RevivificationManager.IsFixedLength || recordLengths.allocatedSize < requiredSize)
                 return (false, recordLengths.usedValueLength);
@@ -218,7 +218,7 @@ namespace Tsavorite.core
             var minValueLength = requiredValueLength < recordLengths.usedValueLength ? requiredValueLength : recordLengths.usedValueLength;
 
             ClearExtraValueSpace(ref srcRecordInfo, ref recordValue, minValueLength, recordLengths.fullValueLength);
-            tsavoriteSession.DisposeForRevivification(ref key, ref recordValue, newKeySize: -1, ref srcRecordInfo);
+            sessionFunctions.DisposeForRevivification(ref key, ref recordValue, newKeySize: -1, ref srcRecordInfo);
 
             srcRecordInfo.Tombstone = false;
 

@@ -259,8 +259,8 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status ConditionalScanPush<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ScanCursorState<Key, Value> scanCursorState, RecordInfo recordInfo, ref Key key, ref Value value, long minAddress)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+        internal Status ConditionalScanPush<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ScanCursorState<Key, Value> scanCursorState, RecordInfo recordInfo, ref Key key, ref Value value, long minAddress)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
             TsavoriteKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext = new(comparer.GetHashCode64(ref key));
@@ -271,17 +271,17 @@ namespace Tsavorite.core
             do
             {
                 // If a more recent version of the record exists, do not push this one. Start by searching in-memory.
-                if (tsavoriteSession.Store.TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, minAddress, out internalStatus, out needIO))
+                if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, minAddress, out internalStatus, out needIO))
                     return Status.CreateFound();
             }
-            while (tsavoriteSession.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(internalStatus, tsavoriteSession));
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
 
             Input input = default;
             Output output = default;
             if (needIO)
             {
                 // A more recent version of the key was not (yet) found and we need another IO to continue searching.
-                internalStatus = PrepareIOForConditionalScan(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, default,
+                internalStatus = PrepareIOForConditionalScan(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default,
                                 ref stackCtx, minAddress, scanCursorState);
             }
             else
@@ -303,18 +303,18 @@ namespace Tsavorite.core
                 }
                 internalStatus = OperationStatus.SUCCESS;
             }
-            return tsavoriteSession.Store.HandleOperationStatus(tsavoriteSession.Ctx, ref pendingContext, internalStatus, out _);
+            return sessionFunctions.Store.HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, internalStatus, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static OperationStatus PrepareIOForConditionalScan<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
+        internal static OperationStatus PrepareIOForConditionalScan<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                                         ref TsavoriteKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
                                         ref OperationStackContext<Key, Value> stackCtx, long minAddress, ScanCursorState<Key, Value> scanCursorState)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // WriteReason is not surfaced for this operation, so pick anything.
-            var status = tsavoriteSession.Store.PrepareIOForConditionalOperation(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output,
+            var status = sessionFunctions.Store.PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output,
                     userContext, ref stackCtx, minAddress, WriteReason.Compaction, OperationType.CONDITIONAL_SCAN_PUSH);
             pendingContext.scanCursorState = scanCursorState;
             return status;

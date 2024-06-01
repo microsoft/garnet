@@ -57,9 +57,9 @@ namespace Tsavorite.core
         public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys, start, count);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoInternalLock<TsavoriteSession, TLockableKey>(TsavoriteSession tsavoriteSession, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        internal static bool DoInternalLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
                                                                    TLockableKey[] keys, int start, int count)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
             where TLockableKey : ILockableKey
         {
             // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
@@ -86,7 +86,7 @@ namespace Tsavorite.core
                     DoInternalUnlock(clientSession, keys, start, keyIdx - 1);
 
                     // We've released our locks so this refresh will let other threads advance and release their locks, and we will retry with a full timeout.
-                    clientSession.store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(status, tsavoriteSession);
+                    clientSession.store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(status, sessionFunctions);
                     retryCount++;
                     if (retryCount >= KeyLockMaxRetryAttempts)
                     {
@@ -101,9 +101,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoInternalTryLock<TsavoriteSession, TLockableKey>(TsavoriteSession tsavoriteSession, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        internal static bool DoInternalTryLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
                                                                    TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
             where TLockableKey : ILockableKey
         {
             // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
@@ -146,7 +146,7 @@ namespace Tsavorite.core
 
                     // No cancellation and we're within the timeout. We've released our locks so this refresh will let other threads advance
                     // and release their locks, and we will retry with a full timeout.
-                    clientSession.store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(status, tsavoriteSession);
+                    clientSession.store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(status, sessionFunctions);
                     goto Retry;
                 }
             }
@@ -156,9 +156,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoInternalTryPromoteLock<TsavoriteSession, TLockableKey>(TsavoriteSession tsavoriteSession, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        internal static bool DoInternalTryPromoteLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
                                                                    TLockableKey key, TimeSpan timeout, CancellationToken cancellationToken)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
             where TLockableKey : ILockableKey
         {
             var startTime = DateTime.UtcNow;
@@ -178,7 +178,7 @@ namespace Tsavorite.core
                 if (cancellationToken.IsCancellationRequested || DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks)
                     break;  // out of the retry loop
 
-                clientSession.store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(status, tsavoriteSession);
+                clientSession.store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(status, sessionFunctions);
             }
 
             // Failed to promote
@@ -349,7 +349,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// The session id of TsavoriteSession
+        /// The id of the current Tsavorite Session
         /// </summary>
         public int SessionID { get { return clientSession.ctx.sessionID; } }
 

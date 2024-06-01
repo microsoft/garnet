@@ -7,7 +7,7 @@ namespace Tsavorite.core
     /// Provides thread management and all callbacks. A wrapper for IFunctions and additional methods called by TsavoriteImpl; the wrapped
     /// IFunctions methods provide additional parameters to support the wrapper functionality, then call through to the user implementations. 
     /// </summary>
-    internal interface ISessionFunctionsWrapper<Key, Value, Input, Output, Context> : ITsavoriteSession, IVariableLengthInput<Value, Input>
+    internal interface ISessionFunctionsWrapper<Key, Value, Input, Output, Context> : ISessionEpochControl, IVariableLengthInput<Value, Input>
     {
         bool IsManualLocking { get; }
         TsavoriteKV<Key, Value> Store { get; }

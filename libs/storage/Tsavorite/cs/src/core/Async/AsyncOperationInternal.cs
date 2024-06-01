@@ -32,20 +32,20 @@ namespace Tsavorite.core
             /// </summary>
             /// <param name="tsavoriteKV">The <see cref="TsavoriteKV{Key, Value}"/> instance the async call was made on</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
-            /// <param name="tsavoriteSession">The <see cref="ISessionFunctionsWrapper{Key, Value, Input, Output, Context}"/> for this operation</param>
+            /// <param name="sessionFunctions">The <see cref="ISessionFunctionsWrapper{Key, Value, Input, Output, Context}"/> for this operation</param>
             /// <param name="output">The output to be populated by this operation</param>
             /// <returns></returns>
-            Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
                                             out Output output);
             /// <summary>
             /// Performs the asynchronous operation. This may be a wait for either a page-flush or a disk-read IO.
             /// </summary>
             /// <param name="tsavoriteKV">The <see cref="TsavoriteKV{Key, Value}"/> instance the async call was made on</param>
-            /// <param name="tsavoriteSession">The <see cref="ISessionFunctionsWrapper{Key, Value, Input, Output, Context}"/> for this operation</param>
+            /// <param name="sessionFunctions">The <see cref="ISessionFunctionsWrapper{Key, Value, Input, Output, Context}"/> for this operation</param>
             /// <param name="pendingContext">The <see cref="PendingContext{Input, Output, Context}"/> for the pending operation</param>
             /// <param name="token">The cancellation token, if any</param>
             /// <returns></returns>
-            ValueTask<TAsyncResult> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            ValueTask<TAsyncResult> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token);
 
             /// <summary>
@@ -61,7 +61,7 @@ namespace Tsavorite.core
             const int Pending = 0;
             ExceptionDispatchInfo _exception;
             readonly TsavoriteKV<Key, Value> _tsavoriteKV;
-            readonly ISessionFunctionsWrapper<Key, Value, Input, Output, Context> _tsavoriteSession;
+            readonly ISessionFunctionsWrapper<Key, Value, Input, Output, Context> _sessionFunctions;
 
 #pragma warning disable IDE0044 // Add readonly modifier
             // This cannot be readonly or it defensively copies and we will modify the internal state of the *temporary*
@@ -71,12 +71,12 @@ namespace Tsavorite.core
             PendingContext<Input, Output, Context> _pendingContext;
             int CompletionComputeStatus;
 
-            internal AsyncOperationInternal(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            internal AsyncOperationInternal(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
                                       PendingContext<Input, Output, Context> pendingContext, ExceptionDispatchInfo exceptionDispatchInfo, TAsyncOperation asyncOperation)
             {
                 _exception = exceptionDispatchInfo;
                 _tsavoriteKV = tsavoriteKV;
-                _tsavoriteSession = tsavoriteSession;
+                _sessionFunctions = sessionFunctions;
                 _pendingContext = pendingContext;
                 _asyncOperation = asyncOperation;
                 CompletionComputeStatus = Pending;
@@ -94,7 +94,7 @@ namespace Tsavorite.core
                     _exception.Throw();
 
                 // DoSlowOperation returns a new XxxAsyncResult, which contains a new UpdateAsyncInternal with a pendingContext with a default flushEvent
-                return _asyncOperation.DoSlowOperation(_tsavoriteKV, _tsavoriteSession, _pendingContext, token);
+                return _asyncOperation.DoSlowOperation(_tsavoriteKV, _sessionFunctions, _pendingContext, token);
             }
 
             internal TAsyncResult CompleteSync()
@@ -140,9 +140,9 @@ namespace Tsavorite.core
                     {
                         if (hasPendingIO)
                         {
-                            _tsavoriteSession.Ctx.ioPendingRequests.Remove(pendingId);
-                            _tsavoriteSession.Ctx.asyncPendingCount--;
-                            _tsavoriteSession.Ctx.pendingReads.Remove();
+                            _sessionFunctions.Ctx.ioPendingRequests.Remove(pendingId);
+                            _sessionFunctions.Ctx.asyncPendingCount--;
+                            _sessionFunctions.Ctx.pendingReads.Remove();
                         }
                     }
                 }
@@ -154,10 +154,10 @@ namespace Tsavorite.core
 
             private bool TryCompleteSync(out TAsyncResult asyncResult)
             {
-                _tsavoriteSession.UnsafeResumeThread();
+                _sessionFunctions.UnsafeResumeThread();
                 try
                 {
-                    Status status = _asyncOperation.DoFastOperation(_tsavoriteKV, ref _pendingContext, _tsavoriteSession, out Output output);
+                    Status status = _asyncOperation.DoFastOperation(_tsavoriteKV, ref _pendingContext, _sessionFunctions, out Output output);
 
                     if (!status.IsPending)
                     {
@@ -173,7 +173,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    _tsavoriteSession.UnsafeSuspendThread();
+                    _sessionFunctions.UnsafeSuspendThread();
                 }
 
                 asyncResult = default;
@@ -190,7 +190,7 @@ namespace Tsavorite.core
                 // Because we've set pendingContext.IsAsync false, CompletePending() will Wait() on any flushEvent if it encounters OperationStatus.ALLOCATE_FAILED.
                 Status status;
                 Output output = default;
-                if (!_tsavoriteSession.CompletePendingWithOutputs(out var completedOutputs, wait: true, spinWaitForCommit: false))
+                if (!_sessionFunctions.CompletePendingWithOutputs(out var completedOutputs, wait: true, spinWaitForCommit: false))
                     status = new(StatusCode.Error);
                 else
                 {

@@ -165,7 +165,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// The session id of TsavoriteSession
+        /// The id of the current Tsavorite Session
         /// </summary>
         public int SessionID { get { return clientSession.ctx.sessionID; } }
 

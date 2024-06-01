@@ -561,8 +561,6 @@ namespace Tsavorite.core
 
         #endregion Other Operations
 
-        #region ITsavoriteSession
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool InPlaceUpdater<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
@@ -596,7 +594,5 @@ namespace Tsavorite.core
             status = OperationStatus.SUCCESS;
             return false;
         }
-
-        #endregion ITsavoriteSession
     }
 }

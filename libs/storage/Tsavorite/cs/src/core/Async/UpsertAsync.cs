@@ -24,7 +24,7 @@ namespace Tsavorite.core
             public UpsertAsyncResult<Input, Output, Context> CreateCompletedResult(Status status, Output output, RecordMetadata recordMetadata) => new UpsertAsyncResult<Input, Output, Context>(status, output, recordMetadata);
 
             /// <inheritdoc/>
-            public Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            public Status DoFastOperation(TsavoriteKV<Key, Value> tsavoriteKV, ref PendingContext<Input, Output, Context> pendingContext, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
                                             out Output output)
             {
                 output = default;
@@ -34,15 +34,15 @@ namespace Tsavorite.core
                 do
                 {
                     internalStatus = tsavoriteKV.InternalUpsert(ref key, keyHash, ref pendingContext.input.Get(), ref pendingContext.value.Get(), ref output,
-                                                            ref pendingContext.userContext, ref pendingContext, tsavoriteSession);
-                } while (tsavoriteKV.HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pendingContext));
+                                                            ref pendingContext.userContext, ref pendingContext, sessionFunctions);
+                } while (tsavoriteKV.HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pendingContext));
                 return TranslateStatus(internalStatus);
             }
 
             /// <inheritdoc/>
-            public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            public ValueTask<UpsertAsyncResult<Input, Output, Context>> DoSlowOperation(TsavoriteKV<Key, Value> tsavoriteKV, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
                                             PendingContext<Input, Output, Context> pendingContext, CancellationToken token)
-                => SlowUpsertAsync(tsavoriteKV, tsavoriteSession, pendingContext, upsertOptions, token);
+                => SlowUpsertAsync(tsavoriteKV, sessionFunctions, pendingContext, upsertOptions, token);
 
             /// <inheritdoc/>
             public bool HasPendingIO => false;
@@ -109,22 +109,22 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ValueTask<UpsertAsyncResult<Input, Output, Context>> UpsertAsync<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
+        internal ValueTask<UpsertAsyncResult<Input, Output, Context>> UpsertAsync<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref Key key, ref Input input, ref Value value, ref UpsertOptions upsertOptions, Context userContext, CancellationToken token = default)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
             Output output = default;
 
-            tsavoriteSession.UnsafeResumeThread();
+            sessionFunctions.UnsafeResumeThread();
             try
             {
                 OperationStatus internalStatus;
                 var keyHash = upsertOptions.KeyHash ?? comparer.GetHashCode64(ref key);
                 do
                 {
-                    internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref userContext, ref pcontext, tsavoriteSession);
-                } while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
+                    internalStatus = InternalUpsert(ref key, keyHash, ref input, ref value, ref output, ref userContext, ref pcontext, sessionFunctions);
+                } while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
                 if (OperationStatusUtils.TryConvertToCompletedStatusCode(internalStatus, out Status status))
                     return new ValueTask<UpsertAsyncResult<Input, Output, Context>>(new UpsertAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
@@ -132,19 +132,19 @@ namespace Tsavorite.core
             }
             finally
             {
-                tsavoriteSession.UnsafeSuspendThread();
+                sessionFunctions.UnsafeSuspendThread();
             }
 
-            return SlowUpsertAsync(this, tsavoriteSession, pcontext, upsertOptions, token);
+            return SlowUpsertAsync(this, sessionFunctions, pcontext, upsertOptions, token);
         }
 
         private static async ValueTask<UpsertAsyncResult<Input, Output, Context>> SlowUpsertAsync<Input, Output, Context>(
-            TsavoriteKV<Key, Value> @this, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> tsavoriteSession,
+            TsavoriteKV<Key, Value> @this, ISessionFunctionsWrapper<Key, Value, Input, Output, Context> sessionFunctions,
             PendingContext<Input, Output, Context> pcontext, UpsertOptions upsertOptions, CancellationToken token = default)
         {
             ExceptionDispatchInfo exceptionDispatchInfo = await WaitForFlushCompletionAsync(@this, pcontext.flushEvent, token).ConfigureAwait(false);
             pcontext.flushEvent = default;
-            return new UpsertAsyncResult<Input, Output, Context>(@this, tsavoriteSession, pcontext, ref upsertOptions, exceptionDispatchInfo);
+            return new UpsertAsyncResult<Input, Output, Context>(@this, sessionFunctions, pcontext, ref upsertOptions, exceptionDispatchInfo);
         }
     }
 }

@@ -14,12 +14,12 @@ namespace Tsavorite.core
         /// <param name="recordValue"></param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        /// <param name="tsavoriteSession"></param>
+        /// <param name="sessionFunctions"></param>
         /// <returns>True if copied to readcache, else false; readcache is "best effort", and we don't fail the read process, or slow it down by retrying.
         /// </returns>
-        internal bool TryCopyToReadCache<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref PendingContext<Input, Output, Context> pendingContext,
+        internal bool TryCopyToReadCache<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value recordValue, ref OperationStackContext<Key, Value> stackCtx)
-            where TsavoriteSession : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocatedSize, _) = hlog.GetRecordSize(ref key, ref recordValue);
 
@@ -30,8 +30,8 @@ namespace Tsavorite.core
 
             UpsertInfo upsertInfo = new()
             {
-                Version = tsavoriteSession.Ctx.version,
-                SessionID = tsavoriteSession.Ctx.sessionID,
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID,
                 Address = Constants.kInvalidAddress,        // We do not expose readcache addresses
                 KeyHash = stackCtx.hei.hash,
             };
@@ -42,7 +42,7 @@ namespace Tsavorite.core
             (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
             Output output = default;
-            if (!tsavoriteSession.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+            if (!sessionFunctions.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref upsertInfo, WriteReason.CopyToReadCache, ref newRecordInfo))
             {
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
@@ -75,7 +75,7 @@ namespace Tsavorite.core
                     newRecordInfo.UnsealAndValidate();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = upsertInfo.Address;
-                tsavoriteSession.PostSingleWriter(ref key, ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress), ref output, ref upsertInfo, WriteReason.CopyToReadCache, ref newRecordInfo);
+                sessionFunctions.PostSingleWriter(ref key, ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress), ref output, ref upsertInfo, WriteReason.CopyToReadCache, ref newRecordInfo);
                 stackCtx.ClearNewRecord();
                 return true;
             }
@@ -84,7 +84,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
             if (!casSuccess)
             {
-                tsavoriteSession.DisposeSingleWriter(ref readcache.GetKey(newPhysicalAddress), ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress),
+                sessionFunctions.DisposeSingleWriter(ref readcache.GetKey(newPhysicalAddress), ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress),
                                                   ref output, ref upsertInfo, WriteReason.CopyToReadCache);
                 newRecordInfo.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
             }
