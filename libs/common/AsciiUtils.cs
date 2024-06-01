@@ -57,6 +57,10 @@ public static class AsciiUtils
 #endif
     }
 
+    /// <inheritdoc cref="EqualsUpperCaseSpanIgnoringCase(ReadOnlySpan{byte}, ReadOnlySpan{byte})"/>
+    public static bool EqualsUpperCaseSpanIgnoringCase(this Span<byte> left, ReadOnlySpan<byte> right)
+        => EqualsUpperCaseSpanIgnoringCase(left, right);
+
     /// <summary>
     /// Check if two byte spans are equal, where right is an all-upper-case span, ignoring case if there are ASCII bytes.
     /// </summary>
