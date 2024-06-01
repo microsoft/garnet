@@ -60,7 +60,7 @@ public static class AsciiUtils
     /// <summary>
     /// Check if two byte spans are equal, where right is an all-upper-case span, ignoring case if there are ASCII bytes.
     /// </summary>
-    public static bool EqualsIgnoreCase(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
+    public static bool EqualsUpperCaseSpanIgnoringCase(this ReadOnlySpan<byte> left, ReadOnlySpan<byte> right)
     {
         if (left.SequenceEqual(right))
             return true;

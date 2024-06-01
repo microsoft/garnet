@@ -300,7 +300,7 @@ namespace Garnet.server
                         var param = GetCommand(bufSpan, out bool success1);
                         if (!success1) return false;
                         count--;
-                        if (AsciiUtils.EqualsIgnoreCase(param, CmdStrings.AUTH))
+                        if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AUTH))
                         {
                             if (count < 2)
                             {
@@ -318,7 +318,7 @@ namespace Garnet.server
                             if (!success1) return false;
                             count--;
                         }
-                        else if (AsciiUtils.EqualsIgnoreCase(param, CmdStrings.SETNAME))
+                        else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETNAME))
                         {
                             if (count < 1)
                             {
@@ -764,7 +764,7 @@ namespace Garnet.server
             var status = GarnetStatus.OK;
             long memoryUsage = default;
 
-            if (AsciiUtils.EqualsIgnoreCase(memoryOption, "USAGE"u8))
+            if (memoryOption.EqualsUpperCaseSpanIgnoringCase("USAGE"u8))
             {
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var keyBytes, ref ptr, recvBufferPtr + bytesRead))
                     return false;

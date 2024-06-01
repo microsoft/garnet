@@ -276,7 +276,7 @@ namespace Garnet.server
             {
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var offsetType, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                bitOffsetType = AsciiUtils.EqualsIgnoreCase(offsetType, "BIT"u8) ? (byte)0x1 : (byte)0x0;
+                bitOffsetType = offsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
             }
 
             readHead = (int)(ptr - recvBufferPtr);
@@ -377,7 +377,7 @@ namespace Garnet.server
             {
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var offsetType, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                bitOffsetType = AsciiUtils.EqualsIgnoreCase(offsetType, "BIT"u8) ? (byte)0x1 : (byte)0x0;
+                bitOffsetType = offsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
             }
 
             readHead = (int)(ptr - recvBufferPtr);
@@ -510,16 +510,16 @@ namespace Garnet.server
                     return false;
 
                 //process overflow command
-                if (AsciiUtils.EqualsIgnoreCase(command, "OVERFLOW"u8))
+                if (command.EqualsUpperCaseSpanIgnoringCase("OVERFLOW"u8))
                 {
                     //Get overflow parameter
                     if (!RespReadUtils.TrySliceWithLengthHeader(out var overflowArg, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    if (AsciiUtils.EqualsIgnoreCase(overflowArg, "WRAP"u8))
+                    if (overflowArg.EqualsUpperCaseSpanIgnoringCase("WRAP"u8))
                         overFlowType = (byte)BitFieldOverflow.WRAP;
-                    else if (AsciiUtils.EqualsIgnoreCase(overflowArg, "SAT"u8))
+                    else if (overflowArg.EqualsUpperCaseSpanIgnoringCase("SAT"u8))
                         overFlowType = (byte)BitFieldOverflow.SAT;
-                    else if (AsciiUtils.EqualsIgnoreCase(overflowArg, "FAIL"u8))
+                    else if (overflowArg.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
                         overFlowType = (byte)BitFieldOverflow.FAIL;
                     //At this point processed two arguments
                     else
@@ -542,7 +542,7 @@ namespace Garnet.server
                         return false;
 
                     //Subcommand takes 2 args, encoding and offset
-                    if (AsciiUtils.EqualsIgnoreCase(command, "GET"u8))
+                    if (command.EqualsUpperCaseSpanIgnoringCase("GET"u8))
                     {
                         secondaryOPcode = (byte)RespCommand.GET;
                         currCount += 3;// Skip 3 args including subcommand
@@ -550,9 +550,9 @@ namespace Garnet.server
                     else
                     {
                         //SET and INCRBY take 3 args, encoding, offset, and valueArg
-                        if (AsciiUtils.EqualsIgnoreCase(command, "SET"u8))
+                        if (command.EqualsUpperCaseSpanIgnoringCase("SET"u8))
                             secondaryOPcode = (byte)RespCommand.SET;
-                        else if (AsciiUtils.EqualsIgnoreCase(command, "INCRBY"u8))
+                        else if (command.EqualsUpperCaseSpanIgnoringCase("INCRBY"u8))
                             secondaryOPcode = (byte)RespCommand.INCRBY;
                         else
                         {
@@ -703,16 +703,16 @@ namespace Garnet.server
                     return false;
 
                 //Process overflow subcommand
-                if (AsciiUtils.EqualsIgnoreCase(command, "OVERFLOW"u8))
+                if (command.EqualsUpperCaseSpanIgnoringCase("OVERFLOW"u8))
                 {
                     //Get overflow parameter
                     if (!RespReadUtils.TrySliceWithLengthHeader(out var overflowArg, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    if (AsciiUtils.EqualsIgnoreCase(overflowArg, "WRAP"u8))
+                    if (overflowArg.EqualsUpperCaseSpanIgnoringCase("WRAP"u8))
                         overFlowType = (byte)BitFieldOverflow.WRAP;
-                    else if (AsciiUtils.EqualsIgnoreCase(overflowArg, "SAT"u8))
+                    else if (overflowArg.EqualsUpperCaseSpanIgnoringCase("SAT"u8))
                         overFlowType = (byte)BitFieldOverflow.SAT;
-                    else if (AsciiUtils.EqualsIgnoreCase(overflowArg, "FAIL"u8))
+                    else if (overflowArg.EqualsUpperCaseSpanIgnoringCase("FAIL"u8))
                         overFlowType = (byte)BitFieldOverflow.FAIL;
                     else
                     {
@@ -735,7 +735,7 @@ namespace Garnet.server
                         return false;
 
                     //Subcommand takes 2 args, encoding and offset
-                    if (AsciiUtils.EqualsIgnoreCase(command, "GET"u8))
+                    if (command.EqualsUpperCaseSpanIgnoringCase("GET"u8))
                     {
                         secondaryOPcode = (byte)RespCommand.GET;
                         currCount += 3;// Skip 3 args including subcommand

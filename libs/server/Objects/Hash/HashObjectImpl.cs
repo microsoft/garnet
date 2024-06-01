@@ -250,7 +250,7 @@ namespace Garnet.server
                         if (!RespReadUtils.TrySliceWithLengthHeader(out var withValuesBytes, ref input_currptr, input + length))
                             return;
 
-                        if (AsciiUtils.EqualsIgnoreCase(withValuesBytes, "WITHVALUES"u8))
+                        if (withValuesBytes.EqualsUpperCaseSpanIgnoringCase("WITHVALUES"u8))
                         {
                             withValues = true;
                         }

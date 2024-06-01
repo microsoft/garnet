@@ -384,19 +384,19 @@ namespace Garnet.server
                         if (!RespReadUtils.TrySliceWithLengthHeader(out var token, ref input_currptr, input + length))
                             return;
 
-                        if (AsciiUtils.EqualsIgnoreCase(token, "BYSCORE"u8))
+                        if (token.EqualsUpperCaseSpanIgnoringCase("BYSCORE"u8))
                         {
                             options.ByScore = true;
                         }
-                        else if (AsciiUtils.EqualsIgnoreCase(token, "BYLEX"u8))
+                        else if (token.EqualsUpperCaseSpanIgnoringCase("BYLEX"u8))
                         {
                             options.ByLex = true;
                         }
-                        else if (AsciiUtils.EqualsIgnoreCase(token, "REV"u8))
+                        else if (token.EqualsUpperCaseSpanIgnoringCase("REV"u8))
                         {
                             options.Reverse = true;
                         }
-                        else if (AsciiUtils.EqualsIgnoreCase(token, "LIMIT"u8))
+                        else if (token.EqualsUpperCaseSpanIgnoringCase("LIMIT"u8))
                         {
                             // read the next two tokens
                             if (!RespReadUtils.TrySliceWithLengthHeader(out var offset, ref input_currptr, input + length) ||
@@ -413,7 +413,7 @@ namespace Garnet.server
                                 i += 2;
                             }
                         }
-                        else if (AsciiUtils.EqualsIgnoreCase(token, "WITHSCORES"u8))
+                        else if (token.EqualsUpperCaseSpanIgnoringCase("WITHSCORES"u8))
                         {
                             options.WithScores = true;
                         }
@@ -834,7 +834,7 @@ namespace Garnet.server
                     if (!RespReadUtils.TrySliceWithLengthHeader(out var token, ref input_currptr, input + length))
                         return;
 
-                    if (AsciiUtils.EqualsIgnoreCase(token, "WITHSCORE"u8))
+                    if (token.EqualsUpperCaseSpanIgnoringCase("WITHSCORE"u8))
                     {
                         withScore = true;
                     }

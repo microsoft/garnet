@@ -69,13 +69,13 @@ namespace Garnet.server
                 // Is NX or XX, if not nx then use XX
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var byteOptions, ref input_currptr, input + length))
                     return;
-                nx = AsciiUtils.EqualsIgnoreCase(byteOptions, "NX"u8);
+                nx = byteOptions.EqualsUpperCaseSpanIgnoringCase("NX"u8);
                 if (optsCount == 2)
                 {
                     // Read CH option
                     if (!RespReadUtils.TrySliceWithLengthHeader(out byteOptions, ref input_currptr, input + length))
                         return;
-                    ch = AsciiUtils.EqualsIgnoreCase(byteOptions, "CH"u8);
+                    ch = byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8);
                 }
                 count -= optsCount;
             }
@@ -389,14 +389,14 @@ namespace Garnet.server
                     if (!RespReadUtils.TrySliceWithLengthHeader(out var tokenBytes, ref input_currptr, input + length))
                         return;
 
-                    if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "FROMMEMBER"u8))
+                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMMEMBER"u8))
                     {
                         if (!RespReadUtils.ReadByteArrayWithLengthHeader(out fromMember, ref input_currptr, input + length))
                             return;
                         opts.FromMember = true;
                         --count;
                     }
-                    else if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "FROMLONLAT"u8))
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMLONLAT"u8))
                     {
                         // Read coordinates
                         if (!RespReadUtils.ReadDoubleWithLengthHeader(out var longitude, out var parsed, ref input_currptr, input + length) ||
@@ -407,7 +407,7 @@ namespace Garnet.server
                         count -= 2;
                         opts.FromLonLat = true;
                     }
-                    else if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "BYRADIUS"u8))
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYRADIUS"u8))
                     {
                         // Read radius and units
                         if (!RespReadUtils.ReadDoubleWithLengthHeader(out var radius, out var parsed, ref input_currptr, input + length) ||
@@ -418,7 +418,7 @@ namespace Garnet.server
                         count -= 2;
                         opts.ByRadius = true;
                     }
-                    else if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "BYBOX"u8))
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYBOX"u8))
                     {
                         // Read width, height & units
                         if (!RespReadUtils.ReadDoubleWithLengthHeader(out width, out var parsed, ref input_currptr, input + length) ||
@@ -430,19 +430,19 @@ namespace Garnet.server
                         count -= 3;
                         opts.ByBox = true;
                     }
-                    else if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "ASC"u8)) opts.SortDescending = false;
-                    else if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "DESC"u8)) opts.SortDescending = true;
-                    else if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "COUNT"u8))
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ASC"u8)) opts.SortDescending = false;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("DESC"u8)) opts.SortDescending = true;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("COUNT"u8))
                     {
                         opts.WithCount = true;
                         if (!RespReadUtils.ReadIntWithLengthHeader(out countValue, ref input_currptr, input + length))
                             return;
                         count -= 1;
                     }
-                    else if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "WITHCOORD"u8)) opts.WithCoord = true;
-                    else if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "WITHDIST"u8)) opts.WithDist = true;
-                    else if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "WITHHASH"u8)) opts.WithHash = true;
-                    else if (AsciiUtils.EqualsIgnoreCase(tokenBytes, "ANY"u8)) opts.WithCountAny = true;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) opts.WithDist = true;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8)) opts.WithCountAny = true;
 
                     --count;
                 }
