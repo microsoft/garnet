@@ -1,0 +1,122 @@
+# Default values for garnet.
+
+statefulSet:
+  # -- StatefulSet annotations
+  annotations: {}
+  # -- StatefulSet replicas
+  replicas: 1
+  # -- StatefulSet revisionHistoryLimit
+  revisionHistoryLimit: 1
+  updateStrategy:
+    # -- StatefulSet updateStrategy type
+    type: RollingUpdate
+
+image:
+  # -- Image registry
+  registry: ghcr.io
+  # -- Image repository
+  repository: microsoft/garnet
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+# -- Image pull secrets
+imagePullSecrets: []
+# -- Chart name override
+nameOverride: ""
+# -- Chart full name override
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Specifies whether a service account should be created
+  create: false
+  # -- Annotations to add to the service account
+  annotations: {}
+  # -- The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+  # -- Creates the token object
+  token: false
+
+containers:
+  # -- Containers args
+  args: ["--port", "6379", "-m", "128m", "-i", "128m", "--auth", "Password","--password", "xxxxxxxxxx"]
+  # -- Containers port
+  port: 6379
+  # -- Containers livenessProbe
+  livenessProbe: {}
+  # -- Containers livenessProbe
+  readinessProbe: {}
+
+# -- Init containers
+initContainers: []
+
+# -- DNS config
+dnsConfig: {}
+# dnsConfig:
+#   options:
+#   - name: ndots
+#     value: "1"
+#   - name: edns0
+
+# -- DNS policy
+dnsPolicy: ClusterFirst
+
+persistence:
+  # -- persistence enabled
+  enabled: false
+
+volumeClaimTemplates:
+  # -- Volume Claim Templates Storage Class Name
+  storageClassName: local-storage
+  # -- Volume Claim Templates Requests Storage
+  requestsStorage: 1Gi
+
+# -- Pod annotations
+podAnnotations: {}
+
+# -- Pod Security Context
+podSecurityContext: {}
+  # fsGroup: 2000
+
+# -- Security Context
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  # -- Service annotations
+  annotations: {}
+  # -- Service type
+  type: ClusterIP
+  # -- Service port
+  port: 6379
+
+# -- Resources
+resources: {}
+  # limits:
+  #   cpu: 200m
+  #   memory: 64Mi
+  # requests:
+  #   cpu: 10m
+  #   memory: 16Mi
+
+# -- Extra Volume Mounts
+extraVolumeMounts: []
+
+# -- Extra Volumes
+extraVolumes: []
+
+# -- Node Selector labels
+nodeSelector: {}
+
+# -- Tolerations
+tolerations: []
+
+# -- Affinity
+affinity: {}
