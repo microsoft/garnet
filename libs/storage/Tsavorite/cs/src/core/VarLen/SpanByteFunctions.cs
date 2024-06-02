@@ -36,6 +36,13 @@ namespace Tsavorite.core
             value.CopyTo(ref dst, memoryPool);
             return true;
         }
+
+        /// <inheritdoc />
+        public override void ConvertOutputToHeap(ref SpanByte input, ref SpanByteAndMemory output)
+        {
+            // Currently the default is a no-op; the derived class inspects 'input' to decide whether to ConvertToHeap().
+            //output.ConvertToHeap();
+        }
     }
 
     /// <summary>

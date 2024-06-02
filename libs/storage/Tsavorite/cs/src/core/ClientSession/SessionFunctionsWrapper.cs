@@ -151,6 +151,11 @@ namespace Tsavorite.core
             => _clientSession.functions.DisposeForRevivification(ref key, ref value, newKeySize);
         #endregion Dispose
 
+        #region Utilities
+        /// <inheritdoc/>
+        public void ConvertOutputToHeap(ref Input input, ref Output output) => _clientSession.functions.ConvertOutputToHeap(ref input, ref output);
+        #endregion Utilities
+
         #region Transient locking
         public bool IsManualLocking => _sessionLocker.IsManualLocking;
 

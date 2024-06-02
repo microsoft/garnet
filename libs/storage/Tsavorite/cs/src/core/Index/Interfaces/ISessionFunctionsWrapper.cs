@@ -59,6 +59,11 @@ namespace Tsavorite.core
         void DisposeForRevivification(ref Key key, ref Value value, int newKeySize, ref RecordInfo recordInfo);
         #endregion Disposal
 
+        #region Utilities
+        /// <inheritdoc/>
+        void ConvertOutputToHeap(ref Input input, ref Output output);
+        #endregion Utilities
+
         #region Transient locking
         bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx);
         bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx);

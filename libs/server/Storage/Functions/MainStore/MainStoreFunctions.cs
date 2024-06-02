@@ -20,5 +20,12 @@ namespace Garnet.server
         {
             this.functionsState = functionsState;
         }
+
+        /// <inheritdoc />
+        public void ConvertOutputToHeap(ref SpanByte input, ref SpanByteAndMemory output)
+        {
+            // TODO: Inspect input to determine whether we're in a context requiring ConvertToHeap.
+            //output.ConvertToHeap();
+        }
     }
 }

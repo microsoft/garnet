@@ -158,15 +158,12 @@ namespace Tsavorite.core
             readonly get => ((length & UnserializedBitMask) != 0) && payload == IntPtr.Zero;
             set
             {
-                if (value)
-                {
-                    length |= UnserializedBitMask;
-                    payload = IntPtr.Zero;
-                }
-                else
-                {
-                    if (Invalid) length = 0;
-                }
+                Debug.Assert(value, "Cannot restore an Invalid SpanByte to Valid; must reassign the SpanByte as a full value");
+                
+                // Set the actual length to 0; any metadata is no longer available, and a zero length will cause callers' length checks to go
+                // through the ConvertToHeap path automatically. Keep the UnserializedBitMask.
+                length = UnserializedBitMask;
+                payload = IntPtr.Zero;
             }
         }
 

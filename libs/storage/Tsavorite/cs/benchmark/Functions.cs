@@ -93,5 +93,7 @@ namespace Tsavorite.benchmark
         public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { }
         public void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
         public void DisposeForRevivification(ref Key key, ref Value value, int newKeySize) { }
+
+        public void ConvertOutputToHeap(ref input input, ref Output output) { }
     }
 }

@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -361,6 +362,8 @@ namespace Garnet.server
             _ = value.ShrinkSerializedLength(ndigits + value.MetadataSize);
             _ = NumUtils.LongToSpanByte(val, value.AsSpan());
             rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
+
+            Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
             value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = value.LengthWithoutMetadata;
             return true;
@@ -457,7 +460,7 @@ namespace Garnet.server
             return true;
         }
 
-        void CopyDefaultResp(ReadOnlySpan<byte> resp, ref SpanByteAndMemory dst)
+        void CopyDefaultResp(ReadOnlySpan<byte> resp, ref SpanByteAndMemory dst) 
         {
             if (resp.Length < dst.SpanByte.Length)
             {
@@ -502,6 +505,8 @@ namespace Garnet.server
         static void CopyValueLengthToOutput(ref SpanByte value, ref SpanByteAndMemory output)
         {
             int numDigits = NumUtils.NumDigits(value.LengthWithoutMetadata);
+
+            Debug.Assert(output.IsSpanByte, "This code assumes it is called in a non-pending context or in a pending context where dst.SpanByte's pointer remains valid");
             var outputPtr = output.SpanByte.ToPointer();
             NumUtils.IntToBytes(value.LengthWithoutMetadata, numDigits, ref outputPtr);
             output.SpanByte.Length = numDigits;

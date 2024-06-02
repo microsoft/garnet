@@ -70,6 +70,9 @@ namespace Tsavorite.core
         public virtual int GetRMWModifiedValueLength(ref Value value, ref Input input) => throw new TsavoriteException("GetRMWModifiedValueLength is only available for SpanByte Functions");
         /// <inheritdoc/>
         public virtual int GetRMWInitialValueLength(ref Input input) => throw new TsavoriteException("GetRMWInitialValueLength is only available for SpanByte Functions");
+
+        /// <inheritdoc/>
+        public virtual void ConvertOutputToHeap(ref Input input, ref Output output) { }
     }
 
     /// <summary>

@@ -230,8 +230,7 @@ namespace Tsavorite.core
                 pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
 
             pendingContext.output = output;
-            if (pendingContext.output is IHeapConvertible heapConvertible)
-                heapConvertible.ConvertToHeap();
+            sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;

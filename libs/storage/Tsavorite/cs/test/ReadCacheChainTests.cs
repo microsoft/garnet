@@ -975,13 +975,6 @@ namespace Tsavorite.test.ReadCacheTests
             store.Log.FlushAndEvict(true);
         }
 
-        static void ClearCountsOnError(ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty>> luContext)
-        {
-            // If we already have an exception, clear these counts so "Run" will not report them spuriously.
-            luContext.sharedLockCount = 0;
-            luContext.exclusiveLockCount = 0;
-        }
-
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]

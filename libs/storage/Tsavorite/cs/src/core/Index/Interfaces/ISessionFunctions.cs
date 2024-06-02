@@ -299,6 +299,15 @@ namespace Tsavorite.core
         /// <param name="newKeySize">If > 0, this is a record from the freelist and we are disposing the key as well as value (it is -1 when revivifying a record in the hash chain or when doing a RETRY; for these the key does not change)</param>
         void DisposeForRevivification(ref Key key, ref Value value, int newKeySize);
         #endregion Dispose
+
+        #region Utilities
+        /// <summary>
+        /// Called by Tsavorite when the operation goes pending, so the app can signal to itself that any pinned
+        /// buffer in the Output is no longer valid and a heap-based buffer must be created.
+        /// </summary>
+        /// <param name="output"></param>
+        void ConvertOutputToHeap(ref Input input, ref Output output);
+        #endregion Utilities
     }
 
     /// <summary>
