@@ -231,8 +231,7 @@ namespace Garnet.server
             catch (RespParsingException ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
-                logger?.LogCritical($"Aborting open session due to RESP parsing error: {ex.Message}");
-                logger?.LogDebug(ex, "RespParsingException in ProcessMessages:");
+                logger.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
 
                 // Forward parsing error as RESP error
                 while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
@@ -243,10 +242,17 @@ namespace Garnet.server
                     Send(networkSender.GetResponseObjectHead());
                 networkSender.Dispose();
             }
+            catch (GarnetException ex)
+            {
+                sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
+                logger.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
+                // The session is no longer usable, dispose it
+                networkSender.Dispose();
+            }
             catch (Exception ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
-                logger?.LogCritical(ex, "ProcessMessages threw exception:");
+                logger?.LogCritical(ex, "ProcessMessages threw an exception:");
                 // The session is no longer usable, dispose it
                 networkSender.Dispose();
             }
@@ -254,7 +260,6 @@ namespace Garnet.server
             {
                 networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
-
             }
 
             if (txnManager.IsSkippingOperations())
@@ -807,7 +812,7 @@ namespace Garnet.server
                 // Reaching here means that we retried SendAndReset without the RespWriteUtils.Write*
                 // method making any progress. This should only happen when the message being written is
                 // too large to fit in the response buffer.
-                GarnetException.Throw("Failed to write to response buffer");
+                GarnetException.Throw("Failed to write to response buffer", LogLevel.Critical);
             }
         }
 

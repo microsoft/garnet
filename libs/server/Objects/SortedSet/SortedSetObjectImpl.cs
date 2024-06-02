@@ -336,9 +336,9 @@ namespace Garnet.server
             }
         }
 
-        private void SortedSetRank(byte* input, int length, byte* output)
+        private void SortedSetRank(byte* input, int length, ref SpanByteAndMemory output)
         {
-            GetRank(input, length, output);
+            GetRank(input, length, ref output);
         }
 
         private void SortedSetRange(byte* input, int length, ref SpanByteAndMemory output)
@@ -565,9 +565,9 @@ namespace Garnet.server
             SortedSetRange(input, length, ref output);
         }
 
-        private void SortedSetReverseRank(byte* input, int length, byte* output)
+        private void SortedSetReverseRank(byte* input, int length, ref SpanByteAndMemory output)
         {
-            GetRank(input, length, output, ascending: false);
+            GetRank(input, length, ref output, ascending: false);
         }
 
         private void SortedSetRemoveRangeByLex(byte* input, int length, byte* output)
@@ -810,31 +810,95 @@ namespace Garnet.server
         /// <param name="length"></param>
         /// <param name="output"></param>
         /// <param name="ascending"></param>
-        private void GetRank(byte* input, int length, byte* output, bool ascending = true)
+        private void GetRank(byte* input, int length, ref SpanByteAndMemory output, bool ascending = true)
         {
             //ZRANK key member
             var _input = (ObjectInputHeader*)input;
-            var _output = (ObjectOutputHeader*)output;
+            var input_startptr = input + sizeof(ObjectInputHeader);
+            var input_currptr = input_startptr;
+            var withScore = false;
 
-            var member = new Span<byte>(input + sizeof(ObjectInputHeader), _input->count).ToArray();
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            byte* ptr = output.SpanByte.ToPointer();
+            var curr = ptr;
+            var end = curr + output.Length;
+            var error = false;
 
-            *_output = default;
-
-            if (!sortedSetDict.TryGetValue(member, out var score))
+            ObjectOutputHeader _output = default;
+            try
             {
-                _output->opsDone = -1;
-                return;
-            }
-            else
-            {
-                var rank = 0;
-                foreach (var item in sortedSet)
+                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input + length))
+                    return;
+
+                if (_input->count == 3) // ZRANK key member WITHSCORE
                 {
-                    if (item.Item2.SequenceEqual(member))
-                        break;
-                    rank++;
+                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var token, ref input_currptr, input + length))
+                        return;
+
+                    if (Encoding.ASCII.GetString(token).ToUpperInvariant() == "WITHSCORE")
+                    {
+                        withScore = true;
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        error = true;
+                    }
                 }
-                _output->opsDone = ascending ? rank : (sortedSet.Count - rank) - 1;
+
+                if (!error)
+                {
+                    if (!sortedSetDict.TryGetValue(member, out var score))
+                    {
+                        while (!RespWriteUtils.WriteNull(ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
+                    else
+                    {
+                        var rank = 0;
+                        foreach (var item in sortedSet)
+                        {
+                            if (item.Item2.SequenceEqual(member))
+                                break;
+                            rank++;
+                        }
+
+                        if (!ascending)
+                            rank = sortedSet.Count - rank - 1;
+
+                        if (withScore)
+                        {
+                            while (!RespWriteUtils.WriteArrayLength(2, ref curr, end)) // rank and score
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                            while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                            while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
+                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        }
+                    }
+                }
+
+                _output.bytesDone = (int)(input_currptr - input_startptr);
+                _output.countDone = _input->count;
+                _output.opsDone = 1;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+
+                output.Length = (int)(curr - ptr);
             }
         }
 
