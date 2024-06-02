@@ -460,7 +460,7 @@ namespace Garnet.server
             return true;
         }
 
-        void CopyDefaultResp(ReadOnlySpan<byte> resp, ref SpanByteAndMemory dst) 
+        void CopyDefaultResp(ReadOnlySpan<byte> resp, ref SpanByteAndMemory dst)
         {
             if (resp.Length < dst.SpanByte.Length)
             {
