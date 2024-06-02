@@ -94,6 +94,6 @@ namespace Tsavorite.benchmark
         public void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
         public void DisposeForRevivification(ref Key key, ref Value value, int newKeySize) { }
 
-        public void ConvertOutputToHeap(ref input input, ref Output output) { }
+        public void ConvertOutputToHeap(ref Input input, ref Output output) { }
     }
 }
