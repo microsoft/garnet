@@ -37,14 +37,14 @@ namespace Garnet.server.ACL
             PerCommand,
         }
 
-        // do not move these, initialization order is important
+        // Do not move these, initialization order is important
         private static readonly ushort CommandListLength = GetCommandListLength();
 
         public static readonly CommandPermissionSet All = new(AllState.AllPermitted);
         public static readonly CommandPermissionSet None = new(AllState.AllForbidden);
 
 
-        // each bit corresponds to RespCommand + subcommand
+        // Each bit corresponds to RespCommand + subcommand
         private readonly ulong[] _commandList;
 
         private AllState _all;
@@ -65,13 +65,11 @@ namespace Garnet.server.ACL
         /// </summary>
         public bool CanRunCommand(RespCommand command)
         {
-            // quick check for +@all
             if (this._all == AllState.AllPermitted)
             {
                 return true;
             }
 
-            // quick check for -@all
             if (this._all == AllState.AllForbidden)
             {
                 return false;
@@ -83,7 +81,6 @@ namespace Garnet.server.ACL
             int ulongIndex = index / 64;
             int bitIndex = index % 64;
 
-            // if we can run it, this bit will be set
             return (_commandList[ulongIndex] & (1UL << bitIndex)) != 0;
         }
 
@@ -191,7 +188,7 @@ namespace Garnet.server.ACL
 
                 if (!allAllowed)
                 {
-                    // empty category
+                    // Empty category
                     continue;
                 }
 

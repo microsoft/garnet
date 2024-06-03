@@ -115,6 +115,25 @@ namespace Garnet.test
             Assert.IsEmpty(wrong, "These commands are incorrectly classified w.r.t. OneIfRead");
         }
 
+        /// <summary>
+        /// Test that we recognize "cluster" ops correctly.
+        /// </summary>
+        [Test]
+        public void IsClusterSubCommand()
+        {
+            Assert.True(RespCommandsInfo.TryGetRespCommandInfo("CLUSTER", out var clusterCommand), "Couldn't load CLUSTER command details");
+            Assert.IsNotNull(clusterCommand.SubCommands, "CLUSTER didn't have any subcommands");
+
+            IEnumerable<RespCommand> clusterSubCommands = clusterCommand.SubCommands.Select(static s => s.SubCommand.Value);
+            foreach(var cmd in Enum.GetValues<RespCommand>())
+            {
+                var expectedRes = clusterSubCommands.Contains(cmd);
+                var actualRes = cmd.IsClusterSubCommand();
+
+                Assert.AreEqual(expectedRes, actualRes, $"Mismatch for {cmd}");
+            }
+        }
+
         [Test]
         public void SingleSetGet()
         {

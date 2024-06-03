@@ -160,6 +160,10 @@ namespace Garnet.server
                         length += HyperLogLog.DefaultHLL.MergeGrow(srcHLL + sizeof(int), dstHLL);
                         return length + t.MetadataSize;
 
+                    case RespCommand.SETKEEPTTLXX:
+                    case RespCommand.SETKEEPTTL:
+                        return sizeof(int) + t.MetadataSize + input.Length - RespInputHeader.Size;
+
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
                     case RespCommand.PERSIST:

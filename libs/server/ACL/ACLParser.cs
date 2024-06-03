@@ -245,16 +245,38 @@ namespace Garnet.server.ACL
             // There's some fixup that has to be done when parsing a command
             static bool TryParseCommandForAcl(string commandName, out RespCommand command)
             {
-                if (commandName.Equals("SLAVEOF", StringComparison.OrdinalIgnoreCase))
-                {
-                    command = RespCommand.SECONDARYOF;
-                }
-                else
-                {
-                    // TODO: exact matches for the weird commands should be preferred
-                    string effectiveName = commandName.Replace("|", "_").Replace("-", "");
+                int subCommandSepIx = commandName.IndexOf('|');
+                bool isSubCommand = subCommandSepIx != -1;
 
-                    if (!Enum.TryParse(effectiveName, ignoreCase: true, out command))
+                string effectiveName = isSubCommand ? commandName[..subCommandSepIx] + "_" + commandName[(subCommandSepIx + 1)..] : commandName;
+
+                if (!Enum.TryParse(effectiveName, ignoreCase: true, out command))
+                {
+                    // We handle these commands specially because blind replacements would cause
+                    // us to be too accepting of different values
+                    if (commandName.Equals("SLAVEOF", StringComparison.OrdinalIgnoreCase))
+                    {
+                        command = RespCommand.SECONDARYOF;
+                    }
+                    else if (commandName.Equals("CLUSTER|SET-CONFIG-EPOCH", StringComparison.OrdinalIgnoreCase))
+                    {
+                        command = RespCommand.CLUSTER_SETCONFIGEPOCH;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+
+                // Validate parse results matches the original input expectations
+                if (isSubCommand)
+                {
+                    if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
+                    {
+                        throw new ACLException($"Couldn't load information for {command}, shouldn't be possible");
+                    }
+
+                    if (info.SubCommand != command)
                     {
                         return false;
                     }
