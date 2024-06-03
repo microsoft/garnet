@@ -50,5 +50,4 @@ if (UNIX)
    target_link_libraries(native_device PRIVATE stdc++fs aio)
 endif()
 
-
-
+add_subdirectory(device-spdk)
