@@ -121,12 +121,16 @@ namespace Tsavorite.test
             status = bContext.Read(ref key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
+                (status, _) = bContext.GetSinglePendingResult();
+            Assert.IsFalse(status.Found);
+
+            // Update last 100 using RMW in memory
+            for (int i = 1900; i < 2000; i++)
             {
-                bContext.CompletePending(true);
-            }
-            else
-            {
-                Assert.IsFalse(status.Found);
+                var key = new MyKey { key = i };
+                input = new MyInput { value = 1 };
+                status = bContext.RMW(ref key, ref input, Empty.Default);
+                Assert.IsFalse(status.IsPending, "Expected RMW to complete in-memory");
             }
 
             // Update first 100 using RMW from storage
@@ -145,97 +149,16 @@ namespace Tsavorite.test
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                if (bContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
-                {
-                    bContext.CompletePending(true);
-                }
+                status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                if (status.IsPending)
+                    (status, output) = bContext.GetSinglePendingResult();
                 else
                 {
-                    if (i < 100)
-                    {
+                    if (i < 100 || i >= 1900)
                         Assert.AreEqual(value.value + 1, output.value.value);
-                        Assert.AreEqual(value.value + 1, output.value.value);
-                    }
                     else
-                    {
                         Assert.AreEqual(value.value, output.value.value);
-                        Assert.AreEqual(value.value, output.value.value);
-                    }
                 }
-            }
-
-        }
-
-        [Test]
-        [Category("TsavoriteKV")]
-        public async Task ReadAsyncObjectDiskWriteRead()
-        {
-            using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
-            var bContext = session.BasicContext;
-
-            for (int i = 0; i < 2000; i++)
-            {
-                var key = new MyKey { key = i };
-                var value = new MyValue { value = i };
-
-                var r = await bContext.UpsertAsync(ref key, ref value);
-                while (r.Status.IsPending)
-                    r = await r.CompleteAsync(); // test async version of Upsert completion
-            }
-
-            var key1 = new MyKey { key = 1989 };
-            var input = new MyInput();
-            var readResult = await bContext.ReadAsync(ref key1, ref input, Empty.Default);
-            var result = readResult.Complete();
-            Assert.IsTrue(result.status.Found);
-            Assert.AreEqual(1989, result.output.value.value);
-
-            var key2 = new MyKey { key = 23 };
-            readResult = await bContext.ReadAsync(ref key2, ref input, Empty.Default);
-            result = readResult.Complete();
-
-            Assert.IsTrue(result.status.Found);
-            Assert.AreEqual(23, result.output.value.value);
-
-            var key3 = new MyKey { key = 9999 };
-            readResult = await bContext.ReadAsync(ref key3, ref input, Empty.Default);
-            result = readResult.Complete();
-
-            Assert.IsFalse(result.status.Found);
-
-            // Update last 100 using RMW in memory
-            for (int i = 1900; i < 2000; i++)
-            {
-                var key = new MyKey { key = i };
-                input = new MyInput { value = 1 };
-                var r = await bContext.RMWAsync(ref key, ref input, Empty.Default);
-                while (r.Status.IsPending)
-                {
-                    r = await r.CompleteAsync(); // test async version of RMW completion
-                }
-            }
-
-            // Update first 100 using RMW from storage
-            for (int i = 0; i < 100; i++)
-            {
-                var key = new MyKey { key = i };
-                input = new MyInput { value = 1 };
-                (await bContext.RMWAsync(ref key, ref input, Empty.Default)).Complete();
-            }
-
-            for (int i = 0; i < 2000; i++)
-            {
-                var output = new MyOutput();
-                var key = new MyKey { key = i };
-                var value = new MyValue { value = i };
-
-                readResult = await bContext.ReadAsync(ref key, ref input, Empty.Default);
-                result = readResult.Complete();
-                Assert.IsTrue(result.status.Found);
-                if (i < 100 || i >= 1900)
-                    Assert.AreEqual(value.value + 1, result.output.value.value);
-                else
-                    Assert.AreEqual(value.value, result.output.value.value);
             }
         }
     }

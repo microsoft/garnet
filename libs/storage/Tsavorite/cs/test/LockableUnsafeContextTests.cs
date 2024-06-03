@@ -322,7 +322,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public async Task TestShiftHeadAddressLUC([Values] SyncMode syncMode)
+        public async Task TestShiftHeadAddressLUC([Values] CompletionSyncMode syncMode)
         {
             long input = default;
             const int RandSeed = 10;
@@ -332,7 +332,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             Random r = new(RandSeed);
             var sw = Stopwatch.StartNew();
 
-            // Copied from UnsafeContextTests to test Async.
+            // Copied from UnsafeContextTests.
             var luContext = session.LockableUnsafeContext;
             luContext.BeginUnsafe();
             luContext.BeginLockable();
@@ -348,17 +348,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     AssertBucketLockCount(ref keyVec[0], 1, 0);
 
                     var value = keyVec[0].Key + numRecords;
-                    if (syncMode == SyncMode.Sync)
-                    {
-                        luContext.Upsert(ref keyVec[0].Key, ref value, Empty.Default);
-                    }
-                    else
-                    {
-                        luContext.EndUnsafe();
-                        var status = (await luContext.UpsertAsync(ref keyVec[0].Key, ref value)).Complete();
-                        luContext.BeginUnsafe();
-                        Assert.IsFalse(status.IsPending);
-                    }
+                    luContext.Upsert(ref keyVec[0].Key, ref value, Empty.Default);
                     luContext.Unlock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                 }
@@ -376,17 +366,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
                     luContext.Lock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 1);
-                    Status status;
-                    if (syncMode == SyncMode.Sync || (c % 1 == 0))  // in .Async mode, half the ops should be sync to test CompletePendingAsync
-                    {
-                        status = luContext.Read(ref keyVec[0].Key, ref input, ref output, Empty.Default);
-                    }
-                    else
-                    {
-                        luContext.EndUnsafe();
-                        (status, output) = (await luContext.ReadAsync(ref keyVec[0].Key, ref input)).Complete();
-                        luContext.BeginUnsafe();
-                    }
+                    Status status = luContext.Read(ref keyVec[0].Key, ref input, ref output, Empty.Default);
                     luContext.Unlock(keyVec);
                     AssertBucketLockCount(ref keyVec[0], 0, 0);
                     Assert.IsFalse(status.IsPending);
@@ -394,7 +374,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
                 AssertTotalLockCounts(0, 0);
 
-                if (syncMode == SyncMode.Sync)
+                if (syncMode == CompletionSyncMode.Sync)
                 {
                     luContext.CompletePending(true);
                 }
@@ -432,7 +412,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                 AssertTotalLockCounts(0, expectedS);
 
                 CompletedOutputIterator<long, long, long, long, Empty> outputs;
-                if (syncMode == SyncMode.Sync)
+                if (syncMode == CompletionSyncMode.Sync)
                 {
                     luContext.CompletePendingWithOutputs(out outputs, wait: true);
                 }

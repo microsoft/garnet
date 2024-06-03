@@ -203,7 +203,7 @@ namespace Tsavorite.test
             Generic
         }
 
-        internal enum SyncMode { Sync, Async }
+        internal enum CompletionSyncMode { Sync, Async }
 
         public enum ReadCopyDestination { Tail, ReadCache }
 
@@ -240,34 +240,6 @@ namespace Tsavorite.test
             return result;
         }
 
-        internal static async ValueTask<(Status status, Output output)> CompleteAsync<Key, Value, Input, Output, Context>(ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> resultTask)
-        {
-            var readCompleter = await resultTask;
-            return readCompleter.Complete();
-        }
-
-        internal static async ValueTask<Status> CompleteAsync<Key, Value, Context>(ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Key, Value, Context>> resultTask)
-        {
-            var result = await resultTask;
-            while (result.Status.IsPending)
-                result = await result.CompleteAsync().ConfigureAwait(false);
-            return result.Status;
-        }
-
-        internal static async ValueTask<Status> CompleteAsync<Key, Value, Context>(ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Value, Value, Context>> resultTask)
-        {
-            var result = await resultTask;
-            while (result.Status.IsPending)
-                result = await result.CompleteAsync().ConfigureAwait(false);
-            return result.Status;
-        }
-
-        internal static async ValueTask<Status> CompleteAsync<Key, Value, Input, Output, Context>(ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> resultTask)
-        {
-            var deleteCompleter = await resultTask;
-            return deleteCompleter.Complete();
-        }
-
         internal static async ValueTask DoTwoThreadRandomKeyTest(int count, bool doRandom, Action<int> first, Action<int> second, Action<int> verification)
         {
             Task[] tasks = new Task[2];
@@ -291,6 +263,18 @@ namespace Tsavorite.test
             var success = store.FindTag(ref hei);
             entry = hei.entry;
             return success;
+        }
+    }
+
+    static class StaticTestUtils
+    {
+        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(this ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext> sessionContext) 
+            => sessionContext.GetSinglePendingResult(out _);
+
+        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(this ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext> sessionContext, out RecordMetadata recordMetadata)
+        {
+            sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            return TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);
         }
     }
 }

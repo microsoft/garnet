@@ -186,7 +186,7 @@ namespace Tsavorite.test.readaddress
                 }
             }
 
-            internal async Task Populate(bool useRMW, bool useAsync, bool preserveCopyUpdaterSource = false)
+            internal async Task Populate(bool useRMW, bool preserveCopyUpdaterSource = false)
             {
                 var functions = new Functions(preserveCopyUpdaterSource);
                 using var session = store.NewSession<Value, Output, Empty, Functions>(functions);
@@ -208,9 +208,7 @@ namespace Tsavorite.test.readaddress
                     var value = new Value(key.key + LapOffset(lap));
 
                     var status = useRMW
-                        ? useAsync
-                            ? (await bContext.RMWAsync(ref key, ref value)).Complete().status
-                            : bContext.RMW(ref key, ref value)
+                        ? bContext.RMW(ref key, ref value)
                         : bContext.Upsert(ref key, ref value);
 
                     if (status.IsPending)
@@ -271,12 +269,12 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
-        public void VersionedReadSyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
+        public void VersionedReadTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
-            testStore.Populate(updateOp == UpdateOp.RMW, useAsync: false).GetAwaiter().GetResult();
+            testStore.Populate(updateOp == UpdateOp.RMW).GetAwaiter().GetResult();
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
@@ -346,7 +344,7 @@ namespace Tsavorite.test.readaddress
                 Assert.Ignore("Cannot test NoFlush with Upsert");
 
             using var testStore = new TestStore(useReadCache: false, ReadCopyOptions.None, flushMode != FlushMode.NoFlush, concurrencyControlMode);
-            testStore.Populate(useRMW: updateOp == UpdateOp.RMW, useAsync: false, preserveCopyUpdaterSource: true).GetAwaiter().GetResult();
+            testStore.Populate(useRMW: updateOp == UpdateOp.RMW, preserveCopyUpdaterSource: true).GetAwaiter().GetResult();
 
             for (int iteration = 0; iteration < 2; ++iteration)
             {
@@ -365,7 +363,7 @@ namespace Tsavorite.test.readaddress
                 Assert.Ignore("Cannot test NoFlush with Upsert");
 
             using var testStore = new TestStore(useReadCache: false, ReadCopyOptions.None, flushMode != FlushMode.NoFlush, concurrencyControlMode);
-            testStore.Populate(updateOp == UpdateOp.RMW, useAsync: false, preserveCopyUpdaterSource: true).GetAwaiter().GetResult();
+            testStore.Populate(updateOp == UpdateOp.RMW, preserveCopyUpdaterSource: true).GetAwaiter().GetResult();
 
             for (int iteration = 0; iteration < 2; ++iteration)
             {
@@ -384,53 +382,12 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
-        public async Task VersionedReadAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
+        public void ReadAtAddressTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
-            await testStore.Populate(updateOp == UpdateOp.RMW, useAsync: true);
-            using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
-            var bContext = session.BasicContext;
-
-            // Two iterations to ensure no issues due to read-caching or copying to tail.
-            for (int iteration = 0; iteration < 2; ++iteration)
-            {
-                var input = default(Value);
-                var key = new Key(defaultKeyToScan);
-                RecordMetadata recordMetadata = default;
-                ReadOptions readOptions = new() { CopyOptions = session.functions.readCopyOptions };
-                long readAtAddress = 0;
-
-                for (int lap = maxLap - 1; /* tested in loop */; --lap)
-                {
-                    // We need a non-AtAddress read to start the loop of returning the previous address to read at.
-                    var readAsyncResult = readAtAddress == 0
-                        ? await bContext.ReadAsync(ref key, ref input, ref readOptions, default)
-                        : await bContext.ReadAtAddressAsync(readAtAddress, ref key, ref input, ref readOptions, default);
-                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
-
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
-                        break;
-                    readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
-                }
-            }
-        }
-
-        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush, ConcurrencyControlMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [Category("TsavoriteKV"), Category("Read")]
-        public void ReadAtAddressSyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
-        {
-            var useReadCache = urc == UseReadCache.ReadCache;
-            var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
-            testStore.Populate(updateOp == UpdateOp.RMW, useAsync: false).GetAwaiter().GetResult();
+            testStore.Populate(updateOp == UpdateOp.RMW).GetAwaiter().GetResult();
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
@@ -463,46 +420,6 @@ namespace Tsavorite.test.readaddress
             }
         }
 
-        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush, ConcurrencyControlMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [Category("TsavoriteKV"), Category("Read")]
-        public async Task ReadAtAddressAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
-        {
-            var useReadCache = urc == UseReadCache.ReadCache;
-            var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
-            await testStore.Populate(updateOp == UpdateOp.RMW, useAsync: true);
-            using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
-            var bContext = session.BasicContext;
-
-            // Two iterations to ensure no issues due to read-caching or copying to tail.
-            for (int iteration = 0; iteration < 2; ++iteration)
-            {
-                var input = default(Value);
-                var key = new Key(defaultKeyToScan);
-                RecordMetadata recordMetadata = default;
-                ReadOptions readOptions = new() { CopyOptions = session.functions.readCopyOptions };
-                long readAtAddress = 0;
-
-                for (int lap = maxLap - 1; /* tested in loop */; --lap)
-                {
-                    var readAsyncResult = readAtAddress == 0
-                        ? await bContext.ReadAsync(ref key, ref input, ref readOptions, default)
-                        : await bContext.ReadAtAddressAsync(readAtAddress, ref input, ref readOptions, default);
-                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
-
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
-                        break;
-                    readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
-                }
-            }
-        }
-
         // Test is similar to others but tests the Overload where RadCopy*.None is set -- probably don't need all combinations of test but doesn't hurt
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush, ConcurrencyControlMode.None)]
         [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
@@ -511,12 +428,12 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
-        public async Task ReadAtAddressAsyncCopyOptNoRcTest(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
+        public async Task ReadAtAddressCopyOptNoRcTest(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
-            await testStore.Populate(updateOp == UpdateOp.RMW, useAsync: true);
+            await testStore.Populate(updateOp == UpdateOp.RMW);
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
@@ -531,10 +448,12 @@ namespace Tsavorite.test.readaddress
 
                 for (int lap = maxLap - 1; /* tested in loop */; --lap)
                 {
-                    var readAsyncResult = readAtAddress == 0
-                        ? await bContext.ReadAsync(ref key, ref input, ref readOptions, default)
-                        : await bContext.ReadAtAddressAsync(readAtAddress, ref input, ref readOptions, default);
-                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
+                    Output output = new();
+                    Status status = readAtAddress == 0
+                        ? bContext.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata)
+                        : bContext.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
+                    if (status.IsPending)
+                        (status, output) = bContext.GetSinglePendingResult(out recordMetadata);
 
                     if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
                         break;
@@ -551,12 +470,12 @@ namespace Tsavorite.test.readaddress
         [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
         [Category("TsavoriteKV"), Category("Read")]
-        public void ReadNoKeySyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
+        public async ValueTask ReadNoKeyTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, [Values] ConcurrencyControlMode concurrencyControlMode)
         {
             var useReadCache = urc == UseReadCache.ReadCache;
             var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
             using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
-            testStore.Populate(updateOp == UpdateOp.RMW, useAsync: false).GetAwaiter().GetResult();
+            await testStore.Populate(updateOp == UpdateOp.RMW);
             using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
             var bContext = session.BasicContext;
 
@@ -586,51 +505,8 @@ namespace Tsavorite.test.readaddress
                     TestStore.ProcessNoKeyRecord(updateOp == UpdateOp.RMW, status, recordMetadata.RecordInfo, ref output, keyOrdinal);
                 }
 
-                testStore.Flush().AsTask().GetAwaiter().GetResult();
+                await testStore.Flush().AsTask();
             }
-        }
-
-        // readCache and copyReadsToTail are mutually exclusive and orthogonal to populating by RMW vs. Upsert.
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.NoFlush, ConcurrencyControlMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.NoFlush, ConcurrencyControlMode.None)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.NoReadCache, ReadCopyFrom.Device, ReadCopyTo.MainLog, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.Upsert, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [TestCase(UseReadCache.ReadCache, ReadCopyFrom.None, ReadCopyTo.None, UpdateOp.RMW, FlushMode.OnDisk, ConcurrencyControlMode.LockTable)]
-        [Category("TsavoriteKV"), Category("Read")]
-        public async Task ReadNoKeyAsyncTests(UseReadCache urc, ReadCopyFrom readCopyFrom, ReadCopyTo readCopyTo, UpdateOp updateOp, FlushMode flushMode, ConcurrencyControlMode concurrencyControlMode)
-        {
-            var useReadCache = urc == UseReadCache.ReadCache;
-            var readCopyOptions = new ReadCopyOptions(readCopyFrom, readCopyTo);
-            using var testStore = new TestStore(useReadCache, readCopyOptions, flushMode == FlushMode.OnDisk, concurrencyControlMode);
-            await testStore.Populate(updateOp == UpdateOp.RMW, useAsync: true);
-            using var session = testStore.store.NewSession<Value, Output, Empty, Functions>(new Functions());
-            var bContext = session.BasicContext;
-
-            // Two iterations to ensure no issues due to read-caching or copying to tail.
-            for (int iteration = 0; iteration < 2; ++iteration)
-            {
-                var rng = new Random(101);
-                var input = default(Value);
-                RecordMetadata recordMetadata = default;
-
-                for (int ii = 0; ii < numKeys; ++ii)
-                {
-                    var keyOrdinal = rng.Next(numKeys);
-
-                    ReadOptions readOptions = new()
-                    {
-                        CopyOptions = session.functions.readCopyOptions
-                    };
-
-                    var readAsyncResult = await bContext.ReadAtAddressAsync(testStore.InsertAddresses[keyOrdinal], ref input, ref readOptions, default);
-                    var (status, output) = readAsyncResult.Complete(out recordMetadata);
-
-                    TestStore.ProcessNoKeyRecord(updateOp == UpdateOp.RMW, status, recordMetadata.RecordInfo, ref output, keyOrdinal);
-                }
-            }
-
-            await testStore.Flush();
         }
 
         internal struct ReadCopyOptionsMerge

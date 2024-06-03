@@ -7,7 +7,7 @@ using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
-namespace Tsavorite.test.async
+namespace Tsavorite.test.Session
 {
     [TestFixture]
     internal class SessionTests

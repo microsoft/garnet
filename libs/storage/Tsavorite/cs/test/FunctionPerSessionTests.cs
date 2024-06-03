@@ -138,7 +138,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteKV")]
-        public async Task Should_create_multiple_sessions_with_different_callbacks()
+        public void Should_create_multiple_sessions_with_different_callbacks()
         {
             using var adderSession = _tsavorite.NewSession<long, Empty, Empty, RefCountedAdder>(_adder);
             using var removerSession = _tsavorite.NewSession<Empty, Empty, Empty, RefCountedRemover>(_remover);
@@ -146,34 +146,32 @@ namespace Tsavorite.test
             var key = 101;
             var input = 1000L;
 
-            (await adderSession.BasicContext.RMWAsync(ref key, ref input)).Complete();
-            (await adderSession.BasicContext.RMWAsync(ref key, ref input)).Complete();
-            (await adderSession.BasicContext.RMWAsync(ref key, ref input)).Complete();
+            adderSession.BasicContext.RMW(ref key, ref input);
+            adderSession.BasicContext.RMW(ref key, ref input);
+            adderSession.BasicContext.RMW(ref key, ref input);
 
             Assert.AreEqual(1, _adder.InitialCount);
             Assert.AreEqual(2, _adder.InPlaceCount);
 
             var empty = default(Empty);
-            (await removerSession.BasicContext.RMWAsync(ref key, ref empty)).Complete();
+            removerSession.BasicContext.RMW(ref key, ref empty);
 
             Assert.AreEqual(1, _remover.InPlaceCount);
 
-            var read = await readerSession.BasicContext.ReadAsync(ref key, ref empty);
-            var result = read.Complete();
+            RefCountedValue output = new();
+            readerSession.BasicContext.Read(ref key, ref output);
 
-            var actual = result.output;
-            Assert.AreEqual(2, actual.ReferenceCount);
-            Assert.AreEqual(1000L, actual.Value);
+            Assert.AreEqual(2, output.ReferenceCount);
+            Assert.AreEqual(1000L, output.Value);
 
             _tsavorite.Log.FlushAndEvict(true);
 
-            (await removerSession.BasicContext.RMWAsync(ref key, ref empty)).Complete();
-            read = await readerSession.BasicContext.ReadAsync(ref key, ref empty);
-            result = read.Complete();
+            removerSession.BasicContext.RMW(ref key, ref empty);
+            removerSession.BasicContext.CompletePending(wait: true);
+            readerSession.BasicContext.Read(ref key, ref empty, ref output);
 
-            actual = result.output;
-            Assert.AreEqual(1, actual.ReferenceCount);
-            Assert.AreEqual(1000L, actual.Value);
+            Assert.AreEqual(1, output.ReferenceCount);
+            Assert.AreEqual(1000L, output.Value);
             Assert.AreEqual(1, _remover.CopyCount);
         }
     }

@@ -65,6 +65,7 @@ namespace Tsavorite.test
 
                 Assert.IsTrue(!output2.IsSpanByte);
                 Assert.IsTrue(output2.Memory.Memory.Span.Slice(0, output2.Length).SequenceEqual(value2));
+                output2.Memory.Dispose();
             }
             finally
             {
@@ -121,23 +122,14 @@ namespace Tsavorite.test
                         status = bContext.Read(key: SpanByte.FromPinnedSpan(keyBytes), out output);
                     Assert.AreEqual(evicted, status.IsPending, "evicted/pending mismatch");
 
-                    if (!evicted)
-                        Assert.IsTrue(status.Found, $"expected to find key; status = {status}");
-                    else    // needs to be fetched from disk
-                    {
-                        bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        using (completedOutputs)
-                        {
-                            for (var count = 0; completedOutputs.Next(); ++count)
-                            {
-                                Assert.AreEqual(0, count, "should only have one record returned");
-                                Assert.IsTrue(completedOutputs.Current.Status.Found);
-                                output = completedOutputs.Current.Output;
-                            }
-                        }
-                    }
+                    if (evicted)
+                        (status, output) = bContext.GetSinglePendingResult();
+                    Assert.IsTrue(status.Found, $"expected to find key; status = {status}, pending = {evicted}");
+
+                    Assert.IsFalse(output.IsSpanByte, "Output should not have a valid SpanByte");
                     var outputString = new string(MemoryMarshal.Cast<byte, char>(output.Memory.Memory.Span));
                     Assert.AreEqual(value, long.Parse(outputString));
+                    output.Memory.Dispose();
                 }
             }
             finally

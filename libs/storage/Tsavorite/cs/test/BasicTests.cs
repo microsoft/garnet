@@ -879,7 +879,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteKV")]
-        public static async Task BasicAsyncOperationsTest()
+        public static void BasicOperationsTest()
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             using var store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
@@ -897,14 +897,14 @@ namespace Tsavorite.test
             {
                 long value = key + valueMult;
                 hashes[key] = store.comparer.GetHashCode64(ref key);
-                status = await CompleteAsync(bContext.UpsertAsync(key, value));
+                status = bContext.Upsert(key, value);
                 Assert.IsTrue(status.Record.Created, status.ToString());
-                (status, output) = await CompleteAsync(bContext.ReadAsync(key));
+                (status, output) = bContext.Read(key);
                 Assert.IsTrue(status.Found, status.ToString());
                 Assert.AreEqual(value, output);
             }
 
-            async void doUpdate(bool useRMW)
+            void doUpdate(bool useRMW)
             {
                 // Update and Read without keyHash
                 for (long key = 0; key < numRecords; key++)
@@ -912,15 +912,15 @@ namespace Tsavorite.test
                     long value = key + valueMult * 2;
                     if (useRMW)
                     {
-                        status = await CompleteAsync(bContext.RMWAsync(key, value));
+                        status = bContext.RMW(key, value);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
-                        status = await CompleteAsync(bContext.UpsertAsync(key, value));
+                        status = bContext.Upsert(key, value);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
-                    (status, output) = await CompleteAsync(bContext.ReadAsync(key));
+                    (status, output) = bContext.Read(key);
                     Assert.IsTrue(status.Found, status.ToString());
                     Assert.AreEqual(value, output);
                 }
@@ -932,17 +932,17 @@ namespace Tsavorite.test
                     if (useRMW)
                     {
                         RMWOptions rmwOptions = new() { KeyHash = hashes[key] };
-                        status = await CompleteAsync(bContext.RMWAsync(key, value, ref rmwOptions));
+                        status = bContext.RMW(key, value, ref rmwOptions);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
                         UpsertOptions upsertOptions = new() { KeyHash = hashes[key] };
-                        status = await CompleteAsync(bContext.UpsertAsync(key, value, ref upsertOptions));
+                        status = bContext.Upsert(key, value, ref upsertOptions);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     ReadOptions readOptions = new() { KeyHash = hashes[key] };
-                    (status, output) = await CompleteAsync(bContext.ReadAsync(key, ref readOptions));
+                    (status, output) = bContext.Read(key, ref readOptions);
                     Assert.IsTrue(status.Found, status.ToString());
                     Assert.AreEqual(value, output);
                 }
@@ -954,9 +954,9 @@ namespace Tsavorite.test
             // Delete without keyHash
             for (long key = 0; key < numRecords; key++)
             {
-                status = await CompleteAsync(bContext.DeleteAsync(key));
+                status = bContext.Delete(key);
                 Assert.IsTrue(status.Found, status.ToString());
-                (status, _) = await CompleteAsync(bContext.ReadAsync(key));
+                (status, _) = bContext.Read(key);
                 Assert.IsTrue(status.NotFound, status.ToString());
             }
 
@@ -964,9 +964,9 @@ namespace Tsavorite.test
             for (long key = 0; key < numRecords; key++)
             {
                 DeleteOptions deleteOptions = new() { KeyHash = hashes[key] };
-                status = await CompleteAsync(bContext.DeleteAsync(key, ref deleteOptions));
+                status = bContext.Delete(key, ref deleteOptions);
                 ReadOptions readOptions = new() { KeyHash = hashes[key] };
-                (status, _) = await CompleteAsync(bContext.ReadAsync(key, ref readOptions));
+                (status, _) = bContext.Read(key, ref readOptions);
                 Assert.IsTrue(status.NotFound, status.ToString());
             }
         }

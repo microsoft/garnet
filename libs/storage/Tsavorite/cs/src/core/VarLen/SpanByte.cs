@@ -476,6 +476,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override string ToString()
         {
+            if (Invalid)
+                return "Invalid";
             var bytes = AsSpan();
             var len = Math.Min(Length, bytes.Length);
             StringBuilder sb = new($"len: {Length}, mdLen: {MetadataSize}, isSer {Serialized}, ");

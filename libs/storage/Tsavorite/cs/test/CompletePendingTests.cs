@@ -127,7 +127,7 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteKV")]
-        public async ValueTask ReadAndCompleteWithPendingOutput([Values] bool useRMW, [Values] bool isAsync)
+        public async ValueTask ReadAndCompleteWithPendingOutput([Values] bool useRMW)
         {
             using var session = store.NewSession<InputStruct, OutputStruct, ContextStruct, FunctionsWithContext<ContextStruct>>(new FunctionsWithContext<ContextStruct>());
             var bContext = session.BasicContext;
@@ -162,7 +162,7 @@ namespace Tsavorite.test
                     if (bContext.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct).IsPending)
                     {
                         CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
-                        if (isAsync)
+                        if ((key & 1) == 0)
                             completedOutputs = await bContext.CompletePendingWithOutputsAsync();
                         else
                             bContext.CompletePendingWithOutputs(out completedOutputs, wait: true);
@@ -186,7 +186,7 @@ namespace Tsavorite.test
                     if (!processPending.DeferPending())
                     {
                         CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
-                        if (isAsync)
+                        if ((key & 1) == 0)
                             completedOutputs = await bContext.CompletePendingWithOutputsAsync();
                         else
                             bContext.CompletePendingWithOutputs(out completedOutputs, wait: true);

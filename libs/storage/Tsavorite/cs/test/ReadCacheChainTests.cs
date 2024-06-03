@@ -17,6 +17,11 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.ReadCacheTests
 {
+    internal static class RcTestGlobals
+    {
+        internal const int PendingMod = 16;
+    }
+
     class ChainTests
     {
         private TsavoriteKV<long, long> store;
@@ -782,23 +787,44 @@ namespace Tsavorite.test.ReadCacheTests
                 using var session = store.NewSession<long, long, Empty, SimpleSessionFunctions<long, long, Empty>>(new SimpleSessionFunctions<long, long, Empty>());
                 var bContext = session.BasicContext;
 
-                Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
+                    var numCompleted = 0;
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
                         long key = ii, output = 0;
                         var status = bContext.Read(ref key, ref output);
-                        bool wasPending = status.IsPending;
-                        if (wasPending)
+
+                        var numPending = ii - numCompleted;
+                        if (status.IsPending)
+                            ++numPending;
+                        else
+                        {
+                            ++numCompleted;
+                            Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {false}");
+                            Assert.AreEqual(ii, output % valueAdd);
+                        }
+
+                        if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == numKeys - 1))
                         {
                             bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                            Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
+                            using (completedOutputs)
+                            {
+                                while (completedOutputs.Next())
+                                {
+                                    ++numCompleted;
+
+                                    status = completedOutputs.Current.Status;
+                                    output = completedOutputs.Current.Output;
+                                    key = completedOutputs.Current.Key;
+                                    Assert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {key}: {status}");
+                                    Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {true}");
+                                    Assert.AreEqual(key, output % valueAdd);
+                                }
+                            }
                         }
-                        Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {wasPending}");
-                        Assert.AreEqual(ii, output % valueAdd);
                     }
+                    Assert.AreEqual(numKeys, numCompleted, "numCompleted");
                 }
             }
 
@@ -807,29 +833,47 @@ namespace Tsavorite.test.ReadCacheTests
                 using var session = store.NewSession<long, long, Empty, RmwLongFunctions>(new RmwLongFunctions());
                 var bContext = session.BasicContext;
 
-                Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
+                    var numCompleted = 0;
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
                         long key = ii, input = ii + valueAdd * tid, output = 0;
                         var status = updateOp == UpdateOp.RMW
                                         ? bContext.RMW(ref key, ref input, ref output)
                                         : bContext.Upsert(ref key, ref input, ref input, ref output);
-                        bool wasPending = status.IsPending;
-                        if (wasPending)
+
+                        var numPending = ii - numCompleted;
+                        if (status.IsPending)
                         {
                             Assert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
-                            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = GetSinglePendingResult(completedOutputs);
-
-                            // Record may have been updated in-place if a CTT was done during the pending operation.
-                            // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
+                            ++numPending;
                         }
-                        if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                            Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {wasPending}");
-                        Assert.AreEqual(ii + valueAdd * tid, output);
+                        else
+                        {
+                            ++numCompleted;
+                            if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
+                                Assert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {false}");
+                            Assert.AreEqual(ii + valueAdd * tid, output);
+                        }
+
+                        if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == numKeys - 1))
+                        {
+                            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            using (completedOutputs)
+                            {
+                                while (completedOutputs.Next())
+                                {
+                                    ++numCompleted;
+                                    if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
+                                        Assert.IsTrue(completedOutputs.Current.Status.Found, $"key {completedOutputs.Current.Key}, status {completedOutputs.Current.Status}, wasPending {true}");
+                                    Assert.AreEqual(completedOutputs.Current.Key + valueAdd * tid, completedOutputs.Current.Output);
+                                }
+                            }
+                        }
                     }
+
+                    Assert.AreEqual(numKeys, numCompleted, "numCompleted");
                 }
             }
 
@@ -1001,31 +1045,56 @@ namespace Tsavorite.test.ReadCacheTests
                 Span<byte> keyVec = stackalloc byte[sizeof(long)];
                 var key = SpanByte.FromPinnedSpan(keyVec);
 
-                Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
+                    var numCompleted = 0;
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
                         SpanByteAndMemory output = default;
 
                         Assert.IsTrue(BitConverter.TryWriteBytes(keyVec, ii));
                         var status = bContext.Read(ref key, ref output);
-                        bool wasPending = status.IsPending;
-                        if (wasPending)
+
+                        var numPending = ii - numCompleted;
+                        if (status.IsPending)
+                            ++numPending;
+                        else
+                        {
+                            ++numCompleted;
+
+                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {false}, pt 1");
+                            Assert.IsNotNull(output.Memory, $"tid {tid}, key {ii}, wasPending {false}, pt 2");
+                            long value = BitConverter.ToInt64(output.Memory.Memory.Span);
+                            Assert.AreEqual(ii, value % valueAdd, $"tid {tid}, key {ii}, wasPending {false}, pt 3");
+                            output.Memory.Dispose();
+                        }
+
+                        if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == numKeys - 1))
                         {
                             bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = GetSinglePendingResult(completedOutputs, out var recordMetadata);
-                            Assert.AreEqual(recordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {ii}: {status}");
+                            using (completedOutputs)
+                            {
+                                while (completedOutputs.Next())
+                                {
+                                    ++numCompleted;
+
+                                    status = completedOutputs.Current.Status;
+                                    output = completedOutputs.Current.Output;
+                                    // Note: do NOT overwrite 'key' here
+                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
+
+                                    Assert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
+ 
+                                    Assert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
+                                    Assert.IsNotNull(output.Memory, $"tid {tid}, key {keyLong}, wasPending {true}, pt 2");
+                                    long value = BitConverter.ToInt64(output.Memory.Memory.Span);
+                                    Assert.AreEqual(keyLong, value % valueAdd, $"tid {tid}, key {keyLong}, wasPending {true}, pt 3");
+                                    output.Memory.Dispose();
+                                }
+                            }
                         }
-                        Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {wasPending}, pt 1");
-
-                        Assert.IsNotNull(output.Memory, $"tid {tid}, key {ii}, wasPending {wasPending}, pt 2");
-                        Assert.IsNotNull(output.Memory.Memory, $"tid {tid}, key {ii}, wasPending {wasPending}, pt 3");
-                        long value = BitConverter.ToInt64(output.Memory.Memory.Span);
-                        Assert.AreEqual(ii, value % valueAdd, $"tid {tid}, key {ii}, wasPending {wasPending}, pt 4");
-
-                        output.Memory.Dispose();
                     }
+                    Assert.AreEqual(numKeys, numCompleted, "numCompleted");
                 }
             }
 
@@ -1039,9 +1108,9 @@ namespace Tsavorite.test.ReadCacheTests
                 Span<byte> inputVec = stackalloc byte[sizeof(long)];
                 var input = SpanByte.FromPinnedSpan(inputVec);
 
-                Random rng = new(tid * 101);
                 for (var iteration = 0; iteration < numIterations; ++iteration)
                 {
+                    var numCompleted = 0;
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
                         SpanByteAndMemory output = default;
@@ -1051,24 +1120,51 @@ namespace Tsavorite.test.ReadCacheTests
                         var status = updateOp == UpdateOp.RMW
                                         ? bContext.RMW(ref key, ref input, ref output)
                                         : bContext.Upsert(ref key, ref input, ref input, ref output);
-                        bool wasPending = status.IsPending;
-                        if (wasPending)
+
+                        var numPending = ii - numCompleted;
+                        if (status.IsPending)
                         {
                             Assert.AreNotEqual(UpdateOp.Upsert, updateOp, "Upsert should not go pending");
-                            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                            (status, output) = GetSinglePendingResult(completedOutputs);
-
-                            // Record may have been updated in-place if a CTT was done during the pending operation.
-                            // Assert.IsTrue(status.Record.CopyUpdated, $"Expected Record.CopyUpdated but was: {status}");
+                            ++numPending;
                         }
-                        if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
-                            Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
+                        else
+                        {
+                            ++numCompleted;
+                            if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
+                                Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
-                        long value = BitConverter.ToInt64(output.Memory.Memory.Span);
-                        Assert.AreEqual(ii + valueAdd, value, $"tid {tid}, key {ii}, wasPending {wasPending}");
+                            long value = BitConverter.ToInt64(output.Memory.Memory.Span);
+                            Assert.AreEqual(ii + valueAdd, value, $"tid {tid}, key {ii}, wasPending {false}");
 
-                        output.Memory.Dispose();
+                            output.Memory?.Dispose();
+                        }
+
+                        if (numPending > 0 && ((numPending % RcTestGlobals.PendingMod == 0) || ii == numKeys - 1))
+                        {
+                            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            using (completedOutputs)
+                            {
+                                while (completedOutputs.Next())
+                                {
+                                    ++numCompleted;
+
+                                    status = completedOutputs.Current.Status;
+                                    output = completedOutputs.Current.Output;
+                                    // Note: do NOT overwrite 'key' here
+                                    long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
+
+                                    if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
+                                        Assert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}");
+
+                                    long value = BitConverter.ToInt64(output.Memory.Memory.Span);
+                                    Assert.AreEqual(keyLong + valueAdd, value, $"tid {tid}, key {keyLong}, wasPending {true}");
+
+                                    output.Memory?.Dispose();
+                                }
+                            }
+                        }
                     }
+                    Assert.AreEqual(numKeys, numCompleted, "numCompleted");
                 }
             }
 
