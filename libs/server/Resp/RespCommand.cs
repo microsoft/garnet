@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -233,7 +232,7 @@ namespace Garnet.server
         CLUSTER_DELKEYSINSLOTRANGE,
         CLUSTER_DELSLOTS,
         CLUSTER_DELSLOTSRANGE,
-        CLUSTER_ENDPOINT, 
+        CLUSTER_ENDPOINT,
         CLUSTER_FAILOVER,
         CLUSTER_FAILREPLICATIONOFFSET,
         CLUSTER_FAILSTOPWRITES,
@@ -282,7 +281,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static RespCommand NormalizeForACLs(this RespCommand cmd)
         {
-            return 
+            return
                 cmd switch
                 {
                     RespCommand.SETEXNX => RespCommand.SET,
@@ -1248,7 +1247,7 @@ namespace Garnet.server
             {
                 return RespCommand.REPLICAOF;
             }
-            else if (command.SequenceEqual(CmdStrings.SECONDARYOF))
+            else if (command.SequenceEqual(CmdStrings.SECONDARYOF) || command.SequenceEqual(CmdStrings.SLAVEOF))
             {
                 return RespCommand.SECONDARYOF;
             }
@@ -1549,7 +1548,7 @@ namespace Garnet.server
                             return RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT;
                         }
                     }
-                    else if(subCommand.Length == CmdStrings.SEND_CKPT_METADATA.Length)
+                    else if (subCommand.Length == CmdStrings.SEND_CKPT_METADATA.Length)
                     {
                         // SEND_CKPT_METADATA isn't friendly to EqualsUpperCaseSpanIgnoringCase, so we handle it specially here.
                         // 

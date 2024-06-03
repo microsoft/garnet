@@ -109,7 +109,9 @@ namespace Garnet.server
         Write = 1 << 20,
         [Description("garnet")]
         Garnet = 1 << 21,
+        [Description("custom")]
+        Custom = 1 << 22,
         [Description("all")]
-        All = (Garnet << 1) - 1,
+        All = (Custom << 1) - 1,
     }
 }

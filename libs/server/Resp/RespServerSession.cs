@@ -371,12 +371,25 @@ namespace Garnet.server
         {
             ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
 
-            // do ACL validation up front if we don't have to do any additional parsing
-            // to do so
+            // Do ACL validation up front if we don't have to do any additional parsing to do so
             //
-            // all commands with sub-commands have to do validation post-parsing
+            // All commands with sub-commands have to do validation post-parsing
             if (!CheckACLPermissions(cmd, bufSpan, count, out bool success))
             {
+                // If we're rejecting a command, we may need to cleanup some ambient state too
+                if (cmd == RespCommand.CustomCmd)
+                {
+                    currentCustomCommand = null;
+                }
+                else if (cmd == RespCommand.CustomObjCmd)
+                {
+                    currentCustomObjectCommand = null;
+                }
+                else if (cmd == RespCommand.CustomTxn)
+                {
+                    currentCustomTransaction = null;
+                }
+
                 return success;
             }
 

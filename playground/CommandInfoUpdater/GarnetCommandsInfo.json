@@ -118,6 +118,19 @@
       },
       {
         "Command": "CLUSTER",
+        "Name": "CLUSTER|FAILREPLICATIONOFFSET",
+        "IsInternal": true,
+        "Arity": 2,
+        "Flags": "Admin, NoScript, NoMulti",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow, Garnet",
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
         "Name": "CLUSTER|GOSSIP",
         "IsInternal": true,
         "Arity": -2,
@@ -147,6 +160,19 @@
         "Name": "CLUSTER|INITIATE_REPLICA_SYNC",
         "IsInternal": true,
         "Arity": 6,
+        "Flags": "Admin, NoScript, NoMulti",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow, Garnet",
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|MIGRATE",
+        "IsInternal": true,
+        "Arity": 4,
         "Flags": "Admin, NoScript, NoMulti",
         "FirstKey": 0,
         "LastKey": 0,
@@ -264,6 +290,51 @@
     "SubCommands": null
   },
   {
+    "Command": "CustomCmd",
+    "ArrayCommand": null,
+    "Name": "CustomCmd",
+    "IsInternal": true,
+    "Arity": 1,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Garnet, Custom, Dangerous",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "CustomObjCmd",
+    "ArrayCommand": null,
+    "Name": "CustomObjCmd",
+    "IsInternal": true,
+    "Arity": 1,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Garnet, Custom, Dangerous",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "CustomTxn",
+    "ArrayCommand": null,
+    "Name": "CustomTxn",
+    "IsInternal": true,
+    "Arity": 1,
+    "Flags": "None",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Garnet, Custom, Dangerous",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
     "Command": "FORCEGC",
     "ArrayCommand": null,
     "Name": "FORCEGC",
@@ -304,6 +375,20 @@
         "SubCommands": null
       }
     ]
+  },
+  {
+    "Command": "SECONDARYOF",
+    "Name": "SECONDARYOF",
+    "IsInternal": false,
+    "Arity": 3,
+    "Flags": "Admin, NoAsyncLoading, NoScript, Stale",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Admin, Dangerous, Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
   },
   {
     "Command": "REGISTERCS",

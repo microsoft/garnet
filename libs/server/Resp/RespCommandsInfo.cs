@@ -197,17 +197,17 @@ namespace Garnet.server
             {
                 if (respCommandInfo.Command == RespCommand.NONE) continue;
 
+                // For historical reasons, this command is accepted but isn't "real"
+                // So let's prefer the SECONDARYOF or REPLICAOF alternatives
+                if (respCommandInfo.Name == "SLAVEOF") continue;
+
                 tmpBasicRespCommandsInfo.Add(respCommandInfo.Command, respCommandInfo);
 
                 if (respCommandInfo.SubCommands != null)
                 {
                     foreach (var subRespCommandInfo in respCommandInfo.SubCommands)
                     {
-                        // todo: eventually just assume a sub-command
-                        if (subRespCommandInfo.SubCommand != null)
-                        {
-                            tmpBasicRespCommandsInfo.Add(subRespCommandInfo.SubCommand.Value, subRespCommandInfo);
-                        }
+                        tmpBasicRespCommandsInfo.Add(subRespCommandInfo.SubCommand.Value, subRespCommandInfo);
                     }
                 }
             }

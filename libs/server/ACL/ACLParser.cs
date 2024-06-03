@@ -35,6 +35,7 @@ namespace Garnet.server.ACL
             ["transaction"] = RespAclCategories.Transaction,
             ["write"] = RespAclCategories.Write,
             ["garnet"] = RespAclCategories.Garnet,
+            ["custom"] = RespAclCategories.Custom,
             ["all"] = RespAclCategories.All,
         };
 

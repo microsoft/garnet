@@ -17,6 +17,8 @@ namespace Garnet.test.Resp.ACL
         private const string DefaultPassword = nameof(RespCommandTests);
         private const string DefaultUser = "default";
 
+        private IReadOnlyDictionary<string, RespCommandsInfo> respCustomCommandsInfo;
+
         private GarnetServer server;
 
 
@@ -25,6 +27,15 @@ namespace Garnet.test.Resp.ACL
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword, useAcl: true);
+
+            // Register custom commands so we can test ACL'ing them
+            Assert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
+            Assert.IsNotNull(respCustomCommandsInfo);
+
+            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(), respCustomCommandsInfo["SETWPIFPGT"]);
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, new MyDictFactory(), respCustomCommandsInfo["MYDICTGET"]);
+            server.Register.NewTransactionProc("READWRITETX", 3, () => new ReadWriteTxn());
+
             server.Start();
         }
 
@@ -57,21 +68,33 @@ namespace Garnet.test.Resp.ACL
             }
 
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> allInfo), "Couldn't load all command details");
-
-            // Exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
-            IEnumerable<string> withOnlySubCommands = allInfo.Where(static x => (x.Value.SubCommands?.Length ?? 0) != 0 && x.Value.Flags == RespCommandFlags.None).Select(static x => x.Key);
-
-            IEnumerable<string> subCommands = allInfo.Where(static x => x.Value.SubCommands != null).SelectMany(static x => x.Value.SubCommands).Select(static x => x.Name);
-
-            IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
-
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
-            IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
+            IEnumerable<string> withOnlySubCommands = allInfo.Where(static x => (x.Value.SubCommands?.Length ?? 0) != 0 && x.Value.Flags == RespCommandFlags.None).Select(static x => x.Key);
+            IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
-            IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase).Except(notCoveredByACLs, StringComparer.OrdinalIgnoreCase);
+            // Check tests against RespCommandsInfo
+            {
+                // Exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
+                IEnumerable<string> subCommands = allInfo.Where(static x => x.Value.SubCommands != null).SelectMany(static x => x.Value.SubCommands).Select(static x => x.Name);
+                IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
+                IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase).Except(notCoveredByACLs, StringComparer.OrdinalIgnoreCase);
 
-            Assert.IsEmpty(notCovered, $"Commands not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
+                Assert.IsEmpty(notCovered, $"Commands in RespCommandsInfo not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
+            }
+
+            // Check tests against RespCommand
+            {
+                IEnumerable<RespCommand> allValues = Enum.GetValues<RespCommand>().Select(static x => x.NormalizeForACLs()).Distinct();
+                IEnumerable<RespCommand> testableValues =
+                    allValues
+                    .Except([RespCommand.NONE, RespCommand.INVALID])
+                    .Where(cmd => !withOnlySubCommands.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase))
+                    .Where(cmd => !notCoveredByACLs.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
+                IEnumerable<RespCommand> notCovered = testableValues.Where(cmd => !covered.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
+
+                Assert.IsEmpty(notCovered, $"Commands in RespCOmmand not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
+            }
         }
 
         [Test]
@@ -1118,6 +1141,35 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public void ClusterFailReplicationOffsetACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER FAILREPLICATIONOFFSET",
+                [DoClusterFailStopWrites]
+            );
+
+            static void DoClusterFailStopWrites(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "FAILREPLICATIONOFFSET", "foo");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public void ClusterForgetACLs()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
@@ -1353,6 +1405,35 @@ namespace Garnet.test.Resp.ACL
                 try
                 {
                     server.Execute("CLUSTER", "MEET", "127.0.0.1", "1234", "6789");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterMigrateACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER MIGRATE",
+                [DoClusterMigrate]
+            );
+
+            static void DoClusterMigrate(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "MIGRATE", "a", "b", "c");
                     Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
                 }
                 catch (RedisException e)
@@ -2110,9 +2191,63 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: figure out CustomCmd ACL rules
-        // todo: figure out CustomObjCmd ACL rules
-        // todo: figure out CustomTxn ACL rules
+        [Test]
+        public void CustomCmdACLs()
+        {
+            // TODO: it probably makes sense to expose ACLs for registered commands, but for now just a blanket ACL for all custom commands is all we have
+
+            int count = 0;
+
+            CheckCommands(
+                "CUSTOMCMD",
+                [DoSetWpIfPgt],
+                knownCategories: ["garnet", "custom", "dangerous"]
+            );
+
+            void DoSetWpIfPgt(IServer server)
+            {
+                RedisResult res = server.Execute("SETWPIFPGT", $"foo-{count}", "bar", BitConverter.GetBytes((long)0));
+                count++;
+
+                Assert.AreEqual("OK", (string)res);
+            }
+        }
+
+        [Test]
+        public void CustomObjCmdACLs()
+        {
+            // TODO: it probably makes sense to expose ACLs for registered commands, but for now just a blanket ACL for all custom commands is all we have
+
+            CheckCommands(
+                "CUSTOMOBJCMD",
+                [DoMyDictGet],
+                knownCategories: ["garnet", "custom", "dangerous"]
+            );
+
+            static void DoMyDictGet(IServer server)
+            {
+                RedisResult res = server.Execute("MYDICTGET", "foo", "bar");
+                Assert.IsTrue(res.IsNull);
+            }
+        }
+
+        [Test]
+        public void CustomTxnACLs()
+        {
+            // TODO: it probably makes sense to expose ACLs for registered commands, but for now just a blanket ACL for all custom commands is all we have
+
+            CheckCommands(
+                "CustomTxn",
+                [DoReadWriteTx],
+                knownCategories: ["garnet", "custom", "dangerous"]
+            );
+
+            static void DoReadWriteTx(IServer server)
+            {
+                RedisResult res = server.Execute("READWRITETX", "foo", "bar", "fizz");
+                Assert.AreEqual("SUCCESS", (string)res);
+            }
+        }
 
         [Test]
         public void DBSizeACLs()
@@ -4015,7 +4150,7 @@ namespace Garnet.test.Resp.ACL
 
             // TODO: RUNTXP breaks the stream when command is malformed, rework this when that is fixed
 
-            // test denying just the command
+            // Test denying just the command
             {
                 {
                     using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
@@ -4032,7 +4167,7 @@ namespace Garnet.test.Resp.ACL
 
             foreach (string cat in categories)
             {
-                // spin up a temp admin
+                // Spin up a temp admin
                 {
                     using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
 
@@ -4043,7 +4178,7 @@ namespace Garnet.test.Resp.ACL
                     Assert.AreEqual("OK", (string)setupAdmin);
                 }
 
-                // works
+                // Permitted
                 {
                     using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
 
@@ -4053,7 +4188,7 @@ namespace Garnet.test.Resp.ACL
                     Assert.True(CheckAuthFailure(() => DoRunTxp(db)), "Denied when should have been permitted");
                 }
 
-                // denied
+                // Denied
                 {
                     using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
 
@@ -4158,6 +4293,53 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public void SecondaryOfACLs()
+        {
+            // Uses exceptions as control flow, since clustering is disabled in these tests
+
+            CheckCommands(
+                "SECONDARYOF",
+                [DoSecondaryOf, DoSecondaryOfNoOne]
+            );
+
+            static void DoSecondaryOf(IServer server)
+            {
+                try
+                {
+                    server.Execute("SECONDARYOF", "127.0.0.1", "9999");
+                    Assert.Fail("Should be unreachable, cluster is disabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoSecondaryOfNoOne(IServer server)
+            {
+                try
+                {
+                    server.Execute("SECONDARYOF", "NO", "ONE");
+                    Assert.Fail("Should be unreachable, cluster is disabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public void SelectACLs()
         {
             CheckCommands(
@@ -4245,8 +4427,6 @@ namespace Garnet.test.Resp.ACL
                 Assert.AreEqual("OK", (string)val);
             }
         }
-
-        // todo: SETKEEPTTL, SETKEEPTTLXX - all non-standard, what are these for?
 
         [Test]
         public void SetRangeACLs()
@@ -4770,7 +4950,7 @@ namespace Garnet.test.Resp.ACL
 
             IDatabase db = redis.GetDatabase();
 
-            // todo: GEODIST fails on missing keys, which is incorrect, so putting values in to get ACL test passing
+            // TODO: GEODIST fails on missing keys, which is incorrect, so putting values in to get ACL test passing
             Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "10", "10", "bar"));
             Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "20", "20", "fizz"));
 
@@ -5523,7 +5703,8 @@ namespace Garnet.test.Resp.ACL
         /// </summary>
         private static void CheckCommands(
             string command,
-            Action<IServer>[] commands
+            Action<IServer>[] commands,
+            List<string> knownCategories = null
         )
         {
             const string UserWithAll = "temp-all";
@@ -5533,8 +5714,11 @@ namespace Garnet.test.Resp.ACL
             Assert.IsNotEmpty(commands, $"[{command}]: should have delegates to invoke");
 
             // Figure out the ACL categories that apply to this command
-            List<string> categories = new();
+            List<string> categories = knownCategories;
+            if (categories == null)
             {
+                categories = new();
+
                 RespCommandsInfo info;
                 if (!command.Contains(" "))
                 {
