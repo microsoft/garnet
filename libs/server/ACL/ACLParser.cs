@@ -244,13 +244,16 @@ namespace Garnet.server.ACL
             // There's some fixup that has to be done when parsing a command
             static bool TryParseCommandForAcl(string commandName, out RespCommand command)
             {
-                if (!Enum.TryParse(commandName.Replace("|", "_"), ignoreCase: true, out command))
+                if (commandName.Equals("SLAVEOF", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (commandName.Equals("SLAVEOF", StringComparison.OrdinalIgnoreCase))
-                    {
-                        command = RespCommand.SECONDARYOF;
-                    }
-                    else
+                    command = RespCommand.SECONDARYOF;
+                }
+                else
+                {
+                    // TODO: exact matches for the weird commands should be preferred
+                    string effectiveName = commandName.Replace("|", "_").Replace("-", "");
+
+                    if (!Enum.TryParse(effectiveName, ignoreCase: true, out command))
                     {
                         return false;
                     }

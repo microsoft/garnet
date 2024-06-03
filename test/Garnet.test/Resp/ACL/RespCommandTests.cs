@@ -58,14 +58,16 @@ namespace Garnet.test.Resp.ACL
 
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> allInfo), "Couldn't load all command details");
 
-            // exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
+            // Exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
             IEnumerable<string> withOnlySubCommands = allInfo.Where(static x => (x.Value.SubCommands?.Length ?? 0) != 0 && x.Value.Flags == RespCommandFlags.None).Select(static x => x.Key);
+
+            IEnumerable<string> subCommands = allInfo.Where(static x => x.Value.SubCommands != null).SelectMany(static x => x.Value.SubCommands).Select(static x => x.Name);
 
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
-            IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
+            IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
 
             IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase).Except(notCoveredByACLs, StringComparer.OrdinalIgnoreCase);
 
@@ -188,6 +190,21 @@ namespace Garnet.test.Resp.ACL
             {
                 RedisResult val = server.Execute("ACL", "USERS");
                 Assert.AreEqual(ResultType.Array, val.Resp2Type);
+            }
+        }
+
+        [Test]
+        public void AclWhoAmIACLs()
+        {
+            CheckCommands(
+                "ACL WHOAMI",
+                [DoAclWhoAmI]
+            );
+
+            static void DoAclWhoAmI(IServer server)
+            {
+                RedisResult val = server.Execute("ACL", "WHOAMI");
+                Assert.AreNotEqual("", (string)val);
             }
         }
 
@@ -557,7 +574,1341 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // TODO: cluster and subcommands are weird, do them later
+        [Test]
+        public void ClusterAddSlotsACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER ADDSLOTS",
+                [DoClusterAddSlots, DoClusterAddSlotsMulti]
+            );
+
+            static void DoClusterAddSlots(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "ADDSLOTS", "1");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterAddSlotsMulti(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "ADDSLOTS", "1", "2");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterAddSlotsRangeACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER ADDSLOTSRANGE",
+                [DoClusterAddSlotsRange, DoClusterAddSlotsRangeMulti]
+            );
+
+            static void DoClusterAddSlotsRange(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "ADDSLOTSRANGE", "1", "3");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterAddSlotsRangeMulti(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "ADDSLOTSRANGE", "1", "3", "7", "9");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterAofSyncACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER AOFSYNC",
+                [DoClusterAofSync]
+            );
+
+            static void DoClusterAofSync(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "AOFSYNC", "abc", "def");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterAppendLogACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER APPENDLOG",
+                [DoClusterAppendLog]
+            );
+
+            static void DoClusterAppendLog(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "APPENDLOG", "a", "b", "c", "d", "e");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterBanListACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER BANLIST",
+                [DoClusterBanList]
+            );
+
+            static void DoClusterBanList(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "BANLIST");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterBeginReplicaRecoverACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER BEGIN_REPLICA_RECOVER",
+                [DoClusterBeginReplicaFailover]
+            );
+
+            static void DoClusterBeginReplicaFailover(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "BEGIN_REPLICA_RECOVER", "1", "2", "3", "4", "5", "6", "7");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterBumpEpochACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER BUMPEPOCH",
+                [DoClusterBumpEpoch]
+            );
+
+            static void DoClusterBumpEpoch(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "BUMPEPOCH");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterCountKeysInSlotACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER COUNTKEYSINSLOT",
+                [DoClusterBumpEpoch]
+            );
+
+            static void DoClusterBumpEpoch(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "COUNTKEYSINSLOT", "1");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterDelKeysInSlotACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER DELKEYSINSLOT",
+                [DoClusterDelKeysInSlot]
+            );
+
+            static void DoClusterDelKeysInSlot(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "DELKEYSINSLOT", "1");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterDelKeysInSlotRangeACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER DELKEYSINSLOTRANGE",
+                [DoClusterDelKeysInSlotRange, DoClusterDelKeysInSlotRangeMulti]
+            );
+
+            static void DoClusterDelKeysInSlotRange(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "DELKEYSINSLOTRANGE", "1", "3");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterDelKeysInSlotRangeMulti(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "DELKEYSINSLOTRANGE", "1", "3", "5", "9");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterDelSlotsACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER DELSLOTS",
+                [DoClusterDelSlots, DoClusterDelSlotsMulti]
+            );
+
+            static void DoClusterDelSlots(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "DELSLOTS", "1");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterDelSlotsMulti(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "DELSLOTS", "1", "2");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterDelSlotsRangeACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER DELSLOTSRANGE",
+                [DoClusterDelSlotsRange, DoClusterDelSlotsRangeMulti]
+            );
+
+            static void DoClusterDelSlotsRange(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "DELSLOTSRANGE", "1", "3");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterDelSlotsRangeMulti(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "DELSLOTSRANGE", "1", "3", "9", "11");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterEndpointACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER ENDPOINT",
+                [DoClusterEndpoint]
+            );
+
+            static void DoClusterEndpoint(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "ENDPOINT", "abcd");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterFailoverACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER FAILOVER",
+                [DoClusterFailover, DoClusterFailoverForce]
+            );
+
+            static void DoClusterFailover(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "FAILOVER");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterFailoverForce(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "FAILOVER", "FORCE");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterFailStopWritesACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER FAILSTOPWRITES",
+                [DoClusterFailStopWrites]
+            );
+
+            static void DoClusterFailStopWrites(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "FAILSTOPWRITES", "foo");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterForgetACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER FORGET",
+                [DoClusterForget]
+            );
+
+            static void DoClusterForget(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "FORGET", "foo");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterGetKeysInSlotACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER GETKEYSINSLOT",
+                [DoClusterGetKeysInSlot]
+            );
+
+            static void DoClusterGetKeysInSlot(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "GETKEYSINSLOT", "foo", "3");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterGossipACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER GOSSIP",
+                [DoClusterGossip]
+            );
+
+            static void DoClusterGossip(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "GOSSIP", "foo", "3");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterHelpACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER HELP",
+                [DoClusterHelp]
+            );
+
+            static void DoClusterHelp(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "HELP");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterInfoACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER INFO",
+                [DoClusterInfo]
+            );
+
+            static void DoClusterInfo(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "INFO");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterInitiateReplicaSyncACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER INITIATE_REPLICA_SYNC",
+                [DoClusterInfo]
+            );
+
+            static void DoClusterInfo(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "INITIATE_REPLICA_SYNC", "1", "2", "3", "4", "5");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterKeySlotACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER KEYSLOT",
+                [DoClusterKeySlot]
+            );
+
+            static void DoClusterKeySlot(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "KEYSLOT", "foo");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterMeetACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER MEET",
+                [DoClusterMeet, DoClusterMeetPort]
+            );
+
+            static void DoClusterMeet(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "MEET", "127.0.0.1", "1234");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterMeetPort(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "MEET", "127.0.0.1", "1234", "6789");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterMTasksACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER MTASKS",
+                [DoClusterMTasks]
+            );
+
+            static void DoClusterMTasks(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "MTASKS");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterMyIdACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER MYID",
+                [DoClusterMyId]
+            );
+
+            static void DoClusterMyId(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "MYID");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterMyParentIdACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER MYPARENTID",
+                [DoClusterMyParentId]
+            );
+
+            static void DoClusterMyParentId(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "MYPARENTID");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterNodesACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER NODES",
+                [DoClusterNodes]
+            );
+
+            static void DoClusterNodes(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "NODES");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterReplicasACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER REPLICAS",
+                [DoClusterReplicas]
+            );
+
+            static void DoClusterReplicas(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "REPLICAS", "foo");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterReplicateACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER REPLICATE",
+                [DoClusterReplicate]
+            );
+
+            static void DoClusterReplicate(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "REPLICATE", "foo");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterResetACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER RESET",
+                [DoClusterReset, DoClusteResetHard]
+            );
+
+            static void DoClusterReset(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "RESET");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusteResetHard(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "RESET", "HARD");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterSendCkptFileSegmentACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER SEND_CKPT_FILE_SEGMENT",
+                [DoClusterSendCkptFileSegment]
+            );
+
+            static void DoClusterSendCkptFileSegment(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SEND_CKPT_FILE_SEGMENT", "1", "2", "3", "4", "5");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterSendCkptMetadataACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER SEND_CKPT_METADATA",
+                [DoClusterSendCkptMetadata]
+            );
+
+            static void DoClusterSendCkptMetadata(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SEND_CKPT_METADATA", "1", "2", "3", "4", "5");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterSetConfigEpochACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER SET-CONFIG-EPOCH",
+                [DoClusterSetConfigEpoch]
+            );
+
+            static void DoClusterSetConfigEpoch(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SET-CONFIG-EPOCH", "foo");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterSetSlotACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER SETSLOT",
+                [DoClusterSetSlot, DoClusterSetSlotStable, DoClusterSetSlotImporting]
+            );
+
+            static void DoClusterSetSlot(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SETSLOT", "1");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterSetSlotStable(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SETSLOT", "1", "STABLE");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterSetSlotImporting(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SETSLOT", "1", "IMPORTING", "foo");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterSetSlotsRangeACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER SETSLOTSRANGE",
+                [DoClusterSetSlotsRangeStable, DoClusterSetSlotsRangeStableMulti, DoClusterSetSlotsRangeImporting, DoClusterSetSlotsRangeImportingMulti]
+            );
+
+            static void DoClusterSetSlotsRangeStable(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SETSLOTSRANGE", "STABLE", "1", "5");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterSetSlotsRangeStableMulti(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SETSLOTSRANGE", "STABLE", "1", "5", "10", "15");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterSetSlotsRangeImporting(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SETSLOTSRANGE", "IMPORTING", "foo", "1", "5");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static void DoClusterSetSlotsRangeImportingMulti(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SETSLOTSRANGE", "IMPORTING", "foo", "1", "5", "10", "15");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterShardsACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER SHARDS",
+                [DoClusterShards]
+            );
+
+            static void DoClusterShards(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SHARDS");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterSlotsACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER SLOTS",
+                [DoClusterSlots]
+            );
+
+            static void DoClusterSlots(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SLOTS");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterSlotStateACLs()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            CheckCommands(
+                "CLUSTER SLOTSTATE",
+                [DoClusterSlotState]
+            );
+
+            static void DoClusterSlotState(IServer server)
+            {
+                try
+                {
+                    server.Execute("CLUSTER", "SLOTSTATE");
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
 
         [Test]
         public void CommandACLs()
@@ -973,7 +2324,7 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public void FailoverACLs()
         {
-            // failover is strange, so this more complicated that typical
+            // Failover is strange, so this more complicated that typical
 
             Action<IServer>[] cmds = [
                 DoFailover,
@@ -985,7 +2336,7 @@ namespace Garnet.test.Resp.ACL
                 DoFailoverToForceAbortTimeout,
             ];
 
-            // check denied with -failover
+            // Check denied with -failover
             foreach (Action<IServer> cmd in cmds)
             {
                 Run(false, server => SetUser(server, "default", $"-failover"), cmd);
@@ -995,10 +2346,10 @@ namespace Garnet.test.Resp.ACL
 
             foreach (Action<IServer> cmd in cmds)
             {
-                // check works with +@all
+                // Check works with +@all
                 Run(true, server => { }, cmd);
 
-                // check denied with -@whatever
+                // Check denied with -@whatever
                 foreach (string acl in acls)
                 {
                     Run(false, server => SetUser(server, "default", $"-@{acl}"), cmd);
@@ -1007,7 +2358,7 @@ namespace Garnet.test.Resp.ACL
 
             void Run(bool expectSuccess, Action<IServer> before, Action<IServer> cmd)
             {
-                // refresh Garnet instance
+                // Refresh Garnet instance
                 TearDown();
                 Setup();
 
@@ -1696,7 +3047,20 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: figure out what to do with LATENCY|HELP
+        [Test]
+        public void LatencyHelpACLs()
+        {
+            CheckCommands(
+               "LATENCY HELP",
+               [DoLatencyHelp]
+            );
+
+            static void DoLatencyHelp(IServer server)
+            {
+                RedisResult val = server.Execute("LATENCY", "HELP");
+                Assert.AreEqual(ResultType.Array, val.Resp2Type);
+            }
+        }
 
         [Test]
         public void LatencyHistogramACLs()

@@ -1561,7 +1561,7 @@ namespace Garnet.server
 
                         if (upperSubCommand.SequenceEqual(CmdStrings.SEND_CKPT_METADATA))
                         {
-                            return RespCommand.CLUSTER_INITIATE_REPLICA_SYNC;
+                            return RespCommand.CLUSTER_SEND_CKPT_METADATA;
                         }
                     }
                 }
