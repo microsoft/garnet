@@ -448,7 +448,7 @@ namespace Garnet.cluster
         private bool NetworkClusterSetSlot(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-           
+
             // Expecting 2 or 3 arguments
             if (count is < 2 or > 3)
             {

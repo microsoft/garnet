@@ -22,7 +22,7 @@ namespace Garnet.cluster
         private bool NetworkClusterBumpEpoch(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            
+
             // Expecting exactly 0 arguments
             if (count != 0)
             {
@@ -56,7 +56,7 @@ namespace Garnet.cluster
         private bool NetworkClusterForget(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            
+
             // Expecting 1 or 2 arguments
             if (count is < 1 or > 2)
             {
@@ -161,7 +161,7 @@ namespace Garnet.cluster
         private bool NetworkClusterMeet(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            
+
             // Expecting exactly 2 arguments
             if (count != 2)
             {

@@ -297,7 +297,7 @@ namespace Garnet.server
             {
                 (proc, numParams) = customCommandManagerSession.GetCustomTransactionProcedure(txid, txnManager, scratchBufferManager);
             }
-            catch(Exception e)
+            catch (Exception e)
             {
                 while (!RespWriteUtils.WriteError("ERR Could not get transaction procedure", ref dcurr, dend))
                     SendAndReset();

@@ -124,7 +124,7 @@ namespace Garnet.test
             Assert.IsNotNull(clusterCommand.SubCommands, "CLUSTER didn't have any subcommands");
 
             IEnumerable<RespCommand> clusterSubCommands = clusterCommand.SubCommands.Select(static s => s.SubCommand.Value);
-            foreach(var cmd in Enum.GetValues<RespCommand>())
+            foreach (var cmd in Enum.GetValues<RespCommand>())
             {
                 var expectedRes = clusterSubCommands.Contains(cmd);
                 var actualRes = cmd.IsClusterSubCommand();

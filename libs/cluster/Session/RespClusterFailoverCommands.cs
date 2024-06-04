@@ -20,7 +20,7 @@ namespace Garnet.cluster
         private bool NetworkClusterFailover(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            
+
             // Expecting 1 or 2 arguments
             if (count is < 0 or > 2)
             {

@@ -904,8 +904,6 @@ namespace Garnet.server
         private unsafe bool SortedSetRank<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            // Validation of required args
-            
             // TODO: WITHSCORE
             if (count < 2)
             {
