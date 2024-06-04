@@ -84,7 +84,7 @@ namespace Garnet.test
             Assert.IsTrue(releasingTask.IsCompletedSuccessfully);
 
             var valRgx = new Regex(@$"^\*2\r\n\${key3.Length}\r\n{key3}\r\n\$\d+\r\n(\d+)\r\n");
-            var batchSize = Environment.ProcessorCount / 2;
+            var batchSize = 2;
             var batchCount = 0;
             var blockingTaskCount = 100;
             var tasks = new Task[blockingTaskCount];
