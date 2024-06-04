@@ -1530,7 +1530,7 @@ namespace Garnet.server
         /// <param name="count">The size of the batch of keys</param>
         /// <param name="type">Type of key to filter out</param>
         /// <returns></returns>
-        public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> Keys, long count = 10, Span<byte> type = default);
+        public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> Keys, long count = 10, ReadOnlySpan<byte> type = default);
 
         /// <summary>
         /// Iterate the contents of the main store

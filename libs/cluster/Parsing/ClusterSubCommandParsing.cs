@@ -45,7 +45,7 @@ namespace Garnet.cluster
         /// <returns>ClusterSubcommand type</returns>
         private static ClusterSubcommand ConvertToClusterSubcommandIgnoreCase(ref Span<byte> subcommand)
         {
-            ConvertUtils.MakeUpperCase(subcommand);
+            AsciiUtils.ToUpperInPlace(subcommand);
             var subcmd = subcommand switch
             {
                 _ when subcommand.SequenceEqual(CmdStrings.MEET) => ClusterSubcommand.MEET,
