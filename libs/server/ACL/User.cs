@@ -53,6 +53,14 @@ namespace Garnet.server.ACL
         /// <param name="category">Bit flag of the category to add.</param>
         public void AddCategory(RespAclCategories category)
         {
+            // Adding to +@all is a no-op
+            CommandPermissionSet prev = this._enabledCommands;
+            if (prev == CommandPermissionSet.All)
+            {
+                return;
+            }
+
+            string descUpdate;
             IReadOnlyList<RespCommandsInfo> commandInfos;
             if (category != RespAclCategories.All)
             {
@@ -60,13 +68,15 @@ namespace Garnet.server.ACL
                 {
                     throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
                 }
+
+                descUpdate = $"-@{ACLParser.GetNameByACLCategory(category)}";
             }
             else
             {
                 commandInfos = Array.Empty<RespCommandsInfo>();
+                descUpdate = null;
             }
 
-            CommandPermissionSet prev = this._enabledCommands;
             CommandPermissionSet oldPerms;
             CommandPermissionSet updated;
             do
@@ -79,7 +89,7 @@ namespace Garnet.server.ACL
                 }
                 else
                 {
-                    updated = oldPerms.Copy();
+                    updated = oldPerms.Copy(descUpdate);
                     foreach (RespCommand cmd in DetermineCommandDetails(commandInfos))
                     {
                         updated.AddCommand(cmd);
@@ -97,21 +107,28 @@ namespace Garnet.server.ACL
         /// <param name="command">Command to add.</param>
         public void AddCommand(RespCommand command)
         {
+            // Adding to +@all is a no-op
+            CommandPermissionSet prev = this._enabledCommands;
+            if (prev == CommandPermissionSet.All)
+            {
+                return;
+            }
+
             if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
             {
                 throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
             }
 
             IEnumerable<RespCommand> toAdd = DetermineCommandDetails([info]);
+            string descUpdate = $"-{info.Name.ToLowerInvariant()}";
 
-            CommandPermissionSet prev = this._enabledCommands;
             CommandPermissionSet oldPerms;
             CommandPermissionSet updated;
             do
             {
                 oldPerms = prev;
 
-                updated = oldPerms.Copy();
+                updated = oldPerms.Copy(descUpdate);
                 foreach (RespCommand cmd in toAdd)
                 {
                     updated.AddCommand(cmd);
@@ -126,6 +143,14 @@ namespace Garnet.server.ACL
         /// <param name="category">Bit flag of the category to remove.</param>
         public void RemoveCategory(RespAclCategories category)
         {
+            // Removing from -@all is a no-op
+            CommandPermissionSet prev = this._enabledCommands;
+            if (prev == CommandPermissionSet.None)
+            {
+                return;
+            }
+
+            string descUpdate;
             IReadOnlyList<RespCommandsInfo> commandInfos;
             if (category != RespAclCategories.All)
             {
@@ -133,13 +158,15 @@ namespace Garnet.server.ACL
                 {
                     throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
                 }
+
+                descUpdate = $"-@{ACLParser.GetNameByACLCategory(category)}";
             }
             else
             {
                 commandInfos = Array.Empty<RespCommandsInfo>();
+                descUpdate = null;
             }
 
-            CommandPermissionSet prev = this._enabledCommands;
             CommandPermissionSet oldPerms;
             CommandPermissionSet updated;
             do
@@ -152,7 +179,7 @@ namespace Garnet.server.ACL
                 }
                 else
                 {
-                    updated = oldPerms.Copy();
+                    updated = oldPerms.Copy(descUpdate);
                     foreach (RespCommand cmd in DetermineCommandDetails(commandInfos))
                     {
                         updated.RemoveCommand(cmd);
@@ -170,22 +197,29 @@ namespace Garnet.server.ACL
         /// <param name="command">Command to remove.</param>
         public void RemoveCommand(RespCommand command)
         {
+            // Removing from -@all is a no-op
+            CommandPermissionSet prev = this._enabledCommands;
+            if (prev == CommandPermissionSet.None)
+            {
+                return;
+            }
+
             if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
             {
                 throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
             }
 
-            IEnumerable<RespCommand> toAdd = DetermineCommandDetails([info]);
+            IEnumerable<RespCommand> toRemove = DetermineCommandDetails([info]);
+            string descUpdate = $"-{info.Name.ToLowerInvariant()}";
 
-            CommandPermissionSet prev = this._enabledCommands;
             CommandPermissionSet oldPerms;
             CommandPermissionSet updated;
             do
             {
                 oldPerms = prev;
 
-                updated = oldPerms.Copy();
-                foreach (RespCommand cmd in toAdd)
+                updated = oldPerms.Copy(descUpdate);
+                foreach (RespCommand cmd in toRemove)
                 {
                     updated.RemoveCommand(cmd);
                 }
@@ -307,7 +341,7 @@ namespace Garnet.server.ACL
 
             // ACLs
             CommandPermissionSet perms = _enabledCommands;
-            string permsStr = perms.GetDescription();
+            string permsStr = perms.Description;
             if (!string.IsNullOrWhiteSpace(permsStr))
             {
                 stringBuilder.Append($" {permsStr}");
@@ -344,6 +378,12 @@ namespace Garnet.server.ACL
                 }
             }
         }
+
+        /// <summary>
+        /// Returns a copy of the users current <see cref="CommandPermissionSet"/>.
+        /// </summary>
+        internal CommandPermissionSet CopyCommandPermissionSet()
+        => _enabledCommands.Copy("");
 
         /// <summary>
         /// Commands enabled for the user

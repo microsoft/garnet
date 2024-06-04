@@ -7,6 +7,7 @@ using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using Garnet.server;
+using Garnet.server.ACL;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -5931,13 +5932,42 @@ namespace Garnet.test.Resp.ACL
         }
 
         /// <summary>
-        /// Runs ACL SETUSER default [aclPatterns]
+        /// Runs ACL SETUSER default [aclPatterns] and checks that they are reflected in ACL LIST.
         /// </summary>
         private static void SetUser(IServer server, string user, params string[] aclPatterns)
         {
-            RedisResult res = server.Execute("ACL", ["SETUSER", user, .. aclPatterns]);
+            string aclLinePreSet = GetUser(server, user);
 
-            Assert.AreEqual("OK", (string)res, $"Updating user ({user}) failed");
+            RedisResult setRes = server.Execute("ACL", ["SETUSER", user, .. aclPatterns]);
+            Assert.AreEqual("OK", (string)setRes, $"Updating user ({user}) failed");
+
+            string aclLinePostSet = GetUser(server, user);
+
+            string expectedAclLine = $"{aclLinePreSet} {string.Join(" ", aclPatterns)}";
+
+            CommandPermissionSet actualUserPerms = ACLParser.ParseACLRule(aclLinePostSet).CopyCommandPermissionSet();
+            CommandPermissionSet expectedUserPerms = ACLParser.ParseACLRule(expectedAclLine).CopyCommandPermissionSet();
+
+            Assert.IsTrue(expectedUserPerms.IsEquivalentTo(actualUserPerms), $"User permissions were not equivalent after running SETUSER with {string.Join(" ", aclPatterns)}");
+
+            // TODO: if and when ACL GETUSER is implemented, just use that
+            static string GetUser(IServer server, string user)
+            {
+                string ret = null;
+                RedisResult[] resArr = (RedisResult[])server.Execute("ACL", "LIST");
+                foreach (RedisResult res in resArr)
+                {
+                    ret = (string)res;
+                    if (ret.StartsWith($"user {user} on "))
+                    {
+                        break;
+                    }
+                }
+
+                Assert.IsNotNull(ret, $"Couldn't get user from ACL LIST");
+
+                return ret;
+            }
         }
 
         /// <summary>
