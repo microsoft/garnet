@@ -90,7 +90,7 @@ namespace Tsavorite.core
             _hybridLogCheckpoint.info.manualLockingActive = hlog.NumActiveLockingSessions > 0;
         }
 
-        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(IFunctions<Key, Value, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)
+        internal long Compact<T1, T2, T3, T4, CompactionFunctions>(ISessionFunctions<Key, Value, object, object, object> functions, CompactionFunctions compactionFunctions, long untilAddress, CompactionType compactionType)
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             throw new NotImplementedException();

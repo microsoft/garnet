@@ -14,7 +14,7 @@ namespace Tsavorite.core
 
         internal readonly long NumBuckets => IsEnabled ? store.state[store.resizeInfo.version].size_mask + 1 : 0;
 
-        internal readonly bool IsEnabled => store is not null;
+        public readonly bool IsEnabled => store is not null;
 
         internal OverflowBucketLockTable(TsavoriteKV<TKey, TValue> f) => store = f;
 

@@ -36,12 +36,19 @@ namespace Tsavorite.core
             value.CopyTo(ref dst, memoryPool);
             return true;
         }
+
+        /// <inheritdoc />
+        public override void ConvertOutputToHeap(ref SpanByte input, ref SpanByteAndMemory output)
+        {
+            // Currently the default is a no-op; the derived class inspects 'input' to decide whether to ConvertToHeap().
+            //output.ConvertToHeap();
+        }
     }
 
     /// <summary>
     /// Callback functions for <see cref="SpanByte"/> key, value; specified <typeparamref name="Input"/>, <typeparamref name="Output"/>, and <typeparamref name="Context"/>
     /// </summary>
-    public class SpanByteFunctions<Input, Output, Context> : FunctionsBase<SpanByte, SpanByte, Input, Output, Context>
+    public class SpanByteFunctions<Input, Output, Context> : SessionFunctionsBase<SpanByte, SpanByte, Input, Output, Context>
     {
         /// <inheritdoc />
         public override bool SingleWriter(ref SpanByte key, ref Input input, ref SpanByte src, ref SpanByte dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)

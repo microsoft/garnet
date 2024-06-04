@@ -110,11 +110,12 @@ namespace Tsavorite.test.statemachine
             NumClicks value;
 
             s1 = store.NewSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo");
+            var bc1 = s1.BasicContext;
 
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                s1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                bc1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             // Ensure state machine needs no I/O wait during WAIT_FLUSH

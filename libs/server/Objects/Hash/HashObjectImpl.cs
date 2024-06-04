@@ -74,7 +74,7 @@ namespace Garnet.server
 
                 while (count > 0)
                 {
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input + length))
                         break;
 
                     if (countDone < prevDone) // Skip processing previously done entries
@@ -84,9 +84,8 @@ namespace Garnet.server
                         continue;
                     }
 
-                    if (hash.TryGetValue(key, out var _value))
+                    if (hash.TryGetValue(key.ToArray(), out var _value))
                     {
-
                         while (!RespWriteUtils.WriteBulkString(_value, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
@@ -128,7 +127,7 @@ namespace Garnet.server
 
             for (int c = 0; c < count; c++)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref ptr, end))
                     return;
 
                 if (c < _input->done)
@@ -136,7 +135,7 @@ namespace Garnet.server
 
                 _output->countDone++;
 
-                if (hash.Remove(key, out var _value))
+                if (hash.Remove(key.ToArray(), out var _value))
                 {
                     _output->opsDone++;
                     this.UpdateSize(key, _value, false);
@@ -242,15 +241,16 @@ namespace Garnet.server
                 if (count > 2)
                 {
                     // Get the value for the count parameter
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterByteArray, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterBytes, ref input_currptr, input + length))
                         return;
+
                     if (count == 4)
                     {
                         // Advance to read the withvalues flag
-                        if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var withValuesByteArray, ref input_currptr, input + length))
+                        if (!RespReadUtils.TrySliceWithLengthHeader(out var withValuesBytes, ref input_currptr, input + length))
                             return;
 
-                        if (string.Equals(Encoding.ASCII.GetString(withValuesByteArray), "WITHVALUES", StringComparison.OrdinalIgnoreCase))
+                        if (withValuesBytes.EqualsUpperCaseSpanIgnoringCase("WITHVALUES"u8))
                         {
                             withValues = true;
                         }
@@ -260,8 +260,7 @@ namespace Garnet.server
                     countDone = count;
 
                     // Prepare response
-                    if (!Utf8Parser.TryParse(countParameterByteArray, out int countParameter, out var bytesConsumed, default) ||
-                        bytesConsumed != countParameterByteArray.Length)
+                    if (!NumUtils.TryParse(countParameterBytes, out int countParameter))
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -368,7 +367,7 @@ namespace Garnet.server
                     this.UpdateSize(key, value);
                     _output->opsDone++;
                 }
-                else if ((_input->header.HashOp == HashOperation.HSET || _input->header.HashOp == HashOperation.HMSET) && _value != default && !_value.SequenceEqual(value))
+                else if ((_input->header.HashOp == HashOperation.HSET || _input->header.HashOp == HashOperation.HMSET) && _value != default && !_value.AsSpan().SequenceEqual(value))
                 {
                     hash[key] = value;
                     this.Size += Utility.RoundUp(value.Length, IntPtr.Size) - Utility.RoundUp(_value.Length, IntPtr.Size); // Skip overhead as existing item is getting replaced.
@@ -404,15 +403,13 @@ namespace Garnet.server
             try
             {
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref input_currptr, input + length) ||
-                    !RespReadUtils.ReadByteArrayWithLengthHeader(out var incr, ref input_currptr, input + length))
+                    !RespReadUtils.TrySliceWithLengthHeader(out var incr, ref input_currptr, input + length))
                     return;
 
                 if (hash.TryGetValue(key, out var value))
                 {
-                    if (Utf8Parser.TryParse(value, out float result, out var valueBytesConsumed, default) &&
-                        valueBytesConsumed == value.Length &&
-                        Utf8Parser.TryParse(incr, out float resultIncr, out var incrBytesConsumed, default) &&
-                        incrBytesConsumed == incr.Length)
+                    if (NumUtils.TryParse(value, out float result) &&
+                        NumUtils.TryParse(incr, out float resultIncr))
                     {
                         result += resultIncr;
 
@@ -448,15 +445,14 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (!Utf8Parser.TryParse(incr, out float resultIncr, out var incrBytesConsumed, default) ||
-                        incrBytesConsumed != incr.Length)
+                    if (!NumUtils.TryParse(incr, out float resultIncr))
                     {
                         while (!RespWriteUtils.WriteError("ERR field value is not a number"u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
                     {
-                        hash.Add(key, incr);
+                        hash.Add(key, incr.ToArray());
                         UpdateSize(key, incr);
                         if (op == HashOperation.HINCRBY)
                         {

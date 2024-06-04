@@ -3,9 +3,9 @@
 
 namespace Tsavorite.core
 {
-    struct NullTsavoriteSession : ITsavoriteSession
+    struct NullSession : ISessionEpochControl
     {
-        public static readonly NullTsavoriteSession Instance = new();
+        public static readonly NullSession Instance = new();
 
         public void UnsafeResumeThread()
         {

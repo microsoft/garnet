@@ -82,7 +82,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <returns>True if redirect, False if can serve</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool NetworkSingleKeySlotVerify(byte[] key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend)
+        public bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend)
         {
             fixed (byte* keyPtr = key)
                 return NetworkSingleKeySlotVerify(new ArgSlice(keyPtr, key.Length), readOnly, SessionAsking, ref dcurr, ref dend);
