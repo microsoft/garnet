@@ -27,27 +27,27 @@ namespace Tsavorite.core
         /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
-        internal async ValueTask CompletePendingAsync<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
+        internal async ValueTask CompletePendingAsync<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                                       CancellationToken token, CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             while (true)
             {
-                tsavoriteSession.UnsafeResumeThread();
+                sessionFunctions.UnsafeResumeThread();
                 try
                 {
-                    InternalCompletePendingRequests(tsavoriteSession, completedOutputs);
+                    InternalCompletePendingRequests(sessionFunctions, completedOutputs);
                 }
                 finally
                 {
-                    tsavoriteSession.UnsafeSuspendThread();
+                    sessionFunctions.UnsafeSuspendThread();
                 }
 
-                await tsavoriteSession.Ctx.WaitPendingAsync(token).ConfigureAwait(false);
+                await sessionFunctions.Ctx.WaitPendingAsync(token).ConfigureAwait(false);
 
-                if (tsavoriteSession.Ctx.HasNoPendingRequests) return;
+                if (sessionFunctions.Ctx.HasNoPendingRequests) return;
 
-                InternalRefresh<Input, Output, Context, TsavoriteSession>(tsavoriteSession);
+                InternalRefresh<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions);
 
                 Thread.Yield();
             }

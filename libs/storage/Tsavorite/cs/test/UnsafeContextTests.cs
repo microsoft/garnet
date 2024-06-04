@@ -260,7 +260,7 @@ namespace Tsavorite.test.UnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public async Task TestShiftHeadAddressUC([Values] DeviceType deviceType, [Values] SyncMode syncMode)
+        public async Task TestShiftHeadAddressUC([Values] DeviceType deviceType, [Values] CompletionSyncMode syncMode)
         {
             InputStruct input = default;
             const int RandSeed = 10;
@@ -280,17 +280,7 @@ namespace Tsavorite.test.UnsafeContext
                     var i = r.Next(RandRange);
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                    if (syncMode == SyncMode.Sync)
-                    {
-                        uContext.Upsert(ref key1, ref value, Empty.Default);
-                    }
-                    else
-                    {
-                        uContext.EndUnsafe();
-                        var status = (await uContext.UpsertAsync(ref key1, ref value)).Complete();
-                        uContext.BeginUnsafe();
-                        Assert.IsFalse(status.IsPending);
-                    }
+                    uContext.Upsert(ref key1, ref value, Empty.Default);
                 }
 
                 r = new Random(RandSeed);
@@ -303,24 +293,14 @@ namespace Tsavorite.test.UnsafeContext
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                    Status status;
-                    if (syncMode == SyncMode.Sync || (c % 1 == 0))  // in .Async mode, half the ops should be sync to test CompletePendingAsync
-                    {
-                        status = uContext.Read(ref key1, ref input, ref output, Empty.Default);
-                    }
-                    else
-                    {
-                        uContext.EndUnsafe();
-                        (status, output) = (await uContext.ReadAsync(ref key1, ref input)).Complete();
-                        uContext.BeginUnsafe();
-                    }
+                    Status status = uContext.Read(ref key1, ref input, ref output, Empty.Default);
                     if (!status.IsPending)
                     {
                         Assert.AreEqual(value.vfield1, output.value.vfield1);
                         Assert.AreEqual(value.vfield2, output.value.vfield2);
                     }
                 }
-                if (syncMode == SyncMode.Sync)
+                if (syncMode == CompletionSyncMode.Sync)
                 {
                     uContext.CompletePending(true);
                 }
@@ -347,7 +327,7 @@ namespace Tsavorite.test.UnsafeContext
                 }
 
                 CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty> outputs;
-                if (syncMode == SyncMode.Sync)
+                if (syncMode == CompletionSyncMode.Sync)
                 {
                     uContext.CompletePendingWithOutputs(out outputs, wait: true);
                 }

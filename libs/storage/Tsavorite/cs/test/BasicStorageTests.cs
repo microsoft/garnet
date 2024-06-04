@@ -98,6 +98,7 @@ namespace Tsavorite.test
                        (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
 
             var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             InputStruct input = default;
 
@@ -105,18 +106,18 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default);
+                bContext.Upsert(ref key1, ref value, Empty.Default);
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
 
             // Update first 100 using RMW from storage
             for (int i = 0; i < 100; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = 1, ifield2 = 1 };
-                var status = session.RMW(ref key1, ref input, Empty.Default);
+                var status = bContext.RMW(ref key1, ref input, Empty.Default);
                 if (status.IsPending)
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
             }
 
 
@@ -126,9 +127,9 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
+                if (bContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                 }
                 else
                 {

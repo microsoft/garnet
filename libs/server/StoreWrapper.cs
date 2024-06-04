@@ -448,13 +448,13 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Scan:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
+                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
+                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
                         break;
 
                     case LogCompactionType.Lookup:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
+                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
+                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
                         break;
 
                     default:

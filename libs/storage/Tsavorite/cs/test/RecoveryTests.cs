@@ -139,20 +139,21 @@ namespace Tsavorite.test.recovery.sumstore
 
             // Register thread with Tsavorite
             using var session = store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Process the batch of input data
             for (int i = 0; i < numOps; i++)
             {
-                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default);
+                bContext.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default);
 
                 checkpointAction(i);
 
                 if (i % completePendingInterval == 0)
-                    session.CompletePending(false);
+                    bContext.CompletePending(false);
             }
 
             // Make sure operations are completed
-            session.CompletePending(true);
+            bContext.CompletePending(true);
         }
 
         private async ValueTask RecoverAndTestAsync(int tokenIndex, bool isAsync)
@@ -175,7 +176,8 @@ namespace Tsavorite.test.recovery.sumstore
             }
 
             // Register with thread
-            var session = store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            using var session = store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             AdInput input = default;
             Output output = default;
@@ -183,16 +185,13 @@ namespace Tsavorite.test.recovery.sumstore
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default);
+                var status = bContext.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found, $"At tokenIndex {tokenIndex}, keyIndex {i}, AdId {inputArray[i].adId.adId}");
                 inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
-            session.CompletePending(true);
-
-            // Release
-            session.Dispose();
+            bContext.CompletePending(true);
         }
     }
 
@@ -328,11 +327,12 @@ namespace Tsavorite.test.recovery.sumstore
 
         private void Populate(TsavoriteKV<long, long> store)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             for (int i = 0; i < DeviceTypeRecoveryTests.numOps; i++)
-                session.Upsert(i % DeviceTypeRecoveryTests.numUniqueKeys, i);
-            session.CompletePending(true);
+                bContext.Upsert(i % DeviceTypeRecoveryTests.numUniqueKeys, i);
+            bContext.CompletePending(true);
         }
 
         static int GetRandomLength(Random r) => r.Next(StackAllocMax) + 1;  // +1 to remain in range 1..StackAllocMax
@@ -340,6 +340,8 @@ namespace Tsavorite.test.recovery.sumstore
         private unsafe void Populate(TsavoriteKV<SpanByte, SpanByte> store)
         {
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+
             Random rng = new(RandSeed);
 
             // Single alloc outside the loop, to the max length we'll need.
@@ -361,22 +363,23 @@ namespace Tsavorite.test.recovery.sumstore
                     valueSpan[j] = i;
                 var valueSpanByte = valueSpan.Slice(0, len).AsSpanByte();
 
-                session.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
+                bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
         }
 
         private unsafe void Populate(TsavoriteKV<MyValue, MyValue> store)
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions2>(new MyFunctions2());
+            var bContext = session.BasicContext;
 
             for (int i = 0; i < DeviceTypeRecoveryTests.numOps; i++)
             {
                 var key = new MyValue { value = i % (int)DeviceTypeRecoveryTests.numUniqueKeys };
                 var value = new MyValue { value = i };
-                session.Upsert(key, value);
+                bContext.Upsert(key, value);
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
         }
 
         private async ValueTask Checkpoint<TData>(TsavoriteKV<TData, TData> store, bool isAsync)
@@ -403,11 +406,12 @@ namespace Tsavorite.test.recovery.sumstore
 
         private static void Read(TsavoriteKV<long, long> store)
         {
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
 
             for (var i = 0; i < DeviceTypeRecoveryTests.numUniqueKeys; i++)
             {
-                var status = session.Read(i % DeviceTypeRecoveryTests.numUniqueKeys, default, out long output);
+                var status = bContext.Read(i % DeviceTypeRecoveryTests.numUniqueKeys, default, out long output);
                 Assert.IsTrue(status.Found, $"keyIndex {i}");
                 Assert.AreEqual(ExpectedValue(i), output);
             }
@@ -422,6 +426,7 @@ namespace Tsavorite.test.recovery.sumstore
         private static void Read(TsavoriteKV<SpanByte, SpanByte> store)
         {
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
 
             Random rng = new(RandSeed);
 
@@ -435,7 +440,7 @@ namespace Tsavorite.test.recovery.sumstore
                 var len = GetRandomLength(rng);
 
                 int[] output = null;
-                var status = session.Read(ref keySpanByte, ref output, Empty.Default);
+                var status = bContext.Read(ref keySpanByte, ref output, Empty.Default);
 
                 Assert.IsTrue(status.Found);
                 for (int j = 0; j < len; j++)
@@ -452,11 +457,12 @@ namespace Tsavorite.test.recovery.sumstore
         private static void Read(TsavoriteKV<MyValue, MyValue> store)
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions2>(new MyFunctions2());
+            var bContext = session.BasicContext;
 
             for (var i = 0; i < DeviceTypeRecoveryTests.numUniqueKeys; i++)
             {
                 var key = new MyValue { value = i };
-                var status = session.Read(key, default, out MyOutput output);
+                var status = bContext.Read(key, default, out MyOutput output);
                 Assert.IsTrue(status.Found, $"keyIndex {i}");
                 Assert.AreEqual(ExpectedValue(i), output.value.value);
             }

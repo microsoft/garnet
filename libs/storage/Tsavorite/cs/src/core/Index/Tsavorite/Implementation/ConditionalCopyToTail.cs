@@ -11,7 +11,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy a record to the tail of the log after caller has verified it does not exist within a specified range.
         /// </summary>
-        /// <param name="tsavoriteSession">Callback functions.</param>
+        /// <param name="sessionFunctions">Callback functions.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
         /// <param name="key">key of the record.</param>
         /// <param name="input">input passed through.</param>
@@ -24,11 +24,11 @@ namespace Tsavorite.core
         ///     is just an optimization to avoid future IOs, so if we need an IO here we just defer them to the next Read().</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private OperationStatus ConditionalCopyToTail<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
+        private OperationStatus ConditionalCopyToTail<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref PendingContext<Input, Output, Context> pendingContext,
                 ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
                 ref OperationStackContext<Key, Value> stackCtx, WriteReason writeReason, bool wantIO = true)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             bool callerHasTransientLock = stackCtx.recSrc.HasTransientSLock;
 
@@ -41,23 +41,23 @@ namespace Tsavorite.core
             {
                 // ConditionalCopyToTail is different from the usual procedures, in that if we find a source record we don't lock--we exit with success.
                 // So we only lock for tag-chain stability during search.
-                if (callerHasTransientLock || TryTransientSLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out OperationStatus status))
+                if (callerHasTransientLock || TryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
                 {
                     try
                     {
                         RecordInfo dummyRecordInfo = default;   // TryCopyToTail only needs this for readcache record invalidation.
-                        status = TryCopyToTail(ref pendingContext, ref key, ref input, ref value, ref output, ref stackCtx, ref dummyRecordInfo, tsavoriteSession, writeReason);
+                        status = TryCopyToTail(ref pendingContext, ref key, ref input, ref value, ref output, ref stackCtx, ref dummyRecordInfo, sessionFunctions, writeReason);
                     }
                     finally
                     {
                         stackCtx.HandleNewRecordOnException(this);
                         if (!callerHasTransientLock)
-                            TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
+                            TransientSUnlock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
                     }
                 }
 
                 // If we're here we failed TryCopyToTail, probably a failed CAS due to another record insertion.
-                if (!HandleImmediateRetryStatus(status, tsavoriteSession, ref pendingContext))
+                if (!HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext))
                     return status;
 
                 // HandleImmediateRetryStatus may have refreshed the epoch which means HeadAddress etc. may have changed. Re-traverse from the tail to the highest
@@ -68,10 +68,10 @@ namespace Tsavorite.core
                 bool needIO;
                 do
                 {
-                    if (TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx2, minAddress, out status, out needIO))
+                    if (TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx2, minAddress, out status, out needIO))
                         return OperationStatus.SUCCESS;
                 }
-                while (HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(status, tsavoriteSession));
+                while (HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(status, sessionFunctions));
 
                 // Issue IO if necessary and desired (for ReadFromImmutable, it isn't; just exit in that case), else loop back up and retry the insert.
                 if (!wantIO)
@@ -81,15 +81,15 @@ namespace Tsavorite.core
                         return OperationStatus.SUCCESS;
                 }
                 else if (needIO)
-                    return PrepareIOForConditionalOperation(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, userContext,
+                    return PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, userContext,
                                                       ref stackCtx2, minAddress, WriteReason.Compaction);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status CompactionConditionalCopyToTail<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref Key key, ref Input input, ref Value value,
+        internal Status CompactionConditionalCopyToTail<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref Key key, ref Input input, ref Value value,
                 ref Output output, long minAddress)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
             PendingContext<Input, Output, Context> pendingContext = new();
@@ -99,25 +99,25 @@ namespace Tsavorite.core
             bool needIO;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, minAddress, out status, out needIO))
+                if (TryFindRecordInMainLogForConditionalOperation<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, minAddress, out status, out needIO))
                     return Status.CreateFound();
             }
-            while (tsavoriteSession.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TsavoriteSession>(status, tsavoriteSession));
+            while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(status, sessionFunctions));
 
             if (needIO)
-                status = PrepareIOForConditionalOperation(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, default,
+                status = PrepareIOForConditionalOperation(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default,
                                                     ref stackCtx, minAddress, WriteReason.Compaction);
             else
-                status = ConditionalCopyToTail(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, default, ref stackCtx, WriteReason.Compaction);
-            return HandleOperationStatus(tsavoriteSession.Ctx, ref pendingContext, status, out _);
+                status = ConditionalCopyToTail(sessionFunctions, ref pendingContext, ref key, ref input, ref value, ref output, default, ref stackCtx, WriteReason.Compaction);
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pendingContext, status, out _);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus PrepareIOForConditionalOperation<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
+        internal OperationStatus PrepareIOForConditionalOperation<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                                         ref PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
                                         ref OperationStackContext<Key, Value> stackCtx, long minAddress, WriteReason writeReason, OperationType opType = OperationType.CONDITIONAL_INSERT)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;
@@ -128,13 +128,12 @@ namespace Tsavorite.core
             if (!pendingContext.NoKey && pendingContext.key == default)    // If this is true, we don't have a valid key
                 pendingContext.key = hlog.GetKeyContainer(ref key);
             if (pendingContext.input == default)
-                pendingContext.input = tsavoriteSession.GetHeapContainer(ref input);
+                pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
             if (pendingContext.value == default)
                 pendingContext.value = hlog.GetValueContainer(ref value);
 
             pendingContext.output = output;
-            if (pendingContext.output is IHeapConvertible heapConvertible)
-                heapConvertible.ConvertToHeap();
+            sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;

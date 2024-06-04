@@ -10,7 +10,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class PostOperationsTests
     {
-        class PostFunctions : SimpleFunctions<int, int>
+        class PostFunctions : SimpleSimpleFunctions<int, int>
         {
             internal long pswAddress;
             internal long piuAddress;
@@ -46,6 +46,7 @@ namespace Tsavorite.test
 
         private TsavoriteKV<int, int> store;
         private ClientSession<int, int, int, int, Empty, PostFunctions> session;
+        private BasicContext<int, int, int, int, Empty, PostFunctions> bContext;
         private IDevice log;
 
         const int numRecords = 100;
@@ -62,6 +63,7 @@ namespace Tsavorite.test
             store = new TsavoriteKV<int, int>
                        (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10 });
             session = store.NewSession<int, int, Empty, PostFunctions>(new PostFunctions());
+            bContext = session.BasicContext;
             Populate();
         }
 
@@ -82,7 +84,7 @@ namespace Tsavorite.test
             for (var key = 0; key < numRecords; ++key)
             {
                 expectedAddress = store.Log.TailAddress;
-                session.Upsert(key, key * 100);
+                bContext.Upsert(key, key * 100);
                 Assert.AreEqual(expectedAddress, session.functions.pswAddress);
             }
 
@@ -93,7 +95,7 @@ namespace Tsavorite.test
         internal void CompletePendingAndVerifyInsertedAddress()
         {
             // Note: Only Read and RMW have Pending results.
-            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             TestUtils.GetSinglePendingResult(completedOutputs, out var recordMetadata);
             Assert.AreEqual(expectedAddress, recordMetadata.Address);
         }
@@ -107,8 +109,8 @@ namespace Tsavorite.test
 
             // Execute the ReadOnly (InternalInsert) test
             store.Log.FlushAndEvict(wait: true);
-            session.Upsert(targetKey, targetKey * 1000);
-            session.CompletePending(wait: true);
+            bContext.Upsert(targetKey, targetKey * 1000);
+            bContext.CompletePending(wait: true);
             Assert.AreEqual(expectedAddress, session.functions.pswAddress);
         }
 
@@ -118,21 +120,21 @@ namespace Tsavorite.test
         public void PostInitialUpdaterTest()
         {
             // Execute the not-found test (InternalRMW).
-            session.RMW(numRecords + 1, (numRecords + 1) * 1000);
+            bContext.RMW(numRecords + 1, (numRecords + 1) * 1000);
             Assert.AreEqual(expectedAddress, session.functions.piuAddress);
             session.functions.Clear();
 
             // Now cause an attempt at InPlaceUpdater, which we've set to fail, so CopyUpdater is done (InternalInsert).
             expectedAddress = store.Log.TailAddress;
-            session.RMW(targetKey, targetKey * 1000);
+            bContext.RMW(targetKey, targetKey * 1000);
             Assert.AreEqual(expectedAddress, session.functions.pcuAddress);
 
             // Execute the not-in-memory test (InternalContinuePendingRMW). First delete the record so it has a tombstone; this will go to InitialUpdater.
-            session.Delete(targetKey);
+            bContext.Delete(targetKey);
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
 
-            session.RMW(targetKey, targetKey * 1000);
+            bContext.RMW(targetKey, targetKey * 1000);
             CompletePendingAndVerifyInsertedAddress();
             Assert.AreEqual(expectedAddress, session.functions.piuAddress);
         }
@@ -144,13 +146,13 @@ namespace Tsavorite.test
         {
             // First try to modify in-memory, readonly (InternalRMW).
             store.Log.ShiftReadOnlyAddress(store.Log.ReadOnlyAddress, wait: true);
-            session.RMW(targetKey, targetKey * 1000);
+            bContext.RMW(targetKey, targetKey * 1000);
             Assert.AreEqual(expectedAddress, session.functions.pcuAddress);
 
             // Execute the not-in-memory test (InternalContinuePendingRMW).
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
-            session.RMW(targetKey, targetKey * 1000);
+            bContext.RMW(targetKey, targetKey * 1000);
             CompletePendingAndVerifyInsertedAddress();
             Assert.AreEqual(expectedAddress, session.functions.pcuAddress);
         }
@@ -161,13 +163,13 @@ namespace Tsavorite.test
         public void PostSingleDeleterTest()
         {
             // Execute the not-in-memory test (InternalDelete); ConcurrentDeleter returns false to force a new record to be added.
-            session.Delete(targetKey);
+            bContext.Delete(targetKey);
             Assert.AreEqual(expectedAddress, session.functions.psdAddress);
 
             // Execute the not-in-memory test (InternalDelete).
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
-            session.Delete(targetKey + 1);
+            bContext.Delete(targetKey + 1);
             Assert.AreEqual(expectedAddress, session.functions.psdAddress);
         }
     }

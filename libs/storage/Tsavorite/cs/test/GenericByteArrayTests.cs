@@ -15,6 +15,7 @@ namespace Tsavorite.test
     {
         private TsavoriteKV<byte[], byte[]> store;
         private ClientSession<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs> session;
+        private BasicContext<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -31,6 +32,7 @@ namespace Tsavorite.test
                     );
 
             session = store.NewSession<byte[], byte[], Empty, MyByteArrayFuncs>(new MyByteArrayFuncs());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -63,9 +65,9 @@ namespace Tsavorite.test
             {
                 var _key = GetByteArray(i);
                 var _value = GetByteArray(i);
-                session.Upsert(ref _key, ref _value, Empty.Default);
+                bContext.Upsert(ref _key, ref _value, Empty.Default);
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
 
             for (int i = 0; i < totalRecords; i++)
             {
@@ -74,9 +76,9 @@ namespace Tsavorite.test
                 var key = GetByteArray(i);
                 var value = GetByteArray(i);
 
-                if (session.Read(ref key, ref input, ref output, Empty.Default).IsPending)
+                if (bContext.Read(ref key, ref input, ref output, Empty.Default).IsPending)
                 {
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                 }
                 else
                 {
@@ -85,7 +87,7 @@ namespace Tsavorite.test
             }
         }
 
-        class MyByteArrayFuncs : SimpleFunctions<byte[], byte[]>
+        class MyByteArrayFuncs : SimpleSimpleFunctions<byte[], byte[]>
         {
             public override void ReadCompletionCallback(ref byte[] key, ref byte[] input, ref byte[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
