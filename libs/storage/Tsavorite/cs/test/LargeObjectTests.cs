@@ -58,11 +58,11 @@ namespace Tsavorite.test.largeobjects
                     new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, PageSizeBits = 21, MemorySizeBits = 26 },
                     new CheckpointSettings { CheckpointDir = MethodTestDir },
                     new SerializerSettings<MyKey, MyLargeValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyLargeValueSerializer() }))
-            { 
+            {
                 store.Recover(token);
 
                 using (var session = store.NewSession<MyInput, MyLargeOutput, Empty, MyLargeFunctions>(new MyLargeFunctions()))
-                { 
+                {
                     var bContext = session.BasicContext;
 
                     for (int keycnt = 0; keycnt < numOps; keycnt++)

@@ -166,7 +166,7 @@ namespace Tsavorite.test
             ReadOptions readOptions = default;
             var readStatus = bContext.ReadAtAddress(store.hlog.HeadAddress, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(readStatus.Found, $"Could not read at HeadAddress; {readStatus}");
-            var keyString = new string(MemoryMarshal.Cast<byte, char>(output.Memory.Memory.Span));
+            var keyString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
             var keyOrdinal = int.Parse(keyString.Substring(keyString.IndexOf('_') + 1));
             output.Memory.Dispose();
 

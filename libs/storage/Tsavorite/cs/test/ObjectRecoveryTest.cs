@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
 
-namespace Tsavorite.test.recovery.objectstore
+namespace Tsavorite.test.recovery.objects
 {
     internal struct StructTuple<T1, T2>
     {

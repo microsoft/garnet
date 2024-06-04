@@ -27,8 +27,9 @@ namespace Tsavorite.test.ReadCacheTests
                 var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
                 var inputString = new string(MemoryMarshal.Cast<byte, char>(input.AsReadOnlySpan()));
                 var valueString = new string(MemoryMarshal.Cast<byte, char>(value.AsReadOnlySpan()));
-                Assert.AreEqual(long.Parse(keyString) * 2, long.Parse(valueString));
-                Assert.AreEqual(long.Parse(inputString), long.Parse(valueString));
+                var actualValue = long.Parse(valueString);
+                Assert.AreEqual(long.Parse(keyString) * 2, actualValue);
+                Assert.AreEqual(long.Parse(inputString), actualValue);
 
                 value.CopyTo(ref dst, MemoryPool<byte>.Shared);
                 return true;
@@ -40,9 +41,10 @@ namespace Tsavorite.test.ReadCacheTests
                 var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
                 var inputString = new string(MemoryMarshal.Cast<byte, char>(input.AsReadOnlySpan()));
                 var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
-                Assert.AreEqual(long.Parse(keyString) * 2, long.Parse(outputString));
-                Assert.AreEqual(long.Parse(inputString), long.Parse(outputString));
-                Assert.IsNotNull(output.Memory, $"key {keyString}, wasPending {true}, pt 2");
+                var actualValue = long.Parse(outputString);
+                Assert.AreEqual(long.Parse(keyString) * 2, actualValue);
+                Assert.AreEqual(long.Parse(inputString), actualValue);
+                Assert.IsNotNull(output.Memory, $"key {keyString}, in ReadCC");
             }
         }
 
@@ -148,25 +150,25 @@ namespace Tsavorite.test.ReadCacheTests
                         Assert.IsTrue(status.IsPending, $"was not Pending: {keyString}; status {status}");
                         ++numPending;
                     }
+                }
 
-                    if (numPending > 0 && ((numPending % PendingMod) == 0 || isLast))
+                if (numPending > 0 && ((numPending % PendingMod) == 0 || isLast))
+                {
+                    sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    using (completedOutputs)
                     {
-                        sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                        using (completedOutputs)
+                        while (completedOutputs.Next())
                         {
-                            while (completedOutputs.Next())
-                            {
-                                status = completedOutputs.Current.Status;
-                                output = completedOutputs.Current.Output;
-                                // Note: do NOT overwrite 'key' here
-                                long keyLong = long.Parse(new string(MemoryMarshal.Cast<byte, char>(completedOutputs.Current.Key.AsReadOnlySpan())));
+                            var status = completedOutputs.Current.Status;
+                            var output = completedOutputs.Current.Output;
+                            // Note: do NOT overwrite 'key' here
+                            long keyLong = long.Parse(new string(MemoryMarshal.Cast<byte, char>(completedOutputs.Current.Key.AsReadOnlySpan())));
 
-                                Assert.IsTrue(status.Found, $"key {keyLong}, {status}, wasPending {true}, pt 1");
-                                Assert.IsNotNull(output.Memory, $"key {keyLong}, wasPending {true}, pt 2");
-                                var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
-                                Assert.AreEqual(keyLong * 2, long.Parse(outputString), $"key {keyLong}, wasPending {true}, pt 3");
-                                output.Memory.Dispose();
-                            }
+                            Assert.IsTrue(status.Found, $"key {keyLong}, {status}, wasPending {true}, pt 1");
+                            Assert.IsNotNull(output.Memory, $"key {keyLong}, wasPending {true}, pt 2");
+                            var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
+                            Assert.AreEqual(keyLong * 2, long.Parse(outputString), $"key {keyLong}, wasPending {true}, pt 3");
+                            output.Memory.Dispose();
                         }
                     }
                 }

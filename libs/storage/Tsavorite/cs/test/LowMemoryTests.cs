@@ -2,14 +2,13 @@
 // Licensed under the MIT license.
 
 using System.IO;
-using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
 
-namespace Tsavorite.test.LowMem
+namespace Tsavorite.test.LowMemory
 {
     [TestFixture]
-    public class LowMemTests
+    public class LowMemoryTests
     {
         IDevice log;
         TsavoriteKV<long, long> store1;
@@ -97,7 +96,7 @@ namespace Tsavorite.test.LowMem
             {
                 var status = bContext1.RMW(ref key, ref key);
                 if (status.IsPending && (++numPending % 256) == 0)
-                { 
+                {
                     bContext1.CompletePending(wait: true);
                     numPending = 0;
                 }
@@ -111,7 +110,7 @@ namespace Tsavorite.test.LowMem
             {
                 var (status, output) = bContext1.Read(key);
                 if (!status.IsPending)
-                { 
+                {
                     ++numCompleted;
                     Assert.IsTrue(status.Found, $"{status}");
                     Assert.AreEqual(key + key, output);

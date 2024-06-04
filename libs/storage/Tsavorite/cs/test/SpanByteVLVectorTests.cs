@@ -7,7 +7,7 @@ using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
-namespace Tsavorite.test
+namespace Tsavorite.test.spanbyte
 {
     [TestFixture]
     internal class SpanByteVLVectorTests

@@ -1064,7 +1064,7 @@ namespace Tsavorite.test.ReadCacheTests
 
                             Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}, wasPending {false}, pt 1");
                             Assert.IsNotNull(output.Memory, $"tid {tid}, key {ii}, wasPending {false}, pt 2");
-                            long value = BitConverter.ToInt64(output.Memory.Memory.Span);
+                            long value = BitConverter.ToInt64(output.AsReadOnlySpan());
                             Assert.AreEqual(ii, value % valueAdd, $"tid {tid}, key {ii}, wasPending {false}, pt 3");
                             output.Memory.Dispose();
                         }
@@ -1084,10 +1084,10 @@ namespace Tsavorite.test.ReadCacheTests
                                     long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key.AsReadOnlySpan());
 
                                     Assert.AreEqual(completedOutputs.Current.RecordMetadata.Address == Constants.kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
- 
+
                                     Assert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
                                     Assert.IsNotNull(output.Memory, $"tid {tid}, key {keyLong}, wasPending {true}, pt 2");
-                                    long value = BitConverter.ToInt64(output.Memory.Memory.Span);
+                                    long value = BitConverter.ToInt64(output.AsReadOnlySpan());
                                     Assert.AreEqual(keyLong, value % valueAdd, $"tid {tid}, key {keyLong}, wasPending {true}, pt 3");
                                     output.Memory.Dispose();
                                 }
@@ -1133,7 +1133,7 @@ namespace Tsavorite.test.ReadCacheTests
                             if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
                                 Assert.IsTrue(status.Found, $"tid {tid}, key {ii}, {status}");
 
-                            long value = BitConverter.ToInt64(output.Memory.Memory.Span);
+                            long value = BitConverter.ToInt64(output.AsReadOnlySpan());
                             Assert.AreEqual(ii + valueAdd, value, $"tid {tid}, key {ii}, wasPending {false}");
 
                             output.Memory?.Dispose();
@@ -1156,7 +1156,7 @@ namespace Tsavorite.test.ReadCacheTests
                                     if (updateOp == UpdateOp.RMW)   // Upsert will not try to find records below HeadAddress, but it may find them in-memory
                                         Assert.IsTrue(status.Found, $"tid {tid}, key {keyLong}, {status}");
 
-                                    long value = BitConverter.ToInt64(output.Memory.Memory.Span);
+                                    long value = BitConverter.ToInt64(output.AsReadOnlySpan());
                                     Assert.AreEqual(keyLong + valueAdd, value, $"tid {tid}, key {keyLong}, wasPending {true}");
 
                                     output.Memory?.Dispose();

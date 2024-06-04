@@ -4,7 +4,7 @@
 using System.Threading;
 using Tsavorite.core;
 
-namespace Tsavorite.test.recovery.objectstore
+namespace Tsavorite.test.recovery.objects
 {
     public class AdId : ITsavoriteEqualityComparer<AdId>
     {

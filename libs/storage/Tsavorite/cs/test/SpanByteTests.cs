@@ -10,7 +10,7 @@ using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.core.Utility;
 
-namespace Tsavorite.test
+namespace Tsavorite.test.spanbyte
 {
     [TestFixture]
     internal class SpanByteTests
@@ -127,8 +127,8 @@ namespace Tsavorite.test
                     Assert.IsTrue(status.Found, $"expected to find key; status = {status}, pending = {evicted}");
 
                     Assert.IsFalse(output.IsSpanByte, "Output should not have a valid SpanByte");
-                    var outputString = new string(MemoryMarshal.Cast<byte, char>(output.Memory.Memory.Span));
-                    Assert.AreEqual(value, long.Parse(outputString));
+                    var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
+                    Assert.AreEqual(value, long.Parse(outputString), $"outputString mismatch; pending = {evicted}");
                     output.Memory.Dispose();
                 }
             }
