@@ -21,7 +21,7 @@ namespace Garnet.server
 
         public static unsafe ServerConfigType GetConfig(Span<byte> parameter)
         {
-            ConvertUtils.MakeUpperCase(parameter);
+            AsciiUtils.ToUpperInPlace(parameter);
             return parameter switch
             {
                 _ when parameter.SequenceEqual("TIMEOUT"u8) => ServerConfigType.TIMEOUT,
