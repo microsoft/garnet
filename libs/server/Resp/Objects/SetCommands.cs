@@ -917,8 +917,16 @@ namespace Garnet.server
                         return false;
                     break;
                 case GarnetStatus.NOTFOUND:
+                    if (count == 2)
+                    {
+                        while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    }
+
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                         SendAndReset();
+
                     break;
             }
 

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -34,7 +33,7 @@ namespace Tsavorite.core
                 Status status = !diskRequest.IsDefault()
                     ? tsavoriteKV.InternalCompletePendingRequestFromContext(tsavoriteSession, diskRequest, ref pendingContext, out var newDiskRequest)
                     : tsavoriteKV.CallInternalRead(tsavoriteSession, ref pendingContext, readAtAddress, ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output,
-                                    ref readOptions, pendingContext.userContext, pendingContext.serialNum, out newDiskRequest);
+                                    ref readOptions, pendingContext.userContext, out newDiskRequest);
                 output = pendingContext.output;
                 diskRequest = newDiskRequest;
                 return status;
@@ -105,7 +104,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAsync<Input, Output, Context>(ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
-            ref Key key, ref Input input, ref ReadOptions readOptions, Context context, long serialNo, CancellationToken token, bool noKey = false)
+            ref Key key, ref Input input, ref ReadOptions readOptions, Context context, CancellationToken token, bool noKey = false)
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions, isAsync: true, noKey: noKey);
             var diskRequest = default(AsyncIOContext<Key, Value>);
@@ -114,14 +113,12 @@ namespace Tsavorite.core
             try
             {
                 Output output = default;
-                var status = CallInternalRead(tsavoriteSession, ref pcontext, readAtAddress: 0L, ref key, ref input, ref output, ref readOptions, context, serialNo, out diskRequest);
+                var status = CallInternalRead(tsavoriteSession, ref pcontext, readAtAddress: 0L, ref key, ref input, ref output, ref readOptions, context, out diskRequest);
                 if (!status.IsPending)
                     return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally
             {
-                Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-                tsavoriteSession.Ctx.serialNum = serialNo;
                 tsavoriteSession.UnsafeSuspendThread();
             }
 
@@ -130,7 +127,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync<Input, Output, Context>(ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
-            long readAtAddress, ref Key key, ref Input input, ref ReadOptions readOptions, Context context, long serialNo, CancellationToken token, bool noKey = false)
+            long readAtAddress, ref Key key, ref Input input, ref ReadOptions readOptions, Context context, CancellationToken token, bool noKey = false)
         {
             var pcontext = new PendingContext<Input, Output, Context>(tsavoriteSession.Ctx.ReadCopyOptions, ref readOptions, isAsync: true, noKey: noKey);
             var diskRequest = default(AsyncIOContext<Key, Value>);
@@ -139,14 +136,12 @@ namespace Tsavorite.core
             try
             {
                 Output output = default;
-                var status = CallInternalRead(tsavoriteSession, ref pcontext, readAtAddress, ref key, ref input, ref output, ref readOptions, context, serialNo, out diskRequest);
+                var status = CallInternalRead(tsavoriteSession, ref pcontext, readAtAddress, ref key, ref input, ref output, ref readOptions, context, out diskRequest);
                 if (!status.IsPending)
                     return new ValueTask<ReadAsyncResult<Input, Output, Context>>(new ReadAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally
             {
-                Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-                tsavoriteSession.Ctx.serialNum = serialNo;
                 tsavoriteSession.UnsafeSuspendThread();
             }
 
@@ -155,7 +150,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status CallInternalRead<Input, Output, Context>(ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession,
-                ref PendingContext<Input, Output, Context> pcontext, long readAtAddress, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context context, long serialNo,
+                ref PendingContext<Input, Output, Context> pcontext, long readAtAddress, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context context,
                 out AsyncIOContext<Key, Value> diskRequest)
         {
             OperationStatus internalStatus;
@@ -163,9 +158,9 @@ namespace Tsavorite.core
             do
             {
                 if (readAtAddress == 0)
-                    internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, serialNo, ref pcontext, tsavoriteSession);
+                    internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, tsavoriteSession);
                 else
-                    internalStatus = InternalReadAtAddress(readAtAddress, ref key, ref input, ref output, ref readOptions, context, serialNo, ref pcontext, tsavoriteSession);
+                    internalStatus = InternalReadAtAddress(readAtAddress, ref key, ref input, ref output, ref readOptions, context, ref pcontext, tsavoriteSession);
             }
             while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 

@@ -7,7 +7,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using Azure.Core;
 using Garnet.common;
 using Garnet.common.Parsing;
 using Garnet.networking;
@@ -105,8 +104,14 @@ namespace Garnet.server
         /// </summary>
         CustomObjectCommand currentCustomObjectCommand = null;
 
+        /// <summary>
+        /// RESP protocol version (RESP2 is the default)
+        /// </summary>
+        byte respProtocolVersion = 2;
 
-        int respProtocolVersion = 2;
+        /// <summary>
+        /// Client name for the session
+        /// </summary>
         string clientName = null;
 
         public RespServerSession(
@@ -168,6 +173,10 @@ namespace Garnet.server
 
             subscribeBroker?.RemoveSubscription(this);
 
+            // Cancel the async processor, if any
+            asyncWaiterCancel?.Cancel();
+            asyncWaiter?.Signal();
+
             storageSession.Dispose();
         }
 
@@ -215,35 +224,42 @@ namespace Garnet.server
                 latencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
-                networkSender.GetResponseObject();
+                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                 ProcessMessages();
                 recvBufferPtr = null;
             }
             catch (RespParsingException ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
-                logger?.LogCritical($"Aborting open session due to RESP parsing error: {ex.Message}");
-                logger?.LogDebug(ex, "RespParsingException in ProcessMessages:");
+                logger.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
 
                 // Forward parsing error as RESP error
                 while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
                     SendAndReset();
 
-                Send(networkSender.GetResponseObjectHead());
+                // Send message and dispose the network sender to end the session
+                if (dcurr > networkSender.GetResponseObjectHead())
+                    Send(networkSender.GetResponseObjectHead());
+                networkSender.Dispose();
+            }
+            catch (GarnetException ex)
+            {
+                sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
+                logger.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
+                // The session is no longer usable, dispose it
                 networkSender.Dispose();
             }
             catch (Exception ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
-                logger?.LogCritical(ex, "ProcessMessages threw exception:");
+                logger?.LogCritical(ex, "ProcessMessages threw an exception:");
                 // The session is no longer usable, dispose it
                 networkSender.Dispose();
             }
             finally
             {
-                networkSender.ReturnResponseObject();
+                networkSender.ExitAndReturnResponseObject();
                 clusterSession?.ReleaseCurrentEpoch();
-
             }
 
             if (txnManager.IsSkippingOperations())
@@ -275,9 +291,6 @@ namespace Garnet.server
             // #if DEBUG
             // logger?.LogTrace("RECV: [{recv}]", Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", ""));
             // #endif
-
-            dcurr = networkSender.GetResponseObjectHead();
-            dend = networkSender.GetResponseObjectTail();
 
             var _origReadHead = readHead;
 
@@ -448,6 +461,21 @@ namespace Garnet.server
         {
             // Continue reading from the current read head.
             byte* ptr = recvBufferPtr + readHead;
+
+            // If async mode, we want to make sure all arguments are received up front
+            // Otherwise, there might be interleaving of network output between sync
+            // ProcessMessages and AsyncProcessor. We protect this with useAsync for now, but
+            // this should be the standard approach in future after changing the subsequent
+            // logic to avoid re-parsing overheads, and verifying perf impact
+            if (useAsync)
+            {
+                byte* endPtr = ptr;
+                for (int i = 0; i < count; i++)
+                {
+                    if (!RespReadUtils.SkipByteArrayWithLengthHeader(ref endPtr, recvBufferPtr + bytesRead))
+                        return false;
+                }
+            }
 
             if (!_authenticator.IsAuthenticated) return ProcessOtherCommands(cmd, count, ref storageApi);
 
@@ -812,7 +840,7 @@ namespace Garnet.server
                 // Reaching here means that we retried SendAndReset without the RespWriteUtils.Write*
                 // method making any progress. This should only happen when the message being written is
                 // too large to fit in the response buffer.
-                GarnetException.Throw("Failed to write to response buffer");
+                GarnetException.Throw("Failed to write to response buffer", LogLevel.Critical);
             }
         }
 

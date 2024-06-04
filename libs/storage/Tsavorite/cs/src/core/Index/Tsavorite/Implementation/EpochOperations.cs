@@ -21,8 +21,6 @@ namespace Tsavorite.core
             Debug.Assert(sessionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({sessionCtx.phase}) should == Phase.PREPARE");
             InternalRefresh<Input, Output, Context, TsavoriteSession>(tsavoriteSession);
             Debug.Assert(sessionCtx.version > version, $"sessionCtx.version ({sessionCtx.version}) should be > version ({version})");
-
-            pendingContext.version = sessionCtx.version;
         }
 
         /// <summary>

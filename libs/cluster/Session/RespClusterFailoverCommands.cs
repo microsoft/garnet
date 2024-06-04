@@ -67,8 +67,8 @@ namespace Garnet.cluster
                 else
                 {
                     var current = clusterProvider.clusterManager.CurrentConfig;
-                    var nodeRole = current.LocalNodeRole;
-                    if (nodeRole == NodeRole.REPLICA)
+                    // Make local node configuration indicates that this a replica with a configured primary
+                    if (current.IsReplica && current.LocalNodePrimaryId != null)
                     {
                         if (!clusterProvider.failoverManager.TryStartReplicaFailover(failoverOption, failoverTimeout))
                         {
@@ -79,7 +79,7 @@ namespace Garnet.cluster
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteError($"ERR Node is not a {NodeRole.REPLICA} ~{nodeRole}~", ref dcurr, dend))
+                        while (!RespWriteUtils.WriteError($"ERR Node is not configured as a {NodeRole.REPLICA}", ref dcurr, dend))
                             SendAndReset();
                         return true;
                     }
@@ -121,7 +121,16 @@ namespace Garnet.cluster
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var nodeIdBytes, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
-            clusterProvider.clusterManager.TryStopWrites(Encoding.ASCII.GetString(nodeIdBytes));
+
+            if (nodeIdBytes.Length > 0)
+            {// Make this node a primary after receiving a request from a replica that is trying to takeover
+                var nodeId = Encoding.ASCII.GetString(nodeIdBytes);
+                clusterProvider.clusterManager.TryStopWrites(nodeId);
+            }
+            else
+            {// Reset this node back to its original state
+                clusterProvider.clusterManager.TryResetReplica();
+            }
             UnsafeWaitForConfigTransition();
             while (!RespWriteUtils.WriteInteger(clusterProvider.replicationManager.ReplicationOffset, ref dcurr, dend))
                 SendAndReset();

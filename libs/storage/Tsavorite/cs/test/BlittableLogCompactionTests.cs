@@ -101,7 +101,7 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, isDeleted(i) ? 1 : 0, 0);
+                var status = session.Read(ref key1, ref input, ref output, isDeleted(i) ? 1 : 0);
                 if (!status.IsPending)
                 {
                     if (isDeleted(i))
@@ -141,7 +141,7 @@ namespace Tsavorite.test
 
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             store.Log.FlushAndEvict(wait: true);
@@ -173,7 +173,7 @@ namespace Tsavorite.test
 
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             store.Log.FlushAndEvict(true);
@@ -191,7 +191,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             compactUntil = session.Compact(compactUntil, compactionType);
@@ -220,13 +220,13 @@ namespace Tsavorite.test
 
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
 
                 if (i % 8 == 0)
                 {
                     int j = i / 4;
                     key1 = new KeyStruct { kfield1 = j, kfield2 = j + 1 };
-                    session.Delete(ref key1, 0, 0);
+                    session.Delete(ref key1, 0);
                 }
             }
 
@@ -261,7 +261,7 @@ namespace Tsavorite.test
 
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, 0, 0);
+                session.Upsert(ref key1, ref value, 0);
             }
 
             var tail = store.Log.TailAddress;
@@ -280,7 +280,7 @@ namespace Tsavorite.test
 
                 var ctx = (i < (totalRecords / 2) && (i % 2 != 0)) ? 1 : 0;
 
-                var status = session.Read(ref key1, ref input, ref output, ctx, 0);
+                var status = session.Read(ref key1, ref input, ref output, ctx);
                 if (status.IsPending)
                 {
                     Assert.IsTrue(session.CompletePendingWithOutputs(out var outputs, wait: true));
@@ -317,15 +317,15 @@ namespace Tsavorite.test
             var input = default(InputStruct);
             var output = default(OutputStruct);
 
-            session.Upsert(ref key, ref value, 0, 0);
-            var status = session.Read(ref key, ref input, ref output, 0, 0);
+            session.Upsert(ref key, ref value, 0);
+            var status = session.Read(ref key, ref input, ref output, 0);
             Debug.Assert(status.Found);
 
             store.Log.Flush(true);
 
             value = new ValueStruct { vfield1 = 11, vfield2 = 21 };
-            session.Upsert(ref key, ref value, 0, 0);
-            status = session.Read(ref key, ref input, ref output, 0, 0);
+            session.Upsert(ref key, ref value, 0);
+            status = session.Read(ref key, ref input, ref output, 0);
             Debug.Assert(status.Found);
 
             if (flushAndEvict)
@@ -336,7 +336,7 @@ namespace Tsavorite.test
             var compactUntil = session.Compact(store.Log.TailAddress, compactionType);
             store.Log.Truncate();
 
-            status = session.Read(ref key, ref input, ref output, 0, 0);
+            status = session.Read(ref key, ref input, ref output, 0);
             if (status.IsPending)
             {
                 Assert.IsTrue(session.CompletePendingWithOutputs(out var outputs, wait: true));

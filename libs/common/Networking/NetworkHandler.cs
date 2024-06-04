@@ -531,6 +531,28 @@ namespace Garnet.networking
         }
 
         /// <inheritdoc />
+        public override void Enter()
+            => networkSender.Enter();
+
+        /// <inheritdoc />
+        public override unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail)
+        {
+            networkSender.Enter();
+            head = transportSendBufferPtr;
+            tail = transportSendBufferPtr + transportSendBuffer.Length;
+        }
+
+        /// <inheritdoc />
+        public override void Exit()
+            => networkSender.Exit();
+
+        /// <inheritdoc />
+        public override void ExitAndReturnResponseObject()
+        {
+            networkSender.Exit();
+        }
+
+        /// <inheritdoc />
         public override void GetResponseObject() { }
 
         /// <inheritdoc />

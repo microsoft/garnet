@@ -147,6 +147,8 @@ namespace Garnet.server
         BITOP_NOT,
 
         // Neither read nor write commands
+        ASYNC,
+
         PING,
 
         PUBLISH,
@@ -193,6 +195,7 @@ namespace Garnet.server
         ACL_DELUSER,
         ACL_LIST,
         ACL_LOAD,
+        ACL_SAVE,
         ACL_SETUSER,
         ACL_USERS,
         ACL_WHOAMI,
@@ -1685,6 +1688,10 @@ namespace Garnet.server
                 {
                     return RespCommand.ACL_LOAD;
                 }
+                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SAVE))
+                {
+                    return RespCommand.ACL_SAVE;
+                }
                 else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETUSER))
                 {
                     return RespCommand.ACL_SETUSER;
@@ -1701,6 +1708,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.REGISTERCS))
             {
                 return RespCommand.REGISTERCS;
+            }
+            else if (command.SequenceEqual(CmdStrings.ASYNC))
+            {
+                return RespCommand.ASYNC;
             }
             else
             {

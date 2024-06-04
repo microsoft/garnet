@@ -225,6 +225,10 @@ namespace Garnet
         public string ClusterTlsClientTargetHost { get; set; }
 
         [OptionValidation]
+        [Option("server-certificate-required", Required = false, HelpText = "Whether server TLS certificate is required by clients established on the server side, e.g., for cluster gossip and replication.")]
+        public bool? ServerCertificateRequired { get; set; }
+
+        [OptionValidation]
         [Option("tls", Required = false, HelpText = "Enable TLS.")]
         public bool? EnableTLS { get; set; }
 
@@ -243,7 +247,7 @@ namespace Garnet
         public int CertificateRefreshFrequency { get; set; }
 
         [OptionValidation]
-        [Option("client-certificate-required", Required = false, HelpText = "Whether TLS client certificate required.")]
+        [Option("client-certificate-required", Required = false, HelpText = "Whether client TLS certificate is required by the server.")]
         public bool? ClientCertificateRequired { get; set; }
 
         [Option("certificate-revocation-check-mode", Required = false, HelpText = "Certificate revocation check mode for certificate validation (NoCheck, Online, Offline).")]
@@ -580,6 +584,7 @@ namespace Garnet
                     CertificateRefreshFrequency,
                     EnableCluster.GetValueOrDefault(),
                     ClusterTlsClientTargetHost,
+                    ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
                 MetricsSamplingFrequency = MetricsSamplingFrequency,

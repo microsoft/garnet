@@ -30,7 +30,7 @@ namespace Garnet.cluster
             if (IsLocal)
             {
                 // TODO: make sure other Read locations add this new logic
-                if (clusterProvider.replicationManager.recovering)
+                if (clusterProvider.replicationManager.Recovering)
                 {
                     // If we are a replica, let primary handle the request
                     if (config.LocalNodeRole == NodeRole.REPLICA)

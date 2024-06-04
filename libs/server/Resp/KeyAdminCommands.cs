@@ -346,7 +346,7 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_N1, ref dcurr, dend))
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
                     SendAndReset();
             }
             return true;

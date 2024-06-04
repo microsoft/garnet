@@ -44,18 +44,20 @@ namespace Garnet.server
         /// <param name="name">Name of command</param>
         /// <param name="numParams">Number of parameters</param>
         /// <param name="proc">Custom stored procedure</param>
+        /// <param name="commandInfo">RESP command info</param>
         /// <returns>ID of the registered command</returns>
-        public int NewTransactionProc(string name, int numParams, Func<CustomTransactionProcedure> proc)
-            => provider.StoreWrapper.customCommandManager.Register(name, numParams, proc);
+        public int NewTransactionProc(string name, int numParams, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
+            => provider.StoreWrapper.customCommandManager.Register(name, numParams, proc, commandInfo);
 
         /// <summary>
         /// Register transaction procedure with Garnet, with a variable number of parameters
         /// </summary>
         /// <param name="name">Name of command</param>
         /// <param name="proc">Custom stored procedure</param>
+        /// <param name="commandInfo">RESP command info</param>
         /// <returns>ID of the registered command</returns>
-        public int NewTransactionProc(string name, Func<CustomTransactionProcedure> proc)
-            => provider.StoreWrapper.customCommandManager.Register(name, int.MaxValue, proc);
+        public int NewTransactionProc(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
+            => provider.StoreWrapper.customCommandManager.Register(name, int.MaxValue, proc, commandInfo);
 
         /// <summary>
         /// Register object type with server

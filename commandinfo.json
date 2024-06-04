@@ -3753,7 +3753,7 @@
     "SubCommands": null
   },
   {
-    "Command": "SINTER",
+    "Command": "NONE",
     "Name": "SINTER",
     "IsInternal": false,
     "Arity": -2,
@@ -3784,7 +3784,7 @@
     "SubCommands": null
   },
   {
-    "Command": "SINTERSTORE",
+    "Command": "NONE",
     "Name": "SINTERSTORE",
     "IsInternal": false,
     "Arity": -3,

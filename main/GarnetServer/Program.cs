@@ -2,9 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Threading;
-using Garnet.common;
 using Garnet.server;
 
 namespace Garnet
@@ -21,11 +19,7 @@ namespace Garnet
                 using var server = new GarnetServer(args);
 
                 // Optional: register custom extensions
-                if (!TryRegisterExtensions(server))
-                {
-                    Console.WriteLine("Unable to register server extensions.");
-                    return;
-                }
+                RegisterExtensions(server);
 
                 // Start the server
                 server.Start();
@@ -43,10 +37,21 @@ namespace Garnet
         /// commands such as db.Execute in StackExchange.Redis. Example:
         ///   db.Execute("SETIFPM", key, value, prefix);
         /// </summary>
-        static bool TryRegisterExtensions(GarnetServer server)
+        static void RegisterExtensions(GarnetServer server)
         {
             // Register custom command on raw strings (SETIFPM = "set if prefix match")
-            server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand());
+            // Add RESP command info to registration for command to appear when client runs COMMAND / COMMAND INFO
+            var setIfPmCmdInfo = new RespCommandsInfo
+            {
+                Name = "SETIFPM",
+                Arity = 4,
+                FirstKey = 1,
+                LastKey = 1,
+                Step = 1,
+                Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write,
+                AclCategories = RespAclCategories.String | RespAclCategories.Write,
+            };
+            server.Register.NewCommand("SETIFPM", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand(), setIfPmCmdInfo);
 
             // Register custom command on raw strings (SETWPIFPGT = "set with prefix, if prefix greater than")
             server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand());
@@ -60,7 +65,18 @@ namespace Garnet
             server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
 
             // Register stored procedure to run a transactional command
-            server.Register.NewTransactionProc("READWRITETX", 3, () => new ReadWriteTxn());
+            // Add RESP command info to registration for command to appear when client runs COMMAND / COMMAND INFO
+            var readWriteTxCmdInfo = new RespCommandsInfo
+            {
+                Name = "READWRITETX",
+                Arity = 4,
+                FirstKey = 1,
+                LastKey = 3,
+                Step = 1,
+                Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write,
+                AclCategories = RespAclCategories.Write,
+            };
+            server.Register.NewTransactionProc("READWRITETX", 3, () => new ReadWriteTxn(), readWriteTxCmdInfo);
 
             // Register stored procedure to run a transactional command
             server.Register.NewTransactionProc("MSETPX", () => new MSetPxTxn());
@@ -74,15 +90,6 @@ namespace Garnet
             // Register sample transactional procedures
             server.Register.NewTransactionProc("SAMPLEUPDATETX", 8, () => new SampleUpdateTxn());
             server.Register.NewTransactionProc("SAMPLEDELETETX", 5, () => new SampleDeleteTxn());
-
-            return true;
-        }
-
-        private static bool TryGetRespCommandsInfo(string path, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
-        {
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
-            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
-            return commandsInfoProvider.TryImportRespCommandsInfo(path, streamProvider, out commandsInfo);
         }
     }
 }

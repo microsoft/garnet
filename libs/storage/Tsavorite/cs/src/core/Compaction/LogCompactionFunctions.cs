@@ -13,8 +13,6 @@ namespace Tsavorite.core
             _functions = functions;
         }
 
-        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint) { }
-
         /// <summary>
         /// No reads during compaction
         /// </summary>

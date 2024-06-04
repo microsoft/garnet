@@ -71,7 +71,7 @@ namespace Tsavorite.test
             Assert.IsTrue(status.Found, status.ToString());
 
             store.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, new(StatusCode.Found), 0); // PENDING + NeedCopyUpdate + Found
+            status = session.RMW(ref key, ref value2, new(StatusCode.Found)); // PENDING + NeedCopyUpdate + Found
             Assert.IsTrue(status.IsPending, status.ToString());
             session.CompletePendingWithOutputs(out var outputs, true);
 
@@ -80,7 +80,7 @@ namespace Tsavorite.test
             Assert.IsTrue(status.Found, status.ToString()); // NeedCopyUpdate returns false, so RMW returns simply Found
 
             // Test stored value. Should be value1
-            status = session.Read(ref key, ref value1, ref output, new(StatusCode.Found), 0);
+            status = session.Read(ref key, ref value1, ref output, new(StatusCode.Found));
             Assert.IsTrue(status.IsPending, status.ToString());
             session.CompletePending(true);
 
@@ -88,7 +88,7 @@ namespace Tsavorite.test
             Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             session.CompletePending(true);
             store.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord), 0); // PENDING + InitialUpdater + NOTFOUND
+            status = session.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord)); // PENDING + InitialUpdater + NOTFOUND
             Assert.IsTrue(status.IsPending, status.ToString());
             session.CompletePending(true);
         }

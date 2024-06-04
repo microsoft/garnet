@@ -250,15 +250,7 @@ namespace Tsavorite.test.recovery
                     );
 
                 if (i > 0)
-                {
                     store.Recover(default, token);
-                    if (i == 3) store.DisposeRecoverableSessions();
-                    int recoverableSessionCount = store.RecoverableSessions.Count();
-                    if (i < 3)
-                        Assert.AreEqual(i, recoverableSessionCount);
-                    else
-                        Assert.AreEqual(i - 3, recoverableSessionCount);
-                }
 
                 using var s1 = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
 
@@ -611,7 +603,7 @@ namespace Tsavorite.test.recovery
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
                 checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
-                concurrencyControlMode: ConcurrencyControlMode.RecordIsolation
+                concurrencyControlMode: ConcurrencyControlMode.LockTable
                 );
 
             using var s1 = store1.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());

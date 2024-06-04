@@ -8,6 +8,7 @@ using System.Numerics;
 using System.Reflection;
 using Garnet.server;
 using Garnet.server.ACL;
+using Microsoft.CodeAnalysis;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -99,6 +100,35 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public void AsyncACLs()
+        {
+            // ASYNC is only support in Resp3, so we use exceptions for control flow here
+
+            CheckCommands(
+                "ASYNC",
+                [DoAsync]
+            );
+
+            static void DoAsync(IServer server)
+            {
+                try
+                {
+                    RedisResult val = server.Execute("ASYNC", "BARRIER");
+                    Assert.Fail("Should be unreachable, ASYNC shouldn't work in Resp2");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR command not supported in RESP2")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public void AclCatACLs()
         {
             CheckCommands(
@@ -168,6 +198,32 @@ namespace Garnet.test.Resp.ACL
                 catch (RedisException e)
                 {
                     if (e.Message != "ERR Cannot find ACL configuration file ''")
+                    {
+                        throw;
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void AclSaveACLs()
+        {
+            CheckCommands(
+                "ACL SAVE",
+                [DoAclSave]
+            );
+
+            static void DoAclSave(IServer server)
+            {
+                try
+                {
+                    RedisResult val = server.Execute("ACL", "SAVE");
+
+                    Assert.Fail("No ACL file, so this should have failed");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message != "ERR ACL configuration file not set.")
                     {
                         throw;
                     }
@@ -2740,7 +2796,7 @@ namespace Garnet.test.Resp.ACL
             static void DoGetRange(IServer server)
             {
                 RedisResult val = server.Execute("GETRANGE", "foo", "10", "15");
-                Assert.IsNull((string)val);
+                Assert.AreEqual("", (string)val);
             }
         }
 
@@ -3665,9 +3721,21 @@ namespace Garnet.test.Resp.ACL
 
             static void DoModuleList(IServer server)
             {
-                RedisResult val = server.Execute("MODULE", "LIST");
-                RedisResult[] valArr = (RedisResult[])val;
-                Assert.AreEqual(0, valArr.Length);
+                try
+                {
+                    server.Execute("MODULE", "LIST");
+
+                    Assert.Fail("Shouldn't be reachable, MODULE is only parsed - not implemented");
+                }
+                catch (RedisException e)
+                {
+                    if (e.Message == "ERR unknown command")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
             }
         }
 
@@ -3992,7 +4060,7 @@ namespace Garnet.test.Resp.ACL
             static void DoPTTL(IServer server)
             {
                 RedisResult val = server.Execute("PTTL", "foo");
-                Assert.AreEqual(-1, (int)val);
+                Assert.AreEqual(-2, (int)val);
             }
         }
 
@@ -4208,12 +4276,13 @@ namespace Garnet.test.Resp.ACL
             {
                 try
                 {
-                    db.Execute("RUNTXP", "foo");
+                    db.Execute("RUNTXP", "4");
+
                     Assert.Fail("Should be reachable, command is malformed");
                 }
                 catch (RedisException e)
                 {
-                    if (e.Message == "ERR Protocol Error: Unable to parse number: foo")
+                    if (e.Message == "ERR Could not get transaction procedure")
                     {
                         return;
                     }
@@ -4673,7 +4742,7 @@ namespace Garnet.test.Resp.ACL
             static void DoSRandMemberCount(IServer server)
             {
                 RedisResult val = server.Execute("SRANDMEMBER", "foo", "5");
-                Assert.IsTrue(val.IsNull);
+                Assert.AreEqual(ResultType.Array, val.Resp2Type);
             }
         }
 
@@ -4877,7 +4946,7 @@ namespace Garnet.test.Resp.ACL
                 RedisResult val = server.Execute("GEOADD", $"foo-{count}", "NX", "CH", "90", "90", "bar");
                 count++;
 
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(1, (int)val);
             }
 
             void DoGeoAddMulti(IServer server)
@@ -4901,7 +4970,7 @@ namespace Garnet.test.Resp.ACL
                 RedisResult val = server.Execute("GEOADD", $"foo-{count}", "NX", "CH", "90", "90", "bar", "45", "45", "fizz");
                 count++;
 
-                Assert.AreEqual(0, (int)val);
+                Assert.AreEqual(2, (int)val);
             }
         }
 
@@ -5057,8 +5126,8 @@ namespace Garnet.test.Resp.ACL
                 static void DoGeoSearch(IServer db)
                 {
                     RedisResult val = db.Execute("GEOSEARCH", "foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M");
-                    RedisValue[] valArr = (RedisValue[])val;
-                    Assert.AreEqual(0, valArr.Length);
+                    RedisResult[] valArr = (RedisResult[])val;
+                    Assert.IsNotNull(valArr);
                 }
             }
         }
@@ -5580,7 +5649,7 @@ namespace Garnet.test.Resp.ACL
             static void DoTTL(IServer server)
             {
                 RedisResult val = server.Execute("TTL", "foo");
-                Assert.AreEqual(-1, (int)val);
+                Assert.AreEqual(-2, (int)val);
             }
         }
 

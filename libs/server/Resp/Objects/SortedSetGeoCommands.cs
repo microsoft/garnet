@@ -101,13 +101,12 @@ namespace Garnet.server
         {
             int paramsRequiredInCommand = 0;
             string cmd = string.Empty;
-            var responseWhenNotFound = CmdStrings.RESP_EMPTYLIST;
+
             switch (command)
             {
                 case RespCommand.GEODIST:
                     paramsRequiredInCommand = 3;
                     cmd = "GEODIST";
-                    responseWhenNotFound = CmdStrings.RESP_ERRNOTFOUND;
                     break;
                 case RespCommand.GEOHASH:
                     paramsRequiredInCommand = 1;
@@ -191,8 +190,27 @@ namespace Garnet.server
                         ptr += objOutputHeader.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(responseWhenNotFound, ref dcurr, dend))
-                            SendAndReset();
+                        var tokens = ReadLeftToken(inputCount, ref ptr);
+                        if (tokens < inputCount)
+                            return false;
+
+                        switch (op)
+                        {
+                            case SortedSetOperation.GEODIST:
+                                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                                    SendAndReset();
+                                break;
+                            default:
+                                while (!RespWriteUtils.WriteArrayLength(inputCount, ref dcurr, dend))
+                                    SendAndReset();
+                                for (var i = 0; i < inputCount; i++)
+                                {
+                                    while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                                        SendAndReset();
+                                }
+                                break;
+                        }
+
                         break;
                 }
             }

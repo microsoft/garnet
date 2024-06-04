@@ -22,6 +22,28 @@ namespace Garnet.networking
         string RemoteEndpointName { get; }
 
         /// <summary>
+        /// Enter exclusive use of network sender.
+        /// </summary>
+        void Enter();
+
+        /// <summary>
+        /// Enter exclusive use of network sender. Allocate and get response object pointers.
+        /// </summary>
+        /// <param name="head"></param>
+        /// <param name="tail"></param>
+        unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail);
+
+        /// <summary>
+        /// Exit exclusive use of network sender.
+        /// </summary>
+        void Exit();
+
+        /// <summary>
+        /// Exit exclusive use of network sender. Free response object.
+        /// </summary>
+        void ExitAndReturnResponseObject();
+
+        /// <summary>
         /// Allocate a new response object
         /// </summary>
         void GetResponseObject();

@@ -42,12 +42,12 @@ namespace Garnet
         protected StoreWrapper storeWrapper;
 
         // IMPORTANT: Keep the version in sync with .azure\pipelines\azure-pipelines-external-release.yml line ~6.
-        readonly string version = "1.0.10";
+        readonly string version = "1.0.12";
 
         /// <summary>
         /// Resp protocol version
         /// </summary>
-        readonly string redisProtocolVersion = "6.2.11";
+        readonly string redisProtocolVersion = "7.2.5";
 
         /// <summary>
         /// Metrics API

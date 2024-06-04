@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -165,7 +166,7 @@ namespace Garnet.server
                 string errorMsg = null;
                 if (unknownOption)
                 {
-                    errorMsg = string.Format(CmdStrings.GenericErrUnknownOption, unknownKey);
+                    errorMsg = string.Format(CmdStrings.GenericErrUnknownOptionConfigSet, unknownKey);
                 }
                 else
                 {
@@ -265,7 +266,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.HELLO)
             {
-                int? respProtocolVersion = null;
+                byte? respProtocolVersion = null;
                 ReadOnlySpan<byte> authUsername = default, authPassword = default;
                 string clientName = null;
 
@@ -277,7 +278,7 @@ namespace Garnet.server
                         return false;
                     readHead = (int)(ptr - recvBufferPtr);
 
-                    respProtocolVersion = localRespProtocolVersion;
+                    respProtocolVersion = (byte)localRespProtocolVersion;
                     count--;
                     while (count > 0)
                     {
@@ -538,13 +539,81 @@ namespace Garnet.server
             {
                 return NetworkAclWhoAmI(bufSpan, count);
             }
-            else if ((command == RespCommand.REGISTERCS))
+            else if (command == RespCommand.ACL_SAVE)
+            {
+                return NetworkAclSave(bufSpan, count);
+            }
+            else if (command == RespCommand.REGISTERCS)
             {
                 return NetworkRegisterCs(count, recvBufferPtr + readHead, storeWrapper.customCommandManager);
             }
+            else if (command == RespCommand.ASYNC)
+            {
+                if (respProtocolVersion > 2 && count == 1)
+                {
+                    var param = GetCommand(bufSpan, out bool success1);
+                    if (!success1) return false;
+                    if (param.SequenceEqual(CmdStrings.ON) || param.SequenceEqual(CmdStrings.on))
+                    {
+                        useAsync = true;
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else if (param.SequenceEqual(CmdStrings.OFF) || param.SequenceEqual(CmdStrings.off))
+                    {
+                        useAsync = false;
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else if (param.SequenceEqual(CmdStrings.BARRIER) || param.SequenceEqual(CmdStrings.barrier))
+                    {
+                        if (asyncCompleted < asyncStarted)
+                        {
+                            asyncDone = new(0);
+                            if (dcurr > networkSender.GetResponseObjectHead())
+                                Send(networkSender.GetResponseObjectHead());
+                            try
+                            {
+                                networkSender.ExitAndReturnResponseObject();
+                                while (asyncCompleted < asyncStarted) asyncDone.Wait();
+                                asyncDone.Dispose();
+                                asyncDone = null;
+                            }
+                            finally
+                            {
+                                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                            }
+                        }
+
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        if (!DrainCommands(bufSpan, count - 1))
+                            return false;
+                        errorFlag = true;
+                        errorCmd = "ASYNC";
+                    }
+                }
+                else
+                {
+                    if (!DrainCommands(bufSpan, count))
+                        return false;
+                    if (respProtocolVersion <= 2)
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_SUPPORTED_RESP2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        errorFlag = true;
+                        errorCmd = "ASYNC";
+                    }
+                }
+            }
             else
             {
-                // Unknown RESP Command
                 if (!DrainCommands(bufSpan, count))
                     return false;
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
@@ -560,13 +629,23 @@ namespace Garnet.server
             return true;
         }
 
-        void ProcessHelloCommand(int? respProtocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
+        /// <summary>
+        /// Process the HELLO command
+        /// </summary>
+        void ProcessHelloCommand(byte? respProtocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
         {
             if (respProtocolVersion != null)
             {
-                if (respProtocolVersion.Value != 2)
+                if (respProtocolVersion.Value is < 2 or > 3)
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION, ref dcurr, dend))
+                        SendAndReset();
+                    return;
+                }
+
+                if (respProtocolVersion.Value != this.respProtocolVersion && asyncCompleted < asyncStarted)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_ASYNC_PROTOCOL_CHANGE, ref dcurr, dend))
                         SendAndReset();
                     return;
                 }

@@ -348,7 +348,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     var value = keyVec[0].Key + numRecords;
                     if (syncMode == SyncMode.Sync)
                     {
-                        luContext.Upsert(ref keyVec[0].Key, ref value, Empty.Default, 0);
+                        luContext.Upsert(ref keyVec[0].Key, ref value, Empty.Default);
                     }
                     else
                     {
@@ -377,7 +377,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     Status status;
                     if (syncMode == SyncMode.Sync || (c % 1 == 0))  // in .Async mode, half the ops should be sync to test CompletePendingAsync
                     {
-                        status = luContext.Read(ref keyVec[0].Key, ref input, ref output, Empty.Default, 0);
+                        status = luContext.Read(ref keyVec[0].Key, ref input, ref output, Empty.Default);
                     }
                     else
                     {
@@ -422,7 +422,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     ++expectedS;
                     long output = 0;
                     blt.IncrementS(ref lockKeys[idx]);
-                    Status foundStatus = luContext.Read(ref lockKeys[idx].Key, ref input, ref output, Empty.Default, 0);
+                    Status foundStatus = luContext.Read(ref lockKeys[idx].Key, ref input, ref output, Empty.Default);
                     Assert.IsTrue(foundStatus.IsPending);
                 }
 

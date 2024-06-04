@@ -270,6 +270,9 @@ namespace Garnet.server
 
         private bool NetworkRUNTXP(int count, byte* ptr)
         {
+            if (count < 1)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP), count);
+
             if (!RespReadUtils.ReadIntWithLengthHeader(out int txid, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
@@ -287,15 +290,30 @@ namespace Garnet.server
             // Shift read head
             readHead = (int)(ptr - recvBufferPtr);
 
+            CustomTransactionProcedure proc;
+            int numParams;
 
-            var (proc, numParams) = customCommandManagerSession.GetCustomTransactionProcedure(txid, txnManager, scratchBufferManager);
+            try
+            {
+                (proc, numParams) = customCommandManagerSession.GetCustomTransactionProcedure(txid, txnManager, scratchBufferManager);
+            }
+            catch(Exception e)
+            {
+                while (!RespWriteUtils.WriteError("ERR Could not get transaction procedure", ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
             if (count - 1 == numParams)
             {
                 TryTransactionProc((byte)txid, start, ptr, proc);
             }
             else
             {
-                while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {txid}, expected {numParams}, actual {count - 1}", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(
+                           string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txid, numParams, count - 1), ref dcurr,
+                           dend))
                     SendAndReset();
                 return true;
             }

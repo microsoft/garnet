@@ -320,7 +320,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteHalfOfAllCacheRecordsTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void DeleteHalfOfAllReadCacheRecordsTest([Values] ConcurrencyControlMode concurrencyControlMode)
         {
             PopulateAndEvict();
             CreateChain();
@@ -678,7 +678,7 @@ namespace Tsavorite.test.ReadCacheTests
             }
 
             store = new TsavoriteKV<long, long>(1L << 20, logSettings, comparer: new LongComparerModulo(modRange),
-                concurrencyControlMode: ConcurrencyControlMode.RecordIsolation);
+                concurrencyControlMode: ConcurrencyControlMode.LockTable);
         }
 
         [TearDown]
