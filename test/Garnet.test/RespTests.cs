@@ -1288,7 +1288,7 @@ namespace Garnet.test
 
             db.KeyExpire(keyA, TimeSpan.FromSeconds(expire));
             var time = db.KeyTimeToLive(keyA);
-            Assert.IsTrue(time.Value.Seconds > 0);
+            Assert.IsTrue(time.Value.TotalSeconds > 0);
 
             response = db.KeyPersist(keyA);
             Assert.IsTrue(response);

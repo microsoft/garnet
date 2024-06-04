@@ -15,7 +15,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="context"></param>
         static void CompletePendingForSession<TContext>(ref Status status, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
         {
             context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();

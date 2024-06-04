@@ -121,7 +121,7 @@ namespace Garnet.cluster
                 var expiry = w.Value;
                 var diff = expiry - DateTimeOffset.UtcNow.Ticks;
 
-                var str = $"{nodeId} : {TimeSpan.FromTicks(diff).Seconds}";
+                var str = $"{nodeId} : {(int)TimeSpan.FromTicks(diff).TotalSeconds}";
                 banlist.Add(str);
             }
             return banlist;

@@ -7,7 +7,6 @@ namespace Garnet.server
 {
     /// <summary>
     /// Output type used by Garnet object store.
-    /// Does not convert to heap when going pending, because we immediately complete pending operations for object store.
     /// </summary>
     public struct GarnetObjectStoreOutput
     {
@@ -20,5 +19,10 @@ namespace Garnet.server
         /// Garnet object
         /// </summary>
         public IGarnetObject garnetObject;
+
+        public void ConvertToHeap()
+        {
+            // Does not convert to heap when going pending, because we immediately complete pending operations for object store.
+        }
     }
 }

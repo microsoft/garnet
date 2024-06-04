@@ -6,7 +6,7 @@ using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
-    public struct Functions : IFunctions<Key, Value, Input, Output, Empty>
+    public struct SessionFunctions : ISessionFunctions<Key, Value, Input, Output, Empty>
     {
         public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
@@ -93,5 +93,7 @@ namespace Tsavorite.benchmark
         public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { }
         public void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
         public void DisposeForRevivification(ref Key key, ref Value value, int newKeySize) { }
+
+        public void ConvertOutputToHeap(ref Input input, ref Output output) { }
     }
 }

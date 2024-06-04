@@ -8,7 +8,7 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     /// <summary>Hash table entry information for a key</summary>
-    internal unsafe struct HashEntryInfo
+    public unsafe struct HashEntryInfo
     {
         /// <summary>The first bucket in this chain for this hash bucket</summary>
         internal HashBucket* firstBucket;

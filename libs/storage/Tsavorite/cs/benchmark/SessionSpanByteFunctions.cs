@@ -5,7 +5,7 @@ using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
-    public sealed class FunctionsSB : SpanByteFunctions<Empty>
+    public sealed class SessionSpanByteFunctions : SpanByteFunctions<Empty>
     {
     }
 }
