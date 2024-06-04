@@ -2,11 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Numerics;
-using System.Text;
 
 namespace Garnet.server.ACL
 {
@@ -64,8 +61,11 @@ namespace Garnet.server.ACL
 
         /// <summary>
         /// String which, when parsed by <see cref="ACLParser"/>, will produce an equivalent <see cref="CommandPermissionSet"/> to this one.
+        /// 
+        /// This is not updated automatically, and should be rationalized once modification via <see cref="RemoveCommand(RespCommand)"/> or <see cref="AddCommand(RespCommand)"/>
+        /// is complete.
         /// </summary>
-        public string Description { get; private set; }
+        public string Description { get; set; }
 
         /// <summary>
         /// Returns true if the given command + subCommand pair can be run.
@@ -92,12 +92,9 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
-        /// Copy this permission set, adding the given description.
-        /// 
-        /// Note that this does not validate the description, it is the caller's responsibility to correctly
-        /// update permitted/denied commands to match the description.
+        /// Copy this permission set.
         /// </summary>
-        public CommandPermissionSet Copy(string addToDescription)
+        public CommandPermissionSet Copy()
         {
             ulong[] copy = new ulong[this._commandList.Length];
 
@@ -114,14 +111,7 @@ namespace Garnet.server.ACL
                 Array.Copy(this._commandList, copy, this._commandList.Length);
             }
 
-            string newDesc = 
-                string.IsNullOrWhiteSpace(this.Description) ? 
-                addToDescription : 
-                string.IsNullOrEmpty(addToDescription) ? 
-                    this.Description :
-                    $"{this.Description} {addToDescription}";
-
-            return new(this._all, copy, newDesc);
+            return new(this._all, copy, Description);
         }
 
         /// <summary>

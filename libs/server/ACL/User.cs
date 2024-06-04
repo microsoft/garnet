@@ -3,6 +3,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
@@ -53,8 +55,9 @@ namespace Garnet.server.ACL
         /// <param name="category">Bit flag of the category to add.</param>
         public void AddCategory(RespAclCategories category)
         {
-            // Adding to +@all is a no-op
             CommandPermissionSet prev = this._enabledCommands;
+
+            // no-op
             if (prev == CommandPermissionSet.All)
             {
                 return;
@@ -69,7 +72,23 @@ namespace Garnet.server.ACL
                     throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
                 }
 
-                descUpdate = $"-@{ACLParser.GetNameByACLCategory(category)}";
+                bool canRunAll = true;
+                foreach (RespCommand cmd in User.DetermineCommandDetails(commandInfos))
+                {
+                    if (!prev.CanRunCommand(cmd))
+                    {
+                        canRunAll = false;
+                        break;
+                    }
+                }
+
+                // NO-OP
+                if (canRunAll)
+                {
+                    return;
+                }
+
+                descUpdate = $"+@{ACLParser.GetNameByACLCategory(category)}";
             }
             else
             {
@@ -89,11 +108,13 @@ namespace Garnet.server.ACL
                 }
                 else
                 {
-                    updated = oldPerms.Copy(descUpdate);
+                    updated = oldPerms.Copy();
                     foreach (RespCommand cmd in DetermineCommandDetails(commandInfos))
                     {
                         updated.AddCommand(cmd);
                     }
+
+                    updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
                 }
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
@@ -107,12 +128,7 @@ namespace Garnet.server.ACL
         /// <param name="command">Command to add.</param>
         public void AddCommand(RespCommand command)
         {
-            // Adding to +@all is a no-op
             CommandPermissionSet prev = this._enabledCommands;
-            if (prev == CommandPermissionSet.All)
-            {
-                return;
-            }
 
             if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
             {
@@ -120,7 +136,24 @@ namespace Garnet.server.ACL
             }
 
             IEnumerable<RespCommand> toAdd = DetermineCommandDetails([info]);
-            string descUpdate = $"-{info.Name.ToLowerInvariant()}";
+
+            bool canAlreadyRun = true;
+            foreach (RespCommand toCheck in toAdd)
+            {
+                if (!prev.CanRunCommand(toCheck))
+                {
+                    canAlreadyRun = false;
+                    break;
+                }
+            }
+
+            // Update is a no-op, skip the work
+            if (canAlreadyRun)
+            {
+                return;
+            }
+
+            string descUpdate = $"+{info.Name.ToLowerInvariant()}";
 
             CommandPermissionSet oldPerms;
             CommandPermissionSet updated;
@@ -128,11 +161,13 @@ namespace Garnet.server.ACL
             {
                 oldPerms = prev;
 
-                updated = oldPerms.Copy(descUpdate);
+                updated = oldPerms.Copy();
                 foreach (RespCommand cmd in toAdd)
                 {
                     updated.AddCommand(cmd);
                 }
+
+                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
         }
@@ -159,6 +194,22 @@ namespace Garnet.server.ACL
                     throw new ACLException("Unable to obtain ACL information, this shouldn't be possible");
                 }
 
+                bool canRunAny = false;
+                foreach (RespCommand cmd in User.DetermineCommandDetails(commandInfos))
+                {
+                    if (this.CanAccessCommand(cmd))
+                    {
+                        canRunAny = true;
+                        break;
+                    }
+                }
+
+                // NO-OP
+                if (!canRunAny)
+                {
+                    return;
+                }
+
                 descUpdate = $"-@{ACLParser.GetNameByACLCategory(category)}";
             }
             else
@@ -179,30 +230,27 @@ namespace Garnet.server.ACL
                 }
                 else
                 {
-                    updated = oldPerms.Copy(descUpdate);
+                    updated = oldPerms.Copy();
                     foreach (RespCommand cmd in DetermineCommandDetails(commandInfos))
                     {
                         updated.RemoveCommand(cmd);
                     }
+
+                    updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
                 }
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
         }
 
         /// <summary>
-        /// REmoves the given command from the user.
+        /// Removes the given command from the user.
         /// 
         /// If the command has subcommands, and no specific subcommand is indicated, removes all subcommands too.
         /// </summary>
         /// <param name="command">Command to remove.</param>
         public void RemoveCommand(RespCommand command)
         {
-            // Removing from -@all is a no-op
             CommandPermissionSet prev = this._enabledCommands;
-            if (prev == CommandPermissionSet.None)
-            {
-                return;
-            }
 
             if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
             {
@@ -210,6 +258,23 @@ namespace Garnet.server.ACL
             }
 
             IEnumerable<RespCommand> toRemove = DetermineCommandDetails([info]);
+
+            bool cantRun = true;
+            foreach (RespCommand cmd in toRemove)
+            {
+                if (this.CanAccessCommand(cmd))
+                {
+                    cantRun = false;
+                    break;
+                }
+            }
+
+            // Update is a no-op, skip the work
+            if (cantRun)
+            {
+                return;
+            }
+
             string descUpdate = $"-{info.Name.ToLowerInvariant()}";
 
             CommandPermissionSet oldPerms;
@@ -218,11 +283,13 @@ namespace Garnet.server.ACL
             {
                 oldPerms = prev;
 
-                updated = oldPerms.Copy(descUpdate);
+                updated = oldPerms.Copy();
                 foreach (RespCommand cmd in toRemove)
                 {
                     updated.RemoveCommand(cmd);
                 }
+
+                updated.Description = RationalizeACLDescription(updated, $"{updated.Description} {descUpdate}");
             }
             while ((prev = Interlocked.CompareExchange(ref this._enabledCommands, updated, oldPerms)) != oldPerms);
         }
@@ -380,10 +447,43 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
+        /// Check to see if any tokens from a description can be removed without modifying the effective permissions.
+        /// 
+        /// This is an expensive method, but ACL modifications are rare enough it's hopefully not a problem.
+        /// </summary>
+        private static string RationalizeACLDescription(CommandPermissionSet set, string description)
+        {
+            List<string> parts = description.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            while (true)
+            {
+                bool shrunk = false;
+
+                for (int i = 0; i < parts.Count; i++)
+                {
+                    string withoutRule = $"user test on >xxx {string.Join(" ", parts.Take(i).Skip(1))}";
+                    CommandPermissionSet withoutPerms = ACLParser.ParseACLRule(withoutRule).CopyCommandPermissionSet();
+                    if (withoutPerms.IsEquivalentTo(set))
+                    {
+                        parts.RemoveAt(i);
+                        i--;
+                        shrunk = true;
+                    }
+                }
+
+                if (!shrunk)
+                {
+                    break;
+                }
+            }
+
+            return string.Join(" ", parts);
+        }
+
+        /// <summary>
         /// Returns a copy of the users current <see cref="CommandPermissionSet"/>.
         /// </summary>
         internal CommandPermissionSet CopyCommandPermissionSet()
-        => _enabledCommands.Copy("");
+        => _enabledCommands.Copy();
 
         /// <summary>
         /// Commands enabled for the user
