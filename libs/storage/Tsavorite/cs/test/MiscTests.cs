@@ -52,16 +52,16 @@ namespace Tsavorite.test
             var input1 = new MyInput { value = 23 };
             MyOutput output = new();
 
-            session.RMW(ref key, ref input1, Empty.Default, 0);
+            session.RMW(ref key, ref input1, Empty.Default);
 
             int key2 = 8999999;
             var input2 = new MyInput { value = 24 };
-            session.RMW(ref key2, ref input2, Empty.Default, 0);
+            session.RMW(ref key2, ref input2, Empty.Default);
 
-            session.Read(ref key, ref input1, ref output, Empty.Default, 0);
+            session.Read(ref key, ref input1, ref output, Empty.Default);
             Assert.AreEqual(input1.value, output.value.value);
 
-            session.Read(ref key2, ref input2, ref output, Empty.Default, 0);
+            session.Read(ref key2, ref input2, ref output, Empty.Default);
             Assert.AreEqual(input2.value, output.value.value);
         }
 
@@ -74,13 +74,13 @@ namespace Tsavorite.test
             for (int i = 0; i < 2000; i++)
             {
                 var value = new MyValue { value = i };
-                session.Upsert(ref i, ref value, Empty.Default, 0);
+                session.Upsert(ref i, ref value, Empty.Default);
             }
 
             var key2 = 23;
             MyInput input = new();
             MyOutput g1 = new();
-            var status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
+            var status = session.Read(ref key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
             {
@@ -92,7 +92,7 @@ namespace Tsavorite.test
             Assert.AreEqual(23, g1.value.value);
 
             key2 = 99999;
-            status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
+            status = session.Read(ref key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
             {

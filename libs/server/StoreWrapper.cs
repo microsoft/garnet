@@ -9,7 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.ACL;
-using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -135,7 +135,7 @@ namespace Garnet.server
                 // If ACL authentication is enabled, initiate access control list
                 // NOTE: This is a temporary workflow. ACL should always be initiated and authenticator
                 //       should become a parameter of AccessControlList.
-                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType() == typeof(AclAuthenticationSettings)))
+                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings)))
                 {
                     // Create a new access control list and register it with the authentication settings
                     AclAuthenticationSettings aclAuthenticationSettings = (AclAuthenticationSettings)this.serverOptions.AuthSettings;
@@ -490,6 +490,8 @@ namespace Garnet.server
             {
                 Task.Run(() => IndexAutoGrowTask(ctsCommit.Token));
             }
+
+            objectStoreSizeTracker?.Start();
         }
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>

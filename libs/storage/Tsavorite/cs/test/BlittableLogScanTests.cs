@@ -107,7 +107,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default);
             }
             store.Log.FlushAndEvict(true);
 
@@ -153,7 +153,7 @@ namespace Tsavorite.test
                 }
                 var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref value, Empty.Default);
             }
 
             using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress);

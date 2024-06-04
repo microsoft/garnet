@@ -44,17 +44,18 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
 
             commandMap[id] = new CustomCommand(name, (byte)id, 1, numParams, type, customFunctions, expirationTicks);
-            customCommandsInfo.Add(name, commandInfo);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             return id;
         }
 
-        internal int Register(string name, int numParams, Func<CustomTransactionProcedure> proc)
+        internal int Register(string name, int numParams, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
         {
             int id = Interlocked.Increment(ref TransactionProcId) - 1;
             if (id >= MaxRegistrations)
                 throw new Exception("Out of registration space");
 
             transactionProcMap[id] = new CustomTransaction(name, (byte)id, numParams, proc);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             return id;
         }
 
@@ -99,7 +100,7 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
 
             wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, 1, numParams, commandType, wrapper.factory);
-            customCommandsInfo.Add(name, commandInfo);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
 
             return subCommand;
         }
@@ -127,7 +128,7 @@ namespace Garnet.server
                 throw new Exception("Out of registration space");
             wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, 1, numParams, commandType, wrapper.factory);
 
-            customCommandsInfo.Add(name, commandInfo);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
 
             return (objectTypeId, subCommand);
         }

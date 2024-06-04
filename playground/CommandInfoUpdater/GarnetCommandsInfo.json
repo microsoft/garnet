@@ -158,5 +158,20 @@
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null
+  },
+  {
+    "Command": "ASYNC",
+    "ArrayCommand": null,
+    "Name": "ASYNC",
+    "IsInternal": true,
+    "Arity": 1,
+    "Flags": "NoScript, NoMulti, ReadOnly",
+    "FirstKey": 0,
+    "LastKey": 0,
+    "Step": 0,
+    "AclCategories": "Slow",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
   }
 ]

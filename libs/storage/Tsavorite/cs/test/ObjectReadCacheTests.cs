@@ -53,7 +53,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref value, Empty.Default);
             }
             session.CompletePending(true);
 
@@ -67,7 +67,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
@@ -79,7 +79,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(value.value, output.value.value);
             }
@@ -94,7 +94,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
@@ -106,7 +106,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(value.value, output.value.value);
             }
@@ -117,7 +117,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default);
             }
 
             // RMW to overwrite the read cache
@@ -125,7 +125,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key1 = new MyKey { key = i };
                 input = new MyInput { value = 1 };
-                var status = session.RMW(ref key1, ref input, Empty.Default, 0);
+                var status = session.RMW(ref key1, ref input, Empty.Default);
                 if (status.IsPending)
                     session.CompletePending(true);
             }
@@ -137,7 +137,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i + 1 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found, $"key = {key1.key}");
                 Assert.AreEqual(value.value, output.value.value);
             }
@@ -155,7 +155,7 @@ namespace Tsavorite.test.ReadCacheTests
             {
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key, ref value, Empty.Default, 0);
+                session.Upsert(ref key, ref value, Empty.Default);
             }
             session.CompletePending(true);
 
@@ -169,7 +169,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
@@ -181,7 +181,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(value.value, output.value.value);
             }
@@ -196,7 +196,7 @@ namespace Tsavorite.test.ReadCacheTests
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.IsPending);
                 session.CompletePending(true);
             }
@@ -208,7 +208,7 @@ namespace Tsavorite.test.ReadCacheTests
                 MyKey key1 = new() { key = i };
                 MyValue value = new() { value = i };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 Assert.AreEqual(value.value, output.value.value);
             }

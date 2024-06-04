@@ -110,6 +110,7 @@ namespace Garnet.server
                                 _output->opsDone++;
 
                                 this.UpdateSize(member);
+                                elementsChanged++;
                             }
                         }
                         else if (!nx && scoreStored != score)

@@ -451,6 +451,31 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Skip byte array with length header
+        /// </summary>
+        public static bool SkipByteArrayWithLengthHeader(ref byte* ptr, byte* end)
+        {
+            // Parse RESP string header
+            if (!ReadLengthHeader(out var length, ref ptr, end))
+                return false;
+
+            // Advance read pointer to the end of the array (including terminator)
+            var keyPtr = ptr;
+
+            ptr += length + 2;
+
+            if (ptr > end)
+                return false;
+
+            // Ensure terminator has been received
+            if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
+            {
+                RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Read byte array with length header
         /// </summary>
         public static bool ReadByteArrayWithLengthHeader(out byte[] result, ref byte* ptr, byte* end)

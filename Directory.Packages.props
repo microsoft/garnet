@@ -1,9 +1,7 @@
 <Project>
-
   <PropertyGroup Label="Centralized Package Versions">
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
-
   <ItemGroup>
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.14.1" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.13.12" />
@@ -19,10 +17,10 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="6.28.1" />
-    <PackageVersion Include="StackExchange.Redis" Version="2.6.80" />
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="6.34.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="7.5.1" />
+    <PackageVersion Include="Microsoft.IdentityModel.Validators" Version="7.5.1" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.7.33" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="7.5.1" />
     <PackageVersion Include="System.Interactive.Async" Version="6.0.1" />
   </ItemGroup>
-
 </Project>

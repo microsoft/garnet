@@ -63,7 +63,7 @@ namespace Tsavorite.test
             {
                 var _key = GetByteArray(i);
                 var _value = GetByteArray(i);
-                session.Upsert(ref _key, ref _value, Empty.Default, 0);
+                session.Upsert(ref _key, ref _value, Empty.Default);
             }
             session.CompletePending(true);
 
@@ -74,7 +74,7 @@ namespace Tsavorite.test
                 var key = GetByteArray(i);
                 var value = GetByteArray(i);
 
-                if (session.Read(ref key, ref input, ref output, Empty.Default, 0).IsPending)
+                if (session.Read(ref key, ref input, ref output, Empty.Default).IsPending)
                 {
                     session.CompletePending(true);
                 }

@@ -7,10 +7,6 @@ namespace Tsavorite.core
     {
         public static readonly NullTsavoriteSession Instance = new();
 
-        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
-        {
-        }
-
         public void UnsafeResumeThread()
         {
         }

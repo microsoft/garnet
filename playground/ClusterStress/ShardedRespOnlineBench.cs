@@ -411,7 +411,8 @@ namespace Resp.benchmark
             PrintClusterConfig();
             Console.WriteLine($"Running benchmark using {opts.Client} client type");
 
-            InitClients(clusterConfig?.Nodes.ToArray());
+            // Initialize clients to nodes using the retrieved configuration
+            InitClients(clusterConfig.Nodes.ToArray());
             Thread[] workers = InitializeThreadWorkers();
 
             // Start threads.

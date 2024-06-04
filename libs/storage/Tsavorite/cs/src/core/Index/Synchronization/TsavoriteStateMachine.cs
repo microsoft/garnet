@@ -194,7 +194,6 @@ namespace Tsavorite.core
             CancellationToken token = default)
             where TsavoriteSession : ITsavoriteSession
         {
-
             #region Capture current (non-intermediate) system state
             var currentTask = currentSyncStateMachine;
             var targetState = SystemState.Copy(ref systemState);
@@ -210,37 +209,6 @@ namespace Tsavorite.core
 
             var currentState = ctx is null ? targetState : SystemState.Make(ctx.phase, ctx.version);
             var targetStartState = StartOfCurrentCycle(targetState);
-
-            #region Get returning thread to start of current cycle, issuing completion callbacks if needed
-            if (ctx is not null)
-            {
-                if (ctx.version < targetStartState.Version)
-                {
-                    // Issue CPR callback for full session
-                    if (ctx.serialNum != -1)
-                    {
-                        List<long> excludedSerialNos = new();
-                        foreach (var v in ctx.ioPendingRequests.Values)
-                        {
-                            excludedSerialNos.Add(v.serialNum);
-                        }
-
-                        var commitPoint = new CommitPoint
-                        {
-                            UntilSerialNo = ctx.serialNum,
-                            ExcludedSerialNos = excludedSerialNos
-                        };
-
-                        // Thread local action
-                        tsavoriteSession?.CheckpointCompletionCallback(ctx.sessionID, ctx.sessionName, commitPoint);
-                    }
-                }
-                if ((ctx.version == targetStartState.Version) && (ctx.phase < Phase.REST) && ctx.threadStateMachine is not IndexSnapshotStateMachine)
-                {
-                    IssueCompletionCallback(ctx, tsavoriteSession);
-                }
-            }
-            #endregion 
 
             // No state machine associated with target, or target is in REST phase:
             // we can directly fast forward session to target state
@@ -306,33 +274,6 @@ namespace Tsavorite.core
             #endregion
 
             return;
-        }
-
-        /// <summary>
-        /// Issue completion callback if needed, for the given context's prevCtx
-        /// </summary>
-        internal static void IssueCompletionCallback<Input, Output, Context, TsavoriteSession>(TsavoriteExecutionContext<Input, Output, Context> ctx, TsavoriteSession tsavoriteSession)
-             where TsavoriteSession : ITsavoriteSession
-        {
-            CommitPoint commitPoint = default;
-            if (ctx.prevCtx.excludedSerialNos != null)
-            {
-                lock (ctx.prevCtx)
-                {
-                    if (ctx.prevCtx.serialNum != -1)
-                    {
-                        commitPoint = new CommitPoint
-                        {
-                            UntilSerialNo = ctx.prevCtx.serialNum,
-                            ExcludedSerialNos = ctx.prevCtx.excludedSerialNos
-                        };
-                        ctx.prevCtx.excludedSerialNos = null;
-                    }
-                }
-                if (commitPoint.ExcludedSerialNos != null)
-                    tsavoriteSession?.CheckpointCompletionCallback(ctx.sessionID, ctx.sessionName, commitPoint);
-            }
-
         }
     }
 }

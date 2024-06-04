@@ -33,7 +33,7 @@ namespace Garnet.server
             if (input.Length == 0)
                 CopyRespTo(ref value, ref dst);
             else
-                CopyRespToWithInput(ref input, ref value, ref dst);
+                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
 
             return true;
         }
@@ -63,7 +63,9 @@ namespace Garnet.server
             if (input.Length == 0)
                 CopyRespTo(ref value, ref dst);
             else
-                CopyRespToWithInput(ref input, ref value, ref dst);
+            {
+                CopyRespToWithInput(ref input, ref value, ref dst, readInfo.IsFromPending);
+            }
 
             return true;
         }

@@ -19,7 +19,6 @@ namespace Tsavorite.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="tsavoriteSession">Callback functions.</param>
-        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -50,7 +49,7 @@ namespace Tsavorite.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRead<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Output output,
-                                    Context userContext, long lsn, ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
+                                    Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             OperationStackContext<Key, Value> stackCtx = new(keyHash);
@@ -71,6 +70,7 @@ namespace Tsavorite.core
             ReadInfo readInfo = new()
             {
                 Version = tsavoriteSession.Ctx.version,
+                IsFromPending = pendingContext.type != OperationType.NONE,
             };
 
             try
@@ -140,7 +140,7 @@ namespace Tsavorite.core
                     {
                         if (pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable)
                             return OperationStatus.SUCCESS;
-                        return CopyFromImmutable(ref key, ref input, ref output, userContext, lsn, ref pendingContext, tsavoriteSession, ref stackCtx, ref status, stackCtx.recSrc.GetValue());
+                        return CopyFromImmutable(ref key, ref input, ref output, userContext, ref pendingContext, tsavoriteSession, ref stackCtx, ref status, stackCtx.recSrc.GetValue());
                     }
                     return CheckFalseActionStatus(readInfo);
                 }
@@ -153,7 +153,7 @@ namespace Tsavorite.core
                     // Note: we do not lock here; we wait until reading from disk, then lock in the ContinuePendingRead chain.
                     if (hlog.IsNullDevice)
                         return OperationStatus.NOTFOUND;
-                    CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, lsn, stackCtx.recSrc.LogicalAddress);
+                    CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, stackCtx.recSrc.LogicalAddress);
                     return OperationStatus.RECORD_ON_DISK;
                 }
 
@@ -164,22 +164,21 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                if (!TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx))
-                    stackCtx.recSrc.UnlockShared(ref srcRecordInfo, hlog.HeadAddress);
+                TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
             }
         }
 
-        // No AggressiveInlining; this is a less-common function and it may imnprove inlining of InternalRead to have this be a virtcall.
-        private OperationStatus CopyFromImmutable<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, Context userContext, long lsn,
+        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
+        private OperationStatus CopyFromImmutable<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, Context userContext,
                 ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, Value recordValue)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
             {
-                status = ConditionalCopyToTail(tsavoriteSession, ref pendingContext, ref key, ref input, ref recordValue, ref output, userContext, lsn, ref stackCtx,
+                status = ConditionalCopyToTail(tsavoriteSession, ref pendingContext, ref key, ref input, ref recordValue, ref output, userContext, ref stackCtx,
                                                WriteReason.CopyToTail, wantIO: false);
                 if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)    // May happen due to CopyToTailFromReadOnly
-                    CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, lsn, stackCtx.recSrc.LogicalAddress);
+                    CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, stackCtx.recSrc.LogicalAddress);
                 return status;
             }
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.ReadCache
@@ -191,7 +190,7 @@ namespace Tsavorite.core
             return OperationStatus.SUCCESS;
         }
 
-        // No AggressiveInlining; this is a less-common function and it may imnprove inlining of InternalRead to have this be a virtcall.
+        // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
         private static OperationStatus CheckFalseActionStatus(ReadInfo readInfo)
         {
             if (readInfo.Action == ReadAction.CancelOperation)
@@ -213,7 +212,6 @@ namespace Tsavorite.core
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
         /// <param name="tsavoriteSession">Callback functions.</param>
-        /// <param name="lsn">Operation serial number</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -244,7 +242,7 @@ namespace Tsavorite.core
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalReadAtAddress<Input, Output, Context, TsavoriteSession>(long readAtAddress, ref Key key, ref Input input, ref Output output,
-                                    ref ReadOptions readOptions, Context userContext, long lsn, ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
+                                    ref ReadOptions readOptions, Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             if (readAtAddress < hlog.BeginAddress)
@@ -256,17 +254,13 @@ namespace Tsavorite.core
                 // Do not trace back in the pending callback if it is a key mismatch.
                 pendingContext.NoKey = true;
 
-                CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, lsn, readAtAddress);
+                CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, readAtAddress);
                 return OperationStatus.RECORD_ON_DISK;
             }
 
             // We're in-memory, so it is safe to get the address now.
             var physicalAddress = hlog.GetPhysicalAddress(readAtAddress);
 
-            // See if we are doing Transient-only locking (LockTable with a non-LockableContext).
-            bool doTransientLocking = DoTransientLocking && !tsavoriteSession.IsManualLocking;
-
-        Retry:
             Key defaultKey = default;
             if (readOptions.KeyHash.HasValue)
                 pendingContext.keyHash = readOptions.KeyHash.Value;
@@ -309,25 +303,6 @@ namespace Tsavorite.core
                     return OperationStatus.NOTFOUND;
                 // We do not check for Tombstone here; we return the record to the caller.
 
-                // We *do* return RETRY_LATER if there is a locking conflict.
-                if (DoRecordIsolation && !stackCtx.recSrc.TryLock(ref srcRecordInfo, exclusive: false))
-                    return OperationStatus.RETRY_LATER;
-
-                // If we are doing FreeList revivification verify the record is still in the same tag chain. This is similar to the lock-then-verify logic
-                // in TryMatchFirstRecordWithRecordIsolationAndReviv, but does not use the key since we may have NoKey. For ReadAtAddress, the key and keyHash
-                // are merely hints for bucket locking.
-                if (RevivificationManager.UseFreeRecordPool)
-                {
-                    var bucketIndex = OverflowBucketLockTable<Key, Value>.GetBucketIndex(pendingContext.keyHash, this);
-                    if (bucketIndex != stackCtx.hei.bucketIndex)
-                    {
-                        // If the key and/or keyHash were passed in, they do not match what is in the record so ignore them on the retry.
-                        pendingContext.keyHash = default;
-                        pendingContext.NoKey = true;
-                        goto Retry;
-                    }
-                }
-
                 stackCtx.recSrc.SetHasMainLogSrc();
                 pendingContext.recordInfo = srcRecordInfo;
                 pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
@@ -336,6 +311,7 @@ namespace Tsavorite.core
                 {
                     Version = tsavoriteSession.Ctx.version,
                     Address = stackCtx.recSrc.LogicalAddress,
+                    IsFromPending = pendingContext.type != OperationType.NONE,
                 };
                 readInfo.SetRecordInfo(ref srcRecordInfo);
 
@@ -355,15 +331,14 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                if (!TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx))
-                    stackCtx.recSrc.UnlockShared(ref srcRecordInfo, hlog.HeadAddress);
+                TransientSUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
             }
             return status;
         }
 
         // No AggressiveInlining; this is called only for the pending case and may improve inlining of DoInternalRead in the normal case if the compiler decides not to inline this.
         private void CreatePendingReadContext<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, Output output, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long lsn, long logicalAddress)
+                ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, long logicalAddress)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             pendingContext.type = OperationType.READ;
@@ -378,8 +353,6 @@ namespace Tsavorite.core
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = logicalAddress;
-            pendingContext.version = tsavoriteSession.Ctx.version;
-            pendingContext.serialNum = lsn;
         }
     }
 }

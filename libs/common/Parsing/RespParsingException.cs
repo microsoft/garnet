@@ -3,6 +3,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.common.Parsing
 {
@@ -15,7 +16,8 @@ namespace Garnet.common.Parsing
         /// Construct a new RESP parsing exception with the given message.
         /// </summary>
         /// <param name="message">Message that described the exception that has occurred.</param>
-        RespParsingException(string message) : base(message)
+        /// <param name="logLevel">Logging level for the exception that occurred</param>
+        RespParsingException(string message, LogLevel logLevel = LogLevel.Critical) : base(message, logLevel)
         {
             // Nothing...
         }
@@ -78,8 +80,9 @@ namespace Garnet.common.Parsing
         /// Throw helper that throws a RespParsingException.
         /// </summary>
         /// <param name="message">Exception message.</param>
+        /// <param name="logLevel">LogLevel for exception.</param>
         [DoesNotReturn]
-        public static void Throw(string message) =>
-            throw new RespParsingException(message);
+        public static new void Throw(string message, LogLevel logLevel = LogLevel.Critical) =>
+            throw new RespParsingException(message, logLevel);
     }
 }

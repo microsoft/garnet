@@ -1,4 +1,3 @@
-﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31808.319
@@ -75,6 +74,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pipelines", "pipelines", "{
 		.azure\pipelines\azure-pipelines-compliance.yml = .azure\pipelines\azure-pipelines-compliance.yml
 		.azure\pipelines\azure-pipelines-external-release.yml = .azure\pipelines\azure-pipelines-external-release.yml
 		.azure\pipelines\azure-pipelines-internal-release.yml = .azure\pipelines\azure-pipelines-internal-release.yml
+		.azure\pipelines\azure-pipelines-mirror.yml = .azure\pipelines\azure-pipelines-mirror.yml
 		.azure\pipelines\azure-pipelines-tsavorite-codecoverage.yml = .azure\pipelines\azure-pipelines-tsavorite-codecoverage.yml
 		.azure\pipelines\azure-pipelines-tsavorite.yml = .azure\pipelines\azure-pipelines-tsavorite.yml
 		.azure\pipelines\azure-pipelines.yml = .azure\pipelines\azure-pipelines.yml

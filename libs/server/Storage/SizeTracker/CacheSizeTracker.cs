@@ -64,6 +64,8 @@ namespace Garnet.server
             this.mainLogTracker = new LogSizeTracker<byte[], IGarnetObject, LogSizeCalculator>(store.Log, logSizeCalculator,
                 mainLogTargetSizeBytes, mainLogTargetSizeBytes / deltaFraction, loggerFactory?.CreateLogger("ObjSizeTracker"));
             store.Log.SubscribeEvictions(mainLogTracker);
+            store.Log.SubscribeDeserializations(new LogOperationObserver<byte[], IGarnetObject, LogSizeCalculator>(mainLogTracker, LogOperationType.Deserialize));
+            store.Log.IsSizeBeyondLimit = () => mainLogTracker.IsSizeBeyondLimit;
 
             if (store.ReadCache != null)
             {
@@ -71,6 +73,12 @@ namespace Garnet.server
                     readCacheTargetSizeBytes, readCacheTargetSizeBytes / deltaFraction, loggerFactory?.CreateLogger("ObjReadCacheSizeTracker"));
                 store.ReadCache.SubscribeEvictions(readCacheTracker);
             }
+        }
+
+        public void Start()
+        {
+            mainLogTracker.Start();
+            readCacheTracker?.Start();
         }
 
         /// <summary>

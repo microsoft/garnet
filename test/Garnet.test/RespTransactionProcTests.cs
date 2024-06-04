@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Threading;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -60,10 +61,23 @@ namespace Garnet.test
         public void TransactionProcTest2()
         {
             // Register sample custom command (SETIFPM = "set if prefix match")
-            int id = server.Register.NewTransactionProc("READWRITETX", 3, () => new ReadWriteTxn());
+            var numParams = 3;
+            var id = server.Register.NewTransactionProc("READWRITETX", numParams, () => new ReadWriteTxn());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
+
+            // Check RUNTXP without id
+            try
+            {
+                db.Execute("RUNTXP");
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.RUNTXP));
+                Assert.AreEqual(expectedErrorMessage, e.Message);
+            }
 
             string readkey = "readkey";
             string value = "foovalue0";
@@ -72,8 +86,19 @@ namespace Garnet.test
             string writekey1 = "writekey1";
             string writekey2 = "writekey2";
 
-            var result = db.Execute("RUNTXP", id, readkey, writekey1, writekey2);
+            // Check RUNTXP with insufficient parameters
+            try
+            {
+                db.Execute("RUNTXP", id, readkey);
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgsTxn, id, numParams, 1);
+                Assert.AreEqual(expectedErrorMessage, e.Message);
+            }
 
+            var result = db.Execute("RUNTXP", id, readkey, writekey1, writekey2);
             Assert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded

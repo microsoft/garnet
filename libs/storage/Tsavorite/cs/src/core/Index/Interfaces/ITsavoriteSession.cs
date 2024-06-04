@@ -12,7 +12,6 @@ namespace Tsavorite.core
     {
         void UnsafeResumeThread();
         void UnsafeSuspendThread();
-        void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint);
     }
 
     /// <summary>

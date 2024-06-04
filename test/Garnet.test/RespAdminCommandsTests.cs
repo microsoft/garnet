@@ -236,12 +236,10 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 for (int i = 0; i < 3000; i++)
-                {
-                    var key = $"SeSaveRecoverTestKey{i:0000}";
-                    db.ListLeftPush(key, ldata);
-                    var retval = db.ListRange(key);
-                    Assert.AreEqual(ldataArr, retval, $"key {key}");
-                }
+                    db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
+
+                for (int i = 0; i < 3000; i++)
+                    Assert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
 
                 // Issue and wait for DB save
                 var server = redis.GetServer($"{TestUtils.Address}:{TestUtils.Port}");
@@ -250,19 +248,18 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize));
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, MemorySize: sizeToString(recoveryMemorySize), PageSize: sizeToString(pageSize), objectStoreTotalMemorySize: "64k");
             server.Start();
 
             Assert.LessOrEqual(server.Provider.StoreWrapper.objectStore.MaxAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                for (int i = 0; i < 3000; i++)
-                {
-                    var key = $"SeSaveRecoverTestKey{i:0000}";
-                    var returnedData = db.ListRange(key);
-                    Assert.AreEqual(ldataArr, returnedData, $"key {key}");
-                }
+                for (var i = 3000; i < 3100; i++)
+                    db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
+
+                for (var i = 0; i < 3100; i++)
+                    Assert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
             }
         }
 
@@ -487,6 +484,57 @@ namespace Garnet.test
             Assert.IsTrue(_value.IsNull);
         }
 
+        [Test]
+        [TestCase("timeout", "0")]
+        [TestCase("save", "")]
+        [TestCase("appendonly", "no")]
+        [TestCase("slave-read-only", "no")]
+        [TestCase("databases", "16")]
+        [TestCase("cluster-node-timeout", "60")]
+        public void SimpleConfigGet(string parameter, string parameterValue)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var result = (string[])db.Execute("CONFIG", "GET", parameter);
+
+            Assert.AreEqual(parameter, result[0]);
+            Assert.AreEqual(parameterValue, result[1]);
+        }
+
+        #endregion
+
+        #region NegativeTests
+
+        [Test]
+        public void ConfigWrongNumberOfArguments()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            try
+            {
+                db.Execute("CONFIG");
+            }
+            catch (Exception ex)
+            {
+                Assert.AreEqual("ERR wrong number of arguments for 'CONFIG' command", ex.Message);
+            }
+        }
+
+        [Test]
+        public void ConfigGetWrongNumberOfArguments()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            try
+            {
+                db.Execute("CONFIG", "GET");
+            }
+            catch (Exception ex)
+            {
+                Assert.AreEqual("ERR wrong number of arguments for 'CONFIG|GET' command", ex.Message);
+            }
+        }
         #endregion
     }
 }

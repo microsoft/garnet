@@ -166,23 +166,23 @@ namespace Tsavorite.benchmark
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
-                            uContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
+                            uContext.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
                             ++reads_done;
                             continue;
                         }
                         if (r < upsertPercent)
                         {
-                            uContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
+                            uContext.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
                             ++writes_done;
                             continue;
                         }
                         if (r < rmwPercent)
                         {
-                            uContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
+                            uContext.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
                             ++writes_done;
                             continue;
                         }
-                        uContext.Delete(ref txn_keys_[idx], Empty.Default, 1);
+                        uContext.Delete(ref txn_keys_[idx], Empty.Default);
                         ++deletes_done;
                     }
 
@@ -265,23 +265,23 @@ namespace Tsavorite.benchmark
                     int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
                     {
-                        session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default, 1);
+                        session.Read(ref txn_keys_[idx], ref input, ref output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
                     if (r < upsertPercent)
                     {
-                        session.Upsert(ref txn_keys_[idx], ref value, Empty.Default, 1);
+                        session.Upsert(ref txn_keys_[idx], ref value, Empty.Default);
                         ++writes_done;
                         continue;
                     }
                     if (r < rmwPercent)
                     {
-                        session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default, 1);
+                        session.RMW(ref txn_keys_[idx], ref input_[idx & 0x7], Empty.Default);
                         ++writes_done;
                         continue;
                     }
-                    session.Delete(ref txn_keys_[idx], Empty.Default, 1);
+                    session.Delete(ref txn_keys_[idx], Empty.Default);
                     ++deletes_done;
                 }
             }
@@ -465,7 +465,7 @@ namespace Tsavorite.benchmark
                             }
                         }
 
-                        uContext.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
+                        uContext.Upsert(ref init_keys_[idx], ref value, Empty.Default);
                     }
 #if DASHBOARD
                 count += (int)kChunkSize;
@@ -522,7 +522,7 @@ namespace Tsavorite.benchmark
                         }
                     }
 
-                    session.Upsert(ref init_keys_[idx], ref value, Empty.Default, 1);
+                    session.Upsert(ref init_keys_[idx], ref value, Empty.Default);
                 }
             }
 

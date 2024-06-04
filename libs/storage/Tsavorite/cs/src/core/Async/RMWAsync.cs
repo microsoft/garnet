@@ -32,7 +32,7 @@ namespace Tsavorite.core
                 Status status = !diskRequest.IsDefault()
                     ? tsavoriteKV.InternalCompletePendingRequestFromContext(tsavoriteSession, diskRequest, ref pendingContext, out AsyncIOContext<Key, Value> newDiskRequest)
                     : tsavoriteKV.CallInternalRMW(tsavoriteSession, ref pendingContext, ref pendingContext.key.Get(), ref pendingContext.input.Get(), ref pendingContext.output, ref rmwOptions,
-                                    pendingContext.userContext, pendingContext.serialNum, out newDiskRequest);
+                                    pendingContext.userContext, out newDiskRequest);
                 output = pendingContext.output;
                 diskRequest = newDiskRequest;
                 return status;
@@ -111,7 +111,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ValueTask<RmwAsyncResult<Input, Output, Context>> RmwAsync<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
-                ref Key key, ref Input input, ref RMWOptions rmwOptions, Context context, long serialNo, CancellationToken token = default)
+                ref Key key, ref Input input, ref RMWOptions rmwOptions, Context context, CancellationToken token = default)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             var pcontext = new PendingContext<Input, Output, Context> { IsAsync = true };
@@ -121,14 +121,12 @@ namespace Tsavorite.core
             try
             {
                 Output output = default;
-                var status = CallInternalRMW(tsavoriteSession, ref pcontext, ref key, ref input, ref output, ref rmwOptions, context, serialNo, out diskRequest);
+                var status = CallInternalRMW(tsavoriteSession, ref pcontext, ref key, ref input, ref output, ref rmwOptions, context, out diskRequest);
                 if (!status.IsPending)
                     return new ValueTask<RmwAsyncResult<Input, Output, Context>>(new RmwAsyncResult<Input, Output, Context>(status, output, new RecordMetadata(pcontext.recordInfo, pcontext.logicalAddress)));
             }
             finally
             {
-                Debug.Assert(serialNo >= tsavoriteSession.Ctx.serialNum, "Operation serial numbers must be non-decreasing");
-                tsavoriteSession.Ctx.serialNum = serialNo;
                 tsavoriteSession.UnsafeSuspendThread();
             }
 
@@ -137,12 +135,12 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status CallInternalRMW<Input, Output, Context>(ITsavoriteSession<Key, Value, Input, Output, Context> tsavoriteSession, ref PendingContext<Input, Output, Context> pcontext,
-                    ref Key key, ref Input input, ref Output output, ref RMWOptions rmwOptions, Context context, long serialNo, out AsyncIOContext<Key, Value> diskRequest)
+                    ref Key key, ref Input input, ref Output output, ref RMWOptions rmwOptions, Context context, out AsyncIOContext<Key, Value> diskRequest)
         {
             OperationStatus internalStatus;
             var keyHash = rmwOptions.KeyHash ?? comparer.GetHashCode64(ref key);
             do
-                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, tsavoriteSession, serialNo);
+                internalStatus = InternalRMW(ref key, keyHash, ref input, ref output, ref context, ref pcontext, tsavoriteSession);
             while (HandleImmediateRetryStatus(internalStatus, tsavoriteSession, ref pcontext));
 
             return HandleOperationStatus(tsavoriteSession.Ctx, ref pcontext, internalStatus, out diskRequest);

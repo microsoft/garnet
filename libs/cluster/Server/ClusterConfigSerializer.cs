@@ -33,8 +33,6 @@ namespace Garnet.cluster
                 //29 bytes
                 writer.Write(worker.Port);
                 writer.Write(worker.ConfigEpoch);
-                writer.Write(worker.CurrentConfigEpoch);
-                writer.Write(worker.LastVotedConfigEpoch);
                 writer.Write((byte)worker.Role);
 
                 //1 byte
@@ -120,8 +118,6 @@ namespace Garnet.cluster
                 newWorkers[i].Address = reader.ReadString();
                 newWorkers[i].Port = reader.ReadInt32();
                 newWorkers[i].ConfigEpoch = reader.ReadInt64();
-                newWorkers[i].CurrentConfigEpoch = reader.ReadInt64();
-                newWorkers[i].LastVotedConfigEpoch = reader.ReadInt64();
                 newWorkers[i].Role = (NodeRole)reader.ReadByte();
 
                 byte isNull = reader.ReadByte();

@@ -212,6 +212,39 @@ namespace Garnet.server.ACL
         }
 
         /// <summary>
+        /// Save current
+        /// </summary>
+        /// <param name="aclConfigurationFile"></param>
+        public void Save(string aclConfigurationFile)
+        {
+            // Lock to ensure one flush at a time
+            lock (this)
+            {
+                StreamWriter streamWriter = null;
+                try
+                {
+                    // Initialize so as to allow the streamwriter buffer to fill in memory and do a manual flush afterwards
+                    streamWriter = new StreamWriter(path: aclConfigurationFile, append: false, encoding: Encoding.UTF8, bufferSize: 1 << 16)
+                    {
+                        AutoFlush = false
+                    };
+
+                    // Write lines into buffer
+                    foreach (var user in _users)
+                        streamWriter.WriteLine(user.Value.DescribeUser());
+
+                    // Flush data buffer
+                    streamWriter.Flush();
+                }
+                finally
+                {
+                    // Finally ensure streamWriter is closed
+                    streamWriter?.Close();
+                }
+            }
+        }
+
+        /// <summary>
         /// Imports Access Control List rules from the given reader.
         /// </summary>
         /// <param name="input">Input text reader to a list of ACL user definition rules.</param>

@@ -298,6 +298,18 @@ namespace Garnet.test
 
             db.HashSet("user:user1", [new HashEntry("name", "Alice"), new HashEntry("email", "email@example.com"), new HashEntry("age", "30")]);
 
+            // HSCAN without key
+            try
+            {
+                db.Execute("HSCAN");
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(HashOperation.HSCAN));
+                Assert.AreEqual(expectedErrorMessage, e.Message);
+            }
+
             // HSCAN without parameters
             members = db.HashScan("user:user1");
             Assert.IsTrue(((IScanningCursor)members).Cursor == 0);

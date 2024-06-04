@@ -136,10 +136,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetRank(key, input, out output);
+            return garnetApi.SortedSetRank(key, input, ref outputFooter);
         }
 
         /// <inheritdoc />
@@ -261,6 +261,15 @@ namespace Garnet.server
             return garnetApi.SetUnion(keys, out output);
         }
 
+        /// <inheritdoc />
+        public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
+        {
+            foreach (var key in keys)
+            {
+                garnetApi.WATCH(key, StoreType.Object);
+            }
+            return garnetApi.SetIntersect(keys, out output);
+        }
 
         /// <inheritdoc />
         public GarnetStatus SetDiff(ArgSlice[] keys, out HashSet<byte[]> output)
