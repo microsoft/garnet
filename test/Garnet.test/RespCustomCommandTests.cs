@@ -355,7 +355,7 @@ namespace Garnet.test
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
             var time = db.KeyTimeToLive(key);
-            Assert.IsTrue(time.Value.Seconds > 0);
+            Assert.IsTrue(time.Value.TotalSeconds > 0);
 
             // This conditional set should pass (new prefix is greater)
             string newValue1 = "foovalue1";
