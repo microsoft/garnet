@@ -263,7 +263,6 @@
   },
   {
     "Command": "COMMITAOF",
-    "ArrayCommand": null,
     "Name": "COMMITAOF",
     "Arity": -1,
     "Flags": "Admin, NoScript, NoMulti, ReadOnly",
@@ -277,7 +276,6 @@
   },
   {
     "Command": "COSCAN",
-    "ArrayCommand": 39,
     "Name": "COSCAN",
     "Arity": -3,
     "Flags": "ReadOnly",
@@ -291,7 +289,6 @@
   },
   {
     "Command": "CustomCmd",
-    "ArrayCommand": null,
     "Name": "CustomCmd",
     "IsInternal": true,
     "Arity": 1,
@@ -306,7 +303,6 @@
   },
   {
     "Command": "CustomObjCmd",
-    "ArrayCommand": null,
     "Name": "CustomObjCmd",
     "IsInternal": true,
     "Arity": 1,
@@ -321,7 +317,6 @@
   },
   {
     "Command": "CustomTxn",
-    "ArrayCommand": null,
     "Name": "CustomTxn",
     "IsInternal": true,
     "Arity": 1,
@@ -336,7 +331,6 @@
   },
   {
     "Command": "FORCEGC",
-    "ArrayCommand": null,
     "Name": "FORCEGC",
     "Arity": -1,
     "Flags": "Admin, NoScript, NoMulti, ReadOnly",
@@ -392,7 +386,6 @@
   },
   {
     "Command": "REGISTERCS",
-    "ArrayCommand": null,
     "Name": "REGISTERCS",
     "Arity": -5,
     "Flags": "Admin, NoScript, NoMulti, ReadOnly",
@@ -406,7 +399,6 @@
   },
   {
     "Command": "RUNTXP",
-    "ArrayCommand": null,
     "Name": "RUNTXP",
     "Arity": -2,
     "Flags": "NoScript, NoMulti",

@@ -299,10 +299,10 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong OneIfWrite(this RespCommand cmd)
         {
-            // if cmd < RespCommand.Append - underflows, setting high bits
+            // If cmd < RespCommand.Append - underflows, setting high bits
             uint test = (uint)((int)cmd - (int)RespCommand.APPEND);
 
-            // force to be branchless for same reasons as OneIfRead
+            // Force to be branchless for same reasons as OneIfRead
             bool inRange = test <= (RespCommand.BITOP_NOT - RespCommand.APPEND);
             return Unsafe.As<bool, byte>(ref inRange);
         }
@@ -313,7 +313,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static ulong OneIfRead(this RespCommand cmd)
         {
-            // force this to be branchless (as predictability is poor)
+            // Force this to be branchless (as predictability is poor)
             // and we're in the hot path
             bool inRange = cmd <= RespCommand.ZSCORE;
             return Unsafe.As<bool, byte>(ref inRange);
@@ -325,7 +325,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsNoAuth(this RespCommand cmd)
         {
-            // if cmd < RespCommand.Auth - underflows, setting high bits
+            // If cmd < RespCommand.Auth - underflows, setting high bits
             uint test = (uint)((int)cmd - (int)RespCommand.AUTH);
             bool inRange = test <= (RespCommand.QUIT - RespCommand.AUTH);
             return inRange;
@@ -337,7 +337,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsClusterSubCommand(this RespCommand cmd)
         {
-            // if cmd < RespCommand.CLUSTER_ADDSLOTS - underflows, setting high bits
+            // If cmd < RespCommand.CLUSTER_ADDSLOTS - underflows, setting high bits
             uint test = (uint)((int)cmd - (int)RespCommand.CLUSTER_ADDSLOTS);
             bool inRange = test <= (RespCommand.CLUSTER_SLOTSTATE - RespCommand.CLUSTER_ADDSLOTS);
             return inRange;
@@ -798,7 +798,7 @@ namespace Garnet.server
                                             // 8 = "$2\r\nOS\r\n".Length
                                             if (count > 1 && remainingBytes >= length + 8)
                                             {
-                                                // optimistically consume the subcommand
+                                                // Optimistically consume the subcommand
                                                 count--;
                                                 readHead += 8;
 
@@ -811,7 +811,7 @@ namespace Garnet.server
                                                     return RespCommand.WATCH_MS;
                                                 }
 
-                                                // undo the optimistic advance
+                                                // Undo the optimistic advance
                                                 count++;
                                                 readHead -= 8;
                                             }
@@ -1659,7 +1659,6 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.ACL))
             {
-                // skip ACL
                 bufSpan = new(recvBufferPtr + readHead, bytesRead);
                 ReadOnlySpan<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
                 if (!gotSubCommand)

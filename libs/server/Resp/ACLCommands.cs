@@ -23,9 +23,9 @@ namespace Garnet.server
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkACL_LIST(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkAclList(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // no additonal args allowed
+            // No additonal args allowed
             if (count != 0)
             {
                 if (!DrainCommands(bufSpan, count))
@@ -58,9 +58,9 @@ namespace Garnet.server
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkACL_USERS(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkAclUsers(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // no additonal args allowed
+            // No additonal args allowed
             if (count != 0)
             {
                 if (!DrainCommands(bufSpan, count))
@@ -93,9 +93,9 @@ namespace Garnet.server
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkACL_CAT(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkAclCat(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // no additonal args allowed
+            // No additonal args allowed
             if (count != 0)
             {
                 if (!DrainCommands(bufSpan, count))
@@ -126,9 +126,9 @@ namespace Garnet.server
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkACL_SETUSER(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkAclSetUser(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // have to have at least the username
+            // Have to have at least the username
             if (count == 0)
             {
                 if (!DrainCommands(bufSpan, count))
@@ -194,9 +194,9 @@ namespace Garnet.server
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkACL_DELUSER(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkAclDelUser(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // have to have at least the username
+            // Have to have at least the username
             if (count == 0)
             {
                 if (!DrainCommands(bufSpan, count))
@@ -253,9 +253,9 @@ namespace Garnet.server
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkACL_WHOAMI(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkAclWhoAmI(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // no additonal args allowed
+            // No additonal args allowed
             if (count != 0)
             {
                 if (!DrainCommands(bufSpan, count))
@@ -284,15 +284,15 @@ namespace Garnet.server
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkACL_LOAD(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkAclLoad(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // no additional args allowed
+            // No additional args allowed
             if (count != 0)
             {
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
-                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LIST.", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LOAD.", ref dcurr, dend))
                     SendAndReset();
             }
             else

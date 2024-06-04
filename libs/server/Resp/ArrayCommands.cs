@@ -345,7 +345,7 @@ namespace Garnet.server
         /// <summary>
         /// REGISTERCS - Registers one or more custom commands / transactions
         /// </summary>
-        private bool NetworkREGISTERCS(int count, byte* ptr, CustomCommandManager customCommandManager)
+        private bool NetworkRegisterCs(int count, byte* ptr, CustomCommandManager customCommandManager)
         {
             var leftTokens = count;
             var readPathsOnly = false;

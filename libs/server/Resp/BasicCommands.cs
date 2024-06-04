@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
-using Garnet.server.ACL;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -373,7 +372,7 @@ namespace Garnet.server
         /// <summary>
         /// SETEX
         /// </summary>
-        private bool NetworkSETEX<TGarnetApi>(RespCommand cmd, byte* ptr, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSETEX<TGarnetApi>(byte* ptr, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             byte* keyPtr = null, valPtr = null;
@@ -887,7 +886,7 @@ namespace Garnet.server
         /// <summary>
         /// PING
         /// </summary>
-        private bool NetworkPING(byte* ptr)
+        private bool NetworkPING()
         {
             if (isSubscriptionSession && respProtocolVersion == 2)
             {
@@ -905,7 +904,7 @@ namespace Garnet.server
         /// <summary>
         /// ASKING
         /// </summary>
-        private bool NetworkASKING(byte* ptr)
+        private bool NetworkASKING()
         {
             //*1\r\n$6\r\n ASKING\r\n = 16
             if (storeWrapper.serverOptions.EnableCluster)
@@ -918,7 +917,7 @@ namespace Garnet.server
         /// <summary>
         /// QUIT
         /// </summary>
-        private bool NetworkQUIT(byte* ptr)
+        private bool NetworkQUIT()
         {
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -930,7 +929,7 @@ namespace Garnet.server
         /// Mark this session as readonly session
         /// </summary>
         /// <returns></returns>
-        private bool NetworkREADONLY(byte* ptr)
+        private bool NetworkREADONLY()
         {
             //*1\r\n$8\r\nREADONLY\r\n
             clusterSession?.SetReadOnlySession();
@@ -943,7 +942,7 @@ namespace Garnet.server
         /// Mark this session as readwrite
         /// </summary>
         /// <returns></returns>
-        private bool NetworkREADWRITE(byte* ptr)
+        private bool NetworkREADWRITE()
         {
             //*1\r\n$9\r\nREADWRITE\r\n
             clusterSession?.SetReadWriteSession();
@@ -1029,7 +1028,7 @@ namespace Garnet.server
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // no additonal args allowed
+            // No additonal args allowed
             if (count != 0)
             {
                 if (!DrainCommands(bufSpan, count))
@@ -1054,7 +1053,7 @@ namespace Garnet.server
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND_COUNT(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // no additonal args allowed
+            // No additonal args allowed
             if (count != 0)
             {
                 if (!DrainCommands(bufSpan, count))
@@ -1107,7 +1106,7 @@ namespace Garnet.server
         {
             if (count == 0)
             {
-                // zero arg case is equivalent to COMMAND w/o subcommand
+                // Zero arg case is equivalent to COMMAND w/o subcommand
                 WriteCOMMANDResponse();
             }
             else

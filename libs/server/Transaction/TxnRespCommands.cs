@@ -178,7 +178,7 @@ namespace Garnet.server
         /// <summary>
         /// DISCARD
         /// </summary>
-        private bool NetworkDISCARD(byte* ptr)
+        private bool NetworkDISCARD()
         {
             if (txnManager.state == TxnState.None)
             {
@@ -200,7 +200,7 @@ namespace Garnet.server
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool CommonWATCH(int count, StoreType type)
         {
-            // have to provide at least one key
+            // Have to provide at least one key
             if (count == 0)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.GenericErrWrongNumArgs, ref dcurr, dend))
@@ -251,7 +251,7 @@ namespace Garnet.server
         /// <summary>
         /// UNWATCH
         /// </summary>
-        private bool NetworkUNWATCH(byte* ptr)
+        private bool NetworkUNWATCH()
         {
             if (txnManager.state == TxnState.None)
             {

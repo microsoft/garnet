@@ -569,7 +569,6 @@ namespace Garnet.test
                     }
                 );
             }
-
             return configOptions;
         }
 

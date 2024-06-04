@@ -359,7 +359,6 @@ namespace Garnet.server
         private unsafe bool ListRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-
             if (count != 3)
             {
                 return AbortWithWrongNumberOfArguments("LRANGE", count);

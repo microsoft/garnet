@@ -97,7 +97,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CONFIG_GET)
             {
-                return NetworkCONFIG_GET(bufSpan, count);
+                return NetworkConfigGet(bufSpan, count);
             }
             else if (command == RespCommand.CONFIG_REWRITE)
             {
@@ -347,15 +347,15 @@ namespace Garnet.server
             }
             else if (command == RespCommand.LATENCY_HELP)
             {
-                return NetworkLATENCY_HELP(bufSpan, count);
+                return NetworkLatencyHelp(bufSpan, count);
             }
             else if (command == RespCommand.LATENCY_HISTOGRAM)
             {
-                return NetworkLATENCY_HISTOGRAM(bufSpan, count);
+                return NetworkLatencyHistogram(bufSpan, count);
             }
             else if (command == RespCommand.LATENCY_RESET)
             {
-                return NetworkLATENCY_RESET(bufSpan, count);
+                return NetworkLatencyReset(bufSpan, count);
             }
             else if (command == RespCommand.TIME)
             {
@@ -504,43 +504,43 @@ namespace Garnet.server
             }
             else if (command == RespCommand.MEMORY_USAGE)
             {
-                return NetworkMEMORY_USAGE(count, recvBufferPtr + readHead, ref storageApi);
+                return NetworkMemoryUsage(count, recvBufferPtr + readHead, ref storageApi);
             }
             else if (command == RespCommand.MONITOR)
             {
-                return NetworkMONITOR(count, recvBufferPtr + readHead);
+                return NetworkMonitor(count, recvBufferPtr + readHead);
             }
             else if (command == RespCommand.ACL_CAT)
             {
-                return NetworkACL_CAT(bufSpan, count);
+                return NetworkAclCat(bufSpan, count);
             }
             else if (command == RespCommand.ACL_DELUSER)
             {
-                return NetworkACL_DELUSER(bufSpan, count);
+                return NetworkAclDelUser(bufSpan, count);
             }
             else if (command == RespCommand.ACL_LIST)
             {
-                return NetworkACL_LIST(bufSpan, count);
+                return NetworkAclList(bufSpan, count);
             }
             else if (command == RespCommand.ACL_LOAD)
             {
-                return NetworkACL_LOAD(bufSpan, count);
+                return NetworkAclLoad(bufSpan, count);
             }
             else if (command == RespCommand.ACL_SETUSER)
             {
-                return NetworkACL_SETUSER(bufSpan, count);
+                return NetworkAclSetUser(bufSpan, count);
             }
             else if (command == RespCommand.ACL_USERS)
             {
-                return NetworkACL_USERS(bufSpan, count);
+                return NetworkAclUsers(bufSpan, count);
             }
             else if (command == RespCommand.ACL_WHOAMI)
             {
-                return NetworkACL_WHOAMI(bufSpan, count);
+                return NetworkAclWhoAmI(bufSpan, count);
             }
             else if ((command == RespCommand.REGISTERCS))
             {
-                return NetworkREGISTERCS(count, recvBufferPtr + readHead, storeWrapper.customCommandManager);
+                return NetworkRegisterCs(count, recvBufferPtr + readHead, storeWrapper.customCommandManager);
             }
             else
             {
@@ -675,7 +675,7 @@ namespace Garnet.server
             storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
-        private bool NetworkMEMORY_USAGE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkMemoryUsage<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
             //MEMORY USAGE [key] [SAMPLES count]
@@ -717,9 +717,9 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkMONITOR(int count, byte* ptr)
+        private bool NetworkMonitor(int count, byte* ptr)
         {
-            //todo:Not supported yet.
+            // TODO: Not supported yet.
             return true;
         }
 

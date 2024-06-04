@@ -1,7 +1,6 @@
 ﻿[
   {
     "Command": "NONE",
-    "ArrayCommand": null,
     "Name": "DELIFM",
     "Arity": 3,
     "Flags": "Write",
@@ -15,7 +14,6 @@
   },
   {
     "Command": "NONE",
-    "ArrayCommand": null,
     "Name": "MYDICTGET",
     "Arity": 3,
     "Flags": "ReadOnly",
@@ -29,7 +27,6 @@
   },
   {
     "Command": "NONE",
-    "ArrayCommand": null,
     "Name": "MYDICTSET",
     "Arity": 4,
     "Flags": "DenyOom, Write",
@@ -43,7 +40,6 @@
   },
   {
     "Command": "NONE",
-    "ArrayCommand": null,
     "Name": "SETIFPM",
     "Arity": 4,
     "Flags": "DenyOom, Write",
@@ -57,7 +53,6 @@
   },
   {
     "Command": "NONE",
-    "ArrayCommand": null,
     "Name": "SETWPIFPGT",
     "Arity": 4,
     "Flags": "DenyOom, Write",

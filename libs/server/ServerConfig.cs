@@ -38,7 +38,7 @@ namespace Garnet.server
 
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkCONFIG_GET(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkConfigGet(ReadOnlySpan<byte> bufSpan, int count)
         {
             if (count == 0)
             {

@@ -208,7 +208,6 @@ namespace Garnet.server
         /// Set a timeout on a key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-
         /// <param name="command">Indicates which command to use, expire or pexpire.</param>
         /// <param name="count">Number of arguments sent with this command.</param>
         /// <param name="ptr"></param>

@@ -16,9 +16,9 @@ namespace Garnet.server
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkLATENCY_HELP(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkLatencyHelp(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // no additional arguments
+            // No additional arguments
             if (count != 0)
             {
                 if (!DrainCommands(bufSpan, count))
@@ -49,7 +49,7 @@ namespace Garnet.server
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkLATENCY_HISTOGRAM(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkLatencyHistogram(ReadOnlySpan<byte> bufSpan, int count)
         {
             var ptr = recvBufferPtr + readHead;
             HashSet<LatencyMetricsType> events = null;
@@ -103,7 +103,7 @@ namespace Garnet.server
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkLATENCY_RESET(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkLatencyReset(ReadOnlySpan<byte> bufSpan, int count)
         {
             HashSet<LatencyMetricsType> events = null;
             var ptr = recvBufferPtr + readHead;

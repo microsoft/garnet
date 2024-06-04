@@ -234,7 +234,7 @@ namespace Garnet.server
 
             return true;
 
-            // yield each bit set in aclCategories as it's own value
+            // Yield each bit set in aclCategories as it's own value
             static IEnumerable<RespAclCategories> IndividualAcls(RespAclCategories aclCategories)
             {
                 var remaining = aclCategories;
