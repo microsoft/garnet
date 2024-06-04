@@ -123,6 +123,8 @@ namespace Garnet.server
         FORCEGC = 0x3B,
         FAILOVER = 0x3C,
         ACL = 0x3D,
+        HELLO = 0x3E,
+        ASYNC = 0x3F,
 
         // Custom commands
         CustomTxn = 0x29,
@@ -499,6 +501,8 @@ namespace Garnet.server
                                                         count += 1;
                                                     }
                                                 }
+
+                                                return (RespCommand.BITOP, (byte)BitmapOperation.NONE);
                                             }
                                         }
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBRPOP\r\n"u8))
@@ -716,6 +720,10 @@ namespace Garnet.server
                                         {
                                             return (RespCommand.Set, (byte)SetOperation.SUNION);
                                         }
+                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SINTER\r\n"u8))
+                                        {
+                                            return (RespCommand.Set, (byte)SetOperation.SINTER);
+                                        }
                                         break;
 
                                     case 'U':
@@ -923,6 +931,10 @@ namespace Garnet.server
                                 {
                                     return (RespCommand.Set, (byte)SetOperation.SUNIONSTORE);
                                 }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nSINTE"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RSTORE\r\n"u8))
+                                {
+                                    return (RespCommand.Set, (byte)SetOperation.SINTERSTORE);
+                                }
                                 break;
 
                             case 12:
@@ -1048,6 +1060,10 @@ namespace Garnet.server
             {
                 return (RespCommand.PING, 0);
             }
+            else if (command.SequenceEqual(CmdStrings.HELLO))
+            {
+                return (RespCommand.HELLO, 0);
+            }
             else if (command.SequenceEqual(CmdStrings.CLUSTER))
             {
                 return (RespCommand.CLUSTER, 0);
@@ -1111,6 +1127,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.REGISTERCS))
             {
                 return (RespCommand.REGISTERCS, 0);
+            }
+            else if (command.SequenceEqual(CmdStrings.ASYNC))
+            {
+                return (RespCommand.ASYNC, 0);
             }
             else
             {

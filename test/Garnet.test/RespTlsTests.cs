@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -359,7 +360,7 @@ namespace Garnet.test
         [Test]
         public void TlsCanSelectCommandLC()
         {
-            using var lightClientRequest = TestUtils.CreateRequest(useTLS: true, countResponseLength: true);
+            using var lightClientRequest = TestUtils.CreateRequest(useTLS: true, countResponseType: CountResponseType.Bytes);
 
             var expectedResponse = "-ERR invalid database index.\r\n+PONG\r\n";
             var response = lightClientRequest.Execute("SELECT 1", "PING", expectedResponse.Length);
@@ -373,7 +374,7 @@ namespace Garnet.test
         public void TlsCanDoCommandsInChunks(int bytesSent)
         {
             // SETEX
-            using var lightClientRequest = TestUtils.CreateRequest(useTLS: true, countResponseLength: true);
+            using var lightClientRequest = TestUtils.CreateRequest(useTLS: true, countResponseType: CountResponseType.Bytes);
 
             var expectedResponse = "+OK\r\n";
             var response = lightClientRequest.Execute("SETEX mykey 1 abcdefghij", expectedResponse.Length, bytesSent);
@@ -441,7 +442,7 @@ namespace Garnet.test
         [TestCase(100)]
         public void TlsCanSetGetCommandsChunks(int bytesSent)
         {
-            using var lightClientRequest = TestUtils.CreateRequest(useTLS: true, countResponseLength: true);
+            using var lightClientRequest = TestUtils.CreateRequest(useTLS: true, countResponseType: CountResponseType.Bytes);
             var sb = new StringBuilder();
 
             for (int i = 1; i <= 100; i++)

@@ -3,7 +3,6 @@
 
 using System.Collections.Generic;
 using System.IO;
-using System.Threading;
 using NUnit.Framework;
 using Tsavorite.core;
 using Tsavorite.test.recovery.sumstore;
@@ -75,14 +74,7 @@ namespace Tsavorite.test.statemachine
             // We should be in WAIT_FLUSH, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
 
-            // Expect checkpoint completion callback
-            f.checkpointCallbackExpectation = 1;
-
             uc1.Refresh();
-
-            // Completion callback should have been called once
-            Assert.AreEqual(0, f.checkpointCallbackExpectation);
-
 
             // We should be in PERSISTENCE_CALLBACK, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), store.SystemState));
@@ -97,8 +89,6 @@ namespace Tsavorite.test.statemachine
 
             uc1.EndUnsafe();
             s1.Dispose();
-
-            RecoverAndTest(log);
         }
 
 
@@ -129,23 +119,15 @@ namespace Tsavorite.test.statemachine
             // We should be in WAIT_FLUSH, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
 
-            // Expect checkpoint completion callback
-            f.checkpointCallbackExpectation = 1;
-
             // Since s1 is the only session now, it will fast-foward state machine
             // to completion
             uc1.Refresh();
-
-            // Completion callback should have been called once
-            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             // We should be in REST, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             uc1.EndUnsafe();
             s1.Dispose();
-
-            RecoverAndTest(log);
         }
 
         [TestCase]
@@ -173,20 +155,12 @@ namespace Tsavorite.test.statemachine
             // We should be in REST, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
-            // Expect checkpoint completion callback
-            f.checkpointCallbackExpectation = 1;
-
             uc1.BeginUnsafe();
-
-            // Completion callback should have been called once
-            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
 
             uc1.EndUnsafe();
             s1.Dispose();
-
-            RecoverAndTest(log);
         }
 
         [TestCase]
@@ -223,20 +197,12 @@ namespace Tsavorite.test.statemachine
             // We should be in REST, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
-            // Expect checkpoint completion callback
-            f.checkpointCallbackExpectation = 1;
-
             uc1.BeginUnsafe();
-
-            // Completion callback should have been called once
-            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
 
             uc1.EndUnsafe();
             s1.Dispose();
-
-            RecoverAndTest(log);
         }
 
         [TestCase]
@@ -266,13 +232,7 @@ namespace Tsavorite.test.statemachine
             // We should be in PERSISTENCE_CALLBACK, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), store.SystemState));
 
-            // Expect checkpoint completion callback
-            f.checkpointCallbackExpectation = 1;
-
             uc1.Refresh();
-
-            // Completion callback should have been called once
-            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             // We should be in REST, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
@@ -290,20 +250,12 @@ namespace Tsavorite.test.statemachine
             // We should be in REST, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
-            // Expect no checkpoint completion callback on resume
-            f.checkpointCallbackExpectation = 0;
-
             uc1.BeginUnsafe();
-
-            // Completion callback should have been called once
-            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             s2.Dispose();
 
             uc1.EndUnsafe();
             s1.Dispose();
-
-            RecoverAndTest(log);
         }
 
 
@@ -337,18 +289,10 @@ namespace Tsavorite.test.statemachine
             // We should be in REST, 3
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 3), store.SystemState));
 
-            // Expect checkpoint completion callback on resume
-            f.checkpointCallbackExpectation = 1;
-
             uc1.BeginUnsafe();
-
-            // Completion callback should have been called once
-            Assert.AreEqual(0, f.checkpointCallbackExpectation);
 
             uc1.EndUnsafe();
             s1.Dispose();
-
-            RecoverAndTest(log);
         }
 
         [TestCase]
@@ -379,11 +323,8 @@ namespace Tsavorite.test.statemachine
             // fast-foward state machine to completion
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
-            // Expect checkpoint completion callback
-            f.checkpointCallbackExpectation = 1;
             lts.Refresh();
 
-            RecoverAndTest(log);
             s1.Dispose();
             ts.Dispose();
             lts.Dispose();
@@ -429,13 +370,11 @@ namespace Tsavorite.test.statemachine
             Assert.IsTrue(lts.isProtected);
             lts.DisposeLUC();
 
-            // Expect checkpoint completion callback
-            f.checkpointCallbackExpectation = 1;
-            RecoverAndTest(log);
             s1.Dispose();
             ts.Dispose();
             lts.Dispose();
         }
+
         [TestCase]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void LUCScenario3()
@@ -487,13 +426,10 @@ namespace Tsavorite.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.REST, 2), store.SystemState));
 
             // Expect checkpoint completion callback
-            f.checkpointCallbackExpectation = 1;
-            RecoverAndTest(log);
             s1.Dispose();
             ts.Dispose();
             lts.Dispose();
         }
-
 
         [TestCase]
         [Category("TsavoriteKV")]
@@ -523,13 +459,7 @@ namespace Tsavorite.test.statemachine
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, 2), store.SystemState));
             callback.CheckInvoked(store.SystemState);
 
-            // Expect checkpoint completion callback
-            f.checkpointCallbackExpectation = 1;
-
             uc1.Refresh();
-
-            // Completion callback should have been called once
-            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
 
             // We should be in PERSISTENCE_CALLBACK, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, 2), store.SystemState));
@@ -546,10 +476,7 @@ namespace Tsavorite.test.statemachine
 
             uc1.EndUnsafe();
             s1.Dispose();
-
-            RecoverAndTest(log);
         }
-
 
         [TestCase]
         [Category("TsavoriteKV")]
@@ -574,13 +501,7 @@ namespace Tsavorite.test.statemachine
             // We should be in WAIT_FLUSH, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.WAIT_FLUSH, toVersion), store.SystemState));
 
-            // Expect checkpoint completion callback
-            f.checkpointCallbackExpectation = 1;
-
             uc1.Refresh();
-
-            // Completion callback should have been called once
-            Assert.IsTrue(f.checkpointCallbackExpectation == 0);
 
             // We should be in PERSISTENCE_CALLBACK, 2
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.PERSISTENCE_CALLBACK, toVersion), store.SystemState));
@@ -595,10 +516,7 @@ namespace Tsavorite.test.statemachine
 
             uc1.EndUnsafe();
             s1.Dispose();
-
-            RecoverAndTest(log);
         }
-
 
         void Prepare(out SimpleFunctions f,
             out ClientSession<AdId, NumClicks, NumClicks, NumClicks, Empty, SimpleFunctions> s1,
@@ -626,7 +544,7 @@ namespace Tsavorite.test.statemachine
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
+                s1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             // Ensure state machine needs no I/O wait during WAIT_FLUSH
@@ -662,7 +580,7 @@ namespace Tsavorite.test.statemachine
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                s1.Upsert(ref inputArray[key], ref value, Empty.Default, key);
+                s1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             // Ensure state machine needs no I/O wait during WAIT_FLUSH
@@ -679,67 +597,10 @@ namespace Tsavorite.test.statemachine
             store.TryInitiateIndexCheckpoint(out _);
             store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
         }
-
-        void RecoverAndTest(IDevice log)
-        {
-            NumClicks inputArg = default;
-            NumClicks output = default;
-            var f = new SimpleFunctions();
-
-            var store = new TsavoriteKV<AdId, NumClicks>
-                (128,
-                logSettings: new LogSettings { LogDevice = log, MutableFraction = 0.1, PageSizeBits = 10, MemorySizeBits = 13 },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = Path.Join(TestUtils.MethodTestDir, "statemachinetest") }
-                );
-
-            store.Recover(); // sync, does not require session
-
-            using (var s3 = store.ResumeSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo", out CommitPoint lsn))
-            {
-                Assert.AreEqual(numOps - 1, lsn.UntilSerialNo);
-
-                // Expect checkpoint completion callback
-                f.checkpointCallbackExpectation = 1;
-
-                s3.Refresh();
-
-                // Completion callback should have been called once
-                Assert.AreEqual(0, f.checkpointCallbackExpectation);
-
-                for (var key = 0; key < numOps; key++)
-                {
-                    var status = s3.Read(ref inputArray[key], ref inputArg, ref output, Empty.Default, s3.SerialNo);
-
-                    if (status.IsPending)
-                        s3.CompletePending(true);
-                    else
-                    {
-                        Assert.AreEqual(key, output.numClicks);
-                    }
-                }
-            }
-
-            store.Dispose();
-        }
     }
 
     public class SimpleFunctions : SimpleFunctions<AdId, NumClicks, Empty>
     {
-        public int checkpointCallbackExpectation = 0;
-
-        public override void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
-        {
-            switch (checkpointCallbackExpectation)
-            {
-                case 0:
-                    Assert.Fail("Unexpected checkpoint callback");
-                    break;
-                default:
-                    Interlocked.Decrement(ref checkpointCallbackExpectation);
-                    break;
-            }
-        }
-
         public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             Assert.IsTrue(status.Found);

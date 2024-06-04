@@ -280,7 +280,7 @@ namespace Tsavorite.core
             if (needIO)
             {
                 // A more recent version of the key was not (yet) found and we need another IO to continue searching.
-                internalStatus = PrepareIOForConditionalScan(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, default, 0L,
+                internalStatus = PrepareIOForConditionalScan(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output, default,
                                 ref stackCtx, minAddress, scanCursorState);
             }
             else
@@ -308,13 +308,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static OperationStatus PrepareIOForConditionalScan<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession,
                                         ref TsavoriteKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext,
-                                        ref Key key, ref Input input, ref Value value, ref Output output, Context userContext, long lsn,
+                                        ref Key key, ref Input input, ref Value value, ref Output output, Context userContext,
                                         ref OperationStackContext<Key, Value> stackCtx, long minAddress, ScanCursorState<Key, Value> scanCursorState)
             where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
         {
             // WriteReason is not surfaced for this operation, so pick anything.
             var status = tsavoriteSession.Store.PrepareIOForConditionalOperation(tsavoriteSession, ref pendingContext, ref key, ref input, ref value, ref output,
-                    userContext, lsn, ref stackCtx, minAddress, WriteReason.Compaction, OperationType.CONDITIONAL_SCAN_PUSH);
+                    userContext, ref stackCtx, minAddress, WriteReason.Compaction, OperationType.CONDITIONAL_SCAN_PUSH);
             pendingContext.scanCursorState = scanCursorState;
             return status;
         }
@@ -344,8 +344,6 @@ namespace Tsavorite.core
             public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
 
             public void RMWCompletionCallback(ref Key key, ref Input input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
-
-            public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint) { }
 
             public int GetRMWModifiedValueLength(ref Value value, ref Input input) => 0;
             public int GetRMWInitialValueLength(ref Input input) => 0;

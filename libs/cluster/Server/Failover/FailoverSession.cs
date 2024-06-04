@@ -25,7 +25,7 @@ namespace Garnet.cluster
 
         public bool FailoverTimeout => failoverDeadline < DateTime.UtcNow;
 
-        readonly ClusterConfig currentConfig;
+        readonly ClusterConfig oldConfig;
 
         /// <summary>
         /// FailoverSession constructor
@@ -52,15 +52,16 @@ namespace Garnet.cluster
             this.clusterTimeout = clusterTimeout;
             this.option = option;
             this.logger = logger;
-            currentConfig = clusterProvider.clusterManager.CurrentConfig;
+            oldConfig = clusterProvider.clusterManager.CurrentConfig.Copy();
             cts = new();
 
+            // TODO: move connection initialization at start of async primary failover
             // Initialize connections only when failover is initiated by the primary
             if (!isReplicaSession)
             {
                 var endpoints = hostPort == -1
-                    ? currentConfig.GetLocalNodePrimaryEndpoints(includeMyPrimaryFirst: true)
-                    : hostPort == 0 ? currentConfig.GetLocalNodeReplicaEndpoints() : null;
+                    ? oldConfig.GetLocalNodePrimaryEndpoints(includeMyPrimaryFirst: true)
+                    : hostPort == 0 ? oldConfig.GetLocalNodeReplicaEndpoints() : null;
                 clients = endpoints != null ? new GarnetClient[endpoints.Count] : new GarnetClient[1];
 
                 if (clients.Length > 1)

@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -26,11 +27,13 @@ namespace Garnet.cluster
 
         private long primary_sync_last_time;
 
-        internal long LastPrimarySyncSeconds => recovering ? (DateTime.UtcNow.Ticks - primary_sync_last_time) / TimeSpan.TicksPerSecond : 0;
+        internal long LastPrimarySyncSeconds => Recovering ? (DateTime.UtcNow.Ticks - primary_sync_last_time) / TimeSpan.TicksPerSecond : 0;
 
         internal void UpdateLastPrimarySyncTime() => this.primary_sync_last_time = DateTime.UtcNow.Ticks;
 
-        public bool recovering;
+        private SingleWriterMultiReaderLock recoverLock;
+        public bool Recovering => recoverLock.IsWriteLocked;
+
         private long replicationOffset;
         public long ReplicationOffset
         {
@@ -98,9 +101,9 @@ namespace Garnet.cluster
             if (storeWrapper.objectStore != null)
                 clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShift = CheckpointVersionShift;
 
-            // If starts as replica, it cannot serve until it is connected to primary
-            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
-                recovering = true;
+            // If this node starts as replica, it cannot serve requests until it is connected to primary
+            if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && !StartRecovery())
+                throw new Exception(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
 
             this.logger = logger;
 
@@ -134,10 +137,8 @@ namespace Garnet.cluster
             storeWrapper.EnqueueCommit(isMainStore, newVersion);
         }
 
-        public void Reset()
-        {
-            recovering = false;
-        }
+        public bool StartRecovery() => recoverLock.TryWriteLock();
+        public void SuspendRecovery() => recoverLock.WriteUnlock();
 
         public void Dispose()
         {
@@ -232,8 +233,7 @@ namespace Garnet.cluster
             var replicaOfNodeId = current.LocalNodePrimaryId;
             if (localNodeRole == NodeRole.REPLICA && replicaOfNodeId != null)
             {
-                clusterProvider.replicationManager.recovering = true;
-                clusterProvider.WaitForConfigTransition();
+                // At initialization of ReplicationManager, this node has been put into recovery mode
                 if (!TryReplicateFromPrimary(out var errorMessage))
                     logger?.LogError($"An error occurred at {nameof(ReplicationManager)}.{nameof(Start)} {{error}}", Encoding.ASCII.GetString(errorMessage));
             }

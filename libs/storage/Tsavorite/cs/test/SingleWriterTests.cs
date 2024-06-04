@@ -30,7 +30,7 @@ namespace Tsavorite.test.SingleWriter
     {
         const int numRecords = 1000;
         const int valueMult = 1_000_000;
-        const WriteReason NoReason = (WriteReason)(-1);
+        const WriteReason NoReason = (WriteReason)(255);
 
         SingleWriterTestFunctions functions;
 

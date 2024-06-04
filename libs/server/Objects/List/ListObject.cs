@@ -141,7 +141,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                var previouseSize = this.Size;
+                var previousSize = this.Size;
                 switch (header->ListOp)
                 {
                     case ListOperation.LPUSH:
@@ -184,7 +184,7 @@ namespace Garnet.server
                         throw new GarnetException($"Unsupported operation {(ListOperation)_input[0]} in ListObject.Operate");
                 }
 
-                sizeChange = this.Size - previouseSize;
+                sizeChange = this.Size - previousSize;
             }
             return true;
         }

@@ -31,7 +31,7 @@ namespace Tsavorite.core
             if (revivSettings is null)
                 return;
             if (revivSettings.EnableRevivification && !store.IsLocking)
-                throw new TsavoriteException("Revivification requires ConcurrencyControlMode of LockTable or RecordIsolation");
+                throw new TsavoriteException("Revivification cannot be used with ConcurrencyControlMode.None");
 
             revivSettings.Verify(IsFixedLength, logSettings.MutableFraction);
             if (!revivSettings.EnableRevivification)

@@ -59,6 +59,15 @@ namespace Garnet.server
             return ret;
         }
 
+        public bool GET_CompletePending<TContext>(out CompletedOutputIterator<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long> completedOutputs, bool wait, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+        {
+            latencyMetrics?.Start(LatencyMetricsType.PENDING_LAT);
+            var ret = context.CompletePendingWithOutputs(out completedOutputs, wait);
+            latencyMetrics?.Stop(LatencyMetricsType.PENDING_LAT);
+            return ret;
+        }
+
         public GarnetStatus RMW_MainStore<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
         {

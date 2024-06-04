@@ -46,8 +46,8 @@ namespace Tsavorite.test.async
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default, 0);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            session.Upsert(ref key1, ref value, Empty.Default);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -74,10 +74,10 @@ namespace Tsavorite.test.async
             var key2 = new KeyStruct { kfield1 = 15, kfield2 = 16 };
             var value2 = new ValueStruct { vfield1 = 25, vfield2 = 26 };
 
-            session1.Upsert(ref key1, ref value1, Empty.Default, 0);
-            session2.Upsert(ref key2, ref value2, Empty.Default, 0);
+            session1.Upsert(ref key1, ref value1, Empty.Default);
+            session2.Upsert(ref key2, ref value2, Empty.Default);
 
-            var status = session1.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            var status = session1.Read(ref key1, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -89,7 +89,7 @@ namespace Tsavorite.test.async
             Assert.AreEqual(value1.vfield1, output.value.vfield1);
             Assert.AreEqual(value1.vfield2, output.value.vfield2);
 
-            status = session2.Read(ref key2, ref input, ref output, Empty.Default, 0);
+            status = session2.Read(ref key2, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -115,8 +115,8 @@ namespace Tsavorite.test.async
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                session.Upsert(ref key1, ref value, Empty.Default, 0);
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                session.Upsert(ref key1, ref value, Empty.Default);
+                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
@@ -144,8 +144,8 @@ namespace Tsavorite.test.async
                 var key1 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
                 var value1 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-                session1.Upsert(ref key1, ref value1, Empty.Default, 0);
-                var status = session1.Read(ref key1, ref input, ref output, Empty.Default, 0);
+                session1.Upsert(ref key1, ref value1, Empty.Default);
+                var status = session1.Read(ref key1, ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
@@ -166,9 +166,9 @@ namespace Tsavorite.test.async
                 var key2 = new KeyStruct { kfield1 = 15, kfield2 = 16 };
                 var value2 = new ValueStruct { vfield1 = 25, vfield2 = 26 };
 
-                session2.Upsert(ref key2, ref value2, Empty.Default, 0);
+                session2.Upsert(ref key2, ref value2, Empty.Default);
 
-                var status = session2.Read(ref key2, ref input, ref output, Empty.Default, 0);
+                var status = session2.Read(ref key2, ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
@@ -197,8 +197,8 @@ namespace Tsavorite.test.async
             var key1 = new KeyStruct { kfield1 = 16, kfield2 = 17 };
             var value1 = new ValueStruct { vfield1 = 26, vfield2 = 27 };
 
-            session.Upsert(ref key1, ref value1, Empty.Default, 0);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default, 0);
+            session.Upsert(ref key1, ref value1, Empty.Default);
+            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -217,9 +217,9 @@ namespace Tsavorite.test.async
             var key2 = new KeyStruct { kfield1 = 17, kfield2 = 18 };
             var value2 = new ValueStruct { vfield1 = 27, vfield2 = 28 };
 
-            session.Upsert(ref key2, ref value2, Empty.Default, 0);
+            session.Upsert(ref key2, ref value2, Empty.Default);
 
-            status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
+            status = session.Read(ref key2, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -228,7 +228,7 @@ namespace Tsavorite.test.async
             }
             Assert.IsTrue(status.Found);
 
-            status = session.Read(ref key2, ref input, ref output, Empty.Default, 0);
+            status = session.Read(ref key2, ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {

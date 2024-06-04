@@ -19,10 +19,5 @@ namespace Garnet.server
         public void RMWCompletionCallback(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output, long ctx, Status status, RecordMetadata recordMetadata)
         {
         }
-
-        /// <inheritdoc />
-        public void CheckpointCompletionCallback(int sessionID, string sessionName, CommitPoint commitPoint)
-        {
-        }
     }
 }

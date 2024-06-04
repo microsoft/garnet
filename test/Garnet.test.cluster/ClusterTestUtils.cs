@@ -741,7 +741,7 @@ namespace Garnet.test.cluster
             fixed (byte* ptr = key)
             {
                 byte* keyPtr = ptr;
-                return NumUtils.HashSlot(keyPtr, key.Length);
+                return HashSlotUtils.HashSlot(keyPtr, key.Length);
             }
         }
 
@@ -965,20 +965,6 @@ namespace Garnet.test.cluster
             return a;
         }
 
-        public void AddSlots(IPEndPoint endPoint, ushort startSlot, ushort endSlot, ILogger logger = null)
-        {
-            try
-            {
-                var server = redis.GetServer(endPoint);
-                var resp = server.Execute("cluster", "addslotsrange", $"{startSlot}", $"{endSlot}");
-                Assert.AreEqual((string)resp, "OK");
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error has occured");
-            }
-        }
-
         public string AddSlotsRange(int nodeIndex, List<(int, int)> ranges, ILogger logger)
             => (string)AddSlotsRange((IPEndPoint)endpoints[nodeIndex], ranges, logger);
 
@@ -1113,7 +1099,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured");
+                logger?.LogError(ex, "An error has occurred");
                 Assert.Fail(ex.Message);
             }
         }
@@ -1131,7 +1117,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured");
+                logger?.LogError(ex, "An error has occurred");
                 Assert.Fail(ex.Message);
             }
         }
@@ -1149,7 +1135,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured");
+                logger?.LogError(ex, "An error has occurred");
                 Assert.Fail(ex.Message);
                 return null;
             }
@@ -1330,7 +1316,7 @@ namespace Garnet.test.cluster
                 }
                 return 0;
             }
-            return ResultType.Integer == result.Type ? int.Parse(result.ToString()) : 0;
+            return ResultType.Integer == result.Resp2Type ? int.Parse(result.ToString()) : 0;
         }
 
         public int CountKeysInSlot(int nodeIndex, int slot, ILogger logger = null)
@@ -1781,10 +1767,16 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "An error has occured; ClusterSlots");
+                logger?.LogError(ex, "An error has occurred; ClusterSlots");
                 Assert.Fail(ex.Message);
                 return null;
             }
+        }
+
+        public string ClusterReplicate(int replicaNodeIndex, int primaryNodeIndex, ILogger logger = null)
+        {
+            var primaryId = ClusterMyId(primaryNodeIndex, logger: logger);
+            return ClusterReplicate(replicaNodeIndex, primaryId, logger: logger);
         }
 
         public string ClusterReplicate(int sourceNodeIndex, string primaryNodeId, bool async = false, bool failEx = true, ILogger logger = null)
@@ -1908,6 +1900,30 @@ namespace Garnet.test.cluster
                 logger?.LogError(ex, "An error has occured; ClusterReset");
                 Assert.Fail(ex.Message);
                 return ex.Message;
+            }
+        }
+
+        public int ClusterKeySlot(int nodeIndex, string key, ILogger logger = null)
+            => ClusterKeySlot((IPEndPoint)endpoints[nodeIndex], key, logger);
+
+        public int ClusterKeySlot(IPEndPoint endPoint, string key, ILogger logger = null)
+        {
+            try
+            {
+                var server = redis.GetServer(endPoint);
+                var args = new List<object>() {
+                    "keyslot",
+                    Encoding.ASCII.GetBytes(key)
+                };
+
+                var result = (string)server.Execute("cluster", args);
+                return int.Parse(result);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occured; ClusterKeySlot");
+                Assert.Fail();
+                return -1;
             }
         }
 
