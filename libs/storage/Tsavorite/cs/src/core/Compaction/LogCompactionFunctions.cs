@@ -3,8 +3,8 @@
 
 namespace Tsavorite.core
 {
-    internal sealed class LogCompactionFunctions<Key, Value, Input, Output, Context, Functions> : IFunctions<Key, Value, Input, Output, Context>
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
+    internal sealed class LogCompactionFunctions<Key, Value, Input, Output, Context, Functions> : ISessionFunctions<Key, Value, Input, Output, Context>
+        where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
     {
         readonly Functions _functions;
 
@@ -72,5 +72,7 @@ namespace Tsavorite.core
         public void DisposeSingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo) { }
         public void DisposeDeserializedFromDisk(ref Key key, ref Value value) { }
         public void DisposeForRevivification(ref Key key, ref Value value, int newKeySize) { }
+
+        public void ConvertOutputToHeap(ref Input input, ref Output output) { }
     }
 }

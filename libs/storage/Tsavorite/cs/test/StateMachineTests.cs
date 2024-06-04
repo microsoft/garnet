@@ -379,7 +379,6 @@ namespace Tsavorite.test.statemachine
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public void LUCScenario3()
         {
-
             CreateSessions(out var f, out var s1, out var ts, out var lts);
 
             // System should be in REST, 1
@@ -413,7 +412,7 @@ namespace Tsavorite.test.statemachine
             luc1.EndLockable();
             luc1.EndUnsafe();
 
-            s1.Refresh();
+            s1.BasicContext.Refresh();
             // System should be in IN_PROGRESS, 1 
             Assert.IsTrue(SystemState.Equal(SystemState.Make(Phase.IN_PROGRESS, 2), store.SystemState));
 
@@ -540,11 +539,12 @@ namespace Tsavorite.test.statemachine
             NumClicks value;
 
             s1 = store.NewSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo");
+            var bc1 = s1.BasicContext;
 
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                s1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                bc1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             // Ensure state machine needs no I/O wait during WAIT_FLUSH
@@ -576,11 +576,12 @@ namespace Tsavorite.test.statemachine
             NumClicks value;
 
             s1 = store.NewSession<NumClicks, NumClicks, Empty, SimpleFunctions>(f, "foo");
+            var bc1 = s1.BasicContext;
 
             for (int key = 0; key < numOps; key++)
             {
                 value.numClicks = key;
-                s1.Upsert(ref inputArray[key], ref value, Empty.Default);
+                bc1.Upsert(ref inputArray[key], ref value, Empty.Default);
             }
 
             // Ensure state machine needs no I/O wait during WAIT_FLUSH
@@ -599,7 +600,7 @@ namespace Tsavorite.test.statemachine
         }
     }
 
-    public class SimpleFunctions : SimpleFunctions<AdId, NumClicks, Empty>
+    public class SimpleFunctions : SimpleSessionFunctions<AdId, NumClicks, Empty>
     {
         public override void ReadCompletionCallback(ref AdId key, ref NumClicks input, ref NumClicks output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {

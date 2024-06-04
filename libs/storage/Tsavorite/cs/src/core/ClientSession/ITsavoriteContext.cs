@@ -29,8 +29,19 @@ namespace Tsavorite.core
     /// <summary>
     /// Interface for Tsavorite operations
     /// </summary>
-    public interface ITsavoriteContext<Key, Value, Input, Output, Context> : ITsavoriteContext<Key>
+    public interface ITsavoriteContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key>
+        where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
     {
+        /// <summary>
+        /// Indicates whether this context has been initialized.
+        /// </summary>
+        public bool IsNull { get; }
+
+        /// <summary>
+        /// Obtain the underlying <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}"/>
+        /// </summary>
+        ClientSession<Key, Value, Input, Output, Context, Functions> Session { get; }
+
         /// <summary>
         /// Synchronously complete outstanding pending synchronous operations.
         /// Async operations must be completed individually.
@@ -71,7 +82,7 @@ namespace Tsavorite.core
         /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default);
 
         /// <summary>
@@ -82,7 +93,7 @@ namespace Tsavorite.core
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context userContext = default);
 
         /// <summary>
@@ -92,7 +103,7 @@ namespace Tsavorite.core
         /// <param name="input">Input to help extract the retrieved value into <paramref name="output"/></param>
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(Key key, Input input, out Output output, Context userContext = default);
 
         /// <summary>
@@ -103,7 +114,7 @@ namespace Tsavorite.core
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(Key key, Input input, out Output output, ref ReadOptions readOptions, Context userContext = default);
 
         /// <summary>
@@ -112,7 +123,7 @@ namespace Tsavorite.core
         /// <param name="key">The key to look up</param>
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(ref Key key, ref Output output, Context userContext = default);
 
         /// <summary>
@@ -122,7 +133,7 @@ namespace Tsavorite.core
         /// <param name="output">The location to place the retrieved value</param>
         /// <param name="readOptions">Contains options controlling the Read operation</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(ref Key key, ref Output output, ref ReadOptions readOptions, Context userContext = default);
 
         /// <summary>
@@ -178,7 +189,7 @@ namespace Tsavorite.core
         ///         </list>
         /// </param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation</returns>
         Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default);
 
         /// <summary>
@@ -190,7 +201,7 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation, including the address to read at in StartAddress</param>
         /// <param name="recordMetadata">On output, receives metadata about the record</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
         Status ReadAtAddress(long address, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default);
 
         /// <summary>
@@ -203,191 +214,8 @@ namespace Tsavorite.core
         /// <param name="readOptions">Contains options controlling the Read operation, including the address to read at in StartAddress</param>
         /// <param name="recordMetadata">On output, receives metadata about the record</param>
         /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <returns><paramref name="output"/> is populated by the <see cref="IFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
+        /// <returns><paramref name="output"/> is populated by the <see cref="ISessionFunctions{Key, Value, Context}"/> implementation; this should store the key if it needs it</returns>
         Status ReadAtAddress(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default);
-
-        /// <summary>
-        /// Async read operation. May return uncommitted results; to ensure reading of committed results, complete the read and then call WaitForCommitAsync.
-        /// </summary>
-        /// <param name="key">The key to look up</param>
-        /// <param name="input">Input to help extract the retrieved value into output</param>
-        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <param name="cancellationToken">Token to cancel the operation</param>
-        /// <returns><see cref="ValueTask"/> wrapping <see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
-        ///     </list>
-        ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, Context userContext = default, CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Async read operation, may return uncommitted result
-        /// To ensure reading of committed result, complete the read and then call WaitForCommitAsync.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="context"></param>
-        /// <param name="token"></param>
-        /// <returns><see cref="ValueTask"/> wrapping <see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
-        ///     </list>
-        ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, Context context = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async read operation, may return uncommitted result
-        /// To ensure reading of committed result, complete the read and then call WaitForCommitAsync.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="readOptions"></param>
-        /// <param name="context"></param>
-        /// <param name="token"></param>
-        /// <returns><see cref="ValueTask"/> wrapping <see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
-        ///     </list>
-        ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, ref ReadOptions readOptions, Context context = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async read operation that accepts an address to start the lookup at instead of starting at the hash table entry for <paramref name="key"/>,
-        ///     and returns the <see cref="RecordInfo"/> for the found record (which contains previous address in the hash chain for this key; this can
-        ///     be used as the <paramref name="readOptions"/> StartAddress in a subsequent call to iterate all records for <paramref name="key"/>).
-        /// </summary>
-        /// <param name="key">The key to look up</param>
-        /// <param name="input">Input to help extract the retrieved value into output</param>
-        /// <param name="readOptions">Contains options controlling the Read operation</param>
-        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <param name="cancellationToken">Token to cancel the operation</param>
-        /// <returns><see cref="ValueTask"/> wrapping <see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
-        ///     </list>
-        ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record
-        /// </remarks>
-        ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, ref ReadOptions readOptions,
-                                                                                                 Context userContext = default, CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Async read operation. May return uncommitted results; to ensure reading of committed results, complete the read and then call WaitForCommitAsync.
-        /// </summary>
-        /// <param name="key">The key to look up</param>
-        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <param name="token">Token to cancel the operation</param>
-        /// <returns><see cref="ValueTask"/> wrapping <see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
-        ///     </list>
-        ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async read operation. May return uncommitted results; to ensure reading of committed results, complete the read and then call WaitForCommitAsync.
-        /// </summary>
-        /// <param name="key">The key to look up</param>
-        /// <param name="readOptions">Contains options controlling the Read operation</param>
-        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <param name="token">Token to cancel the operation</param>
-        /// <returns><see cref="ValueTask"/> wrapping <see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
-        ///     </list>
-        ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref ReadOptions readOptions, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async read operation, may return uncommitted result
-        /// To ensure reading of committed result, complete the read and then call WaitForCommitAsync.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="context"></param>
-        /// <param name="token"></param>
-        /// <returns><see cref="ValueTask"/> wrapping <see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
-        ///     </list>
-        ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Context context = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async read operation, may return uncommitted result
-        /// To ensure reading of committed result, complete the read and then call WaitForCommitAsync.
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="readOptions">Contains options controlling the Read operation</param>
-        /// <param name="context"></param>
-        /// <param name="token"></param>
-        /// <returns><see cref="ValueTask"/> wrapping <see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
-        ///     </list>
-        ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, ref ReadOptions readOptions, Context context = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Read operation that accepts an address argument to lookup at, instead of a key.
-        /// </summary>
-        /// <param name="address">The logical address of the record to read</param>
-        /// <param name="input">Input to help extract the retrieved value into output</param>
-        /// <param name="readOptions">Contains options controlling the Read operation, including the address to read at in StartAddress</param>
-        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <param name="cancellationToken">Token to cancel the operation</param>
-        /// <returns><see cref="ValueTask"/> wrapping <see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
-        ///     </list>
-        ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Input input, ref ReadOptions readOptions,
-                                                                                                          Context userContext = default, CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Async Read operation that accepts an address argument to lookup at, and a key to optimize locking.
-        /// </summary>
-        /// <param name="address">The logical address of the record to read</param>
-        /// <param name="key">The key of the record to read, to optimize locking</param>
-        /// <param name="input">Input to help extract the retrieved value into output</param>
-        /// <param name="readOptions">Contains options controlling the Read operation, including the address to read at in StartAddress</param>
-        /// <param name="userContext">User application context passed in case the read goes pending due to IO</param>
-        /// <param name="cancellationToken">Token to cancel the operation</param>
-        /// <returns><see cref="ValueTask"/> wrapping <see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.ReadAsyncResult{Input, Output, Context}.Complete(out RecordMetadata)"/></item>
-        ///     </list>
-        ///     to complete the read operation and obtain the result status, the output that is populated by the 
-        ///     <see cref="IFunctions{Key, Value, Context}"/> implementation, and optionally a copy of the header for the retrieved record</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Key key, ref Input input, ref ReadOptions readOptions,
-                                                                                                          Context userContext = default, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Upsert operation
@@ -499,150 +327,6 @@ namespace Tsavorite.core
         Status Upsert(Key key, Input input, Value desiredValue, ref Output output, ref UpsertOptions upsertOptions, Context userContext = default);
 
         /// <summary>
-        /// Async Upsert operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <returns>ValueTask wrapping <see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Value desiredValue, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Upsert operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <returns>ValueTask wrapping <see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Upsert operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <returns>ValueTask wrapping <see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Upsert operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <returns>ValueTask wrapping <see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}"/></returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Upsert operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <returns>ValueTask wrapping the asyncResult of the operation</returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Upsert operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <returns>ValueTask wrapping the asyncResult of the operation</returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Upsert operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <returns>ValueTask wrapping the asyncResult of the operation</returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Input input, Value desiredValue, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Upsert operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="desiredValue"></param>
-        /// <param name="upsertOptions"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <returns>ValueTask wrapping the asyncResult of the operation</returns>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.UpsertAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Input input, Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
         /// RMW operation
         /// </summary>
         /// <param name="key"></param>
@@ -746,72 +430,6 @@ namespace Tsavorite.core
         Status RMW(Key key, Input input, ref RMWOptions rmwOptions, Context userContext = default);
 
         /// <summary>
-        /// Async RMW operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="context"></param>
-        /// <param name="token"></param>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async RMW operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="rmwOptions"></param>
-        /// <param name="context"></param>
-        /// <param name="token"></param>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, ref RMWOptions rmwOptions, Context context = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async RMW operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="context"></param>
-        /// <param name="token"></param>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(Key key, Input input, Context context = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async RMW operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="rmwOptions"></param>
-        /// <param name="context"></param>
-        /// <param name="token"></param>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.RmwAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(Key key, Input input, ref RMWOptions rmwOptions, Context context = default, CancellationToken token = default);
-
-        /// <summary>
         /// Delete operation
         /// </summary>
         /// <param name="key"></param>
@@ -844,68 +462,6 @@ namespace Tsavorite.core
         /// <param name="userContext"></param>
         /// <returns></returns>
         Status Delete(Key key, ref DeleteOptions deleteOptions, Context userContext = default);
-
-        /// <summary>
-        /// Async Delete operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Delete operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="deleteOptions"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, ref DeleteOptions deleteOptions, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Delete operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, CancellationToken token = default);
-
-        /// <summary>
-        /// Async Delete operation
-        /// Await operation in session before issuing next one
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="deleteOptions"></param>
-        /// <param name="userContext"></param>
-        /// <param name="token"></param>
-        /// <remarks>The caller must await the return value to obtain the result, then call one of
-        ///     <list type="bullet">
-        ///     <item>result.<see cref="TsavoriteKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.Complete()"/></item>
-        ///     <item>result = await result.<see cref="TsavoriteKV{Key, Value}.DeleteAsyncResult{Input, Output, Context}.CompleteAsync(CancellationToken)"/> while result.Status is <see cref="Status.IsPending"/></item>
-        ///     </list>
-        ///     to complete the Upsert operation. Failure to complete the operation will result in leaked allocations.</remarks>
-        ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, ref DeleteOptions deleteOptions, Context userContext = default, CancellationToken token = default);
 
         /// <summary>
         /// Reset the modified bit of a record (for in memory records)

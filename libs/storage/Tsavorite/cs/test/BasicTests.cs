@@ -21,6 +21,7 @@ namespace Tsavorite.test
     {
         private TsavoriteKV<KeyStruct, ValueStruct> store;
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> session;
+        private BasicContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions> bContext;
         private IDevice log;
         DeviceType deviceType;
 
@@ -38,6 +39,7 @@ namespace Tsavorite.test
             logSettings.LogDevice = log;
             store = new TsavoriteKV<KeyStruct, ValueStruct>(size, logSettings);
             session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -61,7 +63,7 @@ namespace Tsavorite.test
 
         private (Status status, OutputStruct output) CompletePendingResult()
         {
-            session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             return GetSinglePendingResult(completedOutputs);
         }
 
@@ -78,8 +80,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
+            bContext.Upsert(ref key1, ref value, Empty.Default);
+            var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
 
             AssertCompleted(new(StatusCode.Found), status);
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -99,20 +101,20 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
+            bContext.Upsert(ref key1, ref value, Empty.Default);
+            var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
-            session.Delete(ref key1, Empty.Default);
+            bContext.Delete(ref key1, Empty.Default);
 
-            status = session.Read(ref key1, ref input, ref output, Empty.Default);
+            status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.NotFound), status);
 
             var key2 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
             var value2 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-            session.Upsert(ref key2, ref value2, Empty.Default);
-            status = session.Read(ref key2, ref input, ref output, Empty.Default);
+            bContext.Upsert(ref key2, ref value2, Empty.Default);
+            status = bContext.Read(ref key2, ref input, ref output, Empty.Default);
 
             AssertCompleted(new(StatusCode.Found), status);
             Assert.AreEqual(value2.vfield1, output.value.vfield1);
@@ -141,13 +143,13 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                session.Upsert(ref key1, ref value, Empty.Default);
+                bContext.Upsert(ref key1, ref value, Empty.Default);
             }
 
             for (int i = 0; i < 10 * count; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
-                session.Delete(ref key1, Empty.Default);
+                bContext.Delete(ref key1, Empty.Default);
             }
 
             for (int i = 0; i < 10 * count; i++)
@@ -155,16 +157,16 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.NotFound), status);
 
-                session.Upsert(ref key1, ref value, Empty.Default);
+                bContext.Upsert(ref key1, ref value, Empty.Default);
             }
 
             for (int i = 0; i < 10 * count; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
-                var status = session.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
             }
         }
@@ -191,7 +193,7 @@ namespace Tsavorite.test
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default);
+                bContext.Upsert(ref key1, ref value, Empty.Default);
             }
 
             r = new Random(10);
@@ -203,9 +205,9 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
+                if (bContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                 }
 
                 Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -221,7 +223,7 @@ namespace Tsavorite.test
                 var i = r.Next(10000);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                Assert.IsFalse(session.Read(ref key1, ref input, ref output, Empty.Default).Found);
+                Assert.IsFalse(bContext.Read(ref key1, ref input, ref output, Empty.Default).Found);
             }
         }
 
@@ -246,7 +248,7 @@ namespace Tsavorite.test
                 var i = r.Next(RandRange);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default);
+                bContext.Upsert(ref key1, ref value, Empty.Default);
             }
 
             r = new Random(RandSeed);
@@ -259,13 +261,13 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (session.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
+                if (bContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
                     Assert.AreEqual(value.vfield1, output.value.vfield1);
                     Assert.AreEqual(value.vfield2, output.value.vfield2);
                 }
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
 
             // Shift head and retry - should not find in main memory now
             store.Log.FlushAndEvict(true);
@@ -279,12 +281,12 @@ namespace Tsavorite.test
                 var i = r.Next(RandRange);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                Status foundStatus = session.Read(ref key1, ref input, ref output, Empty.Default);
+                Status foundStatus = bContext.Read(ref key1, ref input, ref output, Empty.Default);
                 Assert.IsTrue(foundStatus.IsPending);
                 if (batchMode == BatchMode.NoBatch)
                 {
                     Status status;
-                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                     Assert.IsTrue(status.Found, status.ToString());
                     Assert.AreEqual(key1.kfield1, output.value.vfield1);
@@ -293,7 +295,7 @@ namespace Tsavorite.test
                 }
                 else if (c > 0 && (c % batchSize) == 0)
                 {
-                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     int count = 0;
                     while (outputs.Next())
                     {
@@ -332,16 +334,16 @@ namespace Tsavorite.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                session.RMW(ref key1, ref input, Empty.Default);
+                bContext.RMW(ref key1, ref input, Empty.Default);
             }
             for (int j = 0; j < nums.Length; ++j)
             {
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                if (session.RMW(ref key1, ref input, ref output, Empty.Default).IsPending)
+                if (bContext.RMW(ref key1, ref input, ref output, Empty.Default).IsPending)
                 {
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                 }
                 else
                 {
@@ -360,7 +362,7 @@ namespace Tsavorite.test
                 key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 ValueStruct value = new() { vfield1 = i, vfield2 = i + 1 };
 
-                status = session.Read(ref key, ref input, ref output, Empty.Default);
+                status = bContext.Read(ref key, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
                 Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
@@ -368,7 +370,7 @@ namespace Tsavorite.test
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
-            status = session.Read(ref key, ref input, ref output, Empty.Default);
+            status = bContext.Read(ref key, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.NotFound), status);
         }
 
@@ -397,7 +399,7 @@ namespace Tsavorite.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                session.RMW(ref key1, ref input, Empty.Default);
+                bContext.RMW(ref key1, ref input, Empty.Default);
             }
 
             // CopyUpdater
@@ -406,7 +408,7 @@ namespace Tsavorite.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                session.RMW(key1, input);  // no ref and do not set any other params
+                bContext.RMW(key1, input);  // no ref and do not set any other params
             }
 
             OutputStruct output = default;
@@ -420,7 +422,7 @@ namespace Tsavorite.test
                 key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 ValueStruct value = new() { vfield1 = i, vfield2 = i + 1 };
 
-                status = session.Read(ref key, ref input, ref output, Empty.Default);
+                status = bContext.Read(ref key, ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
                 Assert.AreEqual(2 * value.vfield1, output.value.vfield1);
@@ -428,7 +430,7 @@ namespace Tsavorite.test
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
-            status = session.Read(ref key, ref input, ref output, Empty.Default);
+            status = bContext.Read(ref key, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.NotFound), status);
         }
 
@@ -445,8 +447,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default);
-            var status = session.Read(key1, input, out OutputStruct output, Empty.Default);
+            bContext.Upsert(ref key1, ref value, Empty.Default);
+            var status = bContext.Read(key1, input, out OutputStruct output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
@@ -466,8 +468,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default);
-            var status = session.Read(key1, out OutputStruct output, Empty.Default);
+            bContext.Upsert(ref key1, ref value, Empty.Default);
+            var status = bContext.Read(key1, out OutputStruct output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
@@ -491,8 +493,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default);
-            var status = session.Read(ref key1, ref output, Empty.Default);
+            bContext.Upsert(ref key1, ref value, Empty.Default);
+            var status = bContext.Read(ref key1, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
@@ -513,9 +515,9 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(ref key1, ref value, Empty.Default);
+            bContext.Upsert(ref key1, ref value, Empty.Default);
 
-            var (status, output) = session.Read(key1);
+            var (status, output) = bContext.Read(key1);
             AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -541,8 +543,8 @@ namespace Tsavorite.test
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
             ReadOptions readOptions = default;
 
-            session.Upsert(ref key1, ref value, Empty.Default);
-            var status = session.ReadAtAddress(store.Log.BeginAddress, ref input, ref output, ref readOptions, out _, Empty.Default);
+            bContext.Upsert(ref key1, ref value, Empty.Default);
+            var status = bContext.ReadAtAddress(store.Log.BeginAddress, ref input, ref output, ref readOptions, out _, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -591,6 +593,7 @@ namespace Tsavorite.test
 
             SkipReadCacheFunctions functions = new();
             using var skipReadCacheSession = store.NewSession<InputStruct, OutputStruct, Empty, SkipReadCacheFunctions>(functions);
+            var skipReadCachebContext = skipReadCacheSession.BasicContext;
 
             InputStruct input = default;
             OutputStruct output = default;
@@ -599,7 +602,7 @@ namespace Tsavorite.test
             var readAtAddress = store.Log.BeginAddress;
             Status status;
 
-            skipReadCacheSession.Upsert(ref key1, ref value, Empty.Default);
+            skipReadCachebContext.Upsert(ref key1, ref value, Empty.Default);
 
             void VerifyOutput()
             {
@@ -614,7 +617,7 @@ namespace Tsavorite.test
             {
                 if (status.IsPending)
                 {
-                    skipReadCacheSession.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    skipReadCachebContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                 }
                 Assert.IsTrue(status.Found);
@@ -623,7 +626,7 @@ namespace Tsavorite.test
 
             // This will just be an ordinary read, as the record is in memory.
             functions.expectedReadAddress = readAtAddress;
-            status = skipReadCacheSession.Read(ref key1, ref input, ref output);
+            status = skipReadCachebContext.Read(ref key1, ref input, ref output);
             Assert.IsTrue(status.Found);
             VerifyOutput();
 
@@ -638,7 +641,7 @@ namespace Tsavorite.test
             // Do not put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
             ReadOptions readOptions = new() { CopyOptions = ReadCopyOptions.None };
-            status = skipReadCacheSession.ReadAtAddress(readAtAddress, ref key1, ref input, ref output, ref readOptions, out _);
+            status = skipReadCachebContext.ReadAtAddress(readAtAddress, ref key1, ref input, ref output, ref readOptions, out _);
             VerifyResult();
 
             Assert.AreEqual(store.ReadCache.BeginAddress, store.ReadCache.TailAddress);
@@ -646,7 +649,7 @@ namespace Tsavorite.test
             // Put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
             readOptions.CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.ReadCache);
-            status = skipReadCacheSession.ReadAtAddress(readAtAddress, ref key1, ref input, ref output, ref readOptions, out _);
+            status = skipReadCachebContext.ReadAtAddress(readAtAddress, ref key1, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending);
             VerifyResult();
 
@@ -654,7 +657,7 @@ namespace Tsavorite.test
 
             // Now this will read from the read cache.
             functions.expectedReadAddress = Constants.kInvalidAddress;
-            status = skipReadCacheSession.Read(ref key1, ref input, ref output);
+            status = skipReadCachebContext.Read(ref key1, ref input, ref output);
             Assert.IsFalse(status.IsPending);
             Assert.IsTrue(status.Found);
             VerifyOutput();
@@ -676,8 +679,8 @@ namespace Tsavorite.test
 
             Assert.AreEqual(0, store.EntryCount);
 
-            session.Upsert(ref key1, ref value);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
+            bContext.Upsert(ref key1, ref value);
+            var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(1, store.EntryCount);
@@ -702,8 +705,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            session.Upsert(key1, value, Empty.Default);
-            var status = session.Read(ref key1, ref input, ref output, Empty.Default);
+            bContext.Upsert(key1, value, Empty.Default);
+            var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             Assert.AreEqual(value.vfield1, output.value.vfield1);
@@ -719,14 +722,16 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             using var store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
-            using var s = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var s = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = s.BasicContext;
+
             long key = 1, value = 1, input = 10, output = 0;
-            s.Upsert(ref key, ref value);
-            s.Read(ref key, ref output);
+            bContext.Upsert(ref key, ref value);
+            bContext.Read(ref key, ref output);
             Assert.AreEqual(value, output);
-            s.RMW(ref key, ref input);
-            s.RMW(ref key, ref input);
-            s.Read(ref key, ref output);
+            bContext.RMW(ref key, ref input);
+            bContext.RMW(ref key, ref input);
+            bContext.Read(ref key, ref output);
             Assert.AreEqual(10, output);
         }
 
@@ -748,7 +753,8 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             using var store = new TsavoriteKV<ushort, byte>(1L << 20, new LogSettings { LogDevice = log });
-            using var s = store.NewSession<byte, byte, Empty, SimpleFunctions<ushort, byte>>(new SimpleFunctions<ushort, byte>());
+            using var s = store.NewSession<byte, byte, Empty, SimpleSimpleFunctions<ushort, byte>>(new SimpleSimpleFunctions<ushort, byte>());
+            var bContext = s.BasicContext;
             ushort key = 1024;
             byte value = 1, input = 10, output = 0;
 
@@ -760,11 +766,11 @@ namespace Tsavorite.test
             for (var ii = 0; ii < 5; ++ii, ++key, ++value, ++input)
             {
                 output = 0;
-                s.Upsert(ref key, ref value);
-                s.Read(ref key, ref output);
+                bContext.Upsert(ref key, ref value);
+                bContext.Read(ref key, ref output);
                 Assert.AreEqual(value, output);
-                s.RMW(ref key, ref input);
-                s.Read(ref key, ref output);
+                bContext.RMW(ref key, ref input);
+                bContext.Read(ref key, ref output);
                 Assert.AreEqual(input, output);
 
                 var tailLogicalAddress = store.hlog.GetTailAddress();
@@ -783,7 +789,9 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             using var store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
+
             const int numRecords = 500;
             const int valueMult = 1_000_000;
 
@@ -795,9 +803,9 @@ namespace Tsavorite.test
             {
                 long value = key + valueMult;
                 hashes[key] = store.comparer.GetHashCode64(ref key);
-                status = session.Upsert(key, value);
+                status = bContext.Upsert(key, value);
                 Assert.IsTrue(status.Record.Created, status.ToString());
-                status = session.Read(key, out output);
+                status = bContext.Read(key, out output);
                 Assert.IsTrue(status.Found, status.ToString());
                 Assert.AreEqual(value, output);
             }
@@ -810,15 +818,15 @@ namespace Tsavorite.test
                     long value = key + valueMult * 2;
                     if (useRMW)
                     {
-                        status = session.RMW(key, value);
+                        status = bContext.RMW(key, value);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
-                        status = session.Upsert(key, value);
+                        status = bContext.Upsert(key, value);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
-                    status = session.Read(key, out output);
+                    status = bContext.Read(key, out output);
                     Assert.IsTrue(status.Found, status.ToString());
                     Assert.AreEqual(value, output);
                 }
@@ -830,17 +838,17 @@ namespace Tsavorite.test
                     if (useRMW)
                     {
                         RMWOptions rmwOptions = new() { KeyHash = hashes[key] };
-                        status = session.RMW(key, value, ref rmwOptions);
+                        status = bContext.RMW(key, value, ref rmwOptions);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
                         UpsertOptions upsertOptions = new() { KeyHash = hashes[key] };
-                        status = session.Upsert(key, value, ref upsertOptions);
+                        status = bContext.Upsert(key, value, ref upsertOptions);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     ReadOptions readOptions = new() { KeyHash = hashes[key] };
-                    status = session.Read(key, out output, ref readOptions);
+                    status = bContext.Read(key, out output, ref readOptions);
                     Assert.IsTrue(status.Found, status.ToString());
                     Assert.AreEqual(value, output);
                 }
@@ -852,9 +860,9 @@ namespace Tsavorite.test
             // Delete without keyHash
             for (long key = 0; key < numRecords; key++)
             {
-                status = session.Delete(key);
+                status = bContext.Delete(key);
                 Assert.IsTrue(status.Found, status.ToString());
-                status = session.Read(key, out _);
+                status = bContext.Read(key, out _);
                 Assert.IsTrue(status.NotFound, status.ToString());
             }
 
@@ -862,20 +870,22 @@ namespace Tsavorite.test
             for (long key = 0; key < numRecords; key++)
             {
                 DeleteOptions deleteOptions = new() { KeyHash = hashes[key] };
-                status = session.Delete(key, ref deleteOptions);
+                status = bContext.Delete(key, ref deleteOptions);
                 ReadOptions readOptions = new() { KeyHash = hashes[key] };
-                status = session.Read(key, out _, ref readOptions);
+                status = bContext.Read(key, out _, ref readOptions);
                 Assert.IsTrue(status.NotFound, status.ToString());
             }
         }
 
         [Test]
         [Category("TsavoriteKV")]
-        public static async Task BasicAsyncOperationsTest()
+        public static void BasicOperationsTest()
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
             using var store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log });
-            using var session = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            var bContext = session.BasicContext;
+
             const int numRecords = 500;
             const int valueMult = 1_000_000;
 
@@ -887,14 +897,14 @@ namespace Tsavorite.test
             {
                 long value = key + valueMult;
                 hashes[key] = store.comparer.GetHashCode64(ref key);
-                status = await CompleteAsync(session.UpsertAsync(key, value));
+                status = bContext.Upsert(key, value);
                 Assert.IsTrue(status.Record.Created, status.ToString());
-                (status, output) = await CompleteAsync(session.ReadAsync(key));
+                (status, output) = bContext.Read(key);
                 Assert.IsTrue(status.Found, status.ToString());
                 Assert.AreEqual(value, output);
             }
 
-            async void doUpdate(bool useRMW)
+            void doUpdate(bool useRMW)
             {
                 // Update and Read without keyHash
                 for (long key = 0; key < numRecords; key++)
@@ -902,15 +912,15 @@ namespace Tsavorite.test
                     long value = key + valueMult * 2;
                     if (useRMW)
                     {
-                        status = await CompleteAsync(session.RMWAsync(key, value));
+                        status = bContext.RMW(key, value);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
-                        status = await CompleteAsync(session.UpsertAsync(key, value));
+                        status = bContext.Upsert(key, value);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
-                    (status, output) = await CompleteAsync(session.ReadAsync(key));
+                    (status, output) = bContext.Read(key);
                     Assert.IsTrue(status.Found, status.ToString());
                     Assert.AreEqual(value, output);
                 }
@@ -922,17 +932,17 @@ namespace Tsavorite.test
                     if (useRMW)
                     {
                         RMWOptions rmwOptions = new() { KeyHash = hashes[key] };
-                        status = await CompleteAsync(session.RMWAsync(key, value, ref rmwOptions));
+                        status = bContext.RMW(key, value, ref rmwOptions);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
                         UpsertOptions upsertOptions = new() { KeyHash = hashes[key] };
-                        status = await CompleteAsync(session.UpsertAsync(key, value, ref upsertOptions));
+                        status = bContext.Upsert(key, value, ref upsertOptions);
                         Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     ReadOptions readOptions = new() { KeyHash = hashes[key] };
-                    (status, output) = await CompleteAsync(session.ReadAsync(key, ref readOptions));
+                    (status, output) = bContext.Read(key, ref readOptions);
                     Assert.IsTrue(status.Found, status.ToString());
                     Assert.AreEqual(value, output);
                 }
@@ -944,9 +954,9 @@ namespace Tsavorite.test
             // Delete without keyHash
             for (long key = 0; key < numRecords; key++)
             {
-                status = await CompleteAsync(session.DeleteAsync(key));
+                status = bContext.Delete(key);
                 Assert.IsTrue(status.Found, status.ToString());
-                (status, _) = await CompleteAsync(session.ReadAsync(key));
+                (status, _) = bContext.Read(key);
                 Assert.IsTrue(status.NotFound, status.ToString());
             }
 
@@ -954,9 +964,9 @@ namespace Tsavorite.test
             for (long key = 0; key < numRecords; key++)
             {
                 DeleteOptions deleteOptions = new() { KeyHash = hashes[key] };
-                status = await CompleteAsync(session.DeleteAsync(key, ref deleteOptions));
+                status = bContext.Delete(key, ref deleteOptions);
                 ReadOptions readOptions = new() { KeyHash = hashes[key] };
-                (status, _) = await CompleteAsync(session.ReadAsync(key, ref readOptions));
+                (status, _) = bContext.Read(key, ref readOptions);
                 Assert.IsTrue(status.NotFound, status.ToString());
             }
         }

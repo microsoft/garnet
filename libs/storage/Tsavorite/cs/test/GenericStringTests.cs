@@ -54,15 +54,16 @@ namespace Tsavorite.test
                     );
 
             session = store.NewSession<string, string, Empty, MyFuncs>(new MyFuncs());
+            var bContext = session.BasicContext;
 
             const int totalRecords = 200;
             for (int i = 0; i < totalRecords; i++)
             {
                 var _key = $"{i}";
                 var _value = $"{i}"; ;
-                session.Upsert(ref _key, ref _value, Empty.Default);
+                bContext.Upsert(ref _key, ref _value, Empty.Default);
             }
-            session.CompletePending(true);
+            bContext.CompletePending(true);
             Assert.AreEqual(totalRecords, store.EntryCount);
 
             for (int i = 0; i < totalRecords; i++)
@@ -72,10 +73,10 @@ namespace Tsavorite.test
                 var key = $"{i}";
                 var value = $"{i}";
 
-                var status = session.Read(ref key, ref input, ref output, Empty.Default);
+                var status = bContext.Read(ref key, ref input, ref output, Empty.Default);
                 if (status.IsPending)
                 {
-                    session.CompletePendingWithOutputs(out var outputs, wait: true);
+                    bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                     (status, output) = GetSinglePendingResult(outputs);
                 }
                 Assert.IsTrue(status.Found);
@@ -83,7 +84,7 @@ namespace Tsavorite.test
             }
         }
 
-        class MyFuncs : SimpleFunctions<string, string>
+        class MyFuncs : SimpleSimpleFunctions<string, string>
         {
             public override void ReadCompletionCallback(ref string key, ref string input, ref string output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {

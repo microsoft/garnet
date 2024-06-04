@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Output that encapsulates sync stack output (via <see cref="core.SpanByte"/>) and async heap output (via IMemoryOwner)
     /// </summary>
-    public unsafe struct SpanByteAndMemory : IHeapConvertible
+    public unsafe struct SpanByteAndMemory
     {
         /// <summary>
         /// Stack output as <see cref="core.SpanByte"/>
@@ -91,6 +91,28 @@ namespace Tsavorite.core
         {
             Debug.Assert(!IsSpanByte, "Cannot call AsMemoryReadOnlySpan when IsSpanByte");
             return Memory.Memory.Span.Slice(0, Length);
+        }
+
+        /// <summary>
+        /// Copy from the passed ReadOnlySpan{byte}. Use this when you have not tested <see cref="IsSpanByte"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopyFrom(ReadOnlySpan<byte> srcSpan, MemoryPool<byte> memoryPool)
+        {
+            if (IsSpanByte)
+            {
+                if (srcSpan.Length < Length)
+                {
+                    srcSpan.CopyTo(SpanByte.AsSpan());
+                    Length = srcSpan.Length;
+                    return;
+                }
+                ConvertToHeap();
+            }
+
+            Length = srcSpan.Length;
+            Memory = memoryPool.Rent(srcSpan.Length);
+            srcSpan.CopyTo(Memory.Memory.Span);
         }
 
         /// <summary>

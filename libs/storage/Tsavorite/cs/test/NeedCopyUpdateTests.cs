@@ -47,6 +47,7 @@ namespace Tsavorite.test
         {
             TryAddTestFunctions functions = new();
             using var session = store.NewSession<RMWValue, RMWValue, Status, TryAddTestFunctions>(functions);
+            var bContext = session.BasicContext;
 
             Status status;
             var key = 1;
@@ -54,43 +55,43 @@ namespace Tsavorite.test
             var value2 = new RMWValue { value = 2 };
 
             functions.noNeedInitialUpdater = true;
-            status = session.RMW(ref key, ref value1); // needInitialUpdater false + NOTFOUND
+            status = bContext.RMW(ref key, ref value1); // needInitialUpdater false + NOTFOUND
             Assert.IsFalse(status.Found, status.ToString());
             Assert.IsFalse(value1.flag); // InitialUpdater is not called
             functions.noNeedInitialUpdater = false;
 
-            status = session.RMW(ref key, ref value1); // InitialUpdater + NotFound
+            status = bContext.RMW(ref key, ref value1); // InitialUpdater + NotFound
             Assert.IsFalse(status.Found, status.ToString());
             Assert.IsTrue(value1.flag); // InitialUpdater is called
 
-            status = session.RMW(ref key, ref value2); // InPlaceUpdater + Found
+            status = bContext.RMW(ref key, ref value2); // InPlaceUpdater + Found
             Assert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
 
             store.Log.Flush(true);
-            status = session.RMW(ref key, ref value2); // NeedCopyUpdate returns false, so RMW returns simply Found
+            status = bContext.RMW(ref key, ref value2); // NeedCopyUpdate returns false, so RMW returns simply Found
             Assert.IsTrue(status.Found, status.ToString());
 
             store.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, new(StatusCode.Found)); // PENDING + NeedCopyUpdate + Found
+            status = bContext.RMW(ref key, ref value2, new(StatusCode.Found)); // PENDING + NeedCopyUpdate + Found
             Assert.IsTrue(status.IsPending, status.ToString());
-            session.CompletePendingWithOutputs(out var outputs, true);
+            bContext.CompletePendingWithOutputs(out var outputs, true);
 
             var output = new RMWValue();
             (status, output) = GetSinglePendingResult(outputs);
             Assert.IsTrue(status.Found, status.ToString()); // NeedCopyUpdate returns false, so RMW returns simply Found
 
             // Test stored value. Should be value1
-            status = session.Read(ref key, ref value1, ref output, new(StatusCode.Found));
+            status = bContext.Read(ref key, ref value1, ref output, new(StatusCode.Found));
             Assert.IsTrue(status.IsPending, status.ToString());
-            session.CompletePending(true);
+            bContext.CompletePending(true);
 
-            status = session.Delete(ref key);
+            status = bContext.Delete(ref key);
             Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
-            session.CompletePending(true);
+            bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
-            status = session.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord)); // PENDING + InitialUpdater + NOTFOUND
+            status = bContext.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord)); // PENDING + InitialUpdater + NOTFOUND
             Assert.IsTrue(status.IsPending, status.ToString());
-            session.CompletePending(true);
+            bContext.CompletePending(true);
         }
 
         internal class RMWValue
@@ -188,6 +189,7 @@ namespace Tsavorite.test
         {
             RMWSinglePageFunctions functions = new();
             using var session = store.NewSession<long, long, Empty, RMWSinglePageFunctions>(functions);
+            var bContext = session.BasicContext;
 
             // Two records is the most that can "fit" into the first Constants.kFirstValueAddress "range"; therefore when we close pages
             // after flushing, ClosedUntilAddress will be aligned with the end of the page, so we will succeed in the allocation that
@@ -196,7 +198,7 @@ namespace Tsavorite.test
 
             for (int key = 0; key < recsPerPage - padding; key++)
             {
-                var status = session.RMW(key, key << 32 + key);
+                var status = bContext.RMW(key, key << 32 + key);
                 Assert.IsTrue(status.IsCompletedSuccessfully, status.ToString());
             }
 
@@ -205,13 +207,13 @@ namespace Tsavorite.test
             // This should trigger CopyUpdater, after flushing the oldest page (closest to HeadAddress).
             for (int key = 0; key < recsPerPage - padding; key++)
             {
-                var status = session.RMW(key, key << 32 + key);
+                var status = bContext.RMW(key, key << 32 + key);
                 if (status.IsPending)
-                    session.CompletePending(wait: true);
+                    bContext.CompletePending(wait: true);
             }
         }
 
-        internal class RMWSinglePageFunctions : SimpleFunctions<long, long>
+        internal class RMWSinglePageFunctions : SimpleSimpleFunctions<long, long>
         {
         }
     }

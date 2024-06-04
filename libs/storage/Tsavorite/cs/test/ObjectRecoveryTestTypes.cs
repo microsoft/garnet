@@ -4,7 +4,7 @@
 using System.Threading;
 using Tsavorite.core;
 
-namespace Tsavorite.test.recovery.objectstore
+namespace Tsavorite.test.recovery.objects
 {
     public class AdId : ITsavoriteEqualityComparer<AdId>
     {
@@ -69,7 +69,7 @@ namespace Tsavorite.test.recovery.objectstore
         public NumClicks value;
     }
 
-    public class Functions : FunctionsBase<AdId, NumClicks, Input, Output, Empty>
+    public class Functions : SessionFunctionsBase<AdId, NumClicks, Input, Output, Empty>
     {
         // Read functions
         public override bool SingleReader(ref AdId key, ref Input input, ref NumClicks value, ref Output dst, ref ReadInfo readInfo)
