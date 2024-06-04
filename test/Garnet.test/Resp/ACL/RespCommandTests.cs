@@ -406,12 +406,7 @@ namespace Garnet.test.Resp.ACL
 
             CheckCommands(
                 "BITFIELD",
-                [
-                    DoBitFieldGet, DoBitFieldGetWrap, DoBitFieldGetSat, DoBitFieldGetFail,
-                    DoBitFieldSet, DoBitFieldSetWrap, DoBitFieldSetSat, DoBitFieldSetFail,
-                    DoBitFieldIncrBy, DoBitFieldIncrByWrap, DoBitFieldIncrBySat, DoBitFieldIncrByFail,
-                    DoBitFieldMulti
-                ]
+                [DoBitFieldGet, DoBitFieldGetWrap, DoBitFieldGetSat, DoBitFieldGetFail, DoBitFieldSet, DoBitFieldSetWrap, DoBitFieldSetSat, DoBitFieldSetFail, DoBitFieldIncrBy, DoBitFieldIncrByWrap, DoBitFieldIncrBySat, DoBitFieldIncrByFail, DoBitFieldMulti]
             );
 
             void DoBitFieldGet(IServer server)
