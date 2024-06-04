@@ -19,5 +19,5 @@ Project Partners:
 * Knut Magne Risvik, Sarah Williamson, Narayanan Subramanian, Saurabh Singh, Padmanabh Gupta.
 * Kevin Montrose, Matt Tremblay, Marc Gravell.
 * Paulus Pärssinen.
-* Open-source and prior contributors to [Garnet](https://github.com/microsoft/garnet/contributors) and FASTER(https://github.com/microsoft/FASTER/contributors) projects.
+* Open-source and prior contributors to the [Garnet](https://github.com/microsoft/garnet/contributors) and [FASTER](https://github.com/microsoft/FASTER/contributors) projects.
 
