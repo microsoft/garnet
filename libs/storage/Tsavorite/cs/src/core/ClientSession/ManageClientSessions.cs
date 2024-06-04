@@ -20,14 +20,12 @@ namespace Tsavorite.core
         /// <returns>Session instance</returns>
         public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionName = null,
                 ReadCopyOptions readCopyOptions = default)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
         {
             if (functions == null)
                 throw new ArgumentNullException(nameof(functions));
             if (sessionName == "")
                 throw new TsavoriteException("Cannot use empty string as session name");
-            if (sessionName != null && _recoveredSessionNameMap != null && _recoveredSessionNameMap.ContainsKey(sessionName))
-                throw new TsavoriteException($"Session named {sessionName} already exists in recovery info, use RecoverSession to resume it");
 
             int sessionID = Interlocked.Increment(ref maxSessionID);
             var ctx = new TsavoriteExecutionContext<Input, Output, Context>();
@@ -44,54 +42,6 @@ namespace Tsavorite.core
                 Interlocked.CompareExchange(ref _activeSessions, new Dictionary<int, SessionInfo>(), null);
 
             var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions);
-            lock (_activeSessions)
-                _activeSessions.Add(sessionID, new SessionInfo { sessionName = sessionName, session = session, isActive = true });
-            return session;
-        }
-
-        /// <summary>
-        /// Resume (continue) prior client session with Tsavorite; used during recovery from failure.
-        /// </summary>
-        /// <param name="functions">Callback functions</param>
-        /// <param name="sessionName">Name of previous session to resume</param>
-        /// <param name="commitPoint">Prior commit point of durability for session</param>
-        /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
-        /// <returns>Session instance</returns>
-        internal ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, string sessionName, out CommitPoint commitPoint,
-                ReadCopyOptions readCopyOptions = default)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-        {
-            // Map from sessionName to sessionID and call through
-            if (_recoveredSessionNameMap == null || !_recoveredSessionNameMap.TryRemove(sessionName, out int sessionID))
-                throw new TsavoriteException($"Unable to find session named {sessionName} to recover");
-            return ResumeSession<Input, Output, Context, Functions>(functions, sessionID, out commitPoint, readCopyOptions);
-        }
-
-        /// <summary>
-        /// Resume (continue) prior client session with Tsavorite; used during recovery from failure.
-        /// </summary>
-        /// <param name="functions">Callback functions</param>
-        /// <param name="sessionID">ID of previous session to resume</param>
-        /// <param name="commitPoint">Prior commit point of durability for session</param>
-        /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
-        /// <returns>Session instance</returns>
-        internal ClientSession<Key, Value, Input, Output, Context, Functions> ResumeSession<Input, Output, Context, Functions>(Functions functions, int sessionID, out CommitPoint commitPoint,
-                ReadCopyOptions readCopyOptions = default)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
-        {
-            if (functions == null)
-                throw new ArgumentNullException(nameof(functions));
-
-            string sessionName;
-            (sessionName, commitPoint) = InternalContinue<Input, Output, Context>(sessionID, out var ctx);
-            if (commitPoint.UntilSerialNo == -1)
-                throw new Exception($"Unable to find session {sessionID} to recover");
-            ctx.MergeReadCopyOptions(ReadCopyOptions, readCopyOptions);
-
-            var session = new ClientSession<Key, Value, Input, Output, Context, Functions>(this, ctx, functions);
-
-            if (_activeSessions == null)
-                Interlocked.CompareExchange(ref _activeSessions, new Dictionary<int, SessionInfo>(), null);
             lock (_activeSessions)
                 _activeSessions.Add(sessionID, new SessionInfo { sessionName = sessionName, session = session, isActive = true });
             return session;

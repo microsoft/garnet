@@ -118,7 +118,7 @@ namespace Tsavorite.test.Dispose
 
             void WaitForEvent()
             {
-                Assert.IsTrue(tester.store.epoch.ThisInstanceProtected(), "This should only be called from IFunctions methods, which are under epoch protection");
+                Assert.IsTrue(tester.store.epoch.ThisInstanceProtected(), "This should only be called from ISessionFunctions methods, which are under epoch protection");
                 if (isSUT)
                 {
                     MyKey key = new() { key = TestKey };
@@ -364,7 +364,7 @@ namespace Tsavorite.test.Dispose
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void DisposeSingleWriter2Threads([Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
+        public void DisposeSingleWriter2Threads([Values(ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -402,7 +402,7 @@ namespace Tsavorite.test.Dispose
         [Category("TsavoriteKV")]
         [Category("Smoke")]
         public void DisposeInitialUpdater2Threads([Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode,
-                                                  [Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
+                                                  [Values(ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -441,7 +441,7 @@ namespace Tsavorite.test.Dispose
         [Category("TsavoriteKV")]
         [Category("Smoke")]
         public void DisposeCopyUpdater2Threads([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode,
-                                               [Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
+                                               [Values(ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -505,7 +505,7 @@ namespace Tsavorite.test.Dispose
         [Category("TsavoriteKV")]
         [Category("Smoke")]
         public void DisposeSingleDeleter2Threads([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode,
-                                                  [Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
+                                                  [Values(ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions1 = new DisposeFunctions(this, sut: true);
             var functions2 = new DisposeFunctions(this, sut: false);
@@ -551,7 +551,7 @@ namespace Tsavorite.test.Dispose
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void PendingRead([Values] ReadCopyDestination copyDest, [Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
+        public void PendingRead([Values] ReadCopyDestination copyDest, [Values(ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
 
         {
             DoPendingReadInsertTest(copyDest, initialReadCacheInsert: false);
@@ -561,7 +561,7 @@ namespace Tsavorite.test.Dispose
         [Category("TsavoriteKV")]
         [Category("Smoke")]
         public void CopyToTailWithInitialReadCache([Values(ReadCopyDestination.ReadCache)] ReadCopyDestination copyDest,
-                                                   [Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
+                                                   [Values(ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             // We use the ReadCopyDestination.ReadCache parameter so Setup() knows to set up the readcache, but
             // for the actual test it is used only for setup; we execute CopyToTail.
@@ -704,7 +704,7 @@ namespace Tsavorite.test.Dispose
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void DisposePendingReadWithNoInsertTest([Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
+        public void DisposePendingReadWithNoInsertTest([Values(ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions = new DisposeFunctionsNoSync();
 
@@ -731,7 +731,7 @@ namespace Tsavorite.test.Dispose
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void DisposePendingRmwWithNoConflictTest([Values(ConcurrencyControlMode.RecordIsolation, ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
+        public void DisposePendingRmwWithNoConflictTest([Values(ConcurrencyControlMode.None)] ConcurrencyControlMode concurrencyControlMode)
         {
             var functions = new DisposeFunctionsNoSync();
 

@@ -12,7 +12,7 @@ namespace Garnet.server
     /// [K, V, I, O, F, P]
     /// </summary>
     public abstract class TsavoriteKVProviderBase<Key, Value, Input, Output, Functions, ParameterSerializer> : ISessionProvider
-        where Functions : IFunctions<Key, Value, Input, Output, long>
+        where Functions : ISessionFunctions<Key, Value, Input, Output, long>
         where ParameterSerializer : IServerSerializer<Key, Value, Input, Output>
     {
         /// <summary>

@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal struct OperationStackContext<Key, Value>
+    public struct OperationStackContext<Key, Value>
     {
         // Note: Cannot use ref fields because they are not supported before net7.0.
         internal HashEntryInfo hei;

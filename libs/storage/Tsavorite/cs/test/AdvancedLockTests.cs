@@ -37,7 +37,7 @@ namespace Tsavorite.test.LockTests
             CTTAfterUpdate = 2,
         }
 
-        internal class Functions : FunctionsBase<int, int, Input, int, Empty>, IDisposable
+        internal class Functions : SessionFunctionsBase<int, int, Input, int, Empty>, IDisposable
         {
             // The update event is manual reset because it will retry and thus needs to remain set.
             internal readonly ManualResetEvent updateEvent = new(initialState: false);
@@ -171,10 +171,11 @@ namespace Tsavorite.test.LockTests
         void Populate(bool evict = false)
         {
             using var session = store.NewSession<Input, int, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             for (int key = 0; key < numKeys; key++)
-                session.Upsert(key, key + valueAdd);
-            session.CompletePending(true);
+                bContext.Upsert(key, key + valueAdd);
+            bContext.CompletePending(true);
             if (evict)
                 store.Log.FlushAndEvict(wait: true);
         }
@@ -183,7 +184,7 @@ namespace Tsavorite.test.LockTests
         [Category(TsavoriteKVTestCategory)]
         [Category(LockTestCategory)]
         //[Repeat(100)]
-        public async ValueTask SameKeyInsertAndCTTTest([Values(ConcurrencyControlMode.None, ConcurrencyControlMode.RecordIsolation /* Standard will hang */)] ConcurrencyControlMode concurrencyControlMode,
+        public async ValueTask SameKeyInsertAndCTTTest([Values(ConcurrencyControlMode.None /* Do not use LockTable; it will hang */)] ConcurrencyControlMode concurrencyControlMode,
                                                        [Values(ReadCopyTo.ReadCache, ReadCopyTo.MainLog)] ReadCopyTo readCopyTo, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
@@ -191,7 +192,9 @@ namespace Tsavorite.test.LockTests
             Populate(evict: true);
             using Functions functions = new();
             using var readSession = store.NewSession<Input, int, Empty, Functions>(functions);
+            var readbContext = readSession.BasicContext;
             using var updateSession = store.NewSession<Input, int, Empty, Functions>(functions);
+            var updatebContext = updateSession.BasicContext;
             var iter = 0;
 
             // This test ensures that we handle the two cases, which are timing-dependent so we use events to force the sequence. "Update" refers to either
@@ -230,19 +233,19 @@ namespace Tsavorite.test.LockTests
                     {
                         // Upsert of a record not in mutable log returns NOTFOUND because it creates a new record.
                         expectedFound = readCopyTo == ReadCopyTo.MainLog && testMode == LockTestMode.UpdateAfterCTT;
-                        status = updateSession.Upsert(ref key, ref input, ref input.updatedValue, ref output);
+                        status = updatebContext.Upsert(ref key, ref input, ref input.updatedValue, ref output);
                     }
                     else
                     {
                         // RMW will always find and update or copyupdate.
                         expectedFound = true;
-                        status = updateSession.RMW(ref key, ref input, ref output);
+                        status = updatebContext.RMW(ref key, ref input, ref output);
 
                         // Unlike Upsert, RMW may go pending (depending whether CopyToTail|ReadCache completes first). We don't care about that here;
                         // the test is that we properly handle either the CAS at the tail by retrying, or invalidate the readcache record.
                         if (status.IsPending)
                         {
-                            updateSession.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                            updatebContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                             (status, output) = GetSinglePendingResult(completedOutputs);
                         }
                     }
@@ -258,7 +261,7 @@ namespace Tsavorite.test.LockTests
                     ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.Device, readCopyTo) };
 
                     // This will copy to ReadCache or MainLog tail, and the test is trying to cause a race with the above Upsert.
-                    var status = readSession.Read(ref key, ref input, ref output, ref readOptions, out _);
+                    var status = readbContext.Read(ref key, ref input, ref output, ref readOptions, out _);
 
                     // For this test to work deterministically, the read must go pending
                     Assert.IsTrue(status.IsPending, $"Second action: Key = {key}, status = {status}, testMode {testMode}");
@@ -276,14 +279,14 @@ namespace Tsavorite.test.LockTests
                         expectedOutput += valueAdd;
                     }
 
-                    readSession.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    readbContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     (status, output) = GetSinglePendingResult(completedOutputs);
                     Assert.AreEqual(expectedOutput, output, $"Second action: Key = {key}, iter = {iter}, testMode {testMode}");
                 },
                 key =>
                 {
                     int output = -3;
-                    var status = readSession.Read(ref key, ref output);
+                    var status = readbContext.Read(ref key, ref output);
 
                     // This should not have gone pending, since the Insert or Read updated at the log tail. There should be no valid readcache
                     // record; if there is, the test for updated value will fail.

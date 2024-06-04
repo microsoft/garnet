@@ -98,12 +98,14 @@ namespace Tsavorite.test.recovery.objects
 
         private List<(int, Guid)> Write(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, TsavoriteKV<MyKey, MyValue> store, CheckpointType checkpointType)
         {
+            var bContext = session.BasicContext;
+
             var tokens = new List<(int, Guid)>();
             for (int i = 0; i < iterations; i++)
             {
                 var _key = new MyKey { key = i, name = string.Concat(Enumerable.Repeat(i.ToString(), 100)) };
                 var value = new MyValue { value = i.ToString() };
-                session.Upsert(ref _key, ref value, context, 0);
+                bContext.Upsert(ref _key, ref value, context);
 
                 if (i % 1000 == 0 && i > 0)
                 {
@@ -117,16 +119,18 @@ namespace Tsavorite.test.recovery.objects
 
         private void Read(ClientSession<MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions> session, MyContext context, bool delete, int iter)
         {
+            var bContext = session.BasicContext;
+
             for (int i = 0; i < iter; i++)
             {
                 var key = new MyKey { key = i, name = string.Concat(Enumerable.Repeat(i.ToString(), 100)) };
                 MyInput input = default;
                 MyOutput g1 = new();
-                var status = session.Read(ref key, ref input, ref g1, context, 0);
+                var status = bContext.Read(ref key, ref input, ref g1, context);
 
                 if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                     context.FinalizeRead(ref status, ref g1);
                 }
 
@@ -139,12 +143,12 @@ namespace Tsavorite.test.recovery.objects
                 var key = new MyKey { key = 1, name = "1" };
                 var input = default(MyInput);
                 var output = new MyOutput();
-                session.Delete(ref key, context, 0);
-                var status = session.Read(ref key, ref input, ref output, context, 0);
+                bContext.Delete(ref key, context);
+                var status = bContext.Read(ref key, ref input, ref output, context);
 
                 if (status.IsPending)
                 {
-                    session.CompletePending(true);
+                    bContext.CompletePending(true);
                     context.FinalizeRead(ref status, ref output);
                 }
 

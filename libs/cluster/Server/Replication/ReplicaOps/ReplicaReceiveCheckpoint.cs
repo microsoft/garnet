@@ -44,12 +44,12 @@ namespace Garnet.cluster
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeid);
 
                 // TryAddReplica will set the recovering boolean
-                if (clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, ref recovering, out errorMessage))
+                if (clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, out errorMessage))
                 {
                     // Wait for threads to agree
                     session.UnsafeWaitForConfigTransition();
 
-                    //TODO: We should not be resetting this, need to decide where to start syncing from
+                    // Resetting here to decide later when to sync from
                     clusterProvider.replicationManager.ReplicationOffset = 0;
                     return clusterProvider.replicationManager.TryReplicateFromPrimary(out errorMessage, background);
                 }
@@ -68,7 +68,7 @@ namespace Garnet.cluster
         public bool TryReplicateFromPrimary(out ReadOnlySpan<byte> errorMessage, bool background = false)
         {
             errorMessage = default;
-            Debug.Assert(recovering);
+            Debug.Assert(Recovering);
 
             // The caller should have stopped accepting AOF records from old primary at this point
             // (TryREPLICAOF -> TryAddReplica -> UnsafeWaitForConfigTransition)
@@ -160,6 +160,7 @@ namespace Garnet.cluster
             {
                 logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
                 clusterProvider.clusterManager.TryResetReplica();
+                clusterProvider.replicationManager.SuspendRecovery();
                 return ex.Message;
             }
             finally
@@ -303,7 +304,7 @@ namespace Garnet.cluster
             storeWrapper.appendOnlyFile.Initialize(beginAddress, recoveredReplicationOffset);
 
             // Done with recovery at this point
-            recovering = false;
+            SuspendRecovery();
 
             // Finally, advertise that we are caught up to the replication offset
             ReplicationOffset = recoveredReplicationOffset;

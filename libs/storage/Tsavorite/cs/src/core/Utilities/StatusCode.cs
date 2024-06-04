@@ -55,7 +55,7 @@ namespace Tsavorite.core
         NotFound = 0x01,
 
         /// <summary>
-        /// The operation was canceled (e.g. by an IFunctions method setting info.CancelOperation). This is not combined with advanced enum values.
+        /// The operation was canceled (e.g. by an ISessionFunctions method setting info.CancelOperation). This is not combined with advanced enum values.
         /// </summary>
         Canceled = 0x02,
 

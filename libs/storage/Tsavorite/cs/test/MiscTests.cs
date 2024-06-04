@@ -47,21 +47,22 @@ namespace Tsavorite.test
         public void MixedTest1()
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MixedFunctions>(new MixedFunctions());
+            var bContext = session.BasicContext;
 
             int key = 8999998;
             var input1 = new MyInput { value = 23 };
             MyOutput output = new();
 
-            session.RMW(ref key, ref input1, Empty.Default, 0);
+            bContext.RMW(ref key, ref input1, Empty.Default);
 
             int key2 = 8999999;
             var input2 = new MyInput { value = 24 };
-            session.RMW(ref key2, ref input2, Empty.Default, 0);
+            bContext.RMW(ref key2, ref input2, Empty.Default);
 
-            session.Read(ref key, ref input1, ref output, Empty.Default, 0);
+            bContext.Read(ref key, ref input1, ref output, Empty.Default);
             Assert.AreEqual(input1.value, output.value.value);
 
-            session.Read(ref key2, ref input2, ref output, Empty.Default, 0);
+            bContext.Read(ref key2, ref input2, ref output, Empty.Default);
             Assert.AreEqual(input2.value, output.value.value);
         }
 
@@ -70,21 +71,22 @@ namespace Tsavorite.test
         public void MixedTest2()
         {
             using var session = store.NewSession<MyInput, MyOutput, Empty, MixedFunctions>(new MixedFunctions());
+            var bContext = session.BasicContext;
 
             for (int i = 0; i < 2000; i++)
             {
                 var value = new MyValue { value = i };
-                session.Upsert(ref i, ref value, Empty.Default, 0);
+                bContext.Upsert(ref i, ref value, Empty.Default);
             }
 
             var key2 = 23;
             MyInput input = new();
             MyOutput g1 = new();
-            var status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
+            var status = bContext.Read(ref key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
             {
-                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, _) = GetSinglePendingResult(outputs);
             }
             Assert.IsTrue(status.Found);
@@ -92,11 +94,11 @@ namespace Tsavorite.test
             Assert.AreEqual(23, g1.value.value);
 
             key2 = 99999;
-            status = session.Read(ref key2, ref input, ref g1, Empty.Default, 0);
+            status = bContext.Read(ref key2, ref input, ref g1, Empty.Default);
 
             if (status.IsPending)
             {
-                session.CompletePendingWithOutputs(out var outputs, wait: true);
+                bContext.CompletePendingWithOutputs(out var outputs, wait: true);
                 (status, _) = GetSinglePendingResult(outputs);
             }
             Assert.IsFalse(status.Found);
@@ -123,6 +125,7 @@ namespace Tsavorite.test
                     concurrencyControlMode: ConcurrencyControlMode.None);
 
                 session = store.NewSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
+                var bContext = session.BasicContext;
 
                 var key = default(KeyStruct);
                 var value = default(ValueStruct);
@@ -132,7 +135,7 @@ namespace Tsavorite.test
                 key = new KeyStruct() { kfield1 = 1, kfield2 = 2 };
                 value = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
 
-                var status = session.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
+                var status = bContext.Upsert(ref key, ref input, ref value, ref output, out RecordMetadata recordMetadata1);
                 Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 // ConcurrentWriter and InPlaceUpater return false, so we create a new record.
@@ -140,13 +143,13 @@ namespace Tsavorite.test
                 value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
                 if (updateOp == UpdateOp.Upsert)
                 {
-                    status = session.Upsert(ref key, ref input, ref value, ref output, out recordMetadata2);
+                    status = bContext.Upsert(ref key, ref input, ref value, ref output, out recordMetadata2);
                     Assert.AreEqual(1, copyOnWrite.ConcurrentWriterCallCount);
                     Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
                 else
                 {
-                    status = session.RMW(ref key, ref input, ref output, out recordMetadata2);
+                    status = bContext.RMW(ref key, ref input, ref output, out recordMetadata2);
                     Assert.AreEqual(1, copyOnWrite.InPlaceUpdaterCallCount);
                     Assert.IsTrue(status.Found && status.Record.CopyUpdated, status.ToString());
                 }
@@ -157,7 +160,7 @@ namespace Tsavorite.test
                     Assert.True(iterator.GetNext(out var info));    // We should only get the new record...
                     Assert.False(iterator.GetNext(out info));       // ... the old record was elided, so was Sealed and invalidated.
                 }
-                status = session.Read(ref key, ref output);
+                status = bContext.Read(ref key, ref output);
                 Assert.IsTrue(status.Found, status.ToString());
 
                 store.TryInitiateFullCheckpoint(out Guid token, CheckpointType.Snapshot);
@@ -179,7 +182,7 @@ namespace Tsavorite.test
                     Assert.True(iterator.GetNext(out var info));    // We should only get one record...
                     Assert.False(iterator.GetNext(out info));       // ... the old record was Unsealed by Recovery, but remains invalid.
                 }
-                status = session.Read(ref key, ref output);
+                status = bContext.Read(ref key, ref output);
                 Assert.IsTrue(status.Found, status.ToString());
             }
             finally

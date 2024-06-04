@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <PackageReference Include="CommandLineParser" />
+    <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

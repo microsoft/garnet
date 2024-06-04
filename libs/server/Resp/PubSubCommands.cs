@@ -21,46 +21,67 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe void Publish(ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
         {
-            networkSender.GetResponseObject();
+            networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+            try
+            {
+                if (respProtocolVersion == 2)
+                {
+                    while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WritePushLength(3, ref dcurr, dend))
+                        SendAndReset();
+                }
+                while (!RespWriteUtils.WriteBulkString("message"u8, ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)), ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)), ref dcurr, dend))
+                    SendAndReset();
 
-            byte* d = networkSender.GetResponseObjectHead();
-            var dend = networkSender.GetResponseObjectTail();
-            var dcurr = d; // reserve space for size
-
-            while (!RespWriteUtils.WriteArrayLength(3, ref dcurr, dend))
-                SendAndReset();
-
-            while (!RespWriteUtils.WriteBulkString("message"u8, ref dcurr, dend))
-                SendAndReset();
-            while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)), ref dcurr, dend))
-                SendAndReset();
-            while (!RespWriteUtils.WriteBulkString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)), ref dcurr, dend))
-                SendAndReset();
-
-            networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), (int)(dcurr - d));
+                if (dcurr > networkSender.GetResponseObjectHead())
+                    Send(networkSender.GetResponseObjectHead());
+            }
+            finally
+            {
+                networkSender.ExitAndReturnResponseObject();
+            }
         }
 
         /// <inheritdoc />
         public override unsafe void PrefixPublish(byte* patternPtr, int patternLength, ref byte* keyPtr, int keyLength, ref byte* valPtr, int valLength, ref byte* inputPtr, int sid)
         {
-            networkSender.GetResponseObject();
+            networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+            try
+            {
+                if (respProtocolVersion == 2)
+                {
+                    while (!RespWriteUtils.WriteArrayLength(4, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WritePushLength(4, ref dcurr, dend))
+                        SendAndReset();
+                }
+                while (!RespWriteUtils.WriteBulkString("pmessage"u8, ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(patternPtr + sizeof(int), patternLength - sizeof(int)), ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)), ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)), ref dcurr, dend))
+                    SendAndReset();
 
-            byte* d = networkSender.GetResponseObjectHead();
-            var dend = networkSender.GetResponseObjectTail();
-            var dcurr = d; // reserve space for size
-
-            RespWriteUtils.WriteArrayLength(4, ref dcurr, dend);
-
-            while (!RespWriteUtils.WriteBulkString("pmessage"u8, ref dcurr, dend))
-                SendAndReset();
-            while (!RespWriteUtils.WriteBulkString(new Span<byte>(patternPtr + sizeof(int), patternLength - sizeof(int)), ref dcurr, dend))
-                SendAndReset();
-            while (!RespWriteUtils.WriteBulkString(new Span<byte>(keyPtr + sizeof(int), keyLength - sizeof(int)), ref dcurr, dend))
-                SendAndReset();
-            while (!RespWriteUtils.WriteBulkString(new Span<byte>(valPtr + sizeof(int), valLength - sizeof(int)), ref dcurr, dend))
-                SendAndReset();
-
-            networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), (int)(dcurr - d));
+                if (dcurr > networkSender.GetResponseObjectHead())
+                    Send(networkSender.GetResponseObjectHead());
+            }
+            finally
+            {
+                networkSender.ExitAndReturnResponseObject();
+            }
         }
 
         /// <summary>

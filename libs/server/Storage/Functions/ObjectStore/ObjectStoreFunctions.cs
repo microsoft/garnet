@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectStoreFunctions : IFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectStoreFunctions : ISessionFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
     {
         readonly FunctionsState functionsState;
 
@@ -18,6 +18,13 @@ namespace Garnet.server
         internal ObjectStoreFunctions(FunctionsState functionsState)
         {
             this.functionsState = functionsState;
+        }
+
+        /// <inheritdoc />
+        public void ConvertOutputToHeap(ref SpanByte input, ref GarnetObjectStoreOutput output)
+        {
+            // TODO: Inspect input to determine whether we're in a context requiring ConvertToHeap.
+            //output.ConvertToHeap();
         }
     }
 }

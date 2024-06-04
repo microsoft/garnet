@@ -117,11 +117,11 @@ namespace Tsavorite.core
             return (size, RoundUp(size, kRecordAlignment));
         }
 
-        public override (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TsavoriteSession>(ref SpanByte key, ref Input input, ref SpanByte value, ref RecordInfo recordInfo, TsavoriteSession tsavoriteSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref SpanByte key, ref Input input, ref SpanByte value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
         {
             // Used by RMW to determine the length of copy destination (taking Input into account), so does not need to get filler length.
             var keySize = key.TotalSize;
-            var size = RecordInfo.GetLength() + RoundUp(keySize, kRecordAlignment) + tsavoriteSession.GetRMWModifiedValueLength(ref value, ref input);
+            var size = RecordInfo.GetLength() + RoundUp(keySize, kRecordAlignment) + varlenInput.GetRMWModifiedValueLength(ref value, ref input);
             return (size, RoundUp(size, kRecordAlignment), keySize);
         }
 
@@ -160,10 +160,10 @@ namespace Tsavorite.core
 
         public override int GetFixedRecordSize() => GetAverageRecordSize();
 
-        public override (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TsavoriteSession>(ref SpanByte key, ref TInput input, TsavoriteSession tsavoriteSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<TInput, TSessionFunctionsWrapper>(ref SpanByte key, ref TInput input, TSessionFunctionsWrapper sessionFunctions)
         {
             int keySize = key.TotalSize;
-            var actualSize = RecordInfo.GetLength() + RoundUp(keySize, kRecordAlignment) + tsavoriteSession.GetRMWInitialValueLength(ref input);
+            var actualSize = RecordInfo.GetLength() + RoundUp(keySize, kRecordAlignment) + sessionFunctions.GetRMWInitialValueLength(ref input);
             return (actualSize, RoundUp(actualSize, kRecordAlignment), keySize);
         }
 

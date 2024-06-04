@@ -34,15 +34,16 @@ namespace Garnet.test
         [Test]
         public void WriteRead()
         {
-            using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, SimpleFunctions<byte[], IGarnetObject, Empty>>(new SimpleFunctions<byte[], IGarnetObject, Empty>());
+            using var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(new SimpleSessionFunctions<byte[], IGarnetObject, Empty>());
+            var bContext = session.BasicContext;
 
             var key = new byte[] { 0 };
             var obj = new SortedSetObject();
 
-            session.Upsert(key, obj);
+            bContext.Upsert(key, obj);
 
             IGarnetObject output = null;
-            var status = session.Read(ref key, ref output);
+            var status = bContext.Read(ref key, ref output);
 
             Assert.IsTrue(status.Found);
             Assert.AreEqual(obj, output);
@@ -52,12 +53,13 @@ namespace Garnet.test
         public async Task WriteCheckpointRead()
         {
             var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             var key = new byte[] { 0 };
             var obj = new SortedSetObject();
             obj.Add([15], 10);
 
-            session.Upsert(key, obj);
+            bContext.Upsert(key, obj);
 
             session.Dispose();
 
@@ -69,9 +71,10 @@ namespace Garnet.test
             store.Recover();
 
             session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+            bContext = session.BasicContext;
 
             IGarnetObject output = null;
-            var status = session.Read(ref key, ref output);
+            var status = bContext.Read(ref key, ref output);
 
             session.Dispose();
 
@@ -83,16 +86,17 @@ namespace Garnet.test
         public async Task CopyUpdate()
         {
             var session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             var key = new byte[] { 0 };
             IGarnetObject obj = new SortedSetObject();
             ((SortedSetObject)obj).Add([15], 10);
 
-            session.Upsert(key, obj);
+            bContext.Upsert(key, obj);
 
             store.Log.Flush(true);
 
-            session.RMW(ref key, ref obj);
+            bContext.RMW(ref key, ref obj);
 
             session.Dispose();
 
@@ -104,9 +108,10 @@ namespace Garnet.test
             store.Recover();
 
             session = store.NewSession<IGarnetObject, IGarnetObject, Empty, MyFunctions>(new MyFunctions());
+            bContext = session.BasicContext;
 
             IGarnetObject output = null;
-            var status = session.Read(ref key, ref output);
+            var status = bContext.Read(ref key, ref output);
 
             session.Dispose();
 
@@ -114,7 +119,7 @@ namespace Garnet.test
             Assert.IsTrue(((SortedSetObject)obj).Equals((SortedSetObject)output));
         }
 
-        private class MyFunctions : FunctionsBase<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty>
+        private class MyFunctions : SessionFunctionsBase<byte[], IGarnetObject, IGarnetObject, IGarnetObject, Empty>
         {
             public MyFunctions()
             { }

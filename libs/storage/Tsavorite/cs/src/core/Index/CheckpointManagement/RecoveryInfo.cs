@@ -2,323 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    internal enum OperationType
-    {
-        READ,
-        RMW,
-        UPSERT,
-        DELETE,
-        CONDITIONAL_INSERT,
-        CONDITIONAL_SCAN_PUSH,
-    }
-
-    [Flags]
-    internal enum OperationStatus
-    {
-        // Completed Status codes
-
-        /// <summary>
-        /// Operation completed successfully, and a record with the specified key was found.
-        /// </summary>
-        SUCCESS = StatusCode.Found,
-
-        /// <summary>
-        /// Operation completed successfully, and a record with the specified key was not found; the operation may have created a new one.
-        /// </summary>
-        NOTFOUND = StatusCode.NotFound,
-
-        /// <summary>
-        /// Operation was canceled by the client.
-        /// </summary>
-        CANCELED = StatusCode.Canceled,
-
-        /// <summary>
-        /// The maximum range that directly maps to the <see cref="StatusCode"/> enumeration; the operation completed. 
-        /// This is an internal code to reserve ranges in the <see cref="OperationStatus"/> enumeration.
-        /// </summary>
-        MAX_MAP_TO_COMPLETED_STATUSCODE = CANCELED,
-
-        // Not-completed Status codes
-
-        /// <summary>
-        /// Retry operation immediately, within the current epoch. This is only used in situations where another thread does not need to do another operation 
-        /// to bring things into a consistent state.
-        /// </summary>
-        RETRY_NOW,
-
-        /// <summary>
-        /// Retry operation immediately, after refreshing the epoch. This is used in situations where another thread may have done an operation that requires it
-        /// to do a subsequent operation to bring things into a consistent state; that subsequent operation may require <see cref="LightEpoch.BumpCurrentEpoch()"/>.
-        /// </summary>
-        RETRY_LATER,
-
-        /// <summary>
-        /// I/O has been enqueued and the caller must go through <see cref="ITsavoriteContext{Key, Value, Input, Output, Context}.CompletePending(bool, bool)"/> or
-        /// <see cref="ITsavoriteContext{Key, Value, Input, Output, Context}.CompletePendingWithOutputs(out CompletedOutputIterator{Key, Value, Input, Output, Context}, bool, bool)"/>,
-        /// or one of the Async forms.
-        /// </summary>
-        RECORD_ON_DISK,
-
-        /// <summary>
-        /// A checkpoint is in progress so the operation must be retried internally after refreshing the epoch and updating the session context version.
-        /// </summary>
-        CPR_SHIFT_DETECTED,
-
-        /// <summary>
-        /// Allocation failed, due to a need to flush pages. Clients do not see this status directly; they see <see cref="Status.IsPending"/>.
-        /// <list type="bullet">
-        ///   <item>For Sync operations we retry this as part of <see cref="TsavoriteKV{Key, Value}.HandleImmediateRetryStatus{Input, Output, Context, TsavoriteSession}(OperationStatus, TsavoriteSession, ref TsavoriteKV{Key, Value}.PendingContext{Input, Output, Context})"/>.</item>
-        ///   <item>For Async operations we retry this as part of the ".Complete(...)" or ".CompleteAsync(...)" operation on the appropriate "*AsyncResult{}" object.</item>
-        /// </list>
-        /// </summary>
-        ALLOCATE_FAILED,
-
-        /// <summary>
-        /// An internal code to reserve ranges in the <see cref="OperationStatus"/> enumeration.
-        /// </summary>
-        BASIC_MASK = 0xFF,      // Leave plenty of space for future expansion
-
-        ADVANCED_MASK = 0x700,  // Coordinate any changes with OperationStatusUtils.OpStatusToStatusCodeShif
-        CREATED_RECORD = StatusCode.CreatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        INPLACE_UPDATED_RECORD = StatusCode.InPlaceUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPY_UPDATED_RECORD = StatusCode.CopyUpdatedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPIED_RECORD = StatusCode.CopiedRecord << OperationStatusUtils.OpStatusToStatusCodeShift,
-        COPIED_RECORD_TO_READ_CACHE = StatusCode.CopiedRecordToReadCache << OperationStatusUtils.OpStatusToStatusCodeShift,
-        // unused (StatusCode)0x60,
-        // unused (StatusCode)0x70,
-        EXPIRED = StatusCode.Expired << OperationStatusUtils.OpStatusToStatusCodeShift
-    }
-
-    internal static class OperationStatusUtils
-    {
-        // StatusCode has this in the high nybble of the first (only) byte; put it in the low nybble of the second byte here).
-        // Coordinate any changes with OperationStatus.ADVANCED_MASK.
-        internal const int OpStatusToStatusCodeShift = 4;
-
-        internal static OperationStatus BasicOpCode(OperationStatus status) => status & OperationStatus.BASIC_MASK;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static OperationStatus AdvancedOpCode(OperationStatus status, StatusCode advancedStatusCode) => status | (OperationStatus)((int)advancedStatusCode << OpStatusToStatusCodeShift);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool TryConvertToCompletedStatusCode(OperationStatus advInternalStatus, out Status statusCode)
-        {
-            var internalStatus = BasicOpCode(advInternalStatus);
-            if (internalStatus <= OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE)
-            {
-                statusCode = new(advInternalStatus);
-                return true;
-            }
-            statusCode = default;
-            return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool IsAppend(OperationStatus internalStatus)
-        {
-            var advInternalStatus = internalStatus & OperationStatus.ADVANCED_MASK;
-            return advInternalStatus == OperationStatus.CREATED_RECORD || advInternalStatus == OperationStatus.COPY_UPDATED_RECORD;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool IsRetry(OperationStatus internalStatus) => internalStatus == OperationStatus.RETRY_NOW || internalStatus == OperationStatus.RETRY_LATER;
-    }
-
-    public partial class TsavoriteKV<Key, Value> : TsavoriteBase
-    {
-        internal struct PendingContext<Input, Output, Context>
-        {
-            // User provided information
-            internal OperationType type;
-            internal IHeapContainer<Key> key;
-            internal IHeapContainer<Value> value;
-            internal IHeapContainer<Input> input;
-            internal Output output;
-            internal Context userContext;
-            internal long keyHash;
-
-            // Some additional information about the previous attempt
-            internal long id;
-            internal long version;  // TODO unused?
-            internal long logicalAddress;
-            internal long serialNum;
-            internal HashBucketEntry entry;
-
-            // operationFlags values
-            internal ushort operationFlags;
-            internal const ushort kNoOpFlags = 0;
-            internal const ushort kNoKey = 0x0001;
-            internal const ushort kIsAsync = 0x0002;
-
-            internal ReadCopyOptions readCopyOptions;
-
-            internal RecordInfo recordInfo;
-            internal long minAddress;
-            internal WriteReason writeReason;   // for ConditionalCopyToTail
-
-            // For flushing head pages on tail allocation.
-            internal CompletionEvent flushEvent;
-
-            // For RMW if an allocation caused the source record for a copy to go from readonly to below HeadAddress, or for any operation with CAS failure.
-            internal long retryNewLogicalAddress;
-
-            internal ScanCursorState<Key, Value> scanCursorState;
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(long keyHash) => this.keyHash = keyHash;
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions, bool isAsync = false, bool noKey = false)
-            {
-                // The async flag is often set when the PendingContext is created, so preserve that.
-                operationFlags = (ushort)((noKey ? kNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
-                readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal PendingContext(ReadCopyOptions readCopyOptions, bool isAsync = false, bool noKey = false)
-            {
-                // The async flag is often set when the PendingContext is created, so preserve that.
-                operationFlags = (ushort)((noKey ? kNoKey : kNoOpFlags) | (isAsync ? kIsAsync : kNoOpFlags));
-                this.readCopyOptions = readCopyOptions;
-            }
-
-            internal bool NoKey
-            {
-                readonly get => (operationFlags & kNoKey) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kNoKey) : (ushort)(operationFlags & ~kNoKey);
-            }
-
-            internal readonly bool HasMinAddress => minAddress != Constants.kInvalidAddress;
-
-            internal bool IsAsync
-            {
-                readonly get => (operationFlags & kIsAsync) != 0;
-                set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
-            }
-
-            internal long InitialEntryAddress
-            {
-                readonly get => recordInfo.PreviousAddress;
-                set => recordInfo.PreviousAddress = value;
-            }
-
-            internal long InitialLatestLogicalAddress
-            {
-                readonly get => entry.Address;
-                set => entry.Address = value;
-            }
-
-            public void Dispose()
-            {
-                key?.Dispose();
-                key = default;
-                value?.Dispose();
-                value = default;
-                input?.Dispose();
-                input = default;
-            }
-        }
-
-        internal sealed class TsavoriteExecutionContext<Input, Output, Context>
-        {
-            internal int sessionID;
-            internal string sessionName;
-
-            // Control automatic Read copy operations. These flags override flags specified at the TsavoriteKV level, but may be overridden on the individual Read() operations
-            internal ReadCopyOptions ReadCopyOptions;
-
-            internal long version;
-            internal long serialNum;
-            public Phase phase;
-
-            public bool[] markers;
-            public long totalPending;
-            public Dictionary<long, PendingContext<Input, Output, Context>> ioPendingRequests;
-            public AsyncCountDown pendingReads;
-            public AsyncQueue<AsyncIOContext<Key, Value>> readyResponses;
-            public List<long> excludedSerialNos;
-            public int asyncPendingCount;
-            public ISynchronizationStateMachine threadStateMachine;
-
-            internal RevivificationStats RevivificationStats = new();
-
-            public int SyncIoPendingCount => ioPendingRequests.Count - asyncPendingCount;
-
-            public bool IsInV1 => phase switch
-            {
-                Phase.IN_PROGRESS => true,
-                Phase.WAIT_INDEX_CHECKPOINT => true,
-                Phase.WAIT_FLUSH => true,
-                _ => false,
-            };
-
-            internal void MergeReadCopyOptions(ReadCopyOptions storeCopyOptions, ReadCopyOptions copyOptions)
-                => ReadCopyOptions = ReadCopyOptions.Merge(storeCopyOptions, copyOptions);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void MergeRevivificationStatsTo(ref RevivificationStats to, bool reset) => RevivificationStats.MergeTo(ref to, reset);
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void ResetRevivificationStats() => RevivificationStats.Reset();
-
-            public bool HasNoPendingRequests => SyncIoPendingCount == 0;
-
-            public void WaitPending(LightEpoch epoch)
-            {
-                if (SyncIoPendingCount > 0)
-                {
-                    try
-                    {
-                        epoch.Suspend();
-                        readyResponses.WaitForEntry();
-                    }
-                    finally
-                    {
-                        epoch.Resume();
-                    }
-                }
-            }
-
-            public async ValueTask WaitPendingAsync(CancellationToken token = default)
-            {
-                if (SyncIoPendingCount > 0)
-                    await readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
-            }
-
-            public bool InNewVersion => phase < Phase.REST;
-
-            public TsavoriteExecutionContext<Input, Output, Context> prevCtx;
-        }
-    }
-
-    /// <summary>
-    /// Descriptor for a CPR commit point
-    /// </summary>
-    public struct CommitPoint
-    {
-        /// <summary>
-        /// Serial number until which we have committed
-        /// </summary>
-        public long UntilSerialNo;
-
-        /// <summary>
-        /// List of operation serial nos excluded from commit
-        /// </summary>
-        public List<long> ExcludedSerialNos;
-    }
-
     /// <summary>
     /// Recovery info for hybrid log
     /// </summary>
@@ -379,30 +68,9 @@ namespace Tsavorite.core
         public bool manualLockingActive;
 
         /// <summary>
-        /// Commit tokens per session restored during Restore()
-        /// </summary>
-        public ConcurrentDictionary<int, (string, CommitPoint)> continueTokens;
-
-        /// <summary>
-        /// Map of session name to session ID restored during Restore()
-        /// </summary>
-        public ConcurrentDictionary<string, int> sessionNameMap;
-
-        /// <summary>
-        /// Commit tokens per session created during Checkpoint
-        /// </summary>
-        public ConcurrentDictionary<int, (string, CommitPoint)> checkpointTokens;
-
-        /// <summary>
-        /// Max session ID
-        /// </summary>
-        public int maxSessionID;
-
-        /// <summary>
         /// Object log segment offsets
         /// </summary>
         public long[] objectLogSegmentOffsets;
-
 
         /// <summary>
         /// Tail address of delta file: -1 indicates this is not a delta checkpoint metadata
@@ -429,10 +97,10 @@ namespace Tsavorite.core
             deltaTailAddress = -1; // indicates this is not a delta checkpoint metadata
             headAddress = 0;
 
-            checkpointTokens = new();
-
             objectLogSegmentOffsets = null;
         }
+
+        const int checkpointTokenCount = 0;  // Temporary to keep compatibility with previous checkpoint versions
 
         /// <summary>
         /// Initialize from stream
@@ -440,8 +108,6 @@ namespace Tsavorite.core
         /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
-            continueTokens = new();
-
             string value = reader.ReadLine();
             var cversion = int.Parse(value);
 
@@ -493,29 +159,16 @@ namespace Tsavorite.core
             value = reader.ReadLine();
             var numSessions = int.Parse(value);
 
+            // Temporary for backward compatibility
             for (int i = 0; i < numSessions; i++)
             {
-                var sessionID = int.Parse(reader.ReadLine());
-                var sessionName = reader.ReadLine();
-                if (sessionName == "") sessionName = null;
-                var serialno = long.Parse(reader.ReadLine());
+                _ /*var sessionID*/ = int.Parse(reader.ReadLine());
+                _ /*var sessionName*/ = reader.ReadLine();
+                _ /*var serialno*/ = long.Parse(reader.ReadLine());
 
-                var exclusions = new List<long>();
                 var exclusionCount = int.Parse(reader.ReadLine());
                 for (int j = 0; j < exclusionCount; j++)
-                    exclusions.Add(long.Parse(reader.ReadLine()));
-
-                continueTokens.TryAdd(sessionID, (sessionName, new CommitPoint
-                {
-                    UntilSerialNo = serialno,
-                    ExcludedSerialNos = exclusions
-                }));
-                if (sessionName != null)
-                {
-                    sessionNameMap ??= new();
-                    sessionNameMap.TryAdd(sessionName, sessionID);
-                }
-                if (sessionID > maxSessionID) maxSessionID = sessionID;
+                    _ = reader.ReadLine();
             }
 
             // Read object log segment offsets
@@ -531,7 +184,7 @@ namespace Tsavorite.core
                 }
             }
 
-            if (checksum != Checksum(continueTokens.Count))
+            if (checksum != Checksum(numSessions))
                 throw new TsavoriteException("Invalid checksum for checkpoint");
         }
 
@@ -594,7 +247,8 @@ namespace Tsavorite.core
                 using (StreamWriter writer = new(ms))
                 {
                     writer.WriteLine(CheckpointVersion); // checkpoint version
-                    writer.WriteLine(Checksum(checkpointTokens.Count)); // checksum
+
+                    writer.WriteLine(Checksum(checkpointTokenCount)); // checksum
 
                     writer.WriteLine(guid);
                     writer.WriteLine(useSnapshotFile);
@@ -610,16 +264,7 @@ namespace Tsavorite.core
                     writer.WriteLine(deltaTailAddress);
                     writer.WriteLine(manualLockingActive);
 
-                    writer.WriteLine(checkpointTokens.Count);
-                    foreach (var kvp in checkpointTokens)
-                    {
-                        writer.WriteLine(kvp.Key);
-                        writer.WriteLine(kvp.Value.Item1);
-                        writer.WriteLine(kvp.Value.Item2.UntilSerialNo);
-                        writer.WriteLine(kvp.Value.Item2.ExcludedSerialNos.Count);
-                        foreach (long item in kvp.Value.Item2.ExcludedSerialNos)
-                            writer.WriteLine(item);
-                    }
+                    writer.WriteLine(checkpointTokenCount);
 
                     // Write object log segment offsets
                     writer.WriteLine(objectLogSegmentOffsets == null ? 0 : objectLogSegmentOffsets.Length);
@@ -662,15 +307,6 @@ namespace Tsavorite.core
             logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);
             logger?.LogInformation("Delta Tail Address: {deltaTailAddress}", deltaTailAddress);
             logger?.LogInformation("Manual Locking Active: {manualLockingActive}", manualLockingActive);
-            logger?.LogInformation("Num sessions recovered: {continueTokensCount}", continueTokens.Count);
-            logger?.LogInformation("Recovered sessions: ");
-            foreach (var sessionInfo in continueTokens.Take(10))
-            {
-                logger?.LogInformation("{sessionInfo.Key}: {sessionInfo.Value}", sessionInfo.Key, sessionInfo.Value);
-            }
-
-            if (continueTokens.Count > 10)
-                logger?.LogInformation("... {continueTokensSkipped} skipped", continueTokens.Count - 10);
         }
     }
 

@@ -158,15 +158,12 @@ namespace Tsavorite.core
             readonly get => ((length & UnserializedBitMask) != 0) && payload == IntPtr.Zero;
             set
             {
-                if (value)
-                {
-                    length |= UnserializedBitMask;
-                    payload = IntPtr.Zero;
-                }
-                else
-                {
-                    if (Invalid) length = 0;
-                }
+                Debug.Assert(value, "Cannot restore an Invalid SpanByte to Valid; must reassign the SpanByte as a full value");
+
+                // Set the actual length to 0; any metadata is no longer available, and a zero length will cause callers' length checks to go
+                // through the ConvertToHeap path automatically. Keep the UnserializedBitMask.
+                length = UnserializedBitMask;
+                payload = IntPtr.Zero;
             }
         }
 
@@ -279,6 +276,15 @@ namespace Tsavorite.core
         /// SAFETY: The <paramref name="pointer"/> MUST point to pinned memory.
         /// </remarks>
         public static SpanByte FromPinnedPointer(byte* pointer, int length) => new(length, (nint)pointer);
+
+        /// <summary>
+        /// Create a SpanByte around a pinned unmanaged struct.
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: The provided unmanaged struct MUST be on the stack or point to pinned memory.
+        /// </remarks>
+        public static SpanByte FromPinnedStruct<T>(T* ptr) where T : unmanaged
+            => new(Unsafe.SizeOf<T>(), (nint)ptr);
 
         /// <summary>
         /// Create a <see cref="SpanByte"/> from the given <paramref name="span"/>.
@@ -470,6 +476,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override string ToString()
         {
+            if (Invalid)
+                return "Invalid";
             var bytes = AsSpan();
             var len = Math.Min(Length, bytes.Length);
             StringBuilder sb = new($"len: {Length}, mdLen: {MetadataSize}, isSer {Serialized}, ");
