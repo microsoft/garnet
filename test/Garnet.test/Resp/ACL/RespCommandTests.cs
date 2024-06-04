@@ -2460,6 +2460,9 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public void FailoverACLs()
         {
+            const string TestUser = "failover-user";
+            const string TestPassword = "foo";
+
             // Failover is strange, so this more complicated that typical
 
             Action<IServer>[] cmds = [
@@ -2475,7 +2478,7 @@ namespace Garnet.test.Resp.ACL
             // Check denied with -failover
             foreach (Action<IServer> cmd in cmds)
             {
-                Run(false, server => SetUser(server, "default", $"-failover"), cmd);
+                Run(false, (defaultServer, testServer) => SetUser(defaultServer, TestUser, $"-failover"), cmd);
             }
 
             string[] acls = ["admin", "slow", "dangerous"];
@@ -2483,28 +2486,33 @@ namespace Garnet.test.Resp.ACL
             foreach (Action<IServer> cmd in cmds)
             {
                 // Check works with +@all
-                Run(true, server => { }, cmd);
+                Run(true, (defaultServer, testServer) => { }, cmd);
 
                 // Check denied with -@whatever
                 foreach (string acl in acls)
                 {
-                    Run(false, server => SetUser(server, "default", $"-@{acl}"), cmd);
+                    Run(false, (defaultServer, testServer) => SetUser(defaultServer, TestUser, $"-@{acl}"), cmd);
                 }
             }
 
-            void Run(bool expectSuccess, Action<IServer> before, Action<IServer> cmd)
+            void Run(bool expectSuccess, Action<IServer, IServer> before, Action<IServer> cmd)
             {
                 // Refresh Garnet instance
                 TearDown();
                 Setup();
 
-                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+                using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: DefaultUser, authPassword: DefaultPassword));
+                IServer defaultServer = defaultRedis.GetServers().Single();
 
-                IServer server = redis.GetServers().Single();
+                InitUser(defaultServer, "failover-user", "foo");
 
-                before(server);
+                using ConnectionMultiplexer failoverRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
 
-                Assert.AreEqual(expectSuccess, CheckAuthFailure(() => cmd(server)));
+                IServer failoverServer = failoverRedis.GetServers().Single();
+
+                before(defaultServer, failoverServer);
+
+                Assert.AreEqual(expectSuccess, CheckAuthFailure(() => cmd(failoverServer)));
             }
 
             static void DoFailover(IServer server)
@@ -3666,18 +3674,23 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public void MonitorACLs()
         {
+            const string TestUser = "monitor-user";
+            const string TestPassword = "fizz";
+
             // MONITOR isn't actually implemented, and doesn't fit nicely into SE.Redis anyway, so we only check the DENY cases here
 
             // test just the command
             {
-                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+                using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+                IServer defaultServer = defaultRedis.GetServers().Single();
 
-                IServer server = redis.GetServers().Single();
-                IDatabase db = redis.GetDatabase();
+                InitUser(defaultServer, TestUser, TestPassword);
+                SetUser(defaultServer, TestUser, [$"-monitor"]);
 
-                SetUser(server, "default", [$"-monitor"]);
+                using ConnectionMultiplexer testRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
+                IServer testServer = testRedis.GetServers().Single();
 
-                Assert.False(CheckAuthFailure(() => DoMonitor(db)), "Permitted when should have been denied");
+                Assert.False(CheckAuthFailure(() => DoMonitor(testServer)), "Permitted when should have been denied");
             }
 
             // test is a bit more involved since @admin is present
@@ -3685,32 +3698,21 @@ namespace Garnet.test.Resp.ACL
 
             foreach (string category in categories)
             {
-                // spin up a temp admin
-                {
-                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+                using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+                IServer defaultServer = defaultRedis.GetServers().Single();
 
-                    IServer server = redis.GetServers().Single();
-                    IDatabase db = redis.GetDatabase();
+                InitUser(defaultServer, TestUser, TestPassword);
+                SetUser(defaultServer, TestUser, [$"-@{category}"]);
 
-                    RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
-                    Assert.AreEqual("OK", (string)setupAdmin);
-                }
+                using ConnectionMultiplexer testRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
+                IServer testServer = testRedis.GetServers().Single();
 
-                {
-                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
-
-                    IServer server = redis.GetServers().Single();
-                    IDatabase db = redis.GetDatabase();
-
-                    SetUser(server, "temp-admin", [$"-@{category}"]);
-
-                    Assert.False(CheckAuthFailure(() => DoMonitor(db)), "Permitted when should have been denied");
-                }
+                Assert.False(CheckAuthFailure(() => DoMonitor(testServer)), "Permitted when should have been denied");
             }
 
-            static void DoMonitor(IDatabase db)
+            static void DoMonitor(IServer server)
             {
-                db.Execute("MONITOR");
+                server.Execute("MONITOR");
                 Assert.Fail("Should never reach this point");
             }
         }
@@ -5010,6 +5012,9 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public void GeoSearchACLs()
         {
+            const string TestUser = "geosearch-user";
+            const string TestPassword = "bar";
+
             // TODO: there are a LOT of GeoSearch variants (not all of them implemented), come back and cover all the lengths appropriately
 
             // TODO: GEOSEARCH appears to be very broken, so this structured oddly - can be simplified once fixed
@@ -5024,12 +5029,11 @@ namespace Garnet.test.Resp.ACL
 
                 {
                     // fresh connection, as GEOSEARCH seems to break connections pretty easily
-                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+                    using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
 
                     IServer server = redis.GetServers().Single();
-                    IDatabase db = redis.GetDatabase();
 
-                    Assert.True(CheckAuthFailure(() => DoGeoSearch(db)), "Denied when should have been permitted");
+                    Assert.True(CheckAuthFailure(() => DoGeoSearch(server)), "Denied when should have been permitted");
                 }
 
                 // fresh Garnet for the reject version
@@ -5038,17 +5042,19 @@ namespace Garnet.test.Resp.ACL
 
                 {
                     // fresh connection, as GEOSEARCH seems to break connections pretty easily
-                    using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+                    using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+                    IServer defaultServer = defaultRedis.GetServers().Single();
 
-                    IServer server = redis.GetServers().Single();
-                    IDatabase db = redis.GetDatabase();
+                    InitUser(defaultServer, TestUser, TestPassword);
+                    SetUser(defaultServer, TestUser, $"-@{category}");
 
-                    SetUser(server, "default", $"-@{category}");
+                    using ConnectionMultiplexer testRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
+                    IServer testServer = testRedis.GetServers().Single();
 
-                    Assert.False(CheckAuthFailure(() => DoGeoSearch(db)), "Permitted when should have been denied");
+                    Assert.False(CheckAuthFailure(() => DoGeoSearch(testServer)), "Permitted when should have been denied");
                 }
 
-                static void DoGeoSearch(IDatabase db)
+                static void DoGeoSearch(IServer db)
                 {
                     RedisResult val = db.Execute("GEOSEARCH", "foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M");
                     RedisValue[] valArr = (RedisValue[])val;
@@ -5922,13 +5928,15 @@ namespace Garnet.test.Resp.ACL
                 RedisResult pingRes = currentUserServer.Execute("PING");
                 Assert.AreEqual("PONG", (string)pingRes);
             }
+        }
 
-            // Create a user with all permissions
-            static void InitUser(IServer defaultUserServer, string username, string password)
-            {
-                RedisResult res = defaultUserServer.Execute("ACL", "SETUSER", username, "on", $">{password}", "+@all");
-                Assert.AreEqual("OK", (string)res);
-            }
+        /// <summary>
+        /// Create a user with +@all permissions.
+        /// </summary>
+        private static void InitUser(IServer defaultUserServer, string username, string password)
+        {
+            RedisResult res = defaultUserServer.Execute("ACL", "SETUSER", username, "on", $">{password}", "+@all");
+            Assert.AreEqual("OK", (string)res);
         }
 
         /// <summary>
