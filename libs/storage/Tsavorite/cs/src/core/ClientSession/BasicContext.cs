@@ -10,13 +10,13 @@ namespace Tsavorite.core
     /// <summary>
     /// Basic Tsavorite Context implementation.
     /// </summary>
-    public readonly struct BasicContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key, Value, Input, Output, Context>
+    public readonly struct BasicContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key, Value, Input, Output, Context, Functions>
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
         internal readonly SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, BasicSessionLocker<Key, Value>> sessionFunctions;
 
-        /// <summary>Indicates whether this struct has been initialized</summary>
+        /// <inheritdoc/>
         public bool IsNull => clientSession is null;
 
         private TsavoriteKV<Key, Value> store => clientSession.store;
@@ -38,6 +38,9 @@ namespace Tsavorite.core
             => clientSession.UnsafeSuspendThread();
 
         #region ITsavoriteContext
+
+        /// <inheritdoc/>
+        public ClientSession<Key, Value, Input, Output, Context, Functions> Session => clientSession;
 
         /// <inheritdoc/>
         public long GetKeyHash(Key key) => clientSession.store.GetKeyHash(ref key);

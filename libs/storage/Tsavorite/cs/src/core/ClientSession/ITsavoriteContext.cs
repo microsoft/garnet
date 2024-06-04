@@ -29,8 +29,19 @@ namespace Tsavorite.core
     /// <summary>
     /// Interface for Tsavorite operations
     /// </summary>
-    public interface ITsavoriteContext<Key, Value, Input, Output, Context> : ITsavoriteContext<Key>
+    public interface ITsavoriteContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key>
+        where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
     {
+        /// <summary>
+        /// Indicates whether this context has been initialized.
+        /// </summary>
+        public bool IsNull { get; }
+
+        /// <summary>
+        /// Obtain the underlying <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}"/>
+        /// </summary>
+        ClientSession<Key, Value, Input, Output, Context, Functions> Session { get; }
+
         /// <summary>
         /// Synchronously complete outstanding pending synchronous operations.
         /// Async operations must be completed individually.

@@ -19,11 +19,6 @@ namespace Garnet.server
     public sealed unsafe partial class TransactionManager
     {
         /// <summary>
-        /// Session for main store
-        /// </summary>
-        readonly ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> session;
-
-        /// <summary>
         /// Basic context for main store
         /// </summary>
         readonly BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> basicContext;
@@ -32,11 +27,6 @@ namespace Garnet.server
         /// Lockable context for main store
         /// </summary>
         readonly LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> lockableContext;
-
-        /// <summary>
-        /// Session for object store
-        /// </summary>
-        readonly ClientSession<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreSession;
 
         /// <summary>
         /// Basic context for object store
@@ -80,7 +70,7 @@ namespace Garnet.server
         internal LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> LockableContext
             => lockableContext;
         internal LockableUnsafeContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> LockableUnsafeContext
-            => session.LockableUnsafeContext;
+            => basicContext.Session.LockableUnsafeContext;
         internal LockableContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> ObjectStoreLockableContext
             => objectStoreLockableContext;
 
@@ -96,11 +86,11 @@ namespace Garnet.server
             bool clusterEnabled,
             ILogger logger = null)
         {
-            this.session = storageSession.session;
+            var session = storageSession.basicContext.Session;
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
 
-            this.objectStoreSession = storageSession.objectStoreSession;
+            var objectStoreSession = storageSession.objectStoreBasicContext.Session;
             if (objectStoreSession != null)
             {
                 objectStoreBasicContext = objectStoreSession.BasicContext;
@@ -140,9 +130,8 @@ namespace Garnet.server
                     lockableContext.EndLockable();
                 if (transactionStoreType == StoreType.Object || transactionStoreType == StoreType.All)
                 {
-                    if (objectStoreSession == null)
+                    if (objectStoreBasicContext.IsNull)
                         throw new Exception("Trying to perform object store transaction with object store disabled");
-
                     objectStoreLockableContext.EndLockable();
                 }
             }
@@ -226,14 +215,14 @@ namespace Garnet.server
         {
             Debug.Assert(functionsState.StoredProcMode);
             SpanByte sb = new SpanByte(input.Length, (nint)input.ptr);
-            appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = session.Version, sessionID = session.ID }, ref sb, out _);
+            appendOnlyFile?.Enqueue(new AofHeader { opType = AofEntryType.StoredProcedure, type = id, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, ref sb, out _);
         }
 
         internal void Commit(bool internal_txn = false)
         {
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnCommit, version = session.Version, sessionID = session.ID }, out _);
+                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnCommit, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, out _);
             }
             if (!internal_txn)
                 watchContainer.Reset();
@@ -247,7 +236,7 @@ namespace Garnet.server
 
             if (type == StoreType.Main || type == StoreType.All)
                 basicContext.ResetModified(key.SpanByte);
-            if ((type == StoreType.Object || type == StoreType.All) && objectStoreSession != null)
+            if ((type == StoreType.Object || type == StoreType.All) && !objectStoreBasicContext.IsNull)
                 objectStoreBasicContext.ResetModified(key.ToArray());
         }
 
@@ -289,9 +278,8 @@ namespace Garnet.server
             }
             if (transactionStoreType == StoreType.All || transactionStoreType == StoreType.Object)
             {
-                if (objectStoreSession == null)
+                if (objectStoreBasicContext.IsNull)
                     throw new Exception("Trying to perform object store transaction with object store disabled");
-
                 objectStoreLockableContext.BeginLockable();
             }
 
@@ -321,7 +309,7 @@ namespace Garnet.server
 
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnStart, version = session.Version, sessionID = session.ID }, out _);
+                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnStart, version = basicContext.Session.Version, sessionID = basicContext.Session.ID }, out _);
             }
 
             state = TxnState.Running;

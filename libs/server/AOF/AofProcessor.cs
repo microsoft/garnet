@@ -30,14 +30,12 @@ namespace Garnet.server
         /// <summary>
         /// Session for main store
         /// </summary>
-        readonly ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> session = null;
-        readonly BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> sessionBasicContext;
+        readonly BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> basicContext;
 
         /// <summary>
         /// Session for object store
         /// </summary>
-        readonly ClientSession<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreSession = null;
-        readonly BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreSessionBasicContext;
+        readonly BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreBasicContext;
 
         readonly Dictionary<int, List<byte[]>> inflightTxns;
         readonly byte[] buffer;
@@ -77,11 +75,11 @@ namespace Garnet.server
 
             this.respServerSession = new RespServerSession(null, replayAofStoreWrapper, null);
 
-            session = respServerSession.storageSession.session;
-            sessionBasicContext = session.BasicContext;
-            objectStoreSession = respServerSession.storageSession.objectStoreSession;
+            var session = respServerSession.storageSession.basicContext.Session;
+            basicContext = session.BasicContext;
+            var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
             if (objectStoreSession is not null)
-                objectStoreSessionBasicContext = objectStoreSession.BasicContext;
+                objectStoreBasicContext = objectStoreSession.BasicContext;
 
             inflightTxns = new Dictionary<int, List<byte[]>>();
             buffer = new byte[BufferSizeUtils.ServerBufferSize(new MaxSizeSettings())];
@@ -95,8 +93,8 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            session?.Dispose();
-            objectStoreSession?.Dispose();
+            basicContext.Session?.Dispose();
+            objectStoreBasicContext.Session?.Dispose();
             handle.Free();
         }
 
@@ -237,22 +235,22 @@ namespace Garnet.server
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    StoreUpsert(sessionBasicContext, entryPtr);
+                    StoreUpsert(basicContext, entryPtr);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(sessionBasicContext, entryPtr);
+                    StoreRMW(basicContext, entryPtr);
                     break;
                 case AofEntryType.StoreDelete:
-                    StoreDelete(sessionBasicContext, entryPtr);
+                    StoreDelete(basicContext, entryPtr);
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    ObjectStoreRMW(objectStoreSessionBasicContext, entryPtr, bufferPtr, buffer.Length);
+                    ObjectStoreRMW(objectStoreBasicContext, entryPtr, bufferPtr, buffer.Length);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    ObjectStoreUpsert(objectStoreSessionBasicContext, storeWrapper.GarnetObjectSerializer, entryPtr, bufferPtr, buffer.Length);
+                    ObjectStoreUpsert(objectStoreBasicContext, storeWrapper.GarnetObjectSerializer, entryPtr, bufferPtr, buffer.Length);
                     break;
                 case AofEntryType.ObjectStoreDelete:
-                    ObjectStoreDelete(objectStoreSessionBasicContext, entryPtr);
+                    ObjectStoreDelete(objectStoreBasicContext, entryPtr);
                     break;
                 case AofEntryType.StoredProcedure:
                     ref var input = ref Unsafe.AsRef<SpanByte>(entryPtr + sizeof(AofHeader));

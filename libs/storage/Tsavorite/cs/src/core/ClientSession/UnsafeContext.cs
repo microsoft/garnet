@@ -11,13 +11,13 @@ namespace Tsavorite.core
     /// <summary>
     /// Tsavorite Operations implementation that allows manual control of record epoch management. For advanced use only.
     /// </summary>
-    public readonly struct UnsafeContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key, Value, Input, Output, Context>, IUnsafeContext
+    public readonly struct UnsafeContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key, Value, Input, Output, Context, Functions>, IUnsafeContext
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
         internal readonly SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, BasicSessionLocker<Key, Value>> sessionFunctions;
 
-        /// <summary>Indicates whether this struct has been initialized</summary>
+        /// <inheritdoc/>
         public bool IsNull => clientSession is null;
 
         internal UnsafeContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
@@ -39,6 +39,9 @@ namespace Tsavorite.core
         #endregion Begin/EndUnsafe
 
         #region ITsavoriteContext
+
+        /// <inheritdoc/>
+        public ClientSession<Key, Value, Input, Output, Context, Functions> Session => clientSession;
 
         /// <inheritdoc/>
         public long GetKeyHash(Key key) => clientSession.store.GetKeyHash(ref key);

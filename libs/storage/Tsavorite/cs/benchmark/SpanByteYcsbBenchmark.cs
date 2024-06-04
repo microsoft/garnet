@@ -19,7 +19,7 @@ namespace Tsavorite.benchmark
         readonly ManualResetEventSlim waiter = new();
         readonly int numaStyle;
         readonly int readPercent, upsertPercent, rmwPercent;
-        readonly FunctionsSB functions;
+        readonly SessionSpanByteFunctions functions;
         readonly Input[] input_;
 
         readonly KeySpanByte[] init_keys_;
@@ -52,7 +52,7 @@ namespace Tsavorite.benchmark
             readPercent = testLoader.ReadPercent;
             upsertPercent = testLoader.UpsertPercent;
             rmwPercent = testLoader.RmwPercent;
-            functions = new FunctionsSB();
+            functions = new SessionSpanByteFunctions();
 
             input_ = new Input[8];
             for (int i = 0; i < 8; i++)
@@ -128,7 +128,7 @@ namespace Tsavorite.benchmark
             long writes_done = 0;
             long deletes_done = 0;
 
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -216,7 +216,7 @@ namespace Tsavorite.benchmark
             long writes_done = 0;
             long deletes_done = 0;
 
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
             while (!done)
@@ -394,7 +394,7 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -441,7 +441,7 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var bContext = session.BasicContext;
 
             Span<byte> value = stackalloc byte[kValueSize];

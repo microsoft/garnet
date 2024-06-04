@@ -268,10 +268,12 @@ namespace Tsavorite.test
 
     static class StaticTestUtils
     {
-        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(this ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext> sessionContext)
+        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext, Functions>(this ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, Functions> sessionContext)
+            where Functions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
             => sessionContext.GetSinglePendingResult(out _);
 
-        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext>(this ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext> sessionContext, out RecordMetadata recordMetadata)
+        internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TValue, TInput, TOutput, TContext, Functions>(this ITsavoriteContext<TKey, TValue, TInput, TOutput, TContext, Functions> sessionContext, out RecordMetadata recordMetadata)
+            where Functions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
         {
             sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             return TestUtils.GetSinglePendingResult(completedOutputs, out recordMetadata);

@@ -12,13 +12,13 @@ namespace Tsavorite.core
     /// <summary>
     /// Tsavorite Context implementation that allows manual control of record locking and epoch management. For advanced use only.
     /// </summary>
-    public readonly struct LockableContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key, Value, Input, Output, Context>, ILockableContext<Key>
+    public readonly struct LockableContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key, Value, Input, Output, Context, Functions>, ILockableContext<Key>
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
         readonly SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, LockableSessionLocker<Key, Value>> sessionFunctions;
 
-        /// <summary>Indicates whether this struct has been initialized</summary>
+        /// <inheritdoc/>
         public bool IsNull => clientSession is null;
 
         const int KeyLockMaxRetryAttempts = 1000;
@@ -356,6 +356,9 @@ namespace Tsavorite.core
         #endregion Key Locking
 
         #region ITsavoriteContext
+
+        /// <inheritdoc/>
+        public ClientSession<Key, Value, Input, Output, Context, Functions> Session => clientSession;
 
         /// <inheritdoc/>
         public long GetKeyHash(Key key) => clientSession.store.GetKeyHash(ref key);
