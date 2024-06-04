@@ -173,7 +173,7 @@ namespace Garnet.server
             try
             {
                 // Wait for either the result found notification or the timeout to expire
-                await observer.ResultFoundSemaphore.WaitAsync(timeout, cts.Token);
+                await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token);
             }
             catch (OperationCanceledException)
             {
@@ -466,6 +466,21 @@ namespace Garnet.server
         {
             disposed = true;
             cts.Cancel();
+            foreach (var observer in sessionIdToObserver.Values)
+            {
+                if (observer.Status == ObserverStatus.WaitingForResult &&
+                    !observer.CancellationTokenSource.IsCancellationRequested)
+                {
+                    try
+                    {
+                        observer.CancellationTokenSource.Cancel();
+                    }
+                    catch (Exception)
+                    {
+                        // ignored
+                    }
+                }
+            }
             done.Wait();
         }
     }

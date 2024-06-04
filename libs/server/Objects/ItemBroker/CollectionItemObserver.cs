@@ -45,6 +45,11 @@ namespace Garnet.server
         /// </summary>
         internal SemaphoreSlim ResultFoundSemaphore { get; } = new(0, 1);
 
+        /// <summary>
+        /// Cancellation token to signal the semaphore awaiter to stop
+        /// </summary>
+        internal CancellationTokenSource CancellationTokenSource { get; } = new CancellationTokenSource();
+
         internal CollectionItemObserver(RespServerSession session, GarnetObjectType objectType, byte operation)
         {
             Session = session;
@@ -89,6 +94,7 @@ namespace Garnet.server
             try
             {
                 Status = ObserverStatus.SessionDisposed;
+                CancellationTokenSource.Cancel();
             }
             finally
             {
