@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 
@@ -69,7 +70,18 @@ namespace Garnet.test
                 return lcr.SendCommand($"LPUSH {key2} {value2}");
             });
 
-            Task.WaitAll(blockingTask, releasingTask);
+            var timeout = TimeSpan.FromSeconds(5);
+            try
+            {
+                Task.WaitAll(new[] { blockingTask, releasingTask }, timeout);
+            }
+            catch (AggregateException)
+            {
+                Assert.Fail();
+            }
+
+            Assert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            Assert.IsTrue(releasingTask.IsCompletedSuccessfully);
 
             var valRgx = new Regex(@$"^\*2\r\n\${key3.Length}\r\n{key3}\r\n\$\d+\r\n(\d+)\r\n");
             var batchSize = Environment.ProcessorCount / 2;
@@ -106,9 +118,17 @@ namespace Garnet.test
                     batchCount++;
                 }
             }
+            
+            try
+            {
+                Task.WaitAll(tasks, timeout);
+            }
+            catch (AggregateException)
+            {
+                Assert.Fail();
+            }
 
-            Task.WaitAll(tasks);
-
+            Assert.IsTrue(tasks.All(t => t.IsCompletedSuccessfully));
             Assert.IsTrue(retrieved.All(r => r));
         }
 
@@ -177,7 +197,18 @@ namespace Garnet.test
                 return lcr.SendCommand($"LPUSH {key} {value2}");
             });
 
-            Task.WaitAll(blockingTask, releasingTask);
+            var timeout = TimeSpan.FromSeconds(5);
+            try
+            {
+                Task.WaitAll(new [] {blockingTask, releasingTask}, timeout);
+            }
+            catch (AggregateException)
+            {
+                Assert.Fail();
+            }
+
+            Assert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            Assert.IsTrue(releasingTask.IsCompletedSuccessfully);
         }
     }
 }
