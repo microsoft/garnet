@@ -17,7 +17,7 @@ Core Team:
 Project Partners:
 * Alan Yang, Pradeep Yadav, Alex Dubinkov, Venugopal Latchupatulla.
 * Knut Magne Risvik, Sarah Williamson, Narayanan Subramanian, Saurabh Singh, Padmanabh Gupta.
-* Kevin Montrose, Matt Tremblay.
+* Kevin Montrose, Matt Tremblay, Marc Gravell.
 * Paulus Pärssinen.
 * Open-source and prior contributors to [Garnet](https://github.com/microsoft/garnet/contributors) and FASTER(https://github.com/microsoft/FASTER/contributors) projects.
 
