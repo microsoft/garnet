@@ -2,8 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Text;
-using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -178,7 +176,7 @@ namespace Garnet.server
             }
 
             // Get the key
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             if (NetworkSingleKeySlotVerify(key, false))
@@ -204,7 +202,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var status = storageApi.SetIntersectStore(key, keys, out var output);
+            var status = storageApi.SetIntersectStore(key.ToArray(), keys, out var output);
 
             if (status == GarnetStatus.OK)
             {
@@ -679,13 +677,11 @@ namespace Garnet.server
             if (count == 2)
             {
                 // Get the value for the count parameter
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterByteArray, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterBytes, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
                 // Prepare response
-                if (!Utf8Parser.TryParse(countParameterByteArray, out countParameter, out var bytesConsumed, default) ||
-                    bytesConsumed != countParameterByteArray.Length ||
-                    countParameter < 0)
+                if (!NumUtils.TryParse(countParameterBytes, out countParameter) || countParameter < 0)
                 {
                     while (!RespWriteUtils.WriteError("ERR value is not an integer or out of range"u8, ref dcurr, dend))
                         SendAndReset();
@@ -863,15 +859,13 @@ namespace Garnet.server
             if (count == 2)
             {
                 // Get the value for the count parameter
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterByteArray, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterBytes, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
                 // Prepare response
-                var canParse = Int32.TryParse(Encoding.ASCII.GetString(countParameterByteArray), out countParameter);
-                if (!canParse)
+                if (!NumUtils.TryParse(countParameterBytes, out countParameter))
                 {
-                    ReadOnlySpan<byte> errorMessage = "-ERR value is not an integer or out of range\r\n"u8;
-                    while (!RespWriteUtils.WriteDirect(errorMessage, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteError("ERR value is not an integer or out of range\r\n"u8, ref dcurr, dend))
                         SendAndReset();
 
                     // Restore input buffer
@@ -1005,7 +999,7 @@ namespace Garnet.server
             }
 
             // Get the key
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             if (NetworkSingleKeySlotVerify(key, false))
@@ -1031,7 +1025,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var status = storageApi.SetDiffStore(key, keys, out var output);
+            var status = storageApi.SetDiffStore(key.ToArray(), keys, out var output);
 
             if (status == GarnetStatus.OK)
             {
