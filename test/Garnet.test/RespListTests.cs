@@ -57,10 +57,11 @@ namespace Garnet.test
             string popval = db.ListLeftPop(key);
             Assert.AreEqual(val, popval);
 
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(result.IsNull);
         }
 
         [Test]
@@ -395,12 +396,13 @@ namespace Garnet.test
 
             // list is empty, the code should return (nil)
             popval = db.ListLeftPop(key);
-            Assert.AreEqual(null, popval);
+            Assert.IsNull(popval);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(result.IsNull);
         }
 
         [Test]
@@ -470,19 +472,15 @@ namespace Garnet.test
                     break;
             }
 
-            result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
-
             // list is empty, the code should return (nil)
             popval = db.ListLeftPop(key);
-            Assert.AreEqual(null, popval);
+            Assert.IsNull(popval);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(result.IsNull);
         }
 
         [Test]
@@ -1228,6 +1226,23 @@ namespace Garnet.test
             var expectedResponse = ":0\r\n";
             var actualValue = Encoding.ASCII.GetString(len).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CheckEmptyListKeyRemoved()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var key = new RedisKey("user1:list");
+            var db = redis.GetDatabase(0);
+            var values = new[] { new RedisValue("Hello"), new RedisValue("World") };
+            var result = db.ListRightPush(key, values);
+            Assert.AreEqual(2, result);
+
+            var actualMembers = db.ListRightPop(key, 2);
+            Assert.AreEqual(values.Length, actualMembers.Length);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
         }
     }
 }
