@@ -1223,14 +1223,14 @@ namespace Garnet.server
 
                     if (result != null)
                     {
-                        foreach (var item in result)
+                        foreach (var (element, score) in result)
                         {
-                            while (!RespWriteUtils.WriteBulkString(item.Key, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
                                 SendAndReset();
 
                             if (withscoresInclude)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Value.ToString(CultureInfo.InvariantCulture), ref dcurr, dend))
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
                                     SendAndReset();
                             }
                         }

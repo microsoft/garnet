@@ -150,7 +150,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 _output.bytesDone = 0;
@@ -202,7 +202,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -317,7 +317,7 @@ namespace Garnet.server
                     }
 
                     // write the new score
-                    while (!RespWriteUtils.WriteAsciiBulkString(sortedSetDict[memberByteArray].ToString(CultureInfo.InvariantCulture), ref curr, end))
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(sortedSetDict[memberByteArray], ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     countDone = 1;
                 }
@@ -441,13 +441,13 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteArrayLength(options.WithScores ? scoredElements.Count * 2 : scoredElements.Count, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        foreach (var item in scoredElements)
+                        foreach (var (score, element) in scoredElements)
                         {
-                            while (!RespWriteUtils.WriteBulkString(item.Item2, ref curr, end))
+                            while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             if (options.WithScores)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
@@ -497,13 +497,13 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteArrayLength(options.WithScores ? n * 2 : n, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            foreach (var item in iterator)
+                            foreach (var (score, element) in iterator)
                             {
-                                while (!RespWriteUtils.WriteBulkString(item.Item2, ref curr, end))
+                                while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 if (options.WithScores)
                                 {
-                                    while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                                    while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 }
                             }
@@ -530,13 +530,13 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteArrayLength(options.WithScores ? elementsInLex.Count * 2 : elementsInLex.Count, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        foreach (var item in elementsInLex)
+                        foreach (var (score, element) in elementsInLex)
                         {
-                            while (!RespWriteUtils.WriteBulkString(item.Item2, ref curr, end))
+                            while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             if (options.WithScores)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
@@ -740,14 +740,14 @@ namespace Garnet.server
 
                 foreach (var item in indexes)
                 {
-                    var element = sortedSetDict.ElementAt(item);
+                    var (element, score) = sortedSetDict.ElementAt(item);
 
-                    while (!RespWriteUtils.WriteBulkString(element.Key, ref curr, end))
+                    while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     if (withScores)
                     {
-                        while (!RespWriteUtils.WriteAsciiBulkString(element.Value.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -874,7 +874,7 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                         else
@@ -1077,14 +1077,14 @@ namespace Garnet.server
                     }
                     var max = op == SortedSetOperation.ZPOPMAX ? sortedSet.Max : sortedSet.Min;
                     var success = sortedSet.Remove(max);
-                    success = sortedSetDict.Remove(max.Item2);
+                    success = sortedSetDict.Remove(max.Element);
 
-                    this.UpdateSize(max.Item2, false);
+                    this.UpdateSize(max.Element, false);
 
-                    while (!RespWriteUtils.WriteBulkString(max.Item2, ref curr, end))
+                    while (!RespWriteUtils.WriteBulkString(max.Element, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                    while (!RespWriteUtils.WriteAsciiBulkString(max.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(max.Score, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     countDone++;

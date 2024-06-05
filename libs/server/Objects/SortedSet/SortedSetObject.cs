@@ -72,7 +72,7 @@ namespace Garnet.server
     /// </summary>
     public partial class SortedSetObject : GarnetObjectBase
     {
-        private readonly SortedSet<(double, byte[])> sortedSet;
+        private readonly SortedSet<(double Score, byte[] Element)> sortedSet;
         private readonly Dictionary<byte[], double> sortedSetDict;
 
         /// <summary>

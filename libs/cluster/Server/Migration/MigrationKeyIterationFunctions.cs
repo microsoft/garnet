@@ -27,7 +27,7 @@ namespace Garnet.cluster
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    var s = HashSlotUtils.HashSlot(key.ToPointer(), key.Length);
+                    var s = HashSlotUtils.HashSlot(ref key);
 
                     if (slots.Contains(s) && !ClusterSession.Expired(ref value) && !session.WriteOrSendMainStoreKeyValuePair(ref key, ref value))
                         return false;
@@ -85,9 +85,9 @@ namespace Garnet.cluster
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    var s = HashSlotUtils.HashSlot(key.ToPointer(), key.Length);
+                    var s = HashSlotUtils.HashSlot(ref key);
                     if (slots.Contains(s))
-                        session.BasicContext.Delete(key);
+                        _ = session.BasicContext.Delete(key);
                     return true;
                 }
 
