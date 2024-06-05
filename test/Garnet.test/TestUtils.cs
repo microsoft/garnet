@@ -313,7 +313,7 @@ namespace Garnet.test
             int CommitFrequencyMs = 0,
             bool DisableStorageTier = false,
             bool EnableIncrementalSnapshots = false,
-            bool FastCommit = false,
+            bool FastCommit = true,
             string authUsername = null,
             string authPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
@@ -397,7 +397,7 @@ namespace Garnet.test
             int CommitFrequencyMs = 0,
             bool DisableStorageTier = false,
             bool EnableIncrementalSnapshots = false,
-            bool FastCommit = false,
+            bool FastCommit = true,
             string authUsername = null,
             string authPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
