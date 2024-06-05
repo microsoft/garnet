@@ -127,9 +127,10 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteKV")]
-        public async ValueTask ReadAndCompleteWithPendingOutput([Values] bool useRMW, [Values] bool isAsync)
+        public async ValueTask ReadAndCompleteWithPendingOutput([Values] bool useRMW)
         {
             using var session = store.NewSession<InputStruct, OutputStruct, ContextStruct, FunctionsWithContext<ContextStruct>>(new FunctionsWithContext<ContextStruct>());
+            var bContext = session.BasicContext;
             Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
 
             ProcessPending processPending = new();
@@ -139,7 +140,7 @@ namespace Tsavorite.test
                 var keyStruct = NewKeyStruct(key);
                 var valueStruct = NewValueStruct(key);
                 processPending.keyAddressDict[key] = store.Log.TailAddress;
-                session.Upsert(ref keyStruct, ref valueStruct);
+                bContext.Upsert(ref keyStruct, ref valueStruct);
             }
 
             // Flush to make reads or RMWs go pending.
@@ -158,26 +159,26 @@ namespace Tsavorite.test
                 {
                     var ksUnfound = keyStruct;
                     ksUnfound.kfield1 += numRecords * 10;
-                    if (session.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct).IsPending)
+                    if (bContext.Read(ref ksUnfound, ref inputStruct, ref outputStruct, contextStruct).IsPending)
                     {
                         CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
-                        if (isAsync)
-                            completedOutputs = await session.CompletePendingWithOutputsAsync();
+                        if ((key & 1) == 0)
+                            completedOutputs = await bContext.CompletePendingWithOutputsAsync();
                         else
-                            session.CompletePendingWithOutputs(out completedOutputs, wait: true);
+                            bContext.CompletePendingWithOutputs(out completedOutputs, wait: true);
                         ProcessPending.VerifyOneNotFound(completedOutputs, ref ksUnfound);
                     }
                 }
 
                 // We don't use context (though we verify it), and Read does not use input.
                 var status = useRMW
-                    ? session.RMW(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct)
-                    : session.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
+                    ? bContext.RMW(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct)
+                    : bContext.Read(ref keyStruct, ref inputStruct, ref outputStruct, contextStruct);
                 if (status.IsPending)
                 {
                     if (processPending.IsFirst())
                     {
-                        session.CompletePending(wait: true);        // Test that this does not instantiate CompletedOutputIterator
+                        bContext.CompletePending(wait: true);        // Test that this does not instantiate CompletedOutputIterator
                         Assert.IsNull(session.completedOutputs);    // Do not instantiate until we need it
                         continue;
                     }
@@ -185,10 +186,10 @@ namespace Tsavorite.test
                     if (!processPending.DeferPending())
                     {
                         CompletedOutputIterator<KeyStruct, ValueStruct, InputStruct, OutputStruct, ContextStruct> completedOutputs;
-                        if (isAsync)
-                            completedOutputs = await session.CompletePendingWithOutputsAsync();
+                        if ((key & 1) == 0)
+                            completedOutputs = await bContext.CompletePendingWithOutputsAsync();
                         else
-                            session.CompletePendingWithOutputs(out completedOutputs, wait: true);
+                            bContext.CompletePendingWithOutputs(out completedOutputs, wait: true);
                         processPending.Process(completedOutputs, useRMW ? rmwCopyUpdatedAddresses : null);
                     }
                     continue;
@@ -210,7 +211,7 @@ namespace Tsavorite.test
 
                 // This should not be pending since we've not flushed.
                 var localKey = key;
-                var status = session.Read(ref localKey, ref inputStruct, ref outputStruct, ref readOptions, out RecordMetadata recordMetadata);
+                var status = bContext.Read(ref localKey, ref inputStruct, ref outputStruct, ref readOptions, out RecordMetadata recordMetadata);
                 Assert.IsFalse(status.IsPending);
                 Assert.AreEqual(address, recordMetadata.Address);
             }

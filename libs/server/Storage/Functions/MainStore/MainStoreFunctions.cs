@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainStoreFunctions : IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainStoreFunctions : ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
     {
         readonly FunctionsState functionsState;
 
@@ -19,6 +19,13 @@ namespace Garnet.server
         internal MainStoreFunctions(FunctionsState functionsState)
         {
             this.functionsState = functionsState;
+        }
+
+        /// <inheritdoc />
+        public void ConvertOutputToHeap(ref SpanByte input, ref SpanByteAndMemory output)
+        {
+            // TODO: Inspect input to determine whether we're in a context requiring ConvertToHeap.
+            //output.ConvertToHeap();
         }
     }
 }

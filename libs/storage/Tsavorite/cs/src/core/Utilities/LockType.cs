@@ -123,7 +123,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Lock state of a record
     /// </summary>
-    internal struct LockState
+    public struct LockState
     {
         internal bool IsLockedExclusive;
         internal bool IsFound;

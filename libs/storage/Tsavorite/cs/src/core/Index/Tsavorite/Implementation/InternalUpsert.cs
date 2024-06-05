@@ -19,7 +19,7 @@ namespace Tsavorite.core
         /// <param name="output">output where the result of the update can be placed</param>
         /// <param name="userContext">User context for the operation, in case it goes pending.</param>
         /// <param name="pendingContext">Pending context used internally to store the context of the operation.</param>
-        /// <param name="tsavoriteSession">Callback functions.</param>
+        /// <param name="sessionFunctions">Callback functions.</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -41,19 +41,19 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalUpsert<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output,
-                            ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal OperationStatus InternalUpsert<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output,
+                            ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
 
             OperationStackContext<Key, Value> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
 
-            if (tsavoriteSession.Ctx.phase == Phase.IN_PROGRESS_GROW)
+            if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (!FindOrCreateTagAndTryTransientXLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out OperationStatus status))
+            if (!FindOrCreateTagAndTryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
                 return status;
 
             RecordInfo dummyRecordInfo = RecordInfo.InitialValid;
@@ -76,9 +76,9 @@ namespace Tsavorite.core
                 }
 
                 // Check for CPR consistency after checking if source is readcache.
-                if (tsavoriteSession.Ctx.phase != Phase.REST)
+                if (sessionFunctions.Ctx.phase != Phase.REST)
                 {
-                    var latchDestination = CheckCPRConsistencyUpsert(tsavoriteSession.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    var latchDestination = CheckCPRConsistencyUpsert(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
                     switch (latchDestination)
                     {
                         case LatchDestination.Retry:
@@ -98,8 +98,8 @@ namespace Tsavorite.core
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     UpsertInfo upsertInfo = new()
                     {
-                        Version = tsavoriteSession.Ctx.version,
-                        SessionID = tsavoriteSession.Ctx.sessionID,
+                        Version = sessionFunctions.Ctx.version,
+                        SessionID = sessionFunctions.Ctx.sessionID,
                         Address = stackCtx.recSrc.LogicalAddress,
                         KeyHash = stackCtx.hei.hash
                     };
@@ -112,7 +112,7 @@ namespace Tsavorite.core
                         // If we're doing revivification and this is in the revivifiable range, try to revivify--otherwise we'll create a new record.
                         if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                         {
-                            if (TryRevivifyInChain(ref key, ref input, ref value, ref output, ref pendingContext, tsavoriteSession, ref stackCtx, ref srcRecordInfo, ref upsertInfo, out status, ref recordValue)
+                            if (TryRevivifyInChain(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo, ref upsertInfo, out status, ref recordValue)
                                     || status != OperationStatus.SUCCESS)
                                 goto LatchRelease;
                         }
@@ -120,9 +120,9 @@ namespace Tsavorite.core
                     }
 
                     // upsertInfo's lengths are filled in and GetValueLengths and SetLength are called inside ConcurrentWriter.
-                    if (tsavoriteSession.ConcurrentWriter(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, ref srcRecordInfo))
+                    if (sessionFunctions.ConcurrentWriter(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, ref srcRecordInfo))
                     {
-                        MarkPage(stackCtx.recSrc.LogicalAddress, tsavoriteSession.Ctx);
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
@@ -139,23 +139,23 @@ namespace Tsavorite.core
                 }
 
                 // No record exists, or readonly or below. Drop through to create new record.
-                Debug.Assert(!tsavoriteSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
+                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
-                status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, tsavoriteSession, ref stackCtx, ref srcRecordInfo);
+                status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo);
                 if (!OperationStatusUtils.IsAppend(status))
                 {
                     // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
                     Debug.Assert(OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS);
                     if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync)
-                        CreatePendingUpsertContext(ref key, ref input, ref value, output, userContext, ref pendingContext, tsavoriteSession, ref stackCtx);
+                        CreatePendingUpsertContext(ref key, ref input, ref value, output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
                 }
                 goto LatchRelease;
             }
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                TransientXUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
+                TransientXUnlock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
 
         LatchRelease:
@@ -177,31 +177,30 @@ namespace Tsavorite.core
         }
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalUpsert if the compiler decides not to inline this.
-        private void CreatePendingUpsertContext<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Value value, Output output, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        private void CreatePendingUpsertContext<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Value value, Output output, Context userContext,
+                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             pendingContext.type = OperationType.UPSERT;
             if (pendingContext.key == default)
                 pendingContext.key = hlog.GetKeyContainer(ref key);
             if (pendingContext.input == default)
-                pendingContext.input = tsavoriteSession.GetHeapContainer(ref input);
+                pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
             if (pendingContext.value == default)
                 pendingContext.value = hlog.GetValueContainer(ref value);
 
             pendingContext.output = output;
-            if (pendingContext.output is IHeapConvertible heapConvertible)
-                heapConvertible.ConvertToHeap();
+            sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
-        private bool TryRevivifyInChain<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext,
-                TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, ref UpsertInfo upsertInfo, out OperationStatus status, ref Value recordValue)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        private bool TryRevivifyInChain<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext,
+                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, ref UpsertInfo upsertInfo, out OperationStatus status, ref Value recordValue)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
-            if (IsFrozen<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref stackCtx, ref srcRecordInfo))
+            if (IsFrozen<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo))
                 goto NeedNewRecord;
 
             // This record is safe to revivify even if its PreviousAddress points to a valid record, because it is revivified for the same key.
@@ -221,14 +220,14 @@ namespace Tsavorite.core
 
                         // Input is not included in record-length calculations for Upsert
                         var (requiredSize, _, _) = hlog.GetRecordSize(ref key, ref value);
-                        (ok, upsertInfo.UsedValueLength) = TryReinitializeTombstonedValue<Input, Output, Context, TsavoriteSession>(tsavoriteSession,
+                        (ok, upsertInfo.UsedValueLength) = TryReinitializeTombstonedValue<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions,
                                 ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
                     }
 
-                    if (ok && tsavoriteSession.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, WriteReason.Upsert, ref srcRecordInfo))
+                    if (ok && sessionFunctions.SingleWriter(ref key, ref input, ref value, ref recordValue, ref output, ref upsertInfo, WriteReason.Upsert, ref srcRecordInfo))
                     {
                         // Success
-                        MarkPage(stackCtx.recSrc.LogicalAddress, tsavoriteSession.Ctx);
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
@@ -339,17 +338,17 @@ namespace Tsavorite.core
         /// <param name="key">The record Key</param>
         /// <param name="input">Input to the operation</param>
         /// <param name="value">The value to insert</param>
-        /// <param name="output">The result of IFunctions.SingleWriter</param>
+        /// <param name="output">The result of ISessionFunctions.SingleWriter</param>
         /// <param name="pendingContext">Information about the operation context</param>
-        /// <param name="tsavoriteSession">The current session</param>
+        /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="srcRecordInfo">If <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value}.HasInMemorySrc"/>,
         ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value}.LogicalAddress"/></param>
-        private OperationStatus CreateNewRecordUpsert<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref Output output,
-                                                                                             ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession,
+        private OperationStatus CreateNewRecordUpsert<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Value value, ref Output output,
+                                                                                             ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions,
                                                                                              ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);   // Input is not included in record-length calculations for Upsert
             AllocateOptions allocOptions = new()
@@ -357,22 +356,22 @@ namespace Tsavorite.core
                 Recycle = true,
 
                 // If the source record is elidable we can try to elide from the chain and transfer it to the FreeList if we're doing Revivification
-                IgnoreHeiAddress = stackCtx.recSrc.HasMainLogSrc && CanElide<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref stackCtx, ref srcRecordInfo)
+                IgnoreHeiAddress = stackCtx.recSrc.HasMainLogSrc && CanElide<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo)
             };
 
-            if (!TryAllocateRecord(tsavoriteSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, allocOptions,
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, allocOptions,
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: tsavoriteSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.IgnoreHeiAddress)
                 newRecordInfo.PreviousAddress = srcRecordInfo.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
 
             UpsertInfo upsertInfo = new()
             {
-                Version = tsavoriteSession.Ctx.version,
-                SessionID = tsavoriteSession.Ctx.sessionID,
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID,
                 Address = newLogicalAddress,
                 KeyHash = stackCtx.hei.hash,
             };
@@ -381,10 +380,10 @@ namespace Tsavorite.core
             ref Value newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
             (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
-            if (!tsavoriteSession.SingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, WriteReason.Upsert, ref newRecordInfo))
+            if (!sessionFunctions.SingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, WriteReason.Upsert, ref newRecordInfo))
             {
                 // Save allocation for revivification (not retry, because these aren't retry status codes), or abandon it if that fails.
-                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref tsavoriteSession.Ctx.RevivificationStats))
+                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
                     stackCtx.ClearNewRecord();
                 else
                     stackCtx.SetNewRecordInvalid(ref newRecordInfo);
@@ -403,7 +402,7 @@ namespace Tsavorite.core
             {
                 PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo);
 
-                tsavoriteSession.PostSingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, WriteReason.Upsert, ref newRecordInfo);
+                sessionFunctions.PostSingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, WriteReason.Upsert, ref newRecordInfo);
 
                 // IgnoreHeiAddress means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                 // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.
@@ -416,7 +415,7 @@ namespace Tsavorite.core
                     {
                         // We need to re-get the old record's length because upsertInfo has the new record's info. If freelist-add fails, it remains Sealed/Invalidated.
                         var oldRecordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo);
-                        TryTransferToFreeList<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref stackCtx, ref srcRecordInfo, oldRecordLengths);
+                        TryTransferToFreeList<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo, oldRecordLengths);
                     }
                 }
                 else
@@ -430,7 +429,7 @@ namespace Tsavorite.core
 
             // CAS failed
             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
-            tsavoriteSession.DisposeSingleWriter(ref hlog.GetKey(newPhysicalAddress), ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref upsertInfo, WriteReason.Upsert);
+            sessionFunctions.DisposeSingleWriter(ref hlog.GetKey(newPhysicalAddress), ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref upsertInfo, WriteReason.Upsert);
 
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh

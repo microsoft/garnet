@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public class TryAddFunctions<Key, Value, Context> : SimpleFunctions<Key, Value, Context>
+    public class TryAddFunctions<Key, Value, Context> : SimpleSessionFunctions<Key, Value, Context>
     {
         /// <inheritdoc />
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;

@@ -158,6 +158,7 @@ namespace Tsavorite.test.recovery.sumstore
         private void Populate(TsavoriteKV<AdId, NumClicks> store)
         {
             using var session = store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             // Prepare the dataset
             var inputArray = new AdInput[numOps];
@@ -170,16 +171,16 @@ namespace Tsavorite.test.recovery.sumstore
             // Process the batch of input data
             for (int i = 0; i < numOps; i++)
             {
-                session.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default);
+                bContext.RMW(ref inputArray[i].adId, ref inputArray[i], Empty.Default);
 
                 if (i % completePendingInterval == 0)
                 {
-                    session.CompletePending(false);
+                    bContext.CompletePending(false);
                 }
             }
 
             // Make sure operations are completed
-            session.CompletePending(true);
+            bContext.CompletePending(true);
         }
 
         private void Test(TsavoriteTestInstance tsavoriteInstance, Guid checkpointToken)
@@ -203,16 +204,18 @@ namespace Tsavorite.test.recovery.sumstore
             var output = default(Output);
 
             using var session = tsavoriteInstance.Store.NewSession<AdInput, Output, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
+
             // Issue read requests
             for (var i = 0; i < numUniqueKeys; i++)
             {
-                var status = session.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default);
+                var status = bContext.Read(ref inputArray[i].adId, ref input, ref output, Empty.Default);
                 Assert.IsTrue(status.Found);
                 inputArray[i].numClicks = output.value;
             }
 
             // Complete all pending requests
-            session.CompletePending(true);
+            bContext.CompletePending(true);
             session.Dispose();
         }
 
