@@ -978,7 +978,7 @@ namespace Garnet.server
         /// <param name="key">Key bytes</param>
         /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation.</param>
         /// <returns>True when ownernship is verified, false otherwise</returns>
-        bool NetworkSingleKeySlotVerify(byte[] key, bool readOnly)
+        bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly)
             => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(key, readOnly, SessionAsking, ref dcurr, ref dend);
 
         /// <summary>

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -410,16 +409,12 @@ namespace Garnet.server
 
             while (leftTokens > 0)
             {
-                byte* firstTokenPtr = null;
-                var firstTokenSize = 0;
-
                 // Read first token of current sub-command or path
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref firstTokenPtr, ref firstTokenSize, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var tokenSpan, ref ptr, recvBufferPtr + bytesRead))
                     return false;
                 leftTokens--;
 
                 // Check if first token defines the start of a new sub-command (cmdType) or a path
-                var tokenSpan = new ReadOnlySpan<byte>(firstTokenPtr, firstTokenSize);
                 if (!readPathsOnly && (tokenSpan.SequenceEqual(CmdStrings.READ) ||
                                        tokenSpan.SequenceEqual(CmdStrings.read)))
                 {
@@ -468,7 +463,7 @@ namespace Garnet.server
                     // Read only binary paths from this point forth
                     if (readPathsOnly)
                     {
-                        var path = Encoding.ASCII.GetString(firstTokenPtr, firstTokenSize);
+                        var path = Encoding.ASCII.GetString(tokenSpan);
                         binaryPaths.Add(path);
                     }
 
@@ -530,10 +525,7 @@ namespace Garnet.server
             // If ended before reading command, drain tokens not read from pipe
             while (leftTokens > 0)
             {
-                byte* firstTokenPtr = null;
-                int firstTokenSize = 0;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref firstTokenPtr, ref firstTokenSize, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out _, ref ptr, recvBufferPtr + bytesRead))
                     return false;
                 leftTokens--;
             }
@@ -694,7 +686,6 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                var key = new Span<byte>(keyPtr, ksize);
                 keyPtr -= sizeof(int);
 
                 if (c < opsDone)
@@ -734,7 +725,7 @@ namespace Garnet.server
         private bool NetworkSELECT(byte* ptr)
         {
             // Read index
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var result, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadIntWithLengthHeader(out var result, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             readHead = (int)(ptr - recvBufferPtr);
@@ -748,7 +739,7 @@ namespace Garnet.server
             else
             {
 
-                if (string.Equals(result, "0"))
+                if (result == 0)
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
@@ -816,60 +807,51 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SCAN", count);
 
             // Scan cursor [MATCH pattern] [COUNT count] [TYPE type]
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var cursorParameterByte, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadLongWithLengthHeader(out var cursorFromInput, ref ptr, recvBufferPtr + bytesRead))
+            {
                 return false;
+            }
 
             int leftTokens = count - 1;
 
-            int psize = 1;
-            byte* pattern = stackalloc byte[psize];
-            *pattern = (byte)'*';
+            ReadOnlySpan<byte> pattern = "*"u8;
             var allKeys = true;
-
             long countValue = 10;
-
-            int parameterLength = 0;
-            byte* parameterWord = null;
-
-            Span<byte> typeParameterValue = default;
+            ReadOnlySpan<byte> typeParameterValue = default;
 
             while (leftTokens > 0)
             {
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref parameterWord, ref parameterLength, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var parameterWord, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                var parameterSB = new ReadOnlySpan<byte>(parameterWord, parameterLength);
 
-                if (parameterSB.SequenceEqual(CmdStrings.MATCH) || parameterSB.SequenceEqual(CmdStrings.match))
+                if (parameterWord.SequenceEqual(CmdStrings.MATCH) || parameterWord.SequenceEqual(CmdStrings.match))
                 {
                     // Read pattern for keys filter
-                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref pattern, ref psize, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out pattern, ref ptr, recvBufferPtr + bytesRead))
                         return false;
-                    allKeys = psize == 1 && *pattern == '*';
+                    allKeys = pattern.Length == 1 && pattern[0] == '*';
                     leftTokens--;
                 }
-                else if (parameterSB.SequenceEqual(CmdStrings.COUNT) || parameterSB.SequenceEqual(CmdStrings.count))
+                else if (parameterWord.SequenceEqual(CmdStrings.COUNT) || parameterWord.SequenceEqual(CmdStrings.count))
                 {
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countParameterValue, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.ReadLongWithLengthHeader(out countValue, ref ptr, recvBufferPtr + bytesRead))
+                    {
                         return false;
-                    _ = Utf8Parser.TryParse(countParameterValue, out countValue, out var countBytesConsumed, default) &&
-                        countBytesConsumed == countParameterValue.Length;
+                    }
                     leftTokens--;
                 }
-                else if (parameterSB.SequenceEqual(CmdStrings.TYPE) || parameterSB.SequenceEqual(CmdStrings.type))
+                else if (parameterWord.SequenceEqual(CmdStrings.TYPE) || parameterWord.SequenceEqual(CmdStrings.type))
                 {
-                    if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref typeParameterValue, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out typeParameterValue, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                     leftTokens--;
                 }
                 leftTokens--;
             }
 
-            _ = Utf8Parser.TryParse(cursorParameterByte, out long cursorFromInput, out var cursorBytesConsumed, default) &&
-                cursorBytesConsumed == cursorParameterByte.Length;
+            var patternArgSlice = ArgSlice.FromPinnedSpan(pattern);
 
-            var patternAS = new ArgSlice(pattern, psize);
-
-            storageApi.DbScan(patternAS, allKeys, cursorFromInput, out var cursor, out var keys, typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
+            storageApi.DbScan(patternArgSlice, allKeys, cursorFromInput, out var cursor, out var keys, typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
 
             // Prepare values for output
             if (keys.Count == 0)

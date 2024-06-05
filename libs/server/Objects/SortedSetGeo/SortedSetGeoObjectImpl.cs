@@ -37,7 +37,7 @@ namespace Garnet.server
             public bool FromLonLat { get; set; }
             public bool ByRadius { get; set; }
             public bool ByBox { get; set; }
-            public bool SortOrder { get; set; }
+            public bool SortDescending { get; set; }
             public bool WithCount { get; set; }
             public int WithCountValue { get; set; }
             public bool WithCountAny { get; set; }
@@ -67,15 +67,15 @@ namespace Garnet.server
             if (optsCount > 0 && optsCount <= 2)
             {
                 // Is NX or XX, if not nx then use XX
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var byteOptions, ref input_currptr, input + length))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var byteOptions, ref input_currptr, input + length))
                     return;
-                nx = (byteOptions.Length == 2 && (byteOptions[0] == (int)'N' && byteOptions[1] == (int)'X') || (byteOptions[0] == (int)'n' && byteOptions[1] == (int)'x'));
+                nx = byteOptions.EqualsUpperCaseSpanIgnoringCase("NX"u8);
                 if (optsCount == 2)
                 {
                     // Read CH option
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out byteOptions, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out byteOptions, ref input_currptr, input + length))
                         return;
-                    ch = (byteOptions.Length == 2 && (byteOptions[0] == (int)'C' && byteOptions[1] == (int)'H') || (byteOptions[0] == (int)'c' && byteOptions[1] == (int)'h'));
+                    ch = byteOptions.EqualsUpperCaseSpanIgnoringCase("CH"u8);
                 }
                 count -= optsCount;
             }
@@ -88,7 +88,7 @@ namespace Garnet.server
                     return;
                 if (!RespReadUtils.ReadDoubleWithLengthHeader(out var latitude, out parsed, ref input_currptr, input + length))
                     return;
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input + length))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref input_currptr, input + length))
                     return;
 
                 if (c < _input->done)
@@ -101,12 +101,13 @@ namespace Garnet.server
                     var score = server.GeoHash.GeoToLongValue(latitude, longitude);
                     if (score != -1)
                     {
-                        if (!sortedSetDict.TryGetValue(member, out double scoreStored))
+                        var memberByteArray = member.ToArray();
+                        if (!sortedSetDict.TryGetValue(memberByteArray, out double scoreStored))
                         {
                             if (nx)
                             {
-                                sortedSetDict.Add(member, score);
-                                sortedSet.Add((score, member));
+                                sortedSetDict.Add(memberByteArray, score);
+                                sortedSet.Add((score, memberByteArray));
                                 _output->opsDone++;
 
                                 this.UpdateSize(member);
@@ -115,10 +116,10 @@ namespace Garnet.server
                         }
                         else if (!nx && scoreStored != score)
                         {
-                            sortedSetDict[member] = score;
-                            var success = sortedSet.Remove((scoreStored, member));
+                            sortedSetDict[memberByteArray] = score;
+                            var success = sortedSet.Remove((scoreStored, memberByteArray));
                             Debug.Assert(success);
-                            success = sortedSet.Add((score, member));
+                            success = sortedSet.Add((score, memberByteArray));
                             Debug.Assert(success);
                             elementsChanged++;
                         }
@@ -159,7 +160,7 @@ namespace Garnet.server
                 while (countDone < count)
                 {
                     // Read member
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref input_currptr, input + length))
                         break;
 
                     countDone++;
@@ -175,7 +176,7 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
 
-                    if (sortedSetDict.TryGetValue(member, out var value52Int))
+                    if (sortedSetDict.TryGetValue(member.ToArray(), out var value52Int))
                     {
                         var geohash = server.GeoHash.GetGeoHashCode((long)value52Int);
                         while (!RespWriteUtils.WriteAsciiBulkString(geohash, ref curr, end))
@@ -229,26 +230,24 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member2ByteArray, ref input_currptr, input + length))
                     return;
 
-                Byte[] units = "M"u8.ToArray();
+                var units = "M"u8;
 
                 // Read units
                 if (count > 2)
                 {
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out units, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out units, ref input_currptr, input + length))
                         return;
                 }
 
                 if (sortedSetDict.TryGetValue(member1ByteArray, out double scoreMember1) && sortedSetDict.TryGetValue(member2ByteArray, out double scoreMember2))
                 {
+                    var first = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
+                    var second = server.GeoHash.GetCoordinatesFromLong((long)scoreMember2);
 
-                    (double lat, double lon) = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
-                    (double lat, double lon) cord2 = server.GeoHash.GetCoordinatesFromLong((long)scoreMember2);
+                    var distance = server.GeoHash.Distance(first.Latitude, first.Longitude, second.Latitude, second.Longitude);
 
-                    var distance = server.GeoHash.Distance(lat, lon, cord2.lat, cord2.lon);
-
-                    var distanceValue = (units.Length == 1 && (units[0] == (int)'M' || units[0] == (int)'m')) ?
-                                        distance :
-                                        server.GeoHash.ConvertMetersToUnits(distance, units);
+                    var distanceValue = (units.Length == 1 && AsciiUtils.ToUpper(units[0]) == (byte)'M') ?
+                        distance : server.GeoHash.ConvertMetersToUnits(distance, units);
 
                     while (!RespWriteUtils.WriteAsciiBulkString(distanceValue.ToString(CultureInfo.InvariantCulture), ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -307,7 +306,7 @@ namespace Garnet.server
                 while (countDone < count)
                 {
                     // read member
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var memberByteArray, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var memberBytes, ref input_currptr, input + length))
                         break;
 
                     countDone++;
@@ -323,7 +322,7 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
 
-                    if (sortedSetDict.TryGetValue(memberByteArray, out double scoreMember1))
+                    if (sortedSetDict.TryGetValue(memberBytes.ToArray(), out double scoreMember1))
                     {
                         (double lat, double lon) = server.GeoHash.GetCoordinatesFromLong((long)scoreMember1);
 
@@ -377,9 +376,8 @@ namespace Garnet.server
             try
             {
                 var opts = new GeoSearchOptions();
-                var opsStr = "FROMMEMBERFROMLONLATBYRADIUSBYBOXASCDESCCOUNTANYWITHCOORDWITHDISTWITHHASH";
                 byte[] fromMember = null;
-                byte[] byBoxUnits = "M"u8.ToArray();
+                var byBoxUnits = "M"u8;
                 var byRadiusUnits = byBoxUnits;
                 double width = 0, height = 0;
                 int countValue = 0;
@@ -388,77 +386,65 @@ namespace Garnet.server
                 while (count > 0)
                 {
                     // Read token
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var tokenByteArray, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var tokenBytes, ref input_currptr, input + length))
                         return;
-                    var stringToken = Encoding.ASCII.GetString(tokenByteArray).ToUpperInvariant();
-                    if (opsStr.Contains(stringToken, StringComparison.OrdinalIgnoreCase))
+
+                    if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMMEMBER"u8))
                     {
-                        switch (stringToken)
-                        {
-                            case "FROMMEMBER":
-                                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out fromMember, ref input_currptr, input + length))
-                                    return;
-                                opts.FromMember = true;
-                                --count;
-                                break;
-                            case "FROMLONLAT":
-                                // Read two coord
-                                if (!RespReadUtils.ReadDoubleWithLengthHeader(out var longitude, out var parsed, ref input_currptr, input + length))
-                                    return;
-                                if (!RespReadUtils.ReadDoubleWithLengthHeader(out var latitude, out parsed, ref input_currptr, input + length))
-                                    return;
-                                count -= 2;
-                                opts.FromLonLat = true;
-                                break;
-                            case "BYRADIUS":
-                                if (!RespReadUtils.ReadDoubleWithLengthHeader(out var radius, out parsed, ref input_currptr, input + length))
-                                    return;
-                                // Read units
-                                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out byRadiusUnits, ref input_currptr, input + length))
-                                    return;
-                                count -= 2;
-                                opts.ByRadius = true;
-                                break;
-                            case "BYBOX":
-                                if (!RespReadUtils.ReadDoubleWithLengthHeader(out width, out parsed, ref input_currptr, input + length))
-                                    return;
-                                if (!RespReadUtils.ReadDoubleWithLengthHeader(out height, out parsed, ref input_currptr, input + length))
-                                    return;
-                                // Read units
-                                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out byBoxUnits, ref input_currptr, input + length))
-                                    return;
-                                count -= 3;
-                                opts.ByBox = true;
-                                break;
-                            case "ASC":
-                                opts.SortOrder = false;
-                                break;
-                            case "DESC":
-                                opts.SortOrder = true;
-                                break;
-                            case "COUNT":
-                                opts.WithCount = true;
-                                if (!RespReadUtils.ReadIntWithLengthHeader(out countValue, ref input_currptr, input + length))
-                                    return;
-                                count -= 1;
-                                break;
-                            case "WITHCOORD":
-                                opts.WithCoord = true;
-                                break;
-                            case "WITHDIST":
-                                opts.WithDist = true;
-                                break;
-                            case "WITHHASH":
-                                opts.WithHash = true;
-                                break;
-                            case "ANY":
-                                opts.WithCountAny = true;
-                                break;
-                            default:
-                                break;
-                        }
+                        if (!RespReadUtils.ReadByteArrayWithLengthHeader(out fromMember, ref input_currptr, input + length))
+                            return;
+                        opts.FromMember = true;
                         --count;
                     }
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("FROMLONLAT"u8))
+                    {
+                        // Read coordinates
+                        if (!RespReadUtils.ReadDoubleWithLengthHeader(out var longitude, out var parsed, ref input_currptr, input + length) ||
+                            !RespReadUtils.ReadDoubleWithLengthHeader(out var latitude, out parsed, ref input_currptr, input + length))
+                        {
+                            return;
+                        }
+                        count -= 2;
+                        opts.FromLonLat = true;
+                    }
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYRADIUS"u8))
+                    {
+                        // Read radius and units
+                        if (!RespReadUtils.ReadDoubleWithLengthHeader(out var radius, out var parsed, ref input_currptr, input + length) ||
+                            !RespReadUtils.TrySliceWithLengthHeader(out byRadiusUnits, ref input_currptr, input + length))
+                        {
+                            return;
+                        }
+                        count -= 2;
+                        opts.ByRadius = true;
+                    }
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("BYBOX"u8))
+                    {
+                        // Read width, height & units
+                        if (!RespReadUtils.ReadDoubleWithLengthHeader(out width, out var parsed, ref input_currptr, input + length) ||
+                            !RespReadUtils.ReadDoubleWithLengthHeader(out height, out parsed, ref input_currptr, input + length) ||
+                            !RespReadUtils.TrySliceWithLengthHeader(out byBoxUnits, ref input_currptr, input + length))
+                        {
+                            return;
+                        }
+                        count -= 3;
+                        opts.ByBox = true;
+                    }
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ASC"u8)) opts.SortDescending = false;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("DESC"u8)) opts.SortDescending = true;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("COUNT"u8))
+                    {
+                        opts.WithCount = true;
+                        if (!RespReadUtils.ReadIntWithLengthHeader(out countValue, ref input_currptr, input + length))
+                            return;
+                        count -= 1;
+                    }
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHCOORD"u8)) opts.WithCoord = true;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHDIST"u8)) opts.WithDist = true;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("WITHHASH"u8)) opts.WithHash = true;
+                    else if (tokenBytes.EqualsUpperCaseSpanIgnoringCase("ANY"u8)) opts.WithCountAny = true;
+
+                    --count;
                 }
 
                 // Check that we have the mandatory options

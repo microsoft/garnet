@@ -153,7 +153,7 @@ namespace Garnet.server
             return true;
         }
 
-        internal void UpdateSize(byte[] item, bool add = true)
+        internal void UpdateSize(ReadOnlySpan<byte> item, bool add = true)
         {
             var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.HashSetEntryOverhead;
             this.Size += add ? size : -size;

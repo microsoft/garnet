@@ -175,7 +175,6 @@ namespace Garnet.test.cluster
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
 
             // Shutdown secondary
-            context.nodes[1].Store.CommitAOF(true);
             context.nodes[1].Dispose(false);
 
             Thread.Sleep(TimeSpan.FromSeconds(2));
@@ -250,7 +249,6 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitCheckpoint(1, replicaLastSaveTime, logger: context.logger);
 
             // Shutdown secondary
-            context.nodes[1].Store.CommitAOF(true);
             context.nodes[1].Dispose(false);
             Thread.Sleep(TimeSpan.FromSeconds(2));
 

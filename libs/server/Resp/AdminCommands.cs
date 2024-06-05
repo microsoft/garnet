@@ -758,32 +758,28 @@ namespace Garnet.server
         {
             //MEMORY USAGE [key] [SAMPLES count]
 
-            if (!RespReadUtils.ReadStringWithLengthHeader(out var memoryOption, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var memoryOption, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             var status = GarnetStatus.OK;
             long memoryUsage = default;
 
-            if (memoryOption.Equals("USAGE", StringComparison.OrdinalIgnoreCase))
+            if (memoryOption.EqualsUpperCaseSpanIgnoringCase("USAGE"u8))
             {
-                // read key
-                byte* keyPtr = null;
-                int kSize = 0;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref kSize, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var keyBytes, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
                 if (count == 4)
                 {
                     // Calculations for nested types do not apply to garnet, but we are parsing the parameter for API compatibility
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var samplesBA, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out _ /* samplesBA */, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countSamplesBA, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out _ /* countSamplesBA */, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                 }
 
-                status = storageApi.MemoryUsageForKey(new(keyPtr, kSize), out memoryUsage);
+                status = storageApi.MemoryUsageForKey(ArgSlice.FromPinnedSpan(keyBytes), out memoryUsage);
             }
 
             if (status == GarnetStatus.OK)

@@ -665,7 +665,7 @@ ClusterRedirectTests.TestFlags testFlags)
                     Assert.AreEqual(status, ResponseState.OK, command.cmdTag);
                     if (command.response != null)
                     {
-                        Assert.AreEqual(value, response, command.cmdTag);
+                        Assert.AreEqual(value, response, command.testCmd);
                     }
                     else if (command.arrayResponse != null)
                     {
