@@ -41,7 +41,7 @@ serviceAccount:
 
 containers:
   # -- Containers args
-  args: ["--port", "6379", "-m", "128m", "-i", "128m", "--auth", "Password","--password", "xxxxxxxxxx"]
+  args: ["--port", "6379", "-m", "128m", "-i", "128m"]
   # -- Containers port
   port: 6379
   # -- Containers livenessProbe
