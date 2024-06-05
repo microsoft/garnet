@@ -25,7 +25,7 @@ namespace Garnet.server
             public Byte[] Member;
             public double Distance;
             public string GeoHashCode;
-            public (double, double) Coords;
+            public (double Latitude, double Longitude) Coordinates;
         }
 
         /// <summary>
@@ -249,7 +249,7 @@ namespace Garnet.server
                     var distanceValue = (units.Length == 1 && AsciiUtils.ToUpper(units[0]) == (byte)'M') ?
                         distance : server.GeoHash.ConvertMetersToUnits(distance, units);
 
-                    while (!RespWriteUtils.WriteAsciiBulkString(distanceValue.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     countDone = count;
@@ -330,10 +330,10 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        while (!RespWriteUtils.WriteAsciiBulkString(lon.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(lon, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        while (!RespWriteUtils.WriteAsciiBulkString(lat.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(lat, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                     else
@@ -485,7 +485,7 @@ namespace Garnet.server
                                         Member = point.Item2,
                                         Distance = distance,
                                         GeoHashCode = server.GeoHash.GetGeoHashCode((long)point.Item1),
-                                        Coords = server.GeoHash.GetCoordinatesFromLong((long)point.Item1)
+                                        Coordinates = server.GeoHash.GetCoordinatesFromLong((long)point.Item1)
                                     });
 
                                     if (opts.WithCount && responseData.Count == countValue)
@@ -506,17 +506,17 @@ namespace Garnet.server
                             var distanceValue = (byBoxUnits.Length == 1 && (byBoxUnits[0] == (int)'M' || byBoxUnits[0] == (int)'m')) ? item.Distance
                                                 : server.GeoHash.ConvertMetersToUnits(item.Distance, byBoxUnits);
 
-                            while (!RespWriteUtils.WriteAsciiBulkString(distanceValue.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(distanceValue, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                             // Write array of 2 values
                             while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            while (!RespWriteUtils.WriteAsciiBulkString(item.Coords.Item2.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Longitude, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            while (!RespWriteUtils.WriteAsciiBulkString(item.Coords.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(item.Coordinates.Latitude, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
 
