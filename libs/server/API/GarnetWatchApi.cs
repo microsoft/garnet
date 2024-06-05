@@ -476,7 +476,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long cursorStore, out List<byte[]> keys, long count = 10, Span<byte> type = default)
+        public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long cursorStore, out List<byte[]> keys, long count = 10, ReadOnlySpan<byte> type = default)
         {
             return garnetApi.DbScan(patternB, allKeys, cursor, out cursorStore, out keys, count, type);
         }

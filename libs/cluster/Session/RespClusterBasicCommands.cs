@@ -183,14 +183,13 @@ namespace Garnet.cluster
             }
 
             var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var ipaddress, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadStringWithLengthHeader(out var ipaddressStr, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             if (!RespReadUtils.ReadIntWithLengthHeader(out var port, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            var ipaddressStr = Encoding.ASCII.GetString(ipaddress);
             logger?.LogTrace("CLUSTER MEET {ipaddressStr} {port}", ipaddressStr, port);
             clusterProvider.clusterManager.RunMeetTask(ipaddressStr, port);
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -403,10 +402,10 @@ namespace Garnet.cluster
             var gossipWithMeet = false;
             if (count > 1)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var withMeet, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var withMeetSpan, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                Debug.Assert(withMeet.SequenceEqual(CmdStrings.WITHMEET.ToArray()));
-                if (withMeet.SequenceEqual(CmdStrings.WITHMEET.ToArray()))
+                Debug.Assert(withMeetSpan.SequenceEqual(CmdStrings.WITHMEET));
+                if (withMeetSpan.SequenceEqual(CmdStrings.WITHMEET))
                     gossipWithMeet = true;
             }
 
