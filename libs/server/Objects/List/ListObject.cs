@@ -57,7 +57,6 @@ namespace Garnet.server
     /// </summary>
     public partial class ListObject : GarnetObjectBase
     {
-        /// <inheritdoc />
         readonly LinkedList<byte[]> list;
 
         /// <summary>

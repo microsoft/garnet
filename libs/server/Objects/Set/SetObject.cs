@@ -40,7 +40,6 @@ namespace Garnet.server
     /// </summary>
     public unsafe partial class SetObject : GarnetObjectBase
     {
-        /// <inheritdoc />
         readonly HashSet<byte[]> set;
 
         /// <summary>
