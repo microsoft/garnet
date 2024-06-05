@@ -83,12 +83,9 @@ namespace Garnet.test.cluster
             socket.Connect(IPAddress.Loopback, 7000);
 
             var clusterCMD = $"$7\r\ncluster\r\n${subcommand.Length}\r\n{subcommand}\r\n";
-            var errorCmd = subcommand.ToUpper();
+            var errorCmd = $"cluster|{subcommand.ToLowerInvariant()}";
 
-            if (subcommand.Equals("set-config-epoch"))
-                errorCmd = "SETCONFIGEPOCH";
-
-            var expectedResp = $"-ERR Parsing error\r\n";
+            var expectedResp = $"-ERR wrong number of arguments for '{errorCmd}' command\r\n";
             foreach (var count in invalidCount)
             {
                 var packet = $"*{2 + count}\r\n" + clusterCMD;

@@ -337,7 +337,7 @@ namespace Garnet.server
         /// <param name="respCommandsInfo">The commands info</param>
         /// <param name="txnOnly">Return only commands that are allowed in a transaction context (False by default)</param>
         /// <returns>True if initialization was successful and command info was found</returns>
-        internal static bool TryGetRespCommandInfo(RespCommand cmd,
+        public static bool TryGetRespCommandInfo(RespCommand cmd,
             out RespCommandsInfo respCommandsInfo, bool txnOnly = false, ILogger logger = null)
         {
             respCommandsInfo = default;

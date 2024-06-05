@@ -67,14 +67,14 @@ namespace Garnet.server
 
                 var inputCount = (count - 1) / 2;
 
-                HashOperation hop = 0;
-                switch (command)
-                {
-                    case RespCommand.HSET: hop = HashOperation.HSET; break;
-                    case RespCommand.HMSET: hop = HashOperation.HMSET; break;
-                    case RespCommand.HSETNX: hop = HashOperation.HSETNX; break;
-                    default: Debug.Fail($"Unexpected command {command}"); break;
-                }
+                HashOperation hop =
+                    command switch
+                    {
+                        RespCommand.HSET => HashOperation.HSET,
+                        RespCommand.HMSET => HashOperation.HMSET,
+                        RespCommand.HSETNX => HashOperation.HSETNX,
+                        _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;
@@ -158,15 +158,15 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                HashOperation op = 0;
-                switch (command)
-                {
-                    case RespCommand.HGET: op = HashOperation.HGET; break;
-                    case RespCommand.HMGET: op = HashOperation.HMGET; break;
-                    case RespCommand.HGETALL: op = HashOperation.HGETALL; break;
-                    case RespCommand.HRANDFIELD: op = HashOperation.HRANDFIELD; break;
-                    default: Debug.Fail($"Unexpected command {command}"); break;
-                }
+                HashOperation op =
+                    command switch
+                    {
+                        RespCommand.HGET => HashOperation.HGET,
+                        RespCommand.HMGET => HashOperation.HMGET,
+                        RespCommand.HGETALL => HashOperation.HGETALL,
+                        RespCommand.HRANDFIELD => HashOperation.HRANDFIELD,
+                        _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
+                    };
 
                 int inputCount = command == RespCommand.HGETALL ? 0 : (command == RespCommand.HRANDFIELD ? count + 1 : count - 1);
                 // Prepare header in input buffer
@@ -566,13 +566,13 @@ namespace Garnet.server
             // Prepare length of header in input buffer
             var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-            HashOperation op = 0;
-            switch (command)
-            {
-                case RespCommand.HKEYS: op = HashOperation.HKEYS; break;
-                case RespCommand.HVALS: op = HashOperation.HVALS; break;
-                default: Debug.Fail($"Unexpected command {command}"); break;
-            }
+            HashOperation op =
+                command switch
+                {
+                    RespCommand.HKEYS => HashOperation.HKEYS,
+                    RespCommand.HVALS => HashOperation.HVALS,
+                    _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
+                };
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Hash;
@@ -662,13 +662,13 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                HashOperation op = 0;
-                switch (command)
-                {
-                    case RespCommand.HINCRBY: op = HashOperation.HINCRBY; break;
-                    case RespCommand.HINCRBYFLOAT: op = HashOperation.HINCRBYFLOAT; break;
-                    default: Debug.Fail($"Unexpected command {command}"); break;
-                }
+                HashOperation op =
+                    command switch
+                    {
+                        RespCommand.HINCRBY => HashOperation.HINCRBY,
+                        RespCommand.HINCRBYFLOAT => HashOperation.HINCRBYFLOAT,
+                        _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.Hash;

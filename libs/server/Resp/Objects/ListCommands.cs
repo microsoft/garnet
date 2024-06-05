@@ -59,15 +59,15 @@ namespace Garnet.server
             // Prepare length of header in input buffer
             var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-            ListOperation lop = 0;
-            switch (command)
-            {
-                case RespCommand.LPUSH: lop = ListOperation.LPUSH; break;
-                case RespCommand.LPUSHX: lop = ListOperation.LPUSHX; break;
-                case RespCommand.RPUSH: lop = ListOperation.RPUSH; break;
-                case RespCommand.RPUSHX: lop = ListOperation.RPUSHX; break;
-                default: Debug.Fail($"Unexpected command {command}"); break;
-            }
+            ListOperation lop =
+                command switch
+                {
+                    RespCommand.LPUSH => ListOperation.LPUSH,
+                    RespCommand.LPUSHX => ListOperation.LPUSHX,
+                    RespCommand.RPUSH => ListOperation.RPUSH,
+                    RespCommand.RPUSHX => ListOperation.RPUSHX,
+                    _ => throw new Exception($"Unexpected {nameof(ListOperation)}: {command}")
+                };
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.List;
@@ -165,13 +165,13 @@ namespace Garnet.server
             // Prepare length of header in input buffer
             var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-            ListOperation lop = 0;
-            switch (command)
-            {
-                case RespCommand.LPOP: lop = ListOperation.LPOP; break;
-                case RespCommand.RPOP: lop = ListOperation.RPOP; break;
-                default: Debug.Fail($"Unexpected command {command}"); break;
-            }
+            ListOperation lop =
+                command switch
+                {
+                    RespCommand.LPOP => ListOperation.LPOP,
+                    RespCommand.RPOP => ListOperation.RPOP,
+                    _ => throw new Exception($"Unexpected {nameof(ListOperation)}: {command}")
+                };
 
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.List;

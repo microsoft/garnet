@@ -312,14 +312,14 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                SortedSetOperation op = 0;
-                switch (command)
-                {
-                    case RespCommand.ZRANGE: op = SortedSetOperation.ZRANGE; break;
-                    case RespCommand.ZREVRANGE: op = SortedSetOperation.ZREVRANGE; break;
-                    case RespCommand.ZRANGEBYSCORE: op = SortedSetOperation.ZRANGEBYSCORE; break;
-                    default: Debug.Fail($"Unexpected command {command}"); break;
-                }
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
+                        RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
+                        RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -567,13 +567,13 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                SortedSetOperation op = 0;
-                switch (command)
-                {
-                    case RespCommand.ZPOPMIN: op = SortedSetOperation.ZPOPMIN; break;
-                    case RespCommand.ZPOPMAX: op = SortedSetOperation.ZPOPMAX; break;
-                    default: Debug.Fail($"Unexpected command {command}"); break;
-                }
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.ZPOPMIN => SortedSetOperation.ZPOPMIN,
+                        RespCommand.ZPOPMAX => SortedSetOperation.ZPOPMAX,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -743,13 +743,13 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                SortedSetOperation op = 0;
-                switch (command)
-                {
-                    case RespCommand.ZREMRANGEBYLEX: op = SortedSetOperation.ZREMRANGEBYLEX; break;
-                    case RespCommand.ZLEXCOUNT: op = SortedSetOperation.ZLEXCOUNT; break;
-                    default: Debug.Fail($"Unexpected command {command}"); break;
-                }
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.ZREMRANGEBYLEX => SortedSetOperation.ZREMRANGEBYLEX,
+                        RespCommand.ZLEXCOUNT => SortedSetOperation.ZLEXCOUNT,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -931,13 +931,13 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                SortedSetOperation op = 0;
-                switch (command)
-                {
-                    case RespCommand.ZRANK: op = SortedSetOperation.ZRANK; break;
-                    case RespCommand.ZREVRANK: op = SortedSetOperation.ZREVRANK; break;
-                    default: Debug.Fail($"Unexpected command {command}"); break;
-                }
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.ZRANK => SortedSetOperation.ZRANK,
+                        RespCommand.ZREVRANK => SortedSetOperation.ZREVRANK,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -1014,13 +1014,13 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                SortedSetOperation op = 0;
-                switch (command)
-                {
-                    case RespCommand.ZREMRANGEBYRANK: op = SortedSetOperation.ZREMRANGEBYRANK; break;
-                    case RespCommand.ZREMRANGEBYSCORE: op = SortedSetOperation.ZREMRANGEBYSCORE; break;
-                    default: Debug.Fail($"Unexpected command {command}"); break;
-                }
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.ZREMRANGEBYRANK => SortedSetOperation.ZREMRANGEBYRANK,
+                        RespCommand.ZREMRANGEBYSCORE => SortedSetOperation.ZREMRANGEBYSCORE,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;

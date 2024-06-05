@@ -42,14 +42,14 @@ namespace Garnet.server
         {
             if (count == 0)
             {
-                while (!RespWriteUtils.WriteError($"ERR Wrong number of arguments for CONFIG GET.", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError($"ERR wrong number of arguments for 'config|get' command", ref dcurr, dend))
                     SendAndReset();
 
                 return true;
             }
 
             // Extract requested parameters
-            HashSet<ServerConfigType> parameters = new();
+            HashSet<ServerConfigType> parameters = [];
             var returnAll = false;
             for (var i = 0; i < count; i++)
             {

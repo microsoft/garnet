@@ -136,6 +136,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_INVALID_INDEX => "ERR invalid database index."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_CLUSTER_MODE => "ERR SELECT is not allowed in cluster mode"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS => "ERR wrong number of arguments for command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS_CONFIG => "ERR wrong number of arguments for 'config' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION => "ERR Unsupported protocol version"u8;
         public static ReadOnlySpan<byte> RESP_ERR_ASYNC_PROTOCOL_CHANGE => "ERR protocol change is not allowed with pending async operations"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_FLOAT => "ERR value is not a valid float"u8;
@@ -202,7 +204,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> USAGE => "USAGE"u8;
         public static ReadOnlySpan<byte> BUMPEPOCH => "BUMPEPOCH"u8;
         public static ReadOnlySpan<byte> FORGET => "FORGET"u8;
-        public static ReadOnlySpan<byte> GOSSIP => "GOSSIP"u8;
         public static ReadOnlySpan<byte> MEET => "MEET"u8;
         public static ReadOnlySpan<byte> MYID => "MYID"u8;
         public static ReadOnlySpan<byte> NODES => "NODES"u8;
@@ -219,21 +220,26 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> SLOTS => "SLOTS"u8;
         public static ReadOnlySpan<byte> REPLICAS => "REPLICAS"u8;
         public static ReadOnlySpan<byte> REPLICATE => "REPLICATE"u8;
-        public static ReadOnlySpan<byte> DELKEYSINSLOT => "DELKEYSINSLOT"u8;
-        public static ReadOnlySpan<byte> SETSLOTSRANGE => "SETSLOTSRANGE"u8;
-        public static ReadOnlySpan<byte> SLOTSTATE => "SLOTSTATE"u8;
-        public static ReadOnlySpan<byte> INITIATE_REPLICA_SYNC => "INITIATE_REPLICA_SYNC"u8;
-        public static ReadOnlySpan<byte> AOFSYNC => "AOFSYNC"u8;
-        public static ReadOnlySpan<byte> APPENDLOG => "APPENDLOG"u8;
-        public static ReadOnlySpan<byte> BANLIST => "BANLIST"u8;
-        public static ReadOnlySpan<byte> BEGIN_REPLICA_RECOVER => "BEGIN_REPLICA_RECOVER"u8;
-        public static ReadOnlySpan<byte> ENDPOINT => "ENDPOINT"u8;
-        public static ReadOnlySpan<byte> FAILREPLICATIONOFFSET => "FAILREPLICATIONOFFSET"u8;
-        public static ReadOnlySpan<byte> FAILSTOPWRITES => "FAILSTOPWRITES"u8;
-        public static ReadOnlySpan<byte> SEND_CKPT_FILE_SEGMENT => "SEND_CKPT_FILE_SEGMENT"u8;
-        public static ReadOnlySpan<byte> SEND_CKPT_METADATA => "SEND_CKPT_METADATA"u8;
-        public static ReadOnlySpan<byte> MTASKS => "MTASKS"u8;
-        public static ReadOnlySpan<byte> DELKEYSINSLOTRANGE => "DELKEYSINSLOTRANGE"u8;
-        public static ReadOnlySpan<byte> MYPARENTID => "MYPARENTID"u8;
+
+        // Cluster subcommands which are internal and thus undocumented
+        // 
+        // Because these are internal, they have lower case property names
+        public static ReadOnlySpan<byte> gossip => "GOSSIP"u8;
+        public static ReadOnlySpan<byte> myparentid => "MYPARENTID"u8;
+        public static ReadOnlySpan<byte> delkeysinslot => "DELKEYSINSLOT"u8;
+        public static ReadOnlySpan<byte> delkeysinslotrange => "DELKEYSINSLOTRANGE"u8;
+        public static ReadOnlySpan<byte> setslotsrange => "SETSLOTSRANGE"u8;
+        public static ReadOnlySpan<byte> slotstate => "SLOTSTATE"u8;
+        public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
+        public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
+        public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;
+        public static ReadOnlySpan<byte> banlist => "BANLIST"u8;
+        public static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
+        public static ReadOnlySpan<byte> endpoint => "ENDPOINT"u8;
+        public static ReadOnlySpan<byte> failreplicationoffset => "FAILREPLICATIONOFFSET"u8;
+        public static ReadOnlySpan<byte> failstopwrites => "FAILSTOPWRITES"u8;
+        public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
+        public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
+        public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
     }
 }

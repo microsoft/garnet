@@ -152,15 +152,15 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                SortedSetOperation op = 0;
-                switch (command)
-                {
-                    case RespCommand.GEOHASH: op = SortedSetOperation.GEOHASH; break;
-                    case RespCommand.GEODIST: op = SortedSetOperation.GEODIST; break;
-                    case RespCommand.GEOPOS: op = SortedSetOperation.GEOPOS; break;
-                    case RespCommand.GEOSEARCH: op = SortedSetOperation.GEOSEARCH; break;
-                    default: Debug.Fail($"Unexpected command {command}"); break;
-                }
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.GEOHASH => SortedSetOperation.GEOHASH,
+                        RespCommand.GEODIST => SortedSetOperation.GEODIST,
+                        RespCommand.GEOPOS => SortedSetOperation.GEOPOS,
+                        RespCommand.GEOSEARCH => SortedSetOperation.GEOSEARCH,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;

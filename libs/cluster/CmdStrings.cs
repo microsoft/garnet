@@ -67,5 +67,10 @@ namespace Garnet.cluster
         public static ReadOnlySpan<byte> RESP_ERR_CREATE_SYNC_SESSION_ERROR => "PRIMARY-ERR Failed creating replica sync session task"u8;
         public static ReadOnlySpan<byte> RESP_ERR_RETRIEVE_SYNC_SESSION_ERROR => "PRIMARY-ERR Failed retrieving replica sync session"u8;
         public static ReadOnlySpan<byte> RESP_ERR_IOERR => "IOERR Migrate keys failed"u8;
+
+        /// <summary>
+        /// Response string templates
+        /// </summary>
+        public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
     }
 }

@@ -520,7 +520,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
         /// <returns>The parsed command name.</returns>
-        private RespCommand FastParseArrayCommand(ref int count)
+        private RespCommand FastParseArrayCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMessage)
         {
             // Bytes remaining in the read buffer
             int remainingBytes = bytesRead - readHead;
@@ -718,6 +718,7 @@ namespace Garnet.server
                                                 }
 
                                                 // Although we recognize BITOP, the pseudo-subcommand isn't recognized so fail early
+                                                specificErrorMessage = CmdStrings.RESP_SYNTAX_ERROR;
                                                 return RespCommand.NONE;
                                             }
                                         }
@@ -1218,9 +1219,10 @@ namespace Garnet.server
         /// NOTE: Assumes the input command names have already been converted to upper-case.
         /// </summary>
         /// <param name="count">Reference to the number of remaining tokens in the packet. Will be reduced to number of command arguments.</param>
+        /// <param name="specificErrorMsg">If the command could not be parsed, will be non-empty if a specific error message should be returned.</param>
         /// <param name="success">True if the input RESP string was completely included in the buffer, false if we couldn't read the full command name.</param>
         /// <returns>The parsed command name.</returns>
-        private RespCommand SlowParseCommand(ref int count, out bool success)
+        private RespCommand SlowParseCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool success)
         {
             // Try to extract the current string from the front of the read head
             ReadOnlySpan<byte> bufSpan = new(recvBufferPtr + readHead, bytesRead);
@@ -1256,27 +1258,33 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.CONFIG))
             {
-                if (count >= 1)
+                if (count == 0)
+                {
+                    specificErrorMsg = CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS_CONFIG;
+                }
+                else if (count >= 1)
                 {
                     bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                    ReadOnlySpan<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
+                    Span<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
                     if (!gotSubCommand)
                     {
                         success = false;
                         return RespCommand.NONE;
                     }
 
+                    ConvertUtils.MakeUpperCase(subCommand);
+
                     count--;
 
-                    if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
+                    if (subCommand.SequenceEqual(CmdStrings.GET))
                     {
                         return RespCommand.CONFIG_GET;
                     }
-                    else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.REWRITE))
+                    else if (subCommand.SequenceEqual(CmdStrings.REWRITE))
                     {
                         return RespCommand.CONFIG_REWRITE;
                     }
-                    else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SET))
+                    else if (subCommand.SequenceEqual(CmdStrings.SET))
                     {
                         return RespCommand.CONFIG_SET;
                     }
@@ -1302,24 +1310,26 @@ namespace Garnet.server
                 }
 
                 bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                ReadOnlySpan<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
+                Span<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
 
+                ConvertUtils.MakeUpperCase(subCommand);
+
                 count--;
 
-                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
+                if (subCommand.SequenceEqual(CmdStrings.COUNT))
                 {
                     return RespCommand.COMMAND_COUNT;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.DOCS))
+                else if (subCommand.SequenceEqual(CmdStrings.DOCS))
                 {
                     return RespCommand.COMMAND_DOCS;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INFO))
+                else if (subCommand.SequenceEqual(CmdStrings.INFO))
                 {
                     return RespCommand.COMMAND_INFO;
                 }
@@ -1335,156 +1345,158 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.CLUSTER))
             {
                 bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                ReadOnlySpan<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
+                Span<byte> subCommand = GetCommand(bufSpan, out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
 
+                ConvertUtils.MakeUpperCase(subCommand);
+
                 count--;
 
-                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BUMPEPOCH))
+                if (subCommand.SequenceEqual(CmdStrings.BUMPEPOCH))
                 {
                     return RespCommand.CLUSTER_BUMPEPOCH;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FORGET))
+                else if (subCommand.SequenceEqual(CmdStrings.FORGET))
                 {
                     return RespCommand.CLUSTER_FORGET;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GOSSIP))
+                else if (subCommand.SequenceEqual(CmdStrings.gossip))
                 {
                     return RespCommand.CLUSTER_GOSSIP;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INFO))
+                else if (subCommand.SequenceEqual(CmdStrings.INFO))
                 {
                     return RespCommand.CLUSTER_INFO;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MEET))
+                else if (subCommand.SequenceEqual(CmdStrings.MEET))
                 {
                     return RespCommand.CLUSTER_MEET;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MYID))
+                else if (subCommand.SequenceEqual(CmdStrings.MYID))
                 {
                     return RespCommand.CLUSTER_MYID;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MYPARENTID))
+                else if (subCommand.SequenceEqual(CmdStrings.myparentid))
                 {
                     return RespCommand.CLUSTER_MYPARENTID;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NODES))
+                else if (subCommand.SequenceEqual(CmdStrings.NODES))
                 {
                     return RespCommand.CLUSTER_NODES;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SHARDS))
+                else if (subCommand.SequenceEqual(CmdStrings.SHARDS))
                 {
                     return RespCommand.CLUSTER_SHARDS;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.RESET))
+                else if (subCommand.SequenceEqual(CmdStrings.RESET))
                 {
                     return RespCommand.CLUSTER_RESET;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FAILOVER))
+                else if (subCommand.SequenceEqual(CmdStrings.FAILOVER))
                 {
                     return RespCommand.CLUSTER_FAILOVER;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ADDSLOTS))
+                else if (subCommand.SequenceEqual(CmdStrings.ADDSLOTS))
                 {
                     return RespCommand.CLUSTER_ADDSLOTS;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ADDSLOTSRANGE))
+                else if (subCommand.SequenceEqual(CmdStrings.ADDSLOTSRANGE))
                 {
                     return RespCommand.CLUSTER_ADDSLOTSRANGE;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNTKEYSINSLOT))
+                else if (subCommand.SequenceEqual(CmdStrings.COUNTKEYSINSLOT))
                 {
                     return RespCommand.CLUSTER_COUNTKEYSINSLOT;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.DELSLOTS))
+                else if (subCommand.SequenceEqual(CmdStrings.DELSLOTS))
                 {
                     return RespCommand.CLUSTER_DELSLOTS;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.DELSLOTSRANGE))
+                else if (subCommand.SequenceEqual(CmdStrings.DELSLOTSRANGE))
                 {
                     return RespCommand.CLUSTER_DELSLOTSRANGE;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETKEYSINSLOT))
+                else if (subCommand.SequenceEqual(CmdStrings.GETKEYSINSLOT))
                 {
                     return RespCommand.CLUSTER_GETKEYSINSLOT;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
+                else if (subCommand.SequenceEqual(CmdStrings.HELP))
                 {
                     return RespCommand.CLUSTER_HELP;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.KEYSLOT))
+                else if (subCommand.SequenceEqual(CmdStrings.KEYSLOT))
                 {
                     return RespCommand.CLUSTER_KEYSLOT;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETSLOT))
+                else if (subCommand.SequenceEqual(CmdStrings.SETSLOT))
                 {
                     return RespCommand.CLUSTER_SETSLOT;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SLOTS))
+                else if (subCommand.SequenceEqual(CmdStrings.SLOTS))
                 {
                     return RespCommand.CLUSTER_SLOTS;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.REPLICAS))
+                else if (subCommand.SequenceEqual(CmdStrings.REPLICAS))
                 {
                     return RespCommand.CLUSTER_REPLICAS;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.REPLICATE))
+                else if (subCommand.SequenceEqual(CmdStrings.REPLICATE))
                 {
                     return RespCommand.CLUSTER_REPLICATE;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.DELKEYSINSLOT))
+                else if (subCommand.SequenceEqual(CmdStrings.delkeysinslot))
                 {
                     return RespCommand.CLUSTER_DELKEYSINSLOT;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.DELKEYSINSLOTRANGE))
+                else if (subCommand.SequenceEqual(CmdStrings.delkeysinslotrange))
                 {
                     return RespCommand.CLUSTER_DELKEYSINSLOTRANGE;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETSLOTSRANGE))
+                else if (subCommand.SequenceEqual(CmdStrings.setslotsrange))
                 {
                     return RespCommand.CLUSTER_SETSLOTSRANGE;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SLOTSTATE))
+                else if (subCommand.SequenceEqual(CmdStrings.slotstate))
                 {
                     return RespCommand.CLUSTER_SLOTSTATE;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MIGRATE))
+                else if (subCommand.SequenceEqual(CmdStrings.MIGRATE))
                 {
                     return RespCommand.CLUSTER_MIGRATE;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MTASKS))
+                else if (subCommand.SequenceEqual(CmdStrings.mtasks))
                 {
                     return RespCommand.CLUSTER_MTASKS;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AOFSYNC))
+                else if (subCommand.SequenceEqual(CmdStrings.aofsync))
                 {
                     return RespCommand.CLUSTER_AOFSYNC;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.APPENDLOG))
+                else if (subCommand.SequenceEqual(CmdStrings.appendlog))
                 {
                     return RespCommand.CLUSTER_APPENDLOG;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BANLIST))
+                else if (subCommand.SequenceEqual(CmdStrings.banlist))
                 {
                     return RespCommand.CLUSTER_BANLIST;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BEGIN_REPLICA_RECOVER))
+                else if (subCommand.SequenceEqual(CmdStrings.begin_replica_recover))
                 {
                     return RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ENDPOINT))
+                else if (subCommand.SequenceEqual(CmdStrings.endpoint))
                 {
                     return RespCommand.CLUSTER_ENDPOINT;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FAILREPLICATIONOFFSET))
+                else if (subCommand.SequenceEqual(CmdStrings.failreplicationoffset))
                 {
                     return RespCommand.CLUSTER_FAILREPLICATIONOFFSET;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FAILSTOPWRITES))
+                else if (subCommand.SequenceEqual(CmdStrings.failstopwrites))
                 {
                     return RespCommand.CLUSTER_FAILSTOPWRITES;
                 }
@@ -1492,80 +1504,17 @@ namespace Garnet.server
                 {
                     return RespCommand.CLUSTER_SETCONFIGEPOCH;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.INITIATE_REPLICA_SYNC))
+                else if (subCommand.SequenceEqual(CmdStrings.initiate_replica_sync))
                 {
                     return RespCommand.CLUSTER_INITIATE_REPLICA_SYNC;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.SEND_CKPT_FILE_SEGMENT))
+                else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_file_segment))
                 {
                     return RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.SEND_CKPT_METADATA))
+                else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_metadata))
                 {
                     return RespCommand.CLUSTER_SEND_CKPT_METADATA;
-                }
-                else
-                {
-                    if (subCommand.Length == CmdStrings.SETCONFIGEPOCH.Length)
-                    {
-                        // SET-CONFIG-EPOCH isn't friendly to EqualsUpperCaseSpanIgnoringCase, so we handle it specially here.
-                        // 
-                        // In an ideal world, this wouldn't be necessary.
-
-                        Span<byte> upperSubCommand = stackalloc byte[subCommand.Length];
-                        subCommand.CopyTo(upperSubCommand);
-                        ConvertUtils.MakeUpperCase(upperSubCommand);
-
-                        if (upperSubCommand.SequenceEqual(CmdStrings.SETCONFIGEPOCH))
-                        {
-                            return RespCommand.CLUSTER_SETCONFIGEPOCH;
-                        }
-                    }
-                    else if (subCommand.Length == CmdStrings.INITIATE_REPLICA_SYNC.Length)
-                    {
-                        // INITIATE_REPLICA_SYNC isn't friendly to EqualsUpperCaseSpanIgnoringCase, so we handle it specially here.
-                        // 
-                        // In an ideal world, this wouldn't be necessary.
-
-                        Span<byte> upperSubCommand = stackalloc byte[subCommand.Length];
-                        subCommand.CopyTo(upperSubCommand);
-                        ConvertUtils.MakeUpperCase(upperSubCommand);
-
-                        if (upperSubCommand.SequenceEqual(CmdStrings.INITIATE_REPLICA_SYNC))
-                        {
-                            return RespCommand.CLUSTER_INITIATE_REPLICA_SYNC;
-                        }
-                    }
-                    else if (subCommand.Length == CmdStrings.SEND_CKPT_FILE_SEGMENT.Length)
-                    {
-                        // SEND_CKPT_FILE_SEGMENT isn't friendly to EqualsUpperCaseSpanIgnoringCase, so we handle it specially here.
-                        // 
-                        // In an ideal world, this wouldn't be necessary.
-
-                        Span<byte> upperSubCommand = stackalloc byte[subCommand.Length];
-                        subCommand.CopyTo(upperSubCommand);
-                        ConvertUtils.MakeUpperCase(upperSubCommand);
-
-                        if (upperSubCommand.SequenceEqual(CmdStrings.SEND_CKPT_FILE_SEGMENT))
-                        {
-                            return RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT;
-                        }
-                    }
-                    else if (subCommand.Length == CmdStrings.SEND_CKPT_METADATA.Length)
-                    {
-                        // SEND_CKPT_METADATA isn't friendly to EqualsUpperCaseSpanIgnoringCase, so we handle it specially here.
-                        // 
-                        // In an ideal world, this wouldn't be necessary.
-
-                        Span<byte> upperSubCommand = stackalloc byte[subCommand.Length];
-                        subCommand.CopyTo(upperSubCommand);
-                        ConvertUtils.MakeUpperCase(upperSubCommand);
-
-                        if (upperSubCommand.SequenceEqual(CmdStrings.SEND_CKPT_METADATA))
-                        {
-                            return RespCommand.CLUSTER_SEND_CKPT_METADATA;
-                        }
-                    }
                 }
             }
             else if (command.SequenceEqual(CmdStrings.LATENCY))
@@ -1573,24 +1522,26 @@ namespace Garnet.server
                 if (count >= 1)
                 {
                     bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                    ReadOnlySpan<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
+                    Span<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
                     if (!gotSubCommand)
                     {
                         success = false;
                         return RespCommand.NONE;
                     }
 
+                    ConvertUtils.MakeUpperCase(subCommand);
+
                     count--;
 
-                    if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
+                    if (subCommand.SequenceEqual(CmdStrings.HELP))
                     {
                         return RespCommand.LATENCY_HELP;
                     }
-                    else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HISTOGRAM))
+                    else if (subCommand.SequenceEqual(CmdStrings.HISTOGRAM))
                     {
                         return RespCommand.LATENCY_HISTOGRAM;
                     }
-                    else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.RESET))
+                    else if (subCommand.SequenceEqual(CmdStrings.RESET))
                     {
                         return RespCommand.LATENCY_RESET;
                     }
@@ -1663,44 +1614,46 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.ACL))
             {
                 bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                ReadOnlySpan<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
+                Span<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
                     return RespCommand.NONE;
                 }
 
+                ConvertUtils.MakeUpperCase(subCommand);
+
                 count--;
 
-                if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.CAT))
+                if (subCommand.SequenceEqual(CmdStrings.CAT))
                 {
                     return RespCommand.ACL_CAT;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.DELUSER))
+                else if (subCommand.SequenceEqual(CmdStrings.DELUSER))
                 {
                     return RespCommand.ACL_DELUSER;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LIST))
+                else if (subCommand.SequenceEqual(CmdStrings.LIST))
                 {
                     return RespCommand.ACL_LIST;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LOAD))
+                else if (subCommand.SequenceEqual(CmdStrings.LOAD))
                 {
                     return RespCommand.ACL_LOAD;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SAVE))
+                else if (subCommand.SequenceEqual(CmdStrings.SAVE))
                 {
                     return RespCommand.ACL_SAVE;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETUSER))
+                else if (subCommand.SequenceEqual(CmdStrings.SETUSER))
                 {
                     return RespCommand.ACL_SETUSER;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.USERS))
+                else if (subCommand.SequenceEqual(CmdStrings.USERS))
                 {
                     return RespCommand.ACL_USERS;
                 }
-                else if (subCommand.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WHOAMI))
+                else if (subCommand.SequenceEqual(CmdStrings.WHOAMI))
                 {
                     return RespCommand.ACL_WHOAMI;
                 }
@@ -1774,9 +1727,10 @@ namespace Garnet.server
         /// <param name="ptr">Pointer to the beginning of the input buffer.</param>
         /// <param name="count">Returns the number of unparsed arguments of the command (including any unparsed subcommands).</param>
         /// <param name="success">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
+        /// <param name="specificErrorMsg">If the command could not be parsed, will be non-empty if a specific error message should be returned.</param>
         /// <returns>Command parsed from the input buffer.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand ParseCommand(out int count, byte* ptr, out bool success)
+        private RespCommand ParseCommand(out int count, byte* ptr, out bool success, ref ReadOnlySpan<byte> specificErrorMsg)
         {
             RespCommand cmd = RespCommand.INVALID;
 
@@ -1818,11 +1772,11 @@ namespace Garnet.server
                     readHead += (int)(tmp - (recvBufferPtr + readHead));
 
                     // Try parsing the most important variable-length commands
-                    cmd = FastParseArrayCommand(ref count);
+                    cmd = FastParseArrayCommand(ref count, ref specificErrorMsg);
 
                     if (cmd == RespCommand.NONE)
                     {
-                        cmd = SlowParseCommand(ref count, out success);
+                        cmd = SlowParseCommand(ref count, ref specificErrorMsg, out success);
                     }
                 }
             }

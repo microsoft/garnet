@@ -318,7 +318,19 @@ namespace Garnet.cluster
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_PARSING, ref dcurr, dend))
+                // Have to lookup the RESP name now that we're in the failure case
+                string subCommand;
+                if (RespCommandsInfo.TryGetRespCommandInfo(command, out var info))
+                {
+                    subCommand = info.Name.ToLowerInvariant();
+                }
+                else
+                {
+                    subCommand = "unknown";
+                }
+
+                var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, subCommand);
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
 

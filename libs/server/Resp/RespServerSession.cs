@@ -297,7 +297,8 @@ namespace Garnet.server
             while (bytesRead - readHead >= 4)
             {
                 // NOTE: Possible optimization: Don't parse if only parsing AUTH and not authenticated.
-                RespCommand cmd = ParseCommand(out int count, recvBufferPtr + readHead, out bool success);
+                ReadOnlySpan<byte> specificErrorMessage = default;
+                RespCommand cmd = ParseCommand(out int count, recvBufferPtr + readHead, out bool success, ref specificErrorMessage);
 
                 var ptr = recvBufferPtr + readHead;
 
@@ -327,9 +328,17 @@ namespace Garnet.server
                     // Parsing for command name was successful, but the command is unknown
                     if (success)
                     {
-                        // Return "Unknown RESP Command" message
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                            SendAndReset();
+                        if (!specificErrorMessage.IsEmpty)
+                        {
+                            while (!RespWriteUtils.WriteError(specificErrorMessage, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            // Return "Unknown RESP Command" message
+                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                                SendAndReset();
+                        }
                     }
                 }
                 if (!success) break;

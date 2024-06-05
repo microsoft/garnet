@@ -441,7 +441,7 @@ namespace Garnet.server
             // Too few keys
             if (count < 2)
             {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
                     SendAndReset();
 
                 return true;
