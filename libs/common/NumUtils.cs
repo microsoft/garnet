@@ -122,7 +122,7 @@ namespace Garnet.common
                 return false;
 
             // Parse number and check consumed bytes to avoid alphanumeric strings
-            if (!Utf8Parser.TryParse(new Span<byte>(beg, len), out result, out var bytesConsumed) || bytesConsumed != len)
+            if (!TryParse(new ReadOnlySpan<byte>(beg, len), out result))
                 return false;
 
             // Negate if parsed value has a leading negative sign
@@ -172,7 +172,7 @@ namespace Garnet.common
         /// <param name="result">Byte pointer, will updated to point after the written number</param>
         public static unsafe void IntToBytes(int value, int length, ref byte* result)
         {
-            byte sign = (byte)(value < 0 ? 1 : 0);
+            bool isNegative = value < 0;
             if (value == 0)
             {
                 *result++ = (byte)'0';
@@ -180,9 +180,9 @@ namespace Garnet.common
             }
 
             long v = value;
-            if (sign == 0x1)
+            if (isNegative)
             {
-                *result++ = 0x2d;
+                *result++ = (byte)'-';
                 v = -value;
             }
 
@@ -358,29 +358,29 @@ namespace Garnet.common
             return 19;
         }
 
-        /// <summary>
-        /// Try to parse from pointer to integer
-        /// </summary>
-        /// <param name="source"></param>
-        /// <param name="len"></param>
-        /// <param name="result"></param>
-        /// <returns></returns>
-        public static unsafe bool TryBytesToInt(byte* source, int len, out int result)
+        /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out int, out int, char)"/>
+        public static bool TryParse(ReadOnlySpan<byte> source, out int value)
         {
-            bool fNeg = (*source == '-');
-            var beg = fNeg ? source + 1 : source;
-            var start = fNeg ? 1 : 0;
-            result = 0;
-            for (int i = start; i < len; ++i)
-            {
-                if (!(source[i] >= 48 && source[i] <= 57))
-                {
-                    return false;
-                }
-                result = result * 10 + (*beg++ - '0');
-            }
-            result = fNeg ? -(result) : result;
-            return true;
+            return Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
+                bytesConsumed == source.Length;
+        }
+        /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out long, out int, char)"/>
+        public static bool TryParse(ReadOnlySpan<byte> source, out long value)
+        {
+            return Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
+                bytesConsumed == source.Length;
+        }
+        /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out float, out int, char)"/>
+        public static bool TryParse(ReadOnlySpan<byte> source, out float value)
+        {
+            return Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
+                bytesConsumed == source.Length;
+        }
+        /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out double, out int, char)"/>
+        public static bool TryParse(ReadOnlySpan<byte> source, out double value)
+        {
+            return Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
+                bytesConsumed == source.Length;
         }
     }
 }

@@ -1272,7 +1272,7 @@ namespace Garnet.server
                         return RespCommand.NONE;
                     }
 
-                    ConvertUtils.MakeUpperCase(subCommand);
+                    AsciiUtils.ToUpperInPlace(subCommand);
 
                     count--;
 
@@ -1317,7 +1317,7 @@ namespace Garnet.server
                     return RespCommand.NONE;
                 }
 
-                ConvertUtils.MakeUpperCase(subCommand);
+                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -1352,7 +1352,7 @@ namespace Garnet.server
                     return RespCommand.NONE;
                 }
 
-                ConvertUtils.MakeUpperCase(subCommand);
+                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 
@@ -1529,7 +1529,7 @@ namespace Garnet.server
                         return RespCommand.NONE;
                     }
 
-                    ConvertUtils.MakeUpperCase(subCommand);
+                    AsciiUtils.ToUpperInPlace(subCommand);
 
                     count--;
 
@@ -1621,7 +1621,7 @@ namespace Garnet.server
                     return RespCommand.NONE;
                 }
 
-                ConvertUtils.MakeUpperCase(subCommand);
+                AsciiUtils.ToUpperInPlace(subCommand);
 
                 count--;
 

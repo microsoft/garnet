@@ -47,7 +47,7 @@ namespace Garnet.cluster
         /// <param name="startAddress"></param>
         /// <param name="data"></param>
         /// <param name="segmentId"></param>
-        public void ProcessFileSegments(int segmentId, Guid token, CheckpointFileType type, long startAddress, Span<byte> data)
+        public void ProcessFileSegments(int segmentId, Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
         {
             clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
             if (writeIntoCkptDevice == null)
@@ -75,7 +75,7 @@ namespace Garnet.cluster
         /// <param name="address"></param>
         /// <param name="buffer"></param>
         /// <param name="size"></param>
-        private unsafe void WriteInto(IDevice device, ulong address, Span<byte> buffer, int size, int segmentId = -1)
+        private unsafe void WriteInto(IDevice device, ulong address, ReadOnlySpan<byte> buffer, int size, int segmentId = -1)
         {
             if (writeCheckpointBufferPool == null)
                 writeCheckpointBufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);

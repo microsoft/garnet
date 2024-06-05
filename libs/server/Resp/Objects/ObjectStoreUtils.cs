@@ -23,7 +23,7 @@ namespace Garnet.server
             int totalTokens = 0;
             while (totalTokens < count)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var _, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out _, ref ptr, recvBufferPtr + bytesRead))
                     break;
                 totalTokens++;
             }

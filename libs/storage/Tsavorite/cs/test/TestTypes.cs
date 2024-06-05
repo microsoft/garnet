@@ -55,7 +55,7 @@ namespace Tsavorite.test
     {
     }
 
-    public class FunctionsWithContext<TContext> : FunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, TContext>
+    public class FunctionsWithContext<TContext> : SessionFunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, TContext>
     {
         public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, TContext ctx, Status status, RecordMetadata recordMetadata)
         {
@@ -122,7 +122,7 @@ namespace Tsavorite.test
         }
     }
 
-    public class FunctionsCompaction : FunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, int>
+    public class FunctionsCompaction : SessionFunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, int>
     {
         public override void RMWCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, int ctx, Status status, RecordMetadata recordMetadata)
         {
@@ -182,7 +182,7 @@ namespace Tsavorite.test
         }
     }
 
-    public class FunctionsCopyOnWrite : FunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
+    public class FunctionsCopyOnWrite : SessionFunctionsBase<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty>
     {
         private int _concurrentWriterCallCount;
         private int _inPlaceUpdaterCallCount;
@@ -264,7 +264,7 @@ namespace Tsavorite.test
         }
     }
 
-    class RMWSimpleFunctions<Key, Value> : SimpleFunctions<Key, Value>
+    class RMWSimpleFunctions<Key, Value> : SimpleSimpleFunctions<Key, Value>
     {
         public RMWSimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
 

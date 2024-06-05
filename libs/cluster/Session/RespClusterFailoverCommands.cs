@@ -118,13 +118,12 @@ namespace Garnet.cluster
             }
 
             var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var nodeIdBytes, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeId, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (nodeIdBytes.Length > 0)
+            if (!string.IsNullOrEmpty(nodeId))
             {// Make this node a primary after receiving a request from a replica that is trying to takeover
-                var nodeId = Encoding.ASCII.GetString(nodeIdBytes);
                 clusterProvider.clusterManager.TryStopWrites(nodeId);
             }
             else

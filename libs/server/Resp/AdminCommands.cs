@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -762,24 +761,20 @@ namespace Garnet.server
             var status = GarnetStatus.OK;
             long memoryUsage = default;
 
-            // read key
-            byte* keyPtr = null;
-            int kSize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref kSize, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var keyBytes, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             if (count == 3)
             {
                 // Calculations for nested types do not apply to garnet, but we are parsing the parameter for API compatibility
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var samplesBA, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out _ /* samplesBA */, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countSamplesBA, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out _ /* countSamplesBA */, ref ptr, recvBufferPtr + bytesRead))
                     return false;
             }
 
-            status = storageApi.MemoryUsageForKey(new(keyPtr, kSize), out memoryUsage);
+            status = storageApi.MemoryUsageForKey(ArgSlice.FromPinnedSpan(keyBytes), out memoryUsage);
 
             if (status == GarnetStatus.OK)
             {

@@ -513,8 +513,7 @@ namespace Garnet.server
             {
                 if (error)
                 {
-                    Span<byte> tmp = default;
-                    if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref tmp, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out _, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                     count--;
                     continue;

@@ -81,7 +81,7 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    var slot = HashSlotUtils.HashSlot(key.ToPointer(), key.LengthWithoutMetadata);
+                    var slot = HashSlotUtils.HashSlot(ref key);
                     if (!currentConfig.IsImportingSlot(slot))//Slot is not in importing state
                     {
                         migrateState = 1;

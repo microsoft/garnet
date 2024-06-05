@@ -72,7 +72,7 @@ namespace Garnet.server
     /// </summary>
     public partial class SortedSetObject : GarnetObjectBase
     {
-        private readonly SortedSet<(double, byte[])> sortedSet;
+        private readonly SortedSet<(double Score, byte[] Element)> sortedSet;
         private readonly Dictionary<byte[], double> sortedSetDict;
 
         /// <summary>
@@ -383,7 +383,7 @@ namespace Garnet.server
 
         #endregion
 
-        private void UpdateSize(byte[] item, bool add = true)
+        private void UpdateSize(ReadOnlySpan<byte> item, bool add = true)
         {
             // item's length + overhead to store item + value of type double added to sorted set and dictionary + overhead for those datastructures
             var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + (2 * sizeof(double))

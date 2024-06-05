@@ -481,6 +481,36 @@ namespace Garnet.common
         public static bool ReadByteArrayWithLengthHeader(out byte[] result, ref byte* ptr, byte* end)
         {
             result = null;
+            if (!TrySliceWithLengthHeader(out var resultSpan, ref ptr, end))
+                return false;
+
+            result = resultSpan.ToArray();
+            return true;
+        }
+
+        /// <summary>
+        /// Try slice a byte array with length header.
+        /// </summary>
+        /// <remarks>
+        /// SAFETY: Because this hands out a span over the underlying buffer to the caller, 
+        /// it must be aware that any changes in the memory where <paramref name="ptr"/> pointed to 
+        /// will be reflected in the <paramref name="result"/> span. i.e.
+        /// <code>
+        /// byte[] buffer = "$2\r\nAB\r\n"u8.ToArray();
+        /// fixed (byte* ptr = buffer)
+        /// {
+        ///     TrySliceWithLengthHeader(out var result, ref ptr, ptr + buffer.Length);
+        ///     Debug.Assert(result.SequenceEquals("AB"u8)); // True
+        ///     
+        ///     *(ptr - 4) = (byte)'C';
+        ///     *(ptr - 3) = (byte)'D';
+        ///     Debug.Assert(result.SequenceEquals("CD"u8)); // True
+        /// }
+        /// </code>
+        /// </remarks>
+        public static bool TrySliceWithLengthHeader(out ReadOnlySpan<byte> result, scoped ref byte* ptr, byte* end)
+        {
+            result = default;
 
             // Parse RESP string header
             if (!ReadLengthHeader(out var length, ref ptr, end))
@@ -500,8 +530,7 @@ namespace Garnet.common
                 RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
             }
 
-            result = new Span<byte>(keyPtr, length).ToArray();
-
+            result = new ReadOnlySpan<byte>(keyPtr, length);
             return true;
         }
 
@@ -587,7 +616,7 @@ namespace Garnet.common
                 RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
             }
 
-            result = Encoding.UTF8.GetString(new Span<byte>(keyPtr, length));
+            result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(keyPtr, length));
 
             return true;
         }
@@ -831,7 +860,7 @@ namespace Garnet.common
         /// </summary>
         public static bool ReadDoubleWithLengthHeader(out double result, out bool parsed, ref byte* ptr, byte* end)
         {
-            if (!ReadByteArrayWithLengthHeader(out var resultBytes, ref ptr, end))
+            if (!TrySliceWithLengthHeader(out var resultBytes, ref ptr, end))
             {
                 result = 0;
                 parsed = false;
@@ -840,42 +869,6 @@ namespace Garnet.common
 
             parsed = Utf8Parser.TryParse(resultBytes, out result, out var bytesConsumed, default) &&
                 bytesConsumed == resultBytes.Length;
-            return true;
-        }
-
-        /// <summary>
-        /// Read Span of byte with length header
-        /// </summary>
-        public static bool ReadSpanByteWithLengthHeader(ref Span<byte> result, ref byte* ptr, byte* end)
-        {
-            // Parse RESP string header
-            if (!ReadLengthHeader(out var len, ref ptr, end))
-            {
-                return false;
-            }
-
-            if (len < 0)
-            {
-                // NULL value ('$-1\r\n')
-                result = null;
-                return true;
-            }
-
-            var keyPtr = ptr;
-
-            // Parse content: ensure that input contains key + '\r\n'
-            ptr += len + 2;
-            if (ptr > end)
-            {
-                return false;
-            }
-
-            if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
-            }
-
-            result = new Span<byte>(keyPtr, len);
             return true;
         }
 
