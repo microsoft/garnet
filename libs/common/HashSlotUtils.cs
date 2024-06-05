@@ -4,6 +4,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Tsavorite.core;
 
 namespace Garnet.common
 {
@@ -77,6 +78,14 @@ namespace Garnet.common
             }
             return result;
         }
+
+        /// <summary>
+        /// Compute hash slot from the given SpanByte
+        /// </summary>
+        /// <param name="key"></param>
+        /// <returns></returns>
+        public static unsafe ushort HashSlot(ref SpanByte key)
+            => HashSlot(key.ToPointer(), key.LengthWithoutMetadata);
 
         /// <summary>
         /// Compute hash slot of given data
