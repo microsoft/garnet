@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <typeparam name="Input"></typeparam>
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public interface IFunctions<Key, Value, Input, Output, Context>
+    public interface ISessionFunctions<Key, Value, Input, Output, Context>
     {
         #region Reads
         /// <summary>
@@ -299,6 +299,15 @@ namespace Tsavorite.core
         /// <param name="newKeySize">If > 0, this is a record from the freelist and we are disposing the key as well as value (it is -1 when revivifying a record in the hash chain or when doing a RETRY; for these the key does not change)</param>
         void DisposeForRevivification(ref Key key, ref Value value, int newKeySize);
         #endregion Dispose
+
+        #region Utilities
+        /// <summary>
+        /// Called by Tsavorite when the operation goes pending, so the app can signal to itself that any pinned
+        /// buffer in the Output is no longer valid and a heap-based buffer must be created.
+        /// </summary>
+        /// <param name="output"></param>
+        void ConvertOutputToHeap(ref Input input, ref Output output);
+        #endregion Utilities
     }
 
     /// <summary>
@@ -306,7 +315,7 @@ namespace Tsavorite.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    public interface IFunctions<Key, Value> : IFunctions<Key, Value, Value, Value, Empty>
+    public interface ISessionFunctions<Key, Value> : ISessionFunctions<Key, Value, Value, Value, Empty>
     {
     }
 
@@ -316,7 +325,7 @@ namespace Tsavorite.core
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public interface IFunctions<Key, Value, Context> : IFunctions<Key, Value, Value, Value, Context>
+    public interface ISessionFunctions<Key, Value, Context> : ISessionFunctions<Key, Value, Value, Value, Context>
     {
     }
 }

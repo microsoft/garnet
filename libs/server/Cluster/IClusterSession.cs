@@ -64,7 +64,7 @@ namespace Garnet.server
         /// <summary>
         /// Single key slot verify (write result to network)
         /// </summary>
-        unsafe bool NetworkSingleKeySlotVerify(byte[] key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
+        unsafe bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
         /// Single key slot verify (write result to network)

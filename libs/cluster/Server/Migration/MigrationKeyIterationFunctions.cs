@@ -87,7 +87,7 @@ namespace Garnet.cluster
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                     var s = HashSlotUtils.HashSlot(key.ToPointer(), key.Length);
                     if (slots.Contains(s))
-                        session.Delete(key);
+                        session.BasicContext.Delete(key);
                     return true;
                 }
 

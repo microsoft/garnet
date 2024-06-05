@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -11,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectStoreFunctions : IFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectStoreFunctions : ISessionFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
     {
         /// <summary>
         /// Logging upsert from
@@ -76,8 +77,7 @@ namespace Garnet.server
         {
             byte* curr = dst.SpanByte.ToPointer();
             byte* end = curr + dst.SpanByte.Length;
-            int totalLen = 0;
-            if (RespWriteUtils.WriteInteger(number, ref curr, end, out var integerLen, out totalLen))
+            if (RespWriteUtils.WriteInteger(number, ref curr, end, out var integerLen, out int totalLen))
             {
                 dst.SpanByte.Length = (int)(curr - dst.SpanByte.ToPointer());
                 return;
@@ -114,6 +114,7 @@ namespace Garnet.server
 
         static bool EvaluateObjectExpireInPlace(ExpireOption optionType, bool expiryExists, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput output)
         {
+            Debug.Assert(output.spanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
             ObjectOutputHeader* o = (ObjectOutputHeader*)output.spanByteAndMemory.SpanByte.ToPointer();
             if (expiryExists)
             {

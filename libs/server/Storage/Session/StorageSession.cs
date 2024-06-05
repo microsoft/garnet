@@ -17,10 +17,8 @@ namespace Garnet.server
         readonly long HeadAddress;
 
         /// <summary>
-        /// Session for main store
+        /// Session Contexts for main store
         /// </summary>
-        public readonly ClientSession<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> session;
-
         public BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> basicContext;
         public LockableContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions> lockableContext;
 
@@ -29,10 +27,8 @@ namespace Garnet.server
         readonly int sectorAlignedMemoryPoolAlignment = 32;
 
         /// <summary>
-        /// Session for object store
+        /// Session Contexts for object store
         /// </summary>
-        public readonly ClientSession<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreSession;
-
         public BasicContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreBasicContext;
         public LockableContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions> objectStoreLockableContext;
 
@@ -42,8 +38,8 @@ namespace Garnet.server
         public TransactionManager txnManager;
         readonly ILogger logger;
 
-        public int SessionID => session.ID;
-        public int ObjectStoreSessionID => objectStoreSession.ID;
+        public int SessionID => basicContext.Session.ID;
+        public int ObjectStoreSessionID => objectStoreBasicContext.Session.ID;
 
         public readonly int ObjectScanCountLimit;
 
@@ -60,10 +56,10 @@ namespace Garnet.server
             functionsState = storeWrapper.CreateFunctionsState();
 
             var functions = new MainStoreFunctions(functionsState);
-            session = storeWrapper.store.NewSession<SpanByte, SpanByteAndMemory, long, MainStoreFunctions>(functions);
+            var session = storeWrapper.store.NewSession<SpanByte, SpanByteAndMemory, long, MainStoreFunctions>(functions);
 
             var objstorefunctions = new ObjectStoreFunctions(functionsState);
-            objectStoreSession = storeWrapper.objectStore?.NewSession<SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>(objstorefunctions);
+            var objectStoreSession = storeWrapper.objectStore?.NewSession<SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>(objstorefunctions);
 
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
@@ -80,8 +76,8 @@ namespace Garnet.server
         public void Dispose()
         {
             sectorAlignedMemoryBitmap?.Dispose();
-            session.Dispose();
-            objectStoreSession?.Dispose();
+            basicContext.Session.Dispose();
+            objectStoreBasicContext.Session?.Dispose();
             sectorAlignedMemoryHll?.Dispose();
         }
     }

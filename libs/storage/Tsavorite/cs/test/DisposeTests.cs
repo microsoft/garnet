@@ -118,7 +118,7 @@ namespace Tsavorite.test.Dispose
 
             void WaitForEvent()
             {
-                Assert.IsTrue(tester.store.epoch.ThisInstanceProtected(), "This should only be called from IFunctions methods, which are under epoch protection");
+                Assert.IsTrue(tester.store.epoch.ThisInstanceProtected(), "This should only be called from ISessionFunctions methods, which are under epoch protection");
                 if (isSUT)
                 {
                     MyKey key = new() { key = TestKey };
