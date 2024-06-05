@@ -192,7 +192,7 @@ namespace Garnet.cluster
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterMyid(int count, out bool invalidParameters)
+        private bool NetworkClusterMyId(int count, out bool invalidParameters)
         {
             invalidParameters = false;
 
