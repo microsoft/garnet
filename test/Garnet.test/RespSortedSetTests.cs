@@ -692,6 +692,23 @@ namespace Garnet.test
             Assert.AreEqual(0, range.Length);
         }
 
+        [Test]
+        public void CheckEmptySortedSetKeyRemoved()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var key = new RedisKey("user1:sortedset");
+            var db = redis.GetDatabase(0);
+
+            var added = db.SortedSetAdd(key, entries);
+            Assert.AreEqual(entries.Length, added);
+
+            var actualMembers = db.SortedSetPop(key, entries.Length);
+            Assert.AreEqual(entries.Length, actualMembers.Length);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+        }
+
         #endregion
 
         #region LightClientTests

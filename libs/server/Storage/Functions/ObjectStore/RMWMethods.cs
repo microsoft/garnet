@@ -145,6 +145,11 @@ namespace Garnet.server
                     break;
                 default:
                     value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
+                    if (removeKey)
+                    {
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                        return false;
+                    }
                     break;
             }
 

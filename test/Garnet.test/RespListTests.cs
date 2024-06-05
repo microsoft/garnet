@@ -1227,5 +1227,22 @@ namespace Garnet.test
             var actualValue = Encoding.ASCII.GetString(len).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
+
+        [Test]
+        public void CheckEmptyListKeyRemoved()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var key = new RedisKey("user1:list");
+            var db = redis.GetDatabase(0);
+            var values = new[] { new RedisValue("Hello"), new RedisValue("World") };
+            var result = db.ListRightPush(key, values);
+            Assert.AreEqual(2, result);
+
+            var actualMembers = db.ListRightPop(key, 2);
+            Assert.AreEqual(values.Length, actualMembers.Length);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+        }
     }
 }
