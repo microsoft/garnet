@@ -118,7 +118,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostCopyUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject oldValue, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool PostCopyUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject oldValue, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
             // the record was CASed into the hash chain before it gets modified
@@ -126,7 +126,6 @@ namespace Garnet.server
 
             var header = (RespInputHeader*)input.ToPointer();
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
-
 
             switch (header->type)
             {
@@ -153,6 +152,7 @@ namespace Garnet.server
 
             if (functionsState.appendOnlyFile != null)
                 WriteLogRMW(ref key, ref input, ref oldValue, rmwInfo.Version, rmwInfo.SessionID);
+            return true;
         }
     }
 }
