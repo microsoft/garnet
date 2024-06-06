@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
 using Embedded.perftest;
 using Garnet.server;
+using Garnet.server.Auth.Settings;
 
 namespace BDN.benchmark.Resp
 {
@@ -28,30 +29,54 @@ namespace BDN.benchmark.Resp
         byte[] getRequestBuffer;
         byte* getRequestBufferPointer;
 
+        [Params(false, true)]
+        public bool UseACLs { get; set; }
+
         [GlobalSetup]
         public void GlobalSetup()
         {
-            var opt = new GarnetServerOptions
+            IAuthenticationSettings authSettings = null;
+            string aclFile = null;
+
+            try
             {
-                QuietMode = true
-            };
-            server = new EmbeddedRespServer(opt);
-            session = server.GetRespSession();
+                if (UseACLs)
+                {
+                    aclFile = Path.GetTempFileName();
+                    File.WriteAllText(aclFile, @"user default on nopass -@all +ping +set +get");
+                    authSettings = new AclAuthenticationPasswordSettings(aclFile);
+                }
 
-            pingRequestBuffer = GC.AllocateArray<byte>(INLINE_PING.Length * batchSize, pinned: true);
-            pingRequestBufferPointer = (byte*)Unsafe.AsPointer(ref pingRequestBuffer[0]);
-            for (int i = 0; i < batchSize; i++)
-                INLINE_PING.CopyTo(new Span<byte>(pingRequestBuffer).Slice(i * INLINE_PING.Length));
+                var opt = new GarnetServerOptions
+                {
+                    QuietMode = true,
+                    AuthSettings = authSettings,
+                };
+                server = new EmbeddedRespServer(opt);
+                session = server.GetRespSession();
 
-            setRequestBuffer = GC.AllocateArray<byte>(SET.Length * batchSize, pinned: true);
-            setRequestBufferPointer = (byte*)Unsafe.AsPointer(ref setRequestBuffer[0]);
-            for (int i = 0; i < batchSize; i++)
-                SET.CopyTo(new Span<byte>(setRequestBuffer).Slice(i * SET.Length));
+                pingRequestBuffer = GC.AllocateArray<byte>(INLINE_PING.Length * batchSize, pinned: true);
+                pingRequestBufferPointer = (byte*)Unsafe.AsPointer(ref pingRequestBuffer[0]);
+                for (int i = 0; i < batchSize; i++)
+                    INLINE_PING.CopyTo(new Span<byte>(pingRequestBuffer).Slice(i * INLINE_PING.Length));
 
-            getRequestBuffer = GC.AllocateArray<byte>(GET.Length * batchSize, pinned: true);
-            getRequestBufferPointer = (byte*)Unsafe.AsPointer(ref getRequestBuffer[0]);
-            for (int i = 0; i < batchSize; i++)
-                GET.CopyTo(new Span<byte>(getRequestBuffer).Slice(i * GET.Length));
+                setRequestBuffer = GC.AllocateArray<byte>(SET.Length * batchSize, pinned: true);
+                setRequestBufferPointer = (byte*)Unsafe.AsPointer(ref setRequestBuffer[0]);
+                for (int i = 0; i < batchSize; i++)
+                    SET.CopyTo(new Span<byte>(setRequestBuffer).Slice(i * SET.Length));
+
+                getRequestBuffer = GC.AllocateArray<byte>(GET.Length * batchSize, pinned: true);
+                getRequestBufferPointer = (byte*)Unsafe.AsPointer(ref getRequestBuffer[0]);
+                for (int i = 0; i < batchSize; i++)
+                    GET.CopyTo(new Span<byte>(getRequestBuffer).Slice(i * GET.Length));
+            }
+            finally
+            {
+                if (aclFile != null)
+                {
+                    File.Delete(aclFile);
+                }
+            }
         }
 
         [GlobalCleanup]

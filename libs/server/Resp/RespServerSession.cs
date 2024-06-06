@@ -68,6 +68,7 @@ namespace Garnet.server
         internal LockableGarnetApi lockableGarnetApi;
 
         readonly IGarnetAuthenticator _authenticator;
+        readonly bool _authenticatorCanAuthenticate;
 
         /// <summary>
         /// The user currently authenticated in this session
@@ -141,6 +142,7 @@ namespace Garnet.server
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
             this._authenticator = storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
+            this._authenticatorCanAuthenticate = this._authenticator.CanAuthenticate;
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUser().Name));
@@ -196,7 +198,7 @@ namespace Garnet.server
         bool AuthenticateUser(ReadOnlySpan<byte> username, ReadOnlySpan<byte> password = default(ReadOnlySpan<byte>))
         {
             // Authenticate user or change to default user if no authentication is supported
-            bool success = _authenticator.CanAuthenticate ? _authenticator.Authenticate(password, username) : true;
+            bool success = this._authenticatorCanAuthenticate ? _authenticator.Authenticate(password, username) : true;
 
             if (success)
             {
@@ -215,7 +217,7 @@ namespace Garnet.server
                 clusterSession?.SetUser(this._user);
             }
 
-            return _authenticator.CanAuthenticate ? success : false;
+            return this._authenticatorCanAuthenticate ? success : false;
         }
 
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
@@ -401,7 +403,7 @@ namespace Garnet.server
                 return success;
             }
 
-            if (!_authenticator.IsAuthenticated) return ProcessArrayCommands(cmd, count, ref storageApi);
+            if (_authenticatorCanAuthenticate && !_authenticator.IsAuthenticated) return ProcessArrayCommands(cmd, count, ref storageApi);
 
             success = cmd switch
             {
@@ -473,7 +475,7 @@ namespace Garnet.server
                 }
             }
 
-            if (!_authenticator.IsAuthenticated) return ProcessOtherCommands(cmd, count, ref storageApi);
+            if (_authenticatorCanAuthenticate && !_authenticator.IsAuthenticated) return ProcessOtherCommands(cmd, count, ref storageApi);
 
             var success = cmd switch
             {
@@ -597,7 +599,7 @@ namespace Garnet.server
         {
             ReadOnlySpan<byte> bufSpan = new(recvBufferPtr, bytesRead);
 
-            if (!_authenticator.IsAuthenticated) return ProcessAdminCommands(command, bufSpan, count, ref storageApi);
+            if (_authenticatorCanAuthenticate && !_authenticator.IsAuthenticated) return ProcessAdminCommands(command, bufSpan, count, ref storageApi);
 
             if (command == RespCommand.CLIENT)
             {
