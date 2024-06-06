@@ -848,6 +848,7 @@ namespace Garnet.server
                 ReadOnlySpan<byte> errorMessage = default;
                 switch (status)
                 {
+                    case GarnetStatus.NOTFOUND:
                     case GarnetStatus.OK:
                         //verifying length of outputFooter
                         if (outputFooter.spanByteAndMemory.Length == 0)
@@ -868,10 +869,6 @@ namespace Garnet.server
                                 errorMessage = "ERR increment value is not valid."u8;
                             ptr += objOutputHeader.bytesDone;
                         }
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
                         break;
                 }
 
@@ -1226,14 +1223,14 @@ namespace Garnet.server
 
                     if (result != null)
                     {
-                        foreach (var item in result)
+                        foreach (var (element, score) in result)
                         {
-                            while (!RespWriteUtils.WriteBulkString(item.Key, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
                                 SendAndReset();
 
                             if (withscoresInclude)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Value.ToString(CultureInfo.InvariantCulture), ref dcurr, dend))
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
                                     SendAndReset();
                             }
                         }

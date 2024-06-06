@@ -123,7 +123,12 @@ namespace Tsavorite.core
         // unused 0x70,
 
         /// <summary>
-        /// Indicates that an existing record key was auto-expired. This is a flag that is combined with lower Advanced values.
+        /// Individual record-status values that are not masked together.
+        /// </summary>
+        RecordStatusMask = 0x70,
+
+        /// <summary>
+        /// Indicates that an existing record key was auto-expired. This is a flag that is combined with RecordStatusMask values.
         /// </summary>
         /// <remarks>
         /// See basic codes for details of usage.

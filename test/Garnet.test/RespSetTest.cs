@@ -53,6 +53,23 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CheckEmptySetKeyRemoved()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var key = new RedisKey("user1:set");
+            var db = redis.GetDatabase(0);
+            var members = new[] { new RedisValue("Hello"), new RedisValue("World") };
+            var result = db.SetAdd(key, members);
+            Assert.AreEqual(2, result);
+
+            var actualMembers = db.SetPop(key, 2);
+            Assert.AreEqual(members.Length, actualMembers.Length);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+        }
+
+        [Test]
         public void CanAddAndListMembers()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

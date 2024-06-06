@@ -19,27 +19,27 @@ namespace Tsavorite.core
         /// <summary>
         /// Whether a new record for a previously non-existent key was appended to the log.
         /// </summary>
-        public bool Created => (statusCode & StatusCode.AdvancedMask) == StatusCode.CreatedRecord;
+        public bool Created => (statusCode & StatusCode.RecordStatusMask) == StatusCode.CreatedRecord;
 
         /// <summary>
         /// Whether an existing record was updated in place.
         /// </summary>
-        public bool InPlaceUpdated => (statusCode & StatusCode.AdvancedMask) == StatusCode.InPlaceUpdatedRecord;
+        public bool InPlaceUpdated => (statusCode & StatusCode.RecordStatusMask) == StatusCode.InPlaceUpdatedRecord;
 
         /// <summary>
         /// Whether an existing record key was copied, updated, and appended to the log.
         /// </summary>
-        public bool CopyUpdated => (statusCode & StatusCode.AdvancedMask) == StatusCode.CopyUpdatedRecord;
+        public bool CopyUpdated => (statusCode & StatusCode.RecordStatusMask) == StatusCode.CopyUpdatedRecord;
 
         /// <summary>
         /// Whether an existing record key was copied and appended to the log.
         /// </summary>
-        public bool Copied => (statusCode & StatusCode.AdvancedMask) == StatusCode.CopiedRecord;
+        public bool Copied => (statusCode & StatusCode.RecordStatusMask) == StatusCode.CopiedRecord;
 
         /// <summary>
         /// Whether an existing record key was copied, updated, and added to the readcache.
         /// </summary>
-        public bool CopiedToReadCache => (statusCode & StatusCode.AdvancedMask) == StatusCode.CopiedRecordToReadCache;
+        public bool CopiedToReadCache => (statusCode & StatusCode.RecordStatusMask) == StatusCode.CopiedRecordToReadCache;
     }
 
     /// <summary>
