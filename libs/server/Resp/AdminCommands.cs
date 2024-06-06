@@ -715,7 +715,6 @@ namespace Garnet.server
         /// (NOTE: This function does not check keyspaces)
         /// </summary>
         /// <param name="cmd">Command be processed</param>
-        /// <param name="bufSpan">Buffer with remaining parts of command to process.</param>
         /// <param name="count">Number of parameters left in the command specification.</param>
         /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
