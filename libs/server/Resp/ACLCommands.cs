@@ -7,6 +7,7 @@ using System.Text;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -27,7 +28,7 @@ namespace Garnet.server
         {
             // Only proceed if current authenticator can be used with ACL commands.
             // Currently only GarnetACLAuthenticator is supported.
-            if (!_authenticator.HasACLSupport || (_authenticator.GetType() != typeof(GarnetACLAuthenticator)))
+            if (!_authenticator.HasACLSupport || (_authenticator.GetType().BaseType != typeof(GarnetACLAuthenticator)))
             {
                 if (!DrainCommands(bufSpan, count))
                     return false;
@@ -49,13 +50,13 @@ namespace Garnet.server
                 return true;
             }
 
-            GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+            var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
             // Mandatory: <subcommand>
             var subcommandSpan = GetCommand(bufSpan, out bool success1);
             if (!success1) return false;
 
-            string subcommand = Encoding.ASCII.GetString(subcommandSpan);
+            var subcommand = Encoding.ASCII.GetString(subcommandSpan);
 
             // Subcommand: LIST
             if (subcommand.Equals("LIST", StringComparison.OrdinalIgnoreCase) && (count == 1))
@@ -66,13 +67,14 @@ namespace Garnet.server
                 }
 
                 var users = aclAuthenticator.GetAccessControlList().GetUsers();
-                RespWriteUtils.WriteArrayLength(users.Count, ref dcurr, dend);
+                while (!RespWriteUtils.WriteArrayLength(users.Count, ref dcurr, dend))
+                    SendAndReset();
 
                 foreach (var user in users)
                 {
-                    RespWriteUtils.WriteAsciiBulkString(user.Value.DescribeUser(), ref dcurr, dend);
+                    while (!RespWriteUtils.WriteAsciiBulkString(user.Value.DescribeUser(), ref dcurr, dend))
+                        SendAndReset();
                 }
-                SendAndReset();
             }
             // Subcommand: USERS
             else if (subcommand.Equals("USERS", StringComparison.OrdinalIgnoreCase) && (count == 1))
@@ -83,25 +85,27 @@ namespace Garnet.server
                 }
 
                 var users = aclAuthenticator.GetAccessControlList().GetUsers();
-                RespWriteUtils.WriteArrayLength(users.Count, ref dcurr, dend);
+                while (!RespWriteUtils.WriteArrayLength(users.Count, ref dcurr, dend))
+                    SendAndReset();
 
                 foreach (var user in users)
                 {
-                    RespWriteUtils.WriteAsciiBulkString(user.Key, ref dcurr, dend);
+                    while (!RespWriteUtils.WriteAsciiBulkString(user.Key, ref dcurr, dend))
+                        SendAndReset();
                 }
-                SendAndReset();
             }
             // Subcommand: CAT
             else if (subcommand.Equals("CAT", StringComparison.OrdinalIgnoreCase) && (count == 1))
             {
                 var categories = CommandCategory.ListCategories();
-                RespWriteUtils.WriteArrayLength(categories.Count, ref dcurr, dend);
+                while (!RespWriteUtils.WriteArrayLength(categories.Count, ref dcurr, dend))
+                    SendAndReset();
 
                 foreach (var category in categories)
                 {
-                    RespWriteUtils.WriteAsciiBulkString(category, ref dcurr, dend);
+                    while (!RespWriteUtils.WriteAsciiBulkString(category, ref dcurr, dend))
+                        SendAndReset();
                 }
-                SendAndReset();
             }
             // Subcommand: SETUSER <username> [<ops>...]
             else if (subcommand.Equals("SETUSER", StringComparison.OrdinalIgnoreCase) && (count >= 2))
@@ -118,9 +122,9 @@ namespace Garnet.server
                 // Modify or create the user with the given username
                 // FIXME: This step should be atomic in the future. This will prevent partial execution of faulty ACL strings.
                 var username = Encoding.ASCII.GetString(usernameSpan);
-                ACL.User user = aclAuthenticator.GetAccessControlList().GetUser(username);
+                var user = aclAuthenticator.GetAccessControlList().GetUser(username);
 
-                int opsParsed = 0;
+                var opsParsed = 0;
                 try
                 {
                     if (user == null)
@@ -162,8 +166,8 @@ namespace Garnet.server
                     return success;
                 }
 
-                int attemptedDeletes = 0;
-                int successfulDeletes = 0;
+                var attemptedDeletes = 0;
+                var successfulDeletes = 0;
 
                 try
                 {
@@ -213,15 +217,15 @@ namespace Garnet.server
                 }
 
                 // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
-                Debug.Assert(this.storeWrapper.serverOptions.AuthSettings != null);
-                Debug.Assert(this.storeWrapper.serverOptions.AuthSettings.GetType() == typeof(AclAuthenticationSettings));
-                AclAuthenticationSettings aclAuthenticationSettings = (AclAuthenticationSettings)this.storeWrapper.serverOptions.AuthSettings;
+                Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
+                Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
+                var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
 
                 // Try to reload the configured ACL configuration file
                 try
                 {
                     logger?.LogInformation("Reading updated ACL configuration file '{filepath}'", aclAuthenticationSettings.AclConfigurationFile);
-                    this.storeWrapper.accessControlList.Load(aclAuthenticationSettings.DefaultPassword, aclAuthenticationSettings.AclConfigurationFile);
+                    storeWrapper.accessControlList.Load(aclAuthenticationSettings.DefaultPassword, aclAuthenticationSettings.AclConfigurationFile);
 
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
@@ -231,6 +235,34 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteError($"ERR {exception.Message}", ref dcurr, dend))
                         SendAndReset();
                 }
+            }
+            // Subcommand: SAVE
+            else if (subcommand.Equals("SAVE", StringComparison.OrdinalIgnoreCase) && (count == 1))
+            {
+                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
+                {
+                    return success;
+                }
+
+                // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
+                Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
+                Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
+                var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
+
+                try
+                {
+                    storeWrapper.accessControlList.Save(aclAuthenticationSettings.AclConfigurationFile);
+                    logger?.LogInformation("ACL configuration file '{filepath}' saved!", aclAuthenticationSettings.AclConfigurationFile);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "ACL SAVE faulted");
+                    while (!RespWriteUtils.WriteError($"ERR {ex.Message}", ref dcurr, dend))
+                        SendAndReset();
+                }
+
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
             }
             // Unknown or invalidly specified ACL subcommand
             else

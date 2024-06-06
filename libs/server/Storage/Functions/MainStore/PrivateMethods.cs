@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -11,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainStoreFunctions : IFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainStoreFunctions : ISessionFunctions<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
     {
         static void CopyTo(ref SpanByte src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
@@ -81,11 +82,20 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput(ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst)
+        void CopyRespToWithInput(ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, bool isFromPending)
         {
             var inputPtr = input.ToPointer();
             switch ((RespCommand)(*inputPtr))
             {
+                case RespCommand.ASYNC:
+                    // If the GET is expected to complete continuations asynchronously, we should not write anything
+                    // to the network buffer in case the operation does go pending (latter is indicated by isFromPending)
+                    // This is accomplished by calling ConvertToHeap on the destination SpanByteAndMemory
+                    if (isFromPending)
+                        dst.ConvertToHeap();
+                    CopyRespTo(ref value, ref dst);
+                    break;
+
                 case RespCommand.MIGRATE:
                     long expiration = value.ExtraMetadata;
                     if (value.Length <= dst.Length)
@@ -352,6 +362,8 @@ namespace Garnet.server
             _ = value.ShrinkSerializedLength(ndigits + value.MetadataSize);
             _ = NumUtils.LongToSpanByte(val, value.AsSpan());
             rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
+
+            Debug.Assert(output.IsSpanByte, "This code assumes it is called in-place and did not go pending");
             value.AsReadOnlySpan().CopyTo(output.SpanByte.AsSpan());
             output.SpanByte.Length = value.LengthWithoutMetadata;
             return true;
@@ -493,6 +505,8 @@ namespace Garnet.server
         static void CopyValueLengthToOutput(ref SpanByte value, ref SpanByteAndMemory output)
         {
             int numDigits = NumUtils.NumDigits(value.LengthWithoutMetadata);
+
+            Debug.Assert(output.IsSpanByte, "This code assumes it is called in a non-pending context or in a pending context where dst.SpanByte's pointer remains valid");
             var outputPtr = output.SpanByte.ToPointer();
             NumUtils.IntToBytes(value.LengthWithoutMetadata, numDigits, ref outputPtr);
             output.SpanByte.Length = numDigits;

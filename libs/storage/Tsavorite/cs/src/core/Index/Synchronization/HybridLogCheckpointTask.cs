@@ -90,12 +90,6 @@ namespace Tsavorite.core
                         store._activeSessions.Remove(key);
                 }
             }
-
-            // Make sure previous recoverable sessions are re-checkpointed
-            foreach (var item in store.RecoverableSessions)
-            {
-                store._hybridLogCheckpoint.info.checkpointTokens.TryAdd(item.Item1, (item.Item2, item.Item3));
-            }
         }
 
         /// <inheritdoc />
@@ -105,29 +99,24 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public virtual void OnThreadState<Key, Value, Input, Output, Context, TsavoriteSession>(
+        public virtual void OnThreadState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev, TsavoriteKV<Key, Value> store,
             TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession storeSession,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TsavoriteSession : ITsavoriteSession
+            where TSessionFunctionsWrapper : ISessionEpochControl
         {
-            if (current.Phase != Phase.PERSISTENCE_CALLBACK) return;
-
-            if (ctx is not null)
-            {
-                if (!ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback])
-                {
-                    TsavoriteKV<Key, Value>.IssueCompletionCallback(ctx, storeSession);
-                    ctx.prevCtx.markers[EpochPhaseIdx.CheckpointCompletionCallback] = true;
-                }
-            }
+            if (current.Phase != Phase.PERSISTENCE_CALLBACK)
+                return;
 
             store.epoch.Mark(EpochPhaseIdx.CheckpointCompletionCallback, current.Version);
             if (store.epoch.CheckIsComplete(EpochPhaseIdx.CheckpointCompletionCallback, current.Version))
+            {
+                // TODO: store.CheckpointCompletionCallback();
                 store.GlobalStateMachineStep(current);
+            }
         }
     }
 
@@ -160,16 +149,16 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<Key, Value, Input, Output, Context, TsavoriteSession>(
+        public override void OnThreadState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
             TsavoriteKV<Key, Value> store,
             TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession storeSession,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
-            base.OnThreadState(current, prev, store, ctx, storeSession, valueTasks, token);
+            base.OnThreadState(current, prev, store, ctx, sessionFunctions, valueTasks, token);
 
             if (current.Phase != Phase.WAIT_FLUSH) return;
 
@@ -265,15 +254,15 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<Key, Value, Input, Output, Context, TsavoriteSession>(
+        public override void OnThreadState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev, TsavoriteKV<Key, Value> store,
             TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession storeSession,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
-            base.OnThreadState(current, prev, store, ctx, storeSession, valueTasks, token);
+            base.OnThreadState(current, prev, store, ctx, sessionFunctions, valueTasks, token);
 
             if (current.Phase != Phase.WAIT_FLUSH) return;
 
@@ -359,15 +348,15 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public override void OnThreadState<Key, Value, Input, Output, Context, TsavoriteSession>(
+        public override void OnThreadState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev, TsavoriteKV<Key, Value> store,
             TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession storeSession,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
         {
-            base.OnThreadState(current, prev, store, ctx, storeSession, valueTasks, token);
+            base.OnThreadState(current, prev, store, ctx, sessionFunctions, valueTasks, token);
 
             if (current.Phase != Phase.WAIT_FLUSH) return;
 

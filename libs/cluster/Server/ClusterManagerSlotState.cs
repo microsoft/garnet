@@ -462,8 +462,8 @@ namespace Garnet.cluster
             using var iter = BasicGarnetApi.IterateMainStore();
             while (iter.GetNext(out _))
             {
-                ref SpanByte key = ref iter.GetKey();
-                var s = NumUtils.HashSlot(key.ToPointer(), key.Length);
+                ref var key = ref iter.GetKey();
+                var s = HashSlotUtils.HashSlot(ref key);
                 if (slots.Contains(s))
                     _ = BasicGarnetApi.DELETE(ref key, StoreType.Main);
             }
@@ -481,7 +481,7 @@ namespace Garnet.cluster
             {
                 ref var key = ref iterObject.GetKey();
                 ref var value = ref iterObject.GetValue();
-                var s = NumUtils.HashSlot(key);
+                var s = HashSlotUtils.HashSlot(key);
                 if (slots.Contains(s))
                     _ = BasicGarnetApi.DELETE(key, StoreType.Object);
             }

@@ -25,109 +25,114 @@ namespace Garnet.server
             // Check number of required parameters
             if (count < 2)
             {
-                // Forward tokens in the input
-                ReadLeftToken(count, ref ptr);
+                var cmdName = objectType switch
+                {
+                    GarnetObjectType.Hash => nameof(HashOperation.HSCAN),
+                    GarnetObjectType.Set => nameof(SetOperation.SSCAN),
+                    GarnetObjectType.SortedSet => nameof(SortedSetOperation.ZSCAN),
+                    GarnetObjectType.All => nameof(RespCommand.COSCAN),
+                    _ => nameof(RespCommand.NONE)
+                };
+
+                return AbortWithWrongNumberOfArguments(cmdName, count);
             }
-            else
+
+            // Read key for the scan
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            // Get cursor value
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var cursorBytes, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (!NumUtils.TryParse(cursorBytes, out int cursorValue) || cursorValue < 0)
             {
-                // Read key for the scan
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
+                    SendAndReset();
+                ReadLeftToken(count - 1, ref ptr);
+                return true;
+            }
+
+            if (NetworkSingleKeySlotVerify(key, false))
+            {
+                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
+                if (!DrainCommands(bufSpan, count))
                     return false;
+                return true;
+            }
 
-                // Get cursor value
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var cursor, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+            // Prepare input
+            // Header + size of int for the limitCountInOutput
+            var inputPtr = (ObjectInputHeader*)(ptr - ObjectInputHeader.Size - sizeof(int));
+            var ptrToInt = (int*)(ptr - sizeof(int));
 
-                if (!Int32.TryParse(cursor, out int cursorValue) || cursorValue < 0)
-                {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
-                        SendAndReset();
-                    ReadLeftToken(count - 1, ref ptr);
-                    return true;
-                }
+            // Save old values on buffer for possible revert
+            var save = *inputPtr;
+            var savePtrToInt = *ptrToInt;
 
-                if (NetworkSingleKeySlotVerify(key, false))
-                {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
+            // Build the input
+            byte* pcurr = (byte*)inputPtr;
+
+            // ObjectInputHeader
+            (*(ObjectInputHeader*)(pcurr)).header.type = objectType;
+            (*(ObjectInputHeader*)(pcurr)).header.flags = 0;
+
+            switch (objectType)
+            {
+                case GarnetObjectType.Hash:
+                    (*(ObjectInputHeader*)(pcurr)).header.HashOp = HashOperation.HSCAN;
+                    break;
+                case GarnetObjectType.Set:
+                    (*(ObjectInputHeader*)(pcurr)).header.SetOp = SetOperation.SSCAN;
+                    break;
+                case GarnetObjectType.SortedSet:
+                    (*(ObjectInputHeader*)(pcurr)).header.SortedSetOp = SortedSetOperation.ZSCAN;
+                    break;
+                case GarnetObjectType.All:
+                    (*(ObjectInputHeader*)(pcurr)).header.cmd = RespCommand.COSCAN;
+                    break;
+            }
+
+            // Tokens already processed: 3, command, key and cursor
+            (*(ObjectInputHeader*)(pcurr)).count = count - 2;
+
+            // Cursor value
+            (*(ObjectInputHeader*)(pcurr)).done = cursorValue;
+            pcurr += ObjectInputHeader.Size;
+
+            // Object Input Limit
+            *(int*)pcurr = storeWrapper.serverOptions.ObjectScanCountLimit;
+            pcurr += sizeof(int);
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+            var status = storageApi.ObjectScan(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Restore input buffer
+            *inputPtr = save;
+            *ptrToInt = savePtrToInt;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    // Process output
+                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    // Validation for partial input reading or error
+                    if (objOutputHeader.countDone == Int32.MinValue)
                         return false;
-                    return true;
-                }
-
-                // Prepare input
-                // Header + size of int for the limitCountInOutput
-                var inputPtr = (ObjectInputHeader*)(ptr - ObjectInputHeader.Size - sizeof(int));
-                var ptrToInt = (int*)(ptr - sizeof(int));
-
-                // Save old values on buffer for possible revert
-                var save = *inputPtr;
-                var savePtrToInt = *ptrToInt;
-
-                // Build the input
-                byte* pcurr = (byte*)inputPtr;
-
-                // ObjectInputHeader
-                (*(ObjectInputHeader*)(pcurr)).header.type = objectType;
-                (*(ObjectInputHeader*)(pcurr)).header.flags = 0;
-
-                switch (objectType)
-                {
-                    case GarnetObjectType.Hash:
-                        (*(ObjectInputHeader*)(pcurr)).header.HashOp = HashOperation.HSCAN;
-                        break;
-                    case GarnetObjectType.Set:
-                        (*(ObjectInputHeader*)(pcurr)).header.SetOp = SetOperation.SSCAN;
-                        break;
-                    case GarnetObjectType.SortedSet:
-                        (*(ObjectInputHeader*)(pcurr)).header.SortedSetOp = SortedSetOperation.ZSCAN;
-                        break;
-                    case GarnetObjectType.All:
-                        (*(ObjectInputHeader*)(pcurr)).header.cmd = RespCommand.COSCAN;
-                        break;
-                }
-
-                // Tokens already processed: 3, command, key and cursor
-                (*(ObjectInputHeader*)(pcurr)).count = count - 2;
-
-                // Cursor value
-                (*(ObjectInputHeader*)(pcurr)).done = cursorValue;
-                pcurr += ObjectInputHeader.Size;
-
-                // Object Input Limit
-                *(int*)pcurr = storeWrapper.serverOptions.ObjectScanCountLimit;
-                pcurr += sizeof(int);
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                // Prepare GarnetObjectStore output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-                var status = storageApi.ObjectScan(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                //restore input buffer
-                *inputPtr = save;
-                *ptrToInt = savePtrToInt;
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        // Process output
-                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        // Validation for partial input reading or error
-                        if (objOutputHeader.countDone == Int32.MinValue)
-                            return false;
-                        ptr += objOutputHeader.bytesDone;
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteScanOutputHeader(0, ref dcurr, dend))
-                            SendAndReset();
-                        while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
-                            SendAndReset();
-                        // Fast forward left of the input
-                        ReadLeftToken(count - 2, ref ptr);
-                        break;
-                }
-
+                    ptr += objOutputHeader.bytesDone;
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteScanOutputHeader(0, ref dcurr, dend))
+                        SendAndReset();
+                    while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
+                    // Fast forward left of the input
+                    ReadLeftToken(count - 2, ref ptr);
+                    break;
             }
 
             // Update read pointer

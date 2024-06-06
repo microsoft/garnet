@@ -27,7 +27,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetAdd<TObjectContext>(ArgSlice key, ArgSlice member, out int saddCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             saddCount = 0;
 
@@ -59,7 +59,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetAdd<TObjectContext>(ArgSlice key, ArgSlice[] members, out int saddCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             saddCount = 0;
 
@@ -101,7 +101,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetRemove<TObjectContext>(ArgSlice key, ArgSlice member, out int sremCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             sremCount = 0;
 
@@ -134,7 +134,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetRemove<TObjectContext>(ArgSlice key, ArgSlice[] members, out int sremCount, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             sremCount = 0;
 
@@ -173,7 +173,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetLength<TObjectContext>(ArgSlice key, out int count, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             count = 0;
 
@@ -204,7 +204,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetMembers<TObjectContext>(ArgSlice key, out ArgSlice[] members, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             members = default;
 
@@ -239,7 +239,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal GarnetStatus SetPop<TObjectContext>(ArgSlice key, out ArgSlice element, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             var status = SetPop(key, int.MinValue, out var elements, ref objectStoreContext);
             element = default;
@@ -259,7 +259,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         internal unsafe GarnetStatus SetPop<TObjectContext>(ArgSlice key, int count, out ArgSlice[] elements, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             elements = default;
 
@@ -301,7 +301,7 @@ namespace Garnet.server
         /// <param name="items">The list of items for the response</param>
         /// <param name="objectStoreContext"></param>
         public unsafe GarnetStatus SetScan<TObjectContext>(ArgSlice key, long cursor, string match, int count, out ArgSlice[] items, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             items = default;
 
@@ -421,6 +421,147 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
+
+        /// <summary>
+        /// Returns the members of the set resulting from the intersection of all the given sets.
+        /// Keys that do not exist are considered to be empty sets.
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
+        {
+            output = default;
+
+            if (keys.Length == 0)
+                return GarnetStatus.OK;
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                output = SetIntersect(keys, ref setObjectStoreLockableContext);
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// This command is equal to SINTER, but instead of returning the resulting set, it is stored in destination.
+        /// If destination already exists, it is overwritten.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="keys"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        public GarnetStatus SetIntersectStore(byte[] key, ArgSlice[] keys, out int count)
+        {
+            count = default;
+
+            if (keys.Length == 0)
+            {
+                return GarnetStatus.OK;
+            }
+
+            var destination = scratchBufferManager.CreateArgSlice(key);
+
+            var createTransaction = false;
+
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.SaveKeyEntryToLock(destination, true, LockType.Exclusive);
+                foreach (var item in keys)
+                    txnManager.SaveKeyEntryToLock(item, true, LockType.Shared);
+                _ = txnManager.Run(true);
+            }
+
+            // SetObject
+            var setObjectStoreLockableContext = txnManager.ObjectStoreLockableContext;
+
+            try
+            {
+                var members = SetIntersect(keys, ref setObjectStoreLockableContext);
+
+                var newSetObject = new SetObject();
+                foreach (var item in members)
+                {
+                    _ = newSetObject.Set.Add(item);
+                    newSetObject.UpdateSize(item);
+                }
+                _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                count = members.Count;
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+            }
+
+            return GarnetStatus.OK;
+        }
+
+
+        private HashSet<byte[]> SetIntersect<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+        {
+            if (keys.Length == 0)
+            {
+                return new HashSet<byte[]>(ByteArrayComparer.Instance);
+            }
+
+            HashSet<byte[]> result;
+            var status = GET(keys[0].ToArray(), out var first, ref objectContext);
+            if (status == GarnetStatus.OK && first.garnetObject is SetObject firstObject)
+            {
+                result = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
+            }
+            else
+            {
+                return new HashSet<byte[]>(ByteArrayComparer.Instance);
+            }
+
+
+            for (var i = 1; i < keys.Length; i++)
+            {
+                // intersection of anything with empty set is empty set
+                if (result.Count == 0)
+                {
+                    return result;
+                }
+
+                status = GET(keys[i].ToArray(), out var next, ref objectContext);
+                if (status == GarnetStatus.OK && next.garnetObject is SetObject nextObject)
+                {
+                    result.IntersectWith(nextObject.Set);
+                }
+                else
+                {
+                    return new HashSet<byte[]>(ByteArrayComparer.Instance);
+                }
+            }
+
+            return result;
+        }
+
         /// <summary>
         /// Returns the members of the set resulting from the union of all the given sets.
         /// Keys that do not exist are considered to be empty sets.
@@ -517,7 +658,7 @@ namespace Garnet.server
         }
 
         private HashSet<byte[]> SetUnion<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             var result = new HashSet<byte[]>(ByteArrayComparer.Instance);
             if (keys.Length == 0)
@@ -549,7 +690,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetAdd<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
             => RMWObjectStoreOperation(key, input, out output, ref objectContext);
 
         /// <summary>
@@ -564,7 +705,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetRemove<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
             => RMWObjectStoreOperation(key, input, out output, ref objectContext);
 
         /// <summary>
@@ -577,7 +718,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetLength<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
             => ReadObjectStoreOperation(key, input, out output, ref objectContext);
 
         /// <summary>
@@ -590,7 +731,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetMembers<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
             => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
 
         /// <summary>
@@ -603,7 +744,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetIsMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
             => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
 
         /// <summary>
@@ -616,7 +757,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetPop<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
             => RMWObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
 
         /// <summary>
@@ -633,7 +774,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus SetRandomMember<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
             => ReadObjectStoreOperationWithOutput(key, input, ref objectContext, ref outputFooter);
 
         /// <summary>
@@ -731,7 +872,7 @@ namespace Garnet.server
         }
 
         private HashSet<byte[]> SetDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             var result = new HashSet<byte[]>();
             if (keys.Length == 0)

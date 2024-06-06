@@ -10,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectStoreFunctions : IFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectStoreFunctions : ISessionFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
         public bool SingleReader(ref byte[] key, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput dst, ref ReadInfo readInfo)
@@ -28,7 +28,7 @@ namespace Garnet.server
                 return true;
             }
 
-            return value.Operate(ref input, ref dst.spanByteAndMemory, out _);
+            return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
         }
 
         /// <inheritdoc />
@@ -52,7 +52,7 @@ namespace Garnet.server
                     CopyRespNumber(ttlValue, ref dst.spanByteAndMemory);
                     return true;
                 }
-                return value.Operate(ref input, ref dst.spanByteAndMemory, out _);
+                return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
             }
 
             dst.garnetObject = value;

@@ -112,7 +112,7 @@ namespace Garnet.cluster
 
         /// <inheritdoc />
         public bool IsReplica()
-            => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.recovering == true;
+            => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.Recovering == true;
 
         /// <inheritdoc />
         public void ResetGossipStats()
@@ -218,7 +218,7 @@ namespace Garnet.cluster
                     replicationInfo.Add(new("master_port", port.ToString()));
                     replicationInfo.Add(primaryLinkStatus[0]);
                     replicationInfo.Add(primaryLinkStatus[1]);
-                    replicationInfo.Add(new("master_sync_in_progress", replicationManager.recovering.ToString()));
+                    replicationInfo.Add(new("master_sync_in_progress", replicationManager.Recovering.ToString()));
                     replicationInfo.Add(new("slave_read_repl_offset", replication_offset));
                     replicationInfo.Add(new("slave_priority", "100"));
                     replicationInfo.Add(new("slave_read_only", "1"));
@@ -287,7 +287,7 @@ namespace Garnet.cluster
                 foreach (var s in sessions)
                 {
                     var entryEpoch = s.LocalCurrentEpoch;
-                    if (entryEpoch != 0 && entryEpoch >= currentEpoch)
+                    if (entryEpoch != 0 && entryEpoch < currentEpoch)
                         goto retry;
                 }
                 break;

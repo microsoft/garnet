@@ -848,6 +848,7 @@ namespace Garnet.server
                 ReadOnlySpan<byte> errorMessage = default;
                 switch (status)
                 {
+                    case GarnetStatus.NOTFOUND:
                     case GarnetStatus.OK:
                         //verifying length of outputFooter
                         if (outputFooter.spanByteAndMemory.Length == 0)
@@ -868,10 +869,6 @@ namespace Garnet.server
                                 errorMessage = "ERR increment value is not valid."u8;
                             ptr += objOutputHeader.bytesDone;
                         }
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                            SendAndReset();
                         break;
                 }
 
@@ -917,30 +914,26 @@ namespace Garnet.server
                     return true;
                 }
 
-                byte* memberPtr = null;
-                int memberSize = 0;
-
-                // Read member parameter
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref memberPtr, ref memberSize, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
                 // Prepare input
-                var inputPtr = (ObjectInputHeader*)(memberPtr - sizeof(ObjectInputHeader));
+                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
 
                 // Save old values on buffer for possible revert
                 var save = *inputPtr;
 
                 // Prepare length of header in input buffer
-                var inputLength = memberSize + sizeof(ObjectInputHeader);
+                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = op;
-                inputPtr->count = memberSize;
+                inputPtr->count = count;
                 inputPtr->done = 0;
 
-                var status = storageApi.SortedSetRank(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
+                // Prepare GarnetObjectStore output
+                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+                var status = storageApi.SortedSetRank(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
 
                 // Reset input buffer
                 *inputPtr = save;
@@ -948,16 +941,16 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         // Process output
-                        if (output.opsDone != -1)
-                            while (!RespWriteUtils.WriteInteger(output.opsDone, ref dcurr, dend))
-                                SendAndReset();
-                        else
-                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                                SendAndReset();
+                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                        ptr += objOutputHeader.bytesDone;
+                        if (objOutputHeader.bytesDone == 0)
+                            return false;
                         break;
+
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
+                        ReadLeftToken(count - 1, ref ptr);
                         break;
                 }
             }
@@ -1081,9 +1074,7 @@ namespace Garnet.server
                 }
 
                 var paramCount = 0;
-                ReadOnlySpan<byte> withScoresSpan = "WITHSCORES"u8;
-                Byte[] includeWithScores = default;
-
+                bool includeWithScores = false;
                 bool includedCount = false;
 
                 if (count >= 2)
@@ -1097,8 +1088,10 @@ namespace Garnet.server
                     // Read withscores
                     if (count == 3)
                     {
-                        if (!RespReadUtils.ReadByteArrayWithLengthHeader(out includeWithScores, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadUtils.TrySliceWithLengthHeader(out var withScoreBytes, ref ptr, recvBufferPtr + bytesRead))
                             return false;
+
+                        includeWithScores = withScoreBytes.SequenceEqual("WITHSCORES"u8);
                     }
                 }
 
@@ -1116,7 +1109,7 @@ namespace Garnet.server
                 inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZRANDMEMBER;
                 inputPtr->count = count == 1 ? 1 : paramCount;
-                inputPtr->done = withScoresSpan.SequenceEqual(includeWithScores) ? 1 : 0;
+                inputPtr->done = includeWithScores ? 1 : 0;
 
                 GarnetStatus status = GarnetStatus.NOTFOUND;
                 GarnetObjectStoreOutput outputFooter = default;
@@ -1230,14 +1223,14 @@ namespace Garnet.server
 
                     if (result != null)
                     {
-                        foreach (var item in result)
+                        foreach (var (element, score) in result)
                         {
-                            while (!RespWriteUtils.WriteBulkString(item.Key, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteBulkString(element, ref dcurr, dend))
                                 SendAndReset();
 
                             if (withscoresInclude)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Value.ToString(CultureInfo.InvariantCulture), ref dcurr, dend))
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref dcurr, dend))
                                     SendAndReset();
                             }
                         }

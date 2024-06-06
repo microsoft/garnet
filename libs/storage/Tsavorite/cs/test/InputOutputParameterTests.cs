@@ -17,9 +17,10 @@ namespace Tsavorite.test.InputOutputParameterTests
 
         private TsavoriteKV<int, int> store;
         private ClientSession<int, int, int, int, Empty, UpsertInputFunctions> session;
+        private BasicContext<int, int, int, int, Empty, UpsertInputFunctions> bContext;
         private IDevice log;
 
-        internal class UpsertInputFunctions : FunctionsBase<int, int, int, int, Empty>
+        internal class UpsertInputFunctions : SessionFunctionsBase<int, int, int, int, Empty>
         {
             internal long lastWriteAddress;
 
@@ -84,6 +85,7 @@ namespace Tsavorite.test.InputOutputParameterTests
             store = new TsavoriteKV<int, int>
                 (128, new LogSettings { LogDevice = log, MemorySizeBits = 22, SegmentSizeBits = 22, PageSizeBits = 10 });
             session = store.NewSession<int, int, Empty, UpsertInputFunctions>(new UpsertInputFunctions());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -102,60 +104,22 @@ namespace Tsavorite.test.InputOutputParameterTests
         [Test]
         [Category(TestUtils.TsavoriteKVTestCategory)]
         [Category(TestUtils.SmokeTestCategory)]
-        public async Task InputOutputParametersTest([Values] bool useRMW, [Values] bool isAsync)
+        public void InputOutputParametersTest([Values] bool useRMW)
         {
             int input = MultValue;
             Status status;
             int output = -1;
             bool loading = true;
 
-            async Task doWrites()
+            void doWrites()
             {
                 for (int key = 0; key < NumRecs; ++key)
                 {
                     var tailAddress = store.Log.TailAddress;
                     RecordMetadata recordMetadata;
-                    if (isAsync)
-                    {
-                        if (useRMW)
-                        {
-                            var r = await session.RMWAsync(ref key, ref input);
-                            if ((key & 0x1) == 0)
-                            {
-                                while (r.Status.IsPending)
-                                    r = await r.CompleteAsync();
-                                status = r.Status;
-                                output = r.Output;
-                                recordMetadata = r.RecordMetadata;
-                            }
-                            else
-                            {
-                                (status, output) = r.Complete(out recordMetadata);
-                            }
-                        }
-                        else
-                        {
-                            var r = await session.UpsertAsync(ref key, ref input, ref key);
-                            if ((key & 0x1) == 0)
-                            {
-                                while (r.Status.IsPending)
-                                    r = await r.CompleteAsync();
-                                status = r.Status;
-                                output = r.Output;
-                                recordMetadata = r.RecordMetadata;
-                            }
-                            else
-                            {
-                                (status, output) = r.Complete(out recordMetadata);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        status = useRMW
-                            ? session.RMW(ref key, ref input, ref output, out recordMetadata)
-                            : session.Upsert(ref key, ref input, ref key, ref output, out recordMetadata);
-                    }
+                    status = useRMW
+                        ? bContext.RMW(ref key, ref input, ref output, out recordMetadata)
+                        : bContext.Upsert(ref key, ref input, ref key, ref output, out recordMetadata);
                     if (loading)
                     {
                         if (useRMW)
@@ -176,20 +140,20 @@ namespace Tsavorite.test.InputOutputParameterTests
             {
                 for (int key = 0; key < NumRecs; ++key)
                 {
-                    session.Read(ref key, ref input, ref output);
+                    bContext.Read(ref key, ref input, ref output);
                     Assert.AreEqual(key * input + AddValue, output);
                 }
             }
 
             // SingleWriter (records do not yet exist)
-            await doWrites();
+            doWrites();
             doReads();
 
             loading = false;
             input *= input;
 
             // ConcurrentWriter (update existing records)
-            await doWrites();
+            doWrites();
             doReads();
         }
     }

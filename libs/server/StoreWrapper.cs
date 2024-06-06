@@ -9,7 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.ACL;
-using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -135,7 +135,7 @@ namespace Garnet.server
                 // If ACL authentication is enabled, initiate access control list
                 // NOTE: This is a temporary workflow. ACL should always be initiated and authenticator
                 //       should become a parameter of AccessControlList.
-                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType() == typeof(AclAuthenticationSettings)))
+                if ((this.serverOptions.AuthSettings != null) && (this.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings)))
                 {
                     // Create a new access control list and register it with the authentication settings
                     AclAuthenticationSettings aclAuthenticationSettings = (AclAuthenticationSettings)this.serverOptions.AuthSettings;
@@ -220,7 +220,8 @@ namespace Garnet.server
             {
                 storeVersion = !recoverMainStoreFromToken ? store.Recover() : store.Recover(storeIndexToken, storeHlogToken);
                 if (objectStore != null) objectStoreVersion = !recoverObjectStoreFromToken ? objectStore.Recover() : objectStore.Recover(objectStoreIndexToken, objectStoreHlogToken);
-                lastSaveTime = DateTimeOffset.UtcNow;
+                if (storeVersion > 0 || objectStoreVersion > 0)
+                    lastSaveTime = DateTimeOffset.UtcNow;
             }
             catch (Exception ex)
             {
@@ -269,8 +270,8 @@ namespace Garnet.server
             long replicationOffset = 0;
             try
             {
-                //When replaying AOF we do not want to write record again to AOF.
-                //So initialize local AofProcessor with recordToAof: false.
+                // When replaying AOF we do not want to write record again to AOF.
+                // So initialize local AofProcessor with recordToAof: false.
                 var aofProcessor = new AofProcessor(this, recordToAof: false, logger);
                 aofProcessor.Recover(untilAddress);
                 aofProcessor.Dispose();
@@ -447,13 +448,13 @@ namespace Garnet.server
                         break;
 
                     case LogCompactionType.Scan:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
+                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
+                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
                         break;
 
                     case LogCompactionType.Lookup:
-                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleFunctions<byte[], IGarnetObject, Empty>>(
-                            new SimpleFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
+                        objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
+                            new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
                         break;
 
                     default:
@@ -489,6 +490,8 @@ namespace Garnet.server
             {
                 Task.Run(() => IndexAutoGrowTask(ctsCommit.Token));
             }
+
+            objectStoreSizeTracker?.Start();
         }
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
@@ -578,22 +581,22 @@ namespace Garnet.server
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
         /// </summary>
-        /// <param name="afterTime"></param>
+        /// <param name="entryTime"></param>
         /// <returns></returns>
-        public async Task TakeOnDemandCheckpoint(DateTimeOffset afterTime)
+        public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime)
         {
-            //Take lock to ensure not other task will be taking a checkpoint
+            // Take lock to ensure no other task will be taking a checkpoint
             while (!StartCheckpoint())
                 await Task.Yield();
 
-            //If an external task has taken a checkpoint after the provided afterTime return
-            if (this.lastSaveTime > afterTime)
+            // If an external task has taken a checkpoint beyond the provided entryTime return
+            if (this.lastSaveTime > entryTime)
             {
                 CompleteCheckpoint();
                 return;
             }
 
-            //If no newer checkpoint was taken compared to the provided afterTime take a checkpoint
+            // Necessary to take a checkpoint because the latest checkpoint is before entryTime
             await CheckpointTask(StoreType.All, logger: logger);
         }
 

@@ -126,11 +126,13 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new ListObject(list, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange)
+        public override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
             fixed (byte* _input = input.AsSpan())
             fixed (byte* _output = output.SpanByte.AsSpan())
             {
+                removeKey = false;
+
                 var header = (RespInputHeader*)_input;
                 if (header->type != GarnetObjectType.List)
                 {
@@ -140,7 +142,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                long prevSize = this.Size;
+                var previousSize = this.Size;
                 switch (header->ListOp)
                 {
                     case ListOperation.LPUSH:
@@ -183,8 +185,10 @@ namespace Garnet.server
                         throw new GarnetException($"Unsupported operation {(ListOperation)_input[0]} in ListObject.Operate");
                 }
 
-                sizeChange = this.Size - prevSize;
+                sizeChange = this.Size - previousSize;
             }
+
+            removeKey = list.Count == 0;
             return true;
         }
 

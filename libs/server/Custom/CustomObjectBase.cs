@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.IO;
 using Garnet.common;
 using Tsavorite.core;
@@ -57,12 +58,14 @@ namespace Garnet.server
         {
             var bytes = System.Text.Encoding.ASCII.GetBytes(simpleString);
             // Get space for simple string
-            int len = 1 + bytes.Length + 2;
+            var len = 1 + bytes.Length + 2;
             output.Item1 = MemoryPool.Rent(len);
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteSimpleString(bytes, ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteSimpleString(bytes, ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;
         }
@@ -73,13 +76,15 @@ namespace Garnet.server
         protected static unsafe void WriteBulkString(ref (IMemoryOwner<byte>, int) output, Span<byte> bulkString)
         {
             // Get space for bulk string
-            int len = RespWriteUtils.GetBulkStringLength(bulkString.Length);
+            var len = RespWriteUtils.GetBulkStringLength(bulkString.Length);
             output.Item1 = MemoryPool.Rent(len);
             output.Item2 = len;
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteBulkString(bulkString, ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteBulkString(bulkString, ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
         }
 
@@ -89,13 +94,15 @@ namespace Garnet.server
         protected static unsafe void WriteNullBulkString(ref (IMemoryOwner<byte>, int) output)
         {
             // Get space for null bulk string "$-1\r\n"
-            int len = 5;
+            var len = 5;
             output.Item1 = MemoryPool.Rent(len);
             output.Item2 = len;
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteNull(ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteNull(ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
         }
 
@@ -106,12 +113,14 @@ namespace Garnet.server
         {
             var bytes = System.Text.Encoding.ASCII.GetBytes(errorMessage);
             // Get space for error
-            int len = 1 + bytes.Length + 2;
+            var len = 1 + bytes.Length + 2;
             output.Item1 = MemoryPool.Rent(len);
             fixed (byte* ptr = output.Item1.Memory.Span)
             {
                 var curr = ptr;
-                RespWriteUtils.WriteError(bytes, ref curr, ptr + len);
+                // NOTE: Expected to always have enough space to write into pre-allocated buffer
+                var success = RespWriteUtils.WriteError(bytes, ref curr, ptr + len);
+                Debug.Assert(success, "Insufficient space in pre-allocated buffer");
             }
             output.Item2 = len;
         }
@@ -125,12 +134,12 @@ namespace Garnet.server
         protected static unsafe ReadOnlySpan<byte> GetNextArg(ReadOnlySpan<byte> input, scoped ref int offset)
         {
             byte* result = null;
-            int len = 0;
+            var len = 0;
 
             fixed (byte* inputPtr = input)
             {
-                byte* ptr = inputPtr + offset;
-                byte* end = inputPtr + input.Length;
+                var ptr = inputPtr + offset;
+                var end = inputPtr + input.Length;
                 if (ptr < end && RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, end))
                 {
                     offset = (int)(ptr - inputPtr);
@@ -178,13 +187,15 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public abstract void Operate(byte subCommand, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output);
+        public abstract void Operate(byte subCommand, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output, out bool removeKey);
 
         /// <inheritdoc />
-        public sealed override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange)
+        public sealed override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
             var header = (RespInputHeader*)input.ToPointer();
             sizeChange = 0;
+            removeKey = false;
+
             switch (header->cmd)
             {
                 // Scan Command
@@ -198,11 +209,12 @@ namespace Garnet.server
                     break;
                 default:
                     (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
-                    Operate(header->SubId, input.AsReadOnlySpan().Slice(RespInputHeader.Size), ref outp);
+                    Operate(header->SubId, input.AsReadOnlySpan().Slice(RespInputHeader.Size), ref outp, out removeKey);
                     output.Memory = outp.Memory;
                     output.Length = outp.Length;
                     break;
             }
+
             return true;
         }
     }

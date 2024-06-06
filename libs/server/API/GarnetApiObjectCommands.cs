@@ -11,8 +11,8 @@ namespace Garnet.server
     /// Garnet API implementation
     /// </summary>
     public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
-        where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
+        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
     {
         #region SortedSet Methods
 
@@ -113,8 +113,8 @@ namespace Garnet.server
             => storageSession.SortedSetRemoveRange(key, input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SortedSetRank(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetRank(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.SortedSetRank(key, input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
@@ -326,6 +326,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus SetDiffStore(byte[] key, ArgSlice[] keys, out int count)
             => storageSession.SetDiffStore(key, keys, out count);
+
+        /// <inheritdoc />
+        public GarnetStatus SetIntersect(ArgSlice[] keys, out HashSet<byte[]> output)
+            => storageSession.SetIntersect(keys, out output);
+
+        /// <inheritdoc />
+        public GarnetStatus SetIntersectStore(byte[] key, ArgSlice[] keys, out int count)
+            => storageSession.SetIntersectStore(key, keys, out count);
 
         #endregion
 

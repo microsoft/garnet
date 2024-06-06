@@ -178,6 +178,12 @@ namespace Tsavorite.core
             }
         }
 
+        public Func<bool> IsSizeBeyondLimit
+        {
+            get => allocator.IsSizeBeyondLimit;
+            set => allocator.IsSizeBeyondLimit = value;
+        }
+
         /// <summary>
         /// Subscribe to records (in batches) as they become read-only in the log
         /// Currently, we support only one subscriber to the log (easy to extend)
@@ -201,6 +207,12 @@ namespace Tsavorite.core
         public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator<Key, Value>> evictionObserver)
         {
             allocator.OnEvictionObserver = evictionObserver;
+            return new LogSubscribeDisposable(allocator, false);
+        }
+
+        public IDisposable SubscribeDeserializations(IObserver<ITsavoriteScanIterator<Key, Value>> deserializationObserver)
+        {
+            allocator.OnDeserializationObserver = deserializationObserver;
             return new LogSubscribeDisposable(allocator, false);
         }
 
@@ -323,7 +335,7 @@ namespace Tsavorite.core
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<Input, Output, Context, Functions>(Functions functions, long untilAddress, CompactionType compactionType)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
             => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, untilAddress, compactionType);
 
         /// <summary>
@@ -337,7 +349,7 @@ namespace Tsavorite.core
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<Input, Output, Context, Functions>(Functions functions, ref Input input, ref Output output, long untilAddress, CompactionType compactionType)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
             => Compact<Input, Output, Context, Functions, DefaultCompactionFunctions<Key, Value>>(functions, default, ref input, ref output, untilAddress, compactionType);
 
         /// <summary>
@@ -350,7 +362,7 @@ namespace Tsavorite.core
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, long untilAddress, CompactionType compactionType)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
         {
             Input input = default;
@@ -370,7 +382,7 @@ namespace Tsavorite.core
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
         public long Compact<Input, Output, Context, Functions, CompactionFunctions>(Functions functions, CompactionFunctions cf, ref Input input, ref Output output, long untilAddress, CompactionType compactionType)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
             where CompactionFunctions : ICompactionFunctions<Key, Value>
             => store.Compact<Input, Output, Context, Functions, CompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
     }

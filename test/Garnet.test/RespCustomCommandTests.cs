@@ -11,9 +11,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Text;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -322,7 +319,7 @@ namespace Garnet.test
             Assert.AreEqual(value1, (string)retValue);
 
             var result = db.Execute("MEMORY", "USAGE", mainkey);
-            var actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             var expectedResponse = 272;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -334,7 +331,7 @@ namespace Garnet.test
             Assert.AreEqual(value2, (string)retValue);
 
             result = db.Execute("MEMORY", "USAGE", mainkey);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 408;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -358,7 +355,7 @@ namespace Garnet.test
 
             db.KeyExpire(key, TimeSpan.FromSeconds(expire));
             var time = db.KeyTimeToLive(key);
-            Assert.IsTrue(time.Value.Seconds > 0);
+            Assert.IsTrue(time.Value.TotalSeconds > 0);
 
             // This conditional set should pass (new prefix is greater)
             string newValue1 = "foovalue1";
@@ -473,7 +470,7 @@ namespace Garnet.test
         public async Task CustomCommandSetWithCustomExpirationTestAsync()
         {
             // Register sample custom command (SETWPIFPGT = "set if prefix greater than")
-            server.Register.NewCommand("SETWPIFPGTE", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
+            server.Register.NewCommand("SETWPIFPGT", 2, CommandType.ReadModifyWrite, new SetWPIFPGTCustomCommand(),
                 expirationTicks: TimeSpan.FromSeconds(4).Ticks); // provide default expiration at registration time
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -483,14 +480,14 @@ namespace Garnet.test
             string origValue = "foovalue0";
             long prefix = 0;
 
-            await db.ExecuteAsync("SETWPIFPGTE", key, origValue, BitConverter.GetBytes(prefix));
+            await db.ExecuteAsync("SETWPIFPGT", key, origValue, BitConverter.GetBytes(prefix));
 
             string retValue = db.StringGet(key);
             Assert.AreEqual(origValue, retValue.Substring(8));
 
             string newValue1 = "foovalue10";
             prefix = 1;
-            await db.ExecuteAsync("SETWPIFPGTE", key, newValue1, BitConverter.GetBytes(prefix));
+            await db.ExecuteAsync("SETWPIFPGT", key, newValue1, BitConverter.GetBytes(prefix));
 
             retValue = db.StringGet(key);
             Assert.AreEqual(newValue1, retValue.Substring(8));
@@ -500,55 +497,6 @@ namespace Garnet.test
             // should be expired now
             retValue = db.StringGet(key);
             Assert.AreEqual(null, retValue);
-        }
-
-        public static void CreateTestLibrary(string[] namespaces, string[] referenceFiles, string[] filesToCompile, string dstFilePath)
-        {
-            if (File.Exists(dstFilePath))
-            {
-                File.Delete(dstFilePath);
-            }
-
-            foreach (var referenceFile in referenceFiles)
-            {
-                Assert.IsTrue(File.Exists(referenceFile), $"File '{Path.GetFullPath(referenceFile)}' does not exist.");
-            }
-
-            var references = referenceFiles.Select(f => MetadataReference.CreateFromFile(f));
-
-            foreach (var fileToCompile in filesToCompile)
-            {
-                Assert.IsTrue(File.Exists(fileToCompile), $"File '{Path.GetFullPath(fileToCompile)}' does not exist.");
-            }
-
-            var parseFunc = new Func<string, SyntaxTree>(filePath =>
-            {
-                var source = File.ReadAllText(filePath);
-                var stringText = SourceText.From(source, Encoding.UTF8);
-                return SyntaxFactory.ParseSyntaxTree(stringText,
-                    CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest), string.Empty);
-            });
-
-            var syntaxTrees = filesToCompile.Select(f => parseFunc(f));
-
-            var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-                .WithAllowUnsafe(true)
-                .WithOverflowChecks(true)
-                .WithOptimizationLevel(OptimizationLevel.Release)
-                .WithUsings(namespaces);
-
-
-            var compilation = CSharpCompilation.Create(Path.GetFileName(dstFilePath), syntaxTrees, references, compilationOptions);
-
-            try
-            {
-                var result = compilation.Emit(dstFilePath);
-                Assert.IsTrue(result.Success);
-            }
-            catch (Exception ex)
-            {
-                Assert.Fail(ex.Message);
-            }
         }
 
         private string[] CreateTestLibraries()
@@ -609,7 +557,7 @@ namespace Garnet.test
 
             foreach (var ltf in libPathToFiles)
             {
-                CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
+                TestUtils.CreateTestLibrary(namespaces, referenceFiles, ltf.Value, ltf.Key);
             }
 
             var notAllowedPath = Path.Combine(TestUtils.MethodTestDir, "testLib1.dll");

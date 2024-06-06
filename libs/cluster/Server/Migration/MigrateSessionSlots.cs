@@ -56,7 +56,7 @@ namespace Garnet.cluster
         /// </summary>
         public void DeleteKeysInSlot()
         {
-            if (!_copyOption)
+            if (_copyOption)
                 return;
 
             ClusterManager.DeleteKeysInSlotsFromMainStore(localServerSession.BasicGarnetApi, _sslots);

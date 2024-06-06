@@ -854,6 +854,13 @@ namespace Garnet.server
                         var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                         ptr += objOutputHeader.bytesDone;
                         break;
+                    case GarnetStatus.NOTFOUND:
+                        var tokens = ReadLeftToken(count - 1, ref ptr);
+                        if (tokens < count - 1)
+                            return false;
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
+                            SendAndReset();
+                        break;
                 }
             }
 

@@ -3,7 +3,7 @@
 
 using System;
 using System.IO;
-using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -43,7 +43,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of object store hash index in bytes (rounds down to power of 2).
         /// </summary>
-        public string ObjectStoreIndexSize = "1g";
+        public string ObjectStoreIndexSize = "16m";
 
         /// <summary>
         /// Max size of object store hash index in bytes (rounds down to power of 2). 
@@ -229,7 +229,7 @@ namespace Garnet.server
         /// <summary>
         /// Enable FastCommit mode for TsavoriteLog
         /// </summary>
-        public bool EnableFastCommit = false;
+        public bool EnableFastCommit = true;
 
         /// <summary>
         /// Throttle FastCommit to write metadata once every K commits
@@ -381,14 +381,17 @@ namespace Garnet.server
 
             indexSize = IndexSizeCachelines("hash index size", IndexSize);
             logger?.LogInformation($"[Store] Using hash index size of {PrettySize(indexSize * 64L)} ({PrettySize(indexSize)} cache lines)");
+            logger?.LogInformation($"[Store] Hash index size is optimized for up to ~{PrettySize(indexSize * 4L)} distinct keys");
 
             AdjustedIndexMaxSize = IndexMaxSize == string.Empty ? 0 : IndexSizeCachelines("hash index max size", IndexMaxSize);
             if (AdjustedIndexMaxSize != 0 && AdjustedIndexMaxSize < indexSize)
                 throw new Exception($"Index size {IndexSize} should not be less than index max size {IndexMaxSize}");
 
             if (AdjustedIndexMaxSize > 0)
+            {
                 logger?.LogInformation($"[Store] Using hash index max size of {PrettySize(AdjustedIndexMaxSize * 64L)}, ({PrettySize(AdjustedIndexMaxSize)} cache lines)");
-
+                logger?.LogInformation($"[Store] Hash index max size is optimized for up to ~{PrettySize(AdjustedIndexMaxSize * 4L)} distinct keys");
+            }
             logger?.LogInformation($"[Store] Using log mutable percentage of {MutablePercent}%");
 
             if (DeviceFactoryCreator == null)
@@ -521,14 +524,17 @@ namespace Garnet.server
 
             objIndexSize = IndexSizeCachelines("object store hash index size", ObjectStoreIndexSize);
             logger?.LogInformation($"[Object Store] Using hash index size of {PrettySize(objIndexSize * 64L)} ({PrettySize(objIndexSize)} cache lines)");
+            logger?.LogInformation($"[Object Store] Hash index size is optimized for up to ~{PrettySize(objIndexSize * 4L)} distinct keys");
 
             AdjustedObjectStoreIndexMaxSize = ObjectStoreIndexMaxSize == string.Empty ? 0 : IndexSizeCachelines("hash index max size", ObjectStoreIndexMaxSize);
             if (AdjustedObjectStoreIndexMaxSize != 0 && AdjustedObjectStoreIndexMaxSize < objIndexSize)
                 throw new Exception($"Index size {IndexSize} should not be less than index max size {IndexMaxSize}");
 
             if (AdjustedObjectStoreIndexMaxSize > 0)
+            {
                 logger?.LogInformation($"[Object Store] Using hash index max size of {PrettySize(AdjustedObjectStoreIndexMaxSize * 64L)}, ({PrettySize(AdjustedObjectStoreIndexMaxSize)} cache lines)");
-
+                logger?.LogInformation($"[Object Store] Hash index max size is optimized for up to ~{PrettySize(AdjustedObjectStoreIndexMaxSize * 4L)} distinct keys");
+            }
             logger?.LogInformation($"[Object Store] Using log mutable percentage of {ObjectStoreMutablePercent}%");
 
             objTotalMemorySize = ParseSize(ObjectStoreTotalMemorySize);

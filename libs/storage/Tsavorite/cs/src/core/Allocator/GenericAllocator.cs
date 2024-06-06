@@ -202,7 +202,7 @@ namespace Tsavorite.core
 
         public override int GetValueLength(ref Value value) => ValueSize;
 
-        public override (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TsavoriteSession tsavoriteSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
         {
             return (RecordSize, RecordSize, KeySize);
         }
@@ -214,7 +214,7 @@ namespace Tsavorite.core
 
         public override int GetFixedRecordSize() => RecordSize;
 
-        public override (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, TsavoriteSession tsavoriteSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref Key key, ref Input input, TSessionFunctionsWrapper sessionFunctions)
         {
             return (RecordSize, RecordSize, KeySize);
         }
@@ -420,204 +420,239 @@ namespace Tsavorite.core
             // This is the in-memory buffer page to be written
             var src = values[flushPage % BufferSize];
 
-            // Temporary storage to hold the image "template" we'll write to disk: It will have RecordInfos and object pointers that will be overwritten by addresses
-            // when writing to the main log (both object pointers and addresses are 8 bytes).
-            var buffer = bufferPool.Get((int)numBytesToWrite);
-
-            if (aligned_start < start && (KeyHasObjects() || ValueHasObjects()))
+            // We create a shadow copy of the page if we are under epoch protection.
+            // This copy ensures that object references are kept valid even if the original page is reclaimed.
+            // We suspend epoch during the actual flush as that can take a long time.
+            bool epochProtected = false;
+            if (epoch.ThisInstanceProtected())
             {
-                // Do not read back the invalid header of page 0
-                if ((flushPage > 0) || (start > GetFirstValidLogicalAddress(flushPage)))
+                epochProtected = true;
+                src = new Record<Key, Value>[values[flushPage % BufferSize].Length];
+                Array.Copy(values[flushPage % BufferSize], src, values[flushPage % BufferSize].Length);
+                epoch.Suspend();
+            }
+            try
+            {
+                // Temporary storage to hold the image "template" we'll write to disk: It will have RecordInfos and object pointers that will be overwritten by addresses
+                // when writing to the main log (both object pointers and addresses are 8 bytes).
+                var buffer = bufferPool.Get((int)numBytesToWrite);
+
+                if (aligned_start < start && (KeyHasObjects() || ValueHasObjects()))
                 {
-                    // Get the overlapping HLOG from disk as we wrote it with object pointers previously. This avoids object reserialization
-                    PageAsyncReadResult<Empty> result = new()
+                    // Do not read back the invalid header of page 0
+                    if ((flushPage > 0) || (start > GetFirstValidLogicalAddress(flushPage)))
                     {
-                        handle = new CountdownEvent(1)
-                    };
-                    device.ReadAsync(alignedDestinationAddress + (ulong)aligned_start, (IntPtr)buffer.aligned_pointer + aligned_start,
-                        (uint)sectorSize, AsyncReadPageCallback, result);
-                    result.handle.Wait();
-                }
-                fixed (RecordInfo* pin = &src[0].info)
-                {
-                    // Write all the RecordInfos on one operation. This also includes object pointers, but for valid records we will overwrite those below.
-                    Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)Unsafe.AsPointer(ref buffer.buffer[0]) + buffer.buffer.Length);
-
-                    Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.aligned_pointer + start,
-                        numBytesToWrite - start, numBytesToWrite - start);
-                }
-            }
-            else
-            {
-                fixed (RecordInfo* pin = &src[0].info)
-                {
-                    // Write all the RecordInfos on one operation. This also includes object pointers, but for valid records we will overwrite those below.
-                    Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)Unsafe.AsPointer(ref buffer.buffer[0]) + buffer.buffer.Length);
-
-                    Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + aligned_start), buffer.aligned_pointer + aligned_start,
-                        numBytesToWrite - aligned_start, numBytesToWrite - aligned_start);
-                }
-            }
-
-            // In the main log, we write addresses to pages in the object log. This array saves the addresses of the key and/or value fields in 'buffer',
-            // which again is the image we're building from the 'values' "page" for this write. The "addresses into 'buffer'" are cast below to AddressInfo
-            // structures and stored in the sequence we'll write them: alternating series of key then value if both are object types, else keys or values only.
-            List<long> addr = new List<long>();
-            asyncResult.freeBuffer1 = buffer;
-
-            // Object keys and values are serialized into this MemoryStream.
-            MemoryStream ms = new();
-            IObjectSerializer<Key> keySerializer = null;
-            IObjectSerializer<Value> valueSerializer = null;
-
-            if (KeyHasObjects())
-            {
-                keySerializer = SerializerSettings.keySerializer();
-                keySerializer.BeginSerialize(ms);
-            }
-            if (ValueHasObjects())
-            {
-                valueSerializer = SerializerSettings.valueSerializer();
-                valueSerializer.BeginSerialize(ms);
-            }
-
-            // Track the size to be written to the object log.
-            long endPosition = 0;
-
-            for (int i = start / RecordSize; i < end / RecordSize; i++)
-            {
-                if (!src[i].info.Invalid)
-                {
-                    // Calculate the logical address of the 'values' page currently being written.
-                    var address = (flushPage << LogPageSizeBits) + i * RecordSize;
-
-                    // Do not write v+1 records (e.g. during a checkpoint)
-                    if (address < fuzzyStartLogicalAddress || !src[i].info.IsInNewVersion)
-                    {
-                        if (KeyHasObjects())
+                        // Get the overlapping HLOG from disk as we wrote it with object pointers previously. This avoids object reserialization
+                        PageAsyncReadResult<Empty> result = new()
                         {
-                            long pos = ms.Position;
-                            keySerializer.Serialize(ref src[i].key);
-
-                            // Store the key address into the 'buffer' AddressInfo image as an offset into 'ms'.
-                            var key_address = GetKeyAddressInfo((long)(buffer.aligned_pointer + i * RecordSize));
-                            key_address->Address = pos;
-                            key_address->Size = (int)(ms.Position - pos);
-                            addr.Add((long)key_address);
-                            endPosition = pos + key_address->Size;
-                        }
-
-                        if (ValueHasObjects() && !src[i].info.Tombstone)
-                        {
-                            long pos = ms.Position;
-                            valueSerializer.Serialize(ref src[i].value);
-
-                            // Store the value address into the 'buffer' AddressInfo image as an offset into 'ms'.
-                            var value_address = GetValueAddressInfo((long)(buffer.aligned_pointer + i * RecordSize));
-                            value_address->Address = pos;
-                            value_address->Size = (int)(ms.Position - pos);
-                            addr.Add((long)value_address);
-                            endPosition = pos + value_address->Size;
-                        }
+                            handle = new CountdownEvent(1)
+                        };
+                        device.ReadAsync(alignedDestinationAddress + (ulong)aligned_start, (IntPtr)buffer.aligned_pointer + aligned_start,
+                            (uint)sectorSize, AsyncReadPageCallback, result);
+                        result.handle.Wait();
                     }
-                    else
+                    fixed (RecordInfo* pin = &src[0].info)
                     {
-                        // Mark v+1 records as invalid to avoid deserializing them on recovery
-                        ref var record = ref Unsafe.AsRef<Record<Key, Value>>(buffer.aligned_pointer + i * RecordSize);
-                        record.info.SetInvalid();
+                        // Write all the RecordInfos on one operation. This also includes object pointers, but for valid records we will overwrite those below.
+                        Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)Unsafe.AsPointer(ref buffer.buffer[0]) + buffer.buffer.Length);
+
+                        Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + start), buffer.aligned_pointer + start,
+                            numBytesToWrite - start, numBytesToWrite - start);
+                    }
+                }
+                else
+                {
+                    fixed (RecordInfo* pin = &src[0].info)
+                    {
+                        // Write all the RecordInfos on one operation. This also includes object pointers, but for valid records we will overwrite those below.
+                        Debug.Assert(buffer.aligned_pointer + numBytesToWrite <= (byte*)Unsafe.AsPointer(ref buffer.buffer[0]) + buffer.buffer.Length);
+
+                        Buffer.MemoryCopy((void*)((long)Unsafe.AsPointer(ref src[0]) + aligned_start), buffer.aligned_pointer + aligned_start,
+                            numBytesToWrite - aligned_start, numBytesToWrite - aligned_start);
                     }
                 }
 
-                // If this record's serialized size surpassed ObjectBlockSize or it's the last record to be written, write to the object log.
-                if (endPosition > ObjectBlockSize || i == (end / RecordSize) - 1)
-                {
-                    var memoryStreamActualLength = ms.Position;
-                    var memoryStreamTotalLength = (int)endPosition;
-                    endPosition = 0;
+                // In the main log, we write addresses to pages in the object log. This array saves the addresses of the key and/or value fields in 'buffer',
+                // which again is the image we're building from the 'values' "page" for this write. The "addresses into 'buffer'" are cast below to AddressInfo
+                // structures and stored in the sequence we'll write them: alternating series of key then value if both are object types, else keys or values only.
+                List<long> addr = new List<long>();
+                asyncResult.freeBuffer1 = buffer;
 
+                // Object keys and values are serialized into this MemoryStream.
+                MemoryStream ms = new();
+                IObjectSerializer<Key> keySerializer = null;
+                IObjectSerializer<Value> valueSerializer = null;
+
+                if (KeyHasObjects())
+                {
+                    keySerializer = SerializerSettings.keySerializer();
+                    keySerializer.BeginSerialize(ms);
+                }
+                if (ValueHasObjects())
+                {
+                    valueSerializer = SerializerSettings.valueSerializer();
+                    valueSerializer.BeginSerialize(ms);
+                }
+
+                // Track the size to be written to the object log.
+                long endPosition = 0;
+
+                for (int i = start / RecordSize; i < end / RecordSize; i++)
+                {
+                    byte* recordPtr = buffer.aligned_pointer + i * RecordSize;
+
+                    // Retrieve reference to record struct
+                    ref var record = ref Unsafe.AsRef<Record<Key, Value>>(recordPtr);
+                    AddressInfo* key_address = null, value_address = null;
+
+                    // Zero out object reference addresses (AddressInfo) in the planned disk image
                     if (KeyHasObjects())
-                        keySerializer.EndSerialize();
+                    {
+                        key_address = GetKeyAddressInfo((long)recordPtr);
+                        *key_address = default;
+                    }
                     if (ValueHasObjects())
-                        valueSerializer.EndSerialize();
-                    ms.Close();
-
-                    // Get the total serialized length rounded up to sectorSize
-                    var _alignedLength = (memoryStreamTotalLength + (sectorSize - 1)) & ~(sectorSize - 1);
-
-                    // Reserve the current address in the object log segment offsets for this chunk's write operation.
-                    var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
-
-                    // Allocate the object-log buffer to build the image we'll write to disk, then copy to it from the memory stream.
-                    SectorAlignedMemory _objBuffer = null;
-                    if (memoryStreamTotalLength > 0)
                     {
-                        _objBuffer = bufferPool.Get(memoryStreamTotalLength);
-
-                        fixed (void* src_ = ms.GetBuffer())
-                            Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamTotalLength, memoryStreamActualLength);
+                        value_address = GetValueAddressInfo((long)recordPtr);
+                        *value_address = default;
                     }
 
-                    // Each address we calculated above is now an offset to objAddr; convert to the actual address.
-                    foreach (var address in addr)
-                        ((AddressInfo*)address)->Address += _objAddr;
-
-                    // If we have not written all records, prepare for the next chunk of records to be written.
-                    if (i < (end / RecordSize) - 1)
+                    // Now fill in AddressInfo data for the valid records
+                    if (!record.info.Invalid)
                     {
-                        // Create a new MemoryStream for the next chunk of records to be written.
-                        ms = new MemoryStream();
+                        // Calculate the logical address of the 'values' page currently being written.
+                        var address = (flushPage << LogPageSizeBits) + i * RecordSize;
+
+                        // Do not write v+1 records (e.g. during a checkpoint)
+                        if (address < fuzzyStartLogicalAddress || !record.info.IsInNewVersion)
+                        {
+                            if (KeyHasObjects())
+                            {
+                                long pos = ms.Position;
+                                keySerializer.Serialize(ref src[i].key);
+
+                                // Store the key address into the 'buffer' AddressInfo image as an offset into 'ms'.
+                                key_address->Address = pos;
+                                key_address->Size = (int)(ms.Position - pos);
+                                addr.Add((long)key_address);
+                                endPosition = pos + key_address->Size;
+                            }
+
+                            if (ValueHasObjects() && !record.info.Tombstone)
+                            {
+                                long pos = ms.Position;
+                                valueSerializer.Serialize(ref src[i].value);
+
+                                // Store the value address into the 'buffer' AddressInfo image as an offset into 'ms'.
+                                value_address->Address = pos;
+                                value_address->Size = (int)(ms.Position - pos);
+                                addr.Add((long)value_address);
+                                endPosition = pos + value_address->Size;
+                            }
+                        }
+                        else
+                        {
+                            // Mark v+1 records as invalid to avoid deserializing them on recovery
+                            record.info.SetInvalid();
+                        }
+                    }
+
+                    // If this record's serialized size surpassed ObjectBlockSize or it's the last record to be written, write to the object log.
+                    if (endPosition > ObjectBlockSize || i == (end / RecordSize) - 1)
+                    {
+                        var memoryStreamActualLength = ms.Position;
+                        var memoryStreamTotalLength = (int)endPosition;
+                        endPosition = 0;
+
                         if (KeyHasObjects())
-                            keySerializer.BeginSerialize(ms);
+                            keySerializer.EndSerialize();
                         if (ValueHasObjects())
-                            valueSerializer.BeginSerialize(ms);
+                            valueSerializer.EndSerialize();
+                        ms.Close();
 
-                        // Reset address list for the next chunk of records to be written.
-                        addr = new List<long>();
+                        // Get the total serialized length rounded up to sectorSize
+                        var _alignedLength = (memoryStreamTotalLength + (sectorSize - 1)) & ~(sectorSize - 1);
 
-                        // Write this chunk of records to the object log device.
-                        asyncResult.done = new AutoResetEvent(false);
-                        Debug.Assert(memoryStreamTotalLength > 0);
-                        objlogDevice.WriteAsync(
-                            (IntPtr)_objBuffer.aligned_pointer,
-                            (int)(alignedDestinationAddress >> LogSegmentSizeBits),
-                            (ulong)_objAddr, (uint)_alignedLength, AsyncFlushPartialObjectLogCallback<TContext>, asyncResult);
+                        // Reserve the current address in the object log segment offsets for this chunk's write operation.
+                        var _objAddr = Interlocked.Add(ref localSegmentOffsets[(long)(alignedDestinationAddress >> LogSegmentSizeBits) % SegmentBufferSize], _alignedLength) - _alignedLength;
 
-                        // Wait for write to complete before resuming next write
-                        asyncResult.done.WaitOne();
-                        _objBuffer.Return();
-                    }
-                    else
-                    {
-                        // We have written all records in this 'values' "page".
+                        // Allocate the object-log buffer to build the image we'll write to disk, then copy to it from the memory stream.
+                        SectorAlignedMemory _objBuffer = null;
                         if (memoryStreamTotalLength > 0)
                         {
-                            // Increment the count because we need to write both page and object cache.
-                            Interlocked.Increment(ref asyncResult.count);
+                            _objBuffer = bufferPool.Get(memoryStreamTotalLength);
 
-                            asyncResult.freeBuffer2 = _objBuffer;
+                            fixed (void* src_ = ms.GetBuffer())
+                                Buffer.MemoryCopy(src_, _objBuffer.aligned_pointer, memoryStreamTotalLength, memoryStreamActualLength);
+                        }
+
+                        // Each address we calculated above is now an offset to objAddr; convert to the actual address.
+                        foreach (var address in addr)
+                            ((AddressInfo*)address)->Address += _objAddr;
+
+                        // If we have not written all records, prepare for the next chunk of records to be written.
+                        if (i < (end / RecordSize) - 1)
+                        {
+                            // Create a new MemoryStream for the next chunk of records to be written.
+                            ms = new MemoryStream();
+                            if (KeyHasObjects())
+                                keySerializer.BeginSerialize(ms);
+                            if (ValueHasObjects())
+                                valueSerializer.BeginSerialize(ms);
+
+                            // Reset address list for the next chunk of records to be written.
+                            addr = new List<long>();
+
+                            // Write this chunk of records to the object log device.
+                            asyncResult.done = new AutoResetEvent(false);
+                            Debug.Assert(memoryStreamTotalLength > 0);
                             objlogDevice.WriteAsync(
                                 (IntPtr)_objBuffer.aligned_pointer,
                                 (int)(alignedDestinationAddress >> LogSegmentSizeBits),
-                                (ulong)_objAddr, (uint)_alignedLength, callback, asyncResult);
+                                (ulong)_objAddr, (uint)_alignedLength, AsyncFlushPartialObjectLogCallback<TContext>, asyncResult);
+
+                            // Wait for write to complete before resuming next write
+                            asyncResult.done.WaitOne();
+                            _objBuffer.Return();
+                        }
+                        else
+                        {
+                            // We have written all records in this 'values' "page".
+                            if (memoryStreamTotalLength > 0)
+                            {
+                                // Increment the count because we need to write both page and object cache.
+                                Interlocked.Increment(ref asyncResult.count);
+
+                                asyncResult.freeBuffer2 = _objBuffer;
+                                objlogDevice.WriteAsync(
+                                    (IntPtr)_objBuffer.aligned_pointer,
+                                    (int)(alignedDestinationAddress >> LogSegmentSizeBits),
+                                    (ulong)_objAddr, (uint)_alignedLength, callback, asyncResult);
+                            }
                         }
                     }
                 }
-            }
 
-            if (asyncResult.partial)
+                if (asyncResult.partial)
+                {
+                    // We're writing only a subset of the page, so update our count of bytes to write.
+                    var aligned_end = (int)(asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits));
+                    aligned_end = (aligned_end + (sectorSize - 1)) & ~(sectorSize - 1);
+                    numBytesToWrite = (uint)(aligned_end - aligned_start);
+                }
+
+                // Round up the number of byte to write to sector alignment.
+                var alignedNumBytesToWrite = (uint)((numBytesToWrite + (sectorSize - 1)) & ~(sectorSize - 1));
+
+                // Finally write the hlog page
+                device.WriteAsync((IntPtr)buffer.aligned_pointer + aligned_start, alignedDestinationAddress + (ulong)aligned_start,
+                    alignedNumBytesToWrite, callback, asyncResult);
+            }
+            finally
             {
-                // We're writing only a subset of the page, so update our count of bytes to write.
-                var aligned_end = (int)(asyncResult.untilAddress - (asyncResult.page << LogPageSizeBits));
-                aligned_end = (aligned_end + (sectorSize - 1)) & ~(sectorSize - 1);
-                numBytesToWrite = (uint)(aligned_end - aligned_start);
+                if (epochProtected)
+                    epoch.Resume();
             }
-
-            // Round up the number of byte to write to sector alignment.
-            var alignedNumBytesToWrite = (uint)((numBytesToWrite + (sectorSize - 1)) & ~(sectorSize - 1));
-
-            // Finally write the hlog page
-            device.WriteAsync((IntPtr)buffer.aligned_pointer + aligned_start, alignedDestinationAddress + (ulong)aligned_start,
-                alignedNumBytesToWrite, callback, asyncResult);
         }
 
         private void AsyncReadPageCallback(uint errorCode, uint numBytes, object context)
@@ -867,6 +902,7 @@ namespace Tsavorite.core
 
             long streamStartPos = stream.Position;
             long start_addr = -1;
+            int start_offset = -1, end_offset = -1;
             if (KeyHasObjects())
             {
                 keySerializer = SerializerSettings.keySerializer();
@@ -882,6 +918,10 @@ namespace Tsavorite.core
             {
                 ref Record<Key, Value> record = ref Unsafe.AsRef<Record<Key, Value>>(raw + ptr);
                 src[ptr / RecordSize].info = record.info;
+                if (start_offset == -1)
+                    start_offset = (int)(ptr / RecordSize);
+
+                end_offset = (int)(ptr / RecordSize) + 1;
 
                 if (!record.info.Invalid)
                 {
@@ -929,6 +969,12 @@ namespace Tsavorite.core
             if (ValueHasObjects())
             {
                 valueSerializer.EndDeserialize();
+            }
+
+            if (OnDeserializationObserver != null && start_offset != -1 && end_offset != -1)
+            {
+                using var iter = new MemoryPageScanIterator<Key, Value>(src, start_offset, end_offset, -1, RecordSize);
+                OnDeserializationObserver.OnNext(iter);
             }
         }
 
@@ -1158,14 +1204,34 @@ namespace Tsavorite.core
             return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
+        private void ComputeScanBoundaries(long beginAddress, long endAddress, out long pageStartAddress, out int start, out int end)
+        {
+            pageStartAddress = beginAddress & ~PageSizeMask;
+            start = (int)(beginAddress & PageSizeMask) / RecordSize;
+            var count = (int)(endAddress - beginAddress) / RecordSize;
+            end = start + count;
+        }
+
+        /// <inheritdoc />
+        public override void EvictPage(long page)
+        {
+            if (OnEvictionObserver is not null)
+            {
+                var beginAddress = page << LogPageSizeBits;
+                var endAddress = (page + 1) << LogPageSizeBits;
+                ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
+                using var iter = new MemoryPageScanIterator<Key, Value>(values[(int)(page % BufferSize)], start, end, pageStartAddress, RecordSize);
+                OnEvictionObserver?.OnNext(iter);
+            }
+
+            FreePage(page);
+        }
+
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<Key, Value>> observer)
         {
             var page = (beginAddress >> LogPageSizeBits) % BufferSize;
-            long pageStartAddress = beginAddress & ~PageSizeMask;
-            int start = (int)(beginAddress & PageSizeMask) / RecordSize;
-            int count = (int)(endAddress - beginAddress) / RecordSize;
-            int end = start + count;
+            ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
             using var iter = new MemoryPageScanIterator<Key, Value>(values[page], start, end, pageStartAddress, RecordSize);
             Debug.Assert(epoch.ThisInstanceProtected());
             try

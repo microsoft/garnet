@@ -10,16 +10,16 @@ namespace Tsavorite.test.statemachine
     internal static class Extension
     {
         public static ThreadSession<K, V, I, O, C, F> CreateThreadSession<K, V, I, O, C, F>(this TsavoriteKV<K, V> store, F f)
-            where K : new() where V : new() where F : IFunctions<K, V, I, O, C>
+            where K : new() where V : new() where F : ISessionFunctions<K, V, I, O, C>
             => new ThreadSession<K, V, I, O, C, F>(store, f);
 
         public static LUCThreadSession<K, V, I, O, C, F> CreateLUCThreadSession<K, V, I, O, C, F>(this TsavoriteKV<K, V> store, F f)
-            where K : new() where V : new() where F : IFunctions<K, V, I, O, C>
+            where K : new() where V : new() where F : ISessionFunctions<K, V, I, O, C>
             => new LUCThreadSession<K, V, I, O, C, F>(store, f);
     }
 
     internal class ThreadSession<K, V, I, O, C, F>
-        where K : new() where V : new() where F : IFunctions<K, V, I, O, C>
+        where K : new() where V : new() where F : ISessionFunctions<K, V, I, O, C>
     {
         readonly TsavoriteKV<K, V> store;
         ClientSession<K, V, I, O, C, F> s2;
@@ -88,7 +88,7 @@ namespace Tsavorite.test.statemachine
     }
 
     internal class LUCThreadSession<K, V, I, O, C, F>
-        where K : new() where V : new() where F : IFunctions<K, V, I, O, C>
+        where K : new() where V : new() where F : ISessionFunctions<K, V, I, O, C>
     {
         readonly TsavoriteKV<K, V> store;
         ClientSession<K, V, I, O, C, F> session;
@@ -139,7 +139,7 @@ namespace Tsavorite.test.statemachine
                         if (isProtected)
                             luc.Refresh();
                         else
-                            session.Refresh();
+                            session.BasicContext.Refresh();
                         ev.Set();
                         break;
                     case "dispose":

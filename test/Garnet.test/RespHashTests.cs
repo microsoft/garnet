@@ -298,6 +298,18 @@ namespace Garnet.test
 
             db.HashSet("user:user1", [new HashEntry("name", "Alice"), new HashEntry("email", "email@example.com"), new HashEntry("age", "30")]);
 
+            // HSCAN without key
+            try
+            {
+                db.Execute("HSCAN");
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(HashOperation.HSCAN));
+                Assert.AreEqual(expectedErrorMessage, e.Message);
+            }
+
             // HSCAN without parameters
             members = db.HashScan("user:user1");
             Assert.IsTrue(((IScanningCursor)members).Cursor == 0);
@@ -501,7 +513,24 @@ namespace Garnet.test
             Assert.AreEqual("value3", (string?)val3);
             Assert.False(set3);
 #nullable disable
+        }
 
+        [Test]
+        public void CheckEmptyHashKeyRemoved()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var key = new RedisKey("user1:hash");
+            var db = redis.GetDatabase(0);
+
+            db.HashSet(key, [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021")]);
+
+            var result = db.HashDelete(key, new RedisValue("Title"));
+            Assert.IsTrue(result);
+            result = db.HashDelete(key, new RedisValue("Year"));
+            Assert.IsTrue(result);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
         }
 
         #endregion

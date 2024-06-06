@@ -21,6 +21,11 @@ namespace Garnet.server.Custom
         /// Number of parameters required by custom command / transaction
         /// </summary>
         public int NumParams { get; set; }
+
+        /// <summary>
+        /// RESP command info
+        /// </summary>
+        public RespCommandsInfo CommandInfo { get; set; }
     }
 
 
@@ -171,7 +176,13 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.NumParams, this.RegisterArgs.CommandType, this.Instance, this.RegisterArgs.ExpirationTicks);
+            customCommandManager.Register(
+                this.RegisterArgs.Name,
+                this.RegisterArgs.NumParams,
+                this.RegisterArgs.CommandType,
+                this.Instance,
+                this.RegisterArgs.CommandInfo,
+                this.RegisterArgs.ExpirationTicks);
         }
     }
 
@@ -186,7 +197,7 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.NumParams, this.RegisterArgs.CommandType, this.Instance);
+            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.NumParams, this.RegisterArgs.CommandType, this.Instance, this.RegisterArgs.CommandInfo);
         }
     }
 
@@ -201,7 +212,7 @@ namespace Garnet.server.Custom
 
         public override void Register(CustomCommandManager customCommandManager)
         {
-            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.NumParams, () => this.Instance);
+            customCommandManager.Register(this.RegisterArgs.Name, this.RegisterArgs.NumParams, () => this.Instance, this.RegisterArgs.CommandInfo);
         }
     }
 }

@@ -23,7 +23,7 @@ namespace Tsavorite.test.Cancellation
             ConcurrentWriter
         }
 
-        public class CancellationFunctions : FunctionsBase<int, int, int, int, Empty>
+        public class CancellationFunctions : SessionFunctionsBase<int, int, int, int, Empty>
         {
             internal CancelLocation cancelLocation = CancelLocation.None;
             internal CancelLocation lastFunc = CancelLocation.None;
@@ -120,6 +120,7 @@ namespace Tsavorite.test.Cancellation
         CancellationFunctions functions;
         TsavoriteKV<int, int> store;
         ClientSession<int, int, int, int, Empty, CancellationFunctions> session;
+        BasicContext<int, int, int, int, Empty, CancellationFunctions> bContext;
 
         const int NumRecs = 100;
 
@@ -136,6 +137,7 @@ namespace Tsavorite.test.Cancellation
 
             functions = new CancellationFunctions();
             session = store.NewSession<int, int, Empty, CancellationFunctions>(functions);
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -155,7 +157,7 @@ namespace Tsavorite.test.Cancellation
             // Single alloc outside the loop, to the max length we'll need.
             for (int ii = 0; ii < NumRecs; ii++)
             {
-                session.Upsert(ii, ii * NumRecs * 10);
+                bContext.Upsert(ii, ii * NumRecs * 10);
             }
         }
 
@@ -169,12 +171,12 @@ namespace Tsavorite.test.Cancellation
             int key = NumRecs;
 
             functions.cancelLocation = CancelLocation.NeedInitialUpdate;
-            var status = session.RMW(key, key * NumRecs * 10);
+            var status = bContext.RMW(key, key * NumRecs * 10);
             Assert.IsTrue(status.IsCanceled);
             Assert.AreEqual(CancelLocation.NeedInitialUpdate, functions.lastFunc);
 
             functions.cancelLocation = CancelLocation.InitialUpdater;
-            status = session.RMW(key, key * NumRecs * 10);
+            status = bContext.RMW(key, key * NumRecs * 10);
             Assert.IsTrue(status.IsCanceled);
             Assert.AreEqual(CancelLocation.InitialUpdater, functions.lastFunc);
         }
@@ -193,12 +195,12 @@ namespace Tsavorite.test.Cancellation
                 for (int lap = 0; lap < 2; ++lap)
                 {
                     functions.cancelLocation = CancelLocation.NeedCopyUpdate;
-                    var status = session.RMW(key, key * NumRecs * 10);
+                    var status = bContext.RMW(key, key * NumRecs * 10);
                     Assert.IsTrue(status.IsCanceled);
                     Assert.AreEqual(CancelLocation.NeedCopyUpdate, functions.lastFunc);
 
                     functions.cancelLocation = CancelLocation.CopyUpdater;
-                    status = session.RMW(key, key * NumRecs * 10);
+                    status = bContext.RMW(key, key * NumRecs * 10);
                     Assert.IsTrue(status.IsCanceled);
                     Assert.AreEqual(CancelLocation.CopyUpdater, functions.lastFunc);
                 }
@@ -223,7 +225,7 @@ namespace Tsavorite.test.Cancellation
 
             // Note: ExpirationTests tests the combination of CancelOperation and DeleteRecord
             functions.cancelLocation = CancelLocation.InPlaceUpdater;
-            var status = session.RMW(key, key * NumRecs * 10);
+            var status = bContext.RMW(key, key * NumRecs * 10);
             Assert.IsTrue(status.IsCanceled);
             Assert.AreEqual(CancelLocation.InPlaceUpdater, functions.lastFunc);
         }
@@ -238,7 +240,7 @@ namespace Tsavorite.test.Cancellation
             int key = NumRecs + 1;
 
             functions.cancelLocation = CancelLocation.SingleWriter;
-            var status = session.Upsert(key, key * NumRecs * 10);
+            var status = bContext.Upsert(key, key * NumRecs * 10);
             Assert.IsTrue(status.IsCanceled);
             Assert.AreEqual(CancelLocation.SingleWriter, functions.lastFunc);
         }
@@ -253,7 +255,7 @@ namespace Tsavorite.test.Cancellation
             int key = NumRecs / 2;
 
             functions.cancelLocation = CancelLocation.ConcurrentWriter;
-            var status = session.Upsert(key, key * NumRecs * 10);
+            var status = bContext.Upsert(key, key * NumRecs * 10);
             Assert.IsTrue(status.IsCanceled);
             Assert.AreEqual(CancelLocation.ConcurrentWriter, functions.lastFunc);
         }

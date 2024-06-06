@@ -50,21 +50,22 @@ namespace Garnet.test
             Assert.AreEqual(nVals, nAdded);
 
             var result = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             var expectedResponse = 184;
             Assert.AreEqual(expectedResponse, actualValue);
 
             string popval = db.ListLeftPop(key);
             Assert.AreEqual(val, popval);
 
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(result.IsNull);
         }
 
         [Test]
-        public void MultiLPUSHAndLTRIM()
+        public void MultiLPUSHAndLTRIMWithMemoryCheck()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -80,39 +81,82 @@ namespace Garnet.test
             Assert.AreEqual(nVals, nAdded);
 
             var result = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             var expectedResponse = 904;
             Assert.AreEqual(expectedResponse, actualValue);
 
-            long nLen = db.ListLength(key);
             db.ListTrim(key, 1, 5);
 
-            long nLen1 = db.ListLength(key);
-            Assert.AreEqual(nLen1, 5);
+            var nLen = db.ListLength(key);
+            Assert.AreEqual(5, nLen);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 504;
             Assert.AreEqual(expectedResponse, actualValue);
 
             //all elements remain
             db.ListTrim(key, 0, -1);
-            nLen1 = db.ListLength(key);
-            Assert.AreEqual(nLen1, 5);
+            nLen = db.ListLength(key);
+            Assert.AreEqual(5, nLen);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 504;
             Assert.AreEqual(expectedResponse, actualValue);
 
             db.ListTrim(key, 0, -3);
-            nLen1 = db.ListLength(key);
-            Assert.AreEqual(3, nLen1);
+            nLen = db.ListLength(key);
+            Assert.AreEqual(3, nLen);
 
             var vals = db.ListRange(key, 0, -1);
             Assert.AreEqual("val_8", vals[0].ToString());
             Assert.AreEqual("val_7", vals[1].ToString());
             Assert.AreEqual("val_6", vals[2].ToString());
+        }
+
+        private static object[] LTrimTestCases = {
+            new object[] {0, 0, new[] {0} },
+            new object[] {-2, -1, new[] {8, 9} },
+            new object[] {-2, -2, new[] {8} },
+            new object[] {3, 5, new[] {3, 4, 5} },
+            new object[] {-12, 0, new[] {0} },
+            new object[] {-12, 2, new[] {0, 1, 2} },
+            new object[] {-12, -7, new[] {0, 1, 2, 3} },
+            new object[] {-15, -11, Array.Empty<int>() },
+            new object[] {8, 8, new[] {8} },
+            new object[] {8, 12, new[] {8, 9} },
+            new object[] {9, 12, new[] {9} },
+            new object[] {10, 12, Array.Empty<int>() },
+            new object[] {5, 3, Array.Empty<int>()},
+            new object[] {-3, -5, Array.Empty<int>()}
+        };
+
+        [Test]
+        [TestCaseSource(nameof(LTrimTestCases))]
+        public void MultiRPUSHAndLTRIM(int startIdx, int stopIdx, int[] expectedRemainingIdx)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "List_Test";
+            var nVals = 10;
+            var values = new RedisValue[nVals];
+            for (var i = 0; i < 10; i++)
+            {
+                values[i] = "val_" + i;
+            }
+            var nAdded = db.ListRightPush(key, values);
+            Assert.AreEqual(nVals, nAdded);
+
+            db.ListTrim(key, startIdx, stopIdx);
+            var nLen = db.ListLength(key);
+            Assert.AreEqual(expectedRemainingIdx.Length, nLen);
+            var remainingVals = db.ListRange(key);
+            for (var i = 0; i < remainingVals.Length; i++)
+            {
+                Assert.AreEqual(values[expectedRemainingIdx[i]], remainingVals[i].ToString());
+            }
         }
 
         [Test]
@@ -243,7 +287,7 @@ namespace Garnet.test
             Assert.AreEqual(nVals, nAdded);
 
             var result = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             var expectedResponse = 344;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -257,7 +301,7 @@ namespace Garnet.test
             Assert.AreEqual(val, insert_val);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 432;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -268,7 +312,7 @@ namespace Garnet.test
             Assert.AreEqual(val, insert_val);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 520;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -292,7 +336,7 @@ namespace Garnet.test
             Assert.AreEqual(nVals, nAdded);
 
             var result = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             var expectedResponse = 584;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -301,7 +345,7 @@ namespace Garnet.test
             Assert.AreEqual(ret, 2);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 424;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -310,7 +354,7 @@ namespace Garnet.test
             Assert.AreEqual(nLen, 3);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 344;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -333,7 +377,7 @@ namespace Garnet.test
             Assert.AreEqual(nVals, nAdded);
 
             var result = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             var expectedResponse = 904;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -352,12 +396,13 @@ namespace Garnet.test
 
             // list is empty, the code should return (nil)
             popval = db.ListLeftPop(key);
-            Assert.AreEqual(null, popval);
+            Assert.IsNull(popval);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(result.IsNull);
         }
 
         [Test]
@@ -378,7 +423,7 @@ namespace Garnet.test
             Assert.AreEqual(nVals, nAdded);
 
             var result = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             var expectedResponse = 904;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -388,7 +433,7 @@ namespace Garnet.test
             Assert.AreEqual(nLen, 8);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 744;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -411,7 +456,7 @@ namespace Garnet.test
             Assert.AreEqual(nVals, nAdded);
 
             var result = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
+            var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             var expectedResponse = 904;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -427,19 +472,15 @@ namespace Garnet.test
                     break;
             }
 
-            result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
-
             // list is empty, the code should return (nil)
             popval = db.ListLeftPop(key);
-            Assert.AreEqual(null, popval);
+            Assert.IsNull(popval);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
 
             result = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == result.Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 104;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(result.IsNull);
         }
 
         [Test]
@@ -471,7 +512,7 @@ namespace Garnet.test
             Assert.AreEqual("Value-three", result.ToString());
 
             var response = db.Execute("MEMORY", "USAGE", key);
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = 272;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -488,7 +529,7 @@ namespace Garnet.test
             Assert.AreEqual("Value-two", result.ToString());
 
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 272;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -1137,7 +1178,7 @@ namespace Garnet.test
             Assert.IsTrue(result == 0);
 
             var response = db.Execute("MEMORY", "USAGE", "mylist");
-            var actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             var expectedResponse = -1;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -1146,7 +1187,7 @@ namespace Garnet.test
             Assert.IsTrue(result == 10);
 
             response = db.Execute("MEMORY", "USAGE", "mylist");
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 904;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -1155,7 +1196,7 @@ namespace Garnet.test
             Assert.IsTrue(result == 0);
 
             response = db.Execute("MEMORY", "USAGE", "myaux-list");
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = -1;
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -1164,7 +1205,7 @@ namespace Garnet.test
             Assert.IsTrue(result == 10);
 
             response = db.Execute("MEMORY", "USAGE", "myaux-list");
-            actualValue = ResultType.Integer == response.Type ? Int32.Parse(response.ToString()) : -1;
+            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 912;
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -1185,6 +1226,23 @@ namespace Garnet.test
             var expectedResponse = ":0\r\n";
             var actualValue = Encoding.ASCII.GetString(len).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CheckEmptyListKeyRemoved()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var key = new RedisKey("user1:list");
+            var db = redis.GetDatabase(0);
+            var values = new[] { new RedisValue("Hello"), new RedisValue("World") };
+            var result = db.ListRightPush(key, values);
+            Assert.AreEqual(2, result);
+
+            var actualMembers = db.ListRightPop(key, 2);
+            Assert.AreEqual(values.Length, actualMembers.Length);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
         }
     }
 }

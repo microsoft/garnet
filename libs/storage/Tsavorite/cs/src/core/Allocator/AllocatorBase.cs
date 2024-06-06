@@ -260,9 +260,16 @@ namespace Tsavorite.core
         internal IObserver<ITsavoriteScanIterator<Key, Value>> OnEvictionObserver;
 
         /// <summary>
+        /// Observer for records brought into memory by deserializing pages
+        /// </summary>
+        internal IObserver<ITsavoriteScanIterator<Key, Value>> OnDeserializationObserver;
+
+        /// <summary>
         /// The "event" to be waited on for flush completion by the initiator of an operation
         /// </summary>
         internal CompletionEvent FlushEvent;
+
+        public Func<bool> IsSizeBeyondLimit;
 
         #region Abstract methods
         /// <summary>
@@ -345,8 +352,8 @@ namespace Tsavorite.core
         /// Get copy destination size for RMW, taking Input into account
         /// </summary>
         /// <returns></returns>
-        public abstract (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : IVariableLengthInput<Value, Input>;
+        public abstract (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<Value, Input>;
 
         /// <summary>
         /// Get number of bytes required
@@ -373,10 +380,10 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="tsavoriteSession"></param>
+        /// <param name="sessionFunctions"></param>
         /// <returns></returns>
-        public abstract (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : IVariableLengthInput<Value, Input>;
+        public abstract (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref Key key, ref Input input, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : IVariableLengthInput<Value, Input>;
 
         /// <summary>
         /// Get record size
@@ -1448,6 +1455,19 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Invokes eviction observer if set and then frees the page.
+        /// </summary>
+        /// <param name="page"></param>
+        public virtual void EvictPage(long page)
+        {
+            var start = page << LogPageSizeBits;
+            var end = (page + 1) << LogPageSizeBits;
+            if (OnEvictionObserver is not null)
+                MemoryPageScan(start, end, OnEvictionObserver);
+            FreePage(page);
+        }
+
+        /// <summary>
         /// Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices
         /// </summary>
         /// <param name="toAddress"></param>
@@ -2045,7 +2065,7 @@ namespace Tsavorite.core
         /// <param name="throttleCheckpointFlushDelayMs"></param>
         public void AsyncFlushPagesToDevice(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
-            logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
+            logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
             var _completedSemaphore = new SemaphoreSlim(0);
             completedSemaphore = _completedSemaphore;
@@ -2268,12 +2288,15 @@ namespace Tsavorite.core
 
                     if (result.fromAddress > startAddress)
                         startAddress = result.fromAddress;
+                    if (result.untilAddress < endAddress)
+                        endAddress = result.untilAddress;
+
                     var _readOnlyAddress = SafeReadOnlyAddress;
                     if (_readOnlyAddress > startAddress)
                         startAddress = _readOnlyAddress;
+                    if (_readOnlyAddress > endAddress)
+                        endAddress = _readOnlyAddress;
 
-                    if (result.untilAddress < endAddress)
-                        endAddress = result.untilAddress;
                     int flushWidth = (int)(endAddress - startAddress);
 
                     if (flushWidth > 0)

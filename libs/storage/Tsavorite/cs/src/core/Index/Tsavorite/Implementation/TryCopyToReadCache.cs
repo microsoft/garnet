@@ -14,12 +14,12 @@ namespace Tsavorite.core
         /// <param name="recordValue"></param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        /// <param name="tsavoriteSession"></param>
+        /// <param name="sessionFunctions"></param>
         /// <returns>True if copied to readcache, else false; readcache is "best effort", and we don't fail the read process, or slow it down by retrying.
         /// </returns>
-        internal bool TryCopyToReadCache<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref PendingContext<Input, Output, Context> pendingContext,
+        internal bool TryCopyToReadCache<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<Input, Output, Context> pendingContext,
                                         ref Key key, ref Input input, ref Value recordValue, ref OperationStackContext<Key, Value> stackCtx)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var (actualSize, allocatedSize, _) = hlog.GetRecordSize(ref key, ref recordValue);
 
@@ -30,8 +30,8 @@ namespace Tsavorite.core
 
             UpsertInfo upsertInfo = new()
             {
-                Version = tsavoriteSession.Ctx.version,
-                SessionID = tsavoriteSession.Ctx.sessionID,
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID,
                 Address = Constants.kInvalidAddress,        // We do not expose readcache addresses
                 KeyHash = stackCtx.hei.hash,
             };
@@ -42,7 +42,7 @@ namespace Tsavorite.core
             (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
 
             Output output = default;
-            if (!tsavoriteSession.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
+            if (!sessionFunctions.SingleWriter(ref key, ref input, ref recordValue, ref readcache.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize),
                                             ref output, ref upsertInfo, WriteReason.CopyToReadCache, ref newRecordInfo))
             {
                 stackCtx.SetNewRecordInvalid(ref newRecordInfo);
@@ -57,10 +57,15 @@ namespace Tsavorite.core
             OperationStatus failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
             if (success && stackCtx.recSrc.LowestReadCacheLogicalAddress != Constants.kInvalidAddress)
             {
-                // If someone added a main-log entry for this key from an update or CTT while we were inserting the new readcache record, then the new
+                // If someone added a main-log entry for this key from a CTT while we were inserting the new readcache record, then the new
                 // readcache record is obsolete and must be Invalidated. (If LowestReadCacheLogicalAddress == kInvalidAddress, then the CAS would have
                 // failed in this case.) If this was the first readcache record in the chain, then once we CAS'd it in someone could have spliced into
                 // it, but then that splice will call ReadCacheCheckTailAfterSplice and invalidate it if it's the same key.
+                // Consistency Notes:
+                //  - This is only a concern for CTT; an update would take an XLock which means the ReadCache insert could not be done until that XLock was released.
+                //    a. Therefore there is no "momentary inconsistency", because the value inserted at the splice would not be changed.
+                //    b. It is not possible for another thread to update the "at tail" value to introduce inconsistency until we have released the current SLock.
+                //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
                 success = EnsureNoNewMainLogRecordWasSpliced(ref key, stackCtx.recSrc, pendingContext.InitialLatestLogicalAddress, ref failStatus);
             }
 
@@ -70,7 +75,7 @@ namespace Tsavorite.core
                     newRecordInfo.UnsealAndValidate();
                 pendingContext.recordInfo = newRecordInfo;
                 pendingContext.logicalAddress = upsertInfo.Address;
-                tsavoriteSession.PostSingleWriter(ref key, ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress), ref output, ref upsertInfo, WriteReason.CopyToReadCache, ref newRecordInfo);
+                sessionFunctions.PostSingleWriter(ref key, ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress), ref output, ref upsertInfo, WriteReason.CopyToReadCache, ref newRecordInfo);
                 stackCtx.ClearNewRecord();
                 return true;
             }
@@ -79,7 +84,7 @@ namespace Tsavorite.core
             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
             if (!casSuccess)
             {
-                tsavoriteSession.DisposeSingleWriter(ref readcache.GetKey(newPhysicalAddress), ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress),
+                sessionFunctions.DisposeSingleWriter(ref readcache.GetKey(newPhysicalAddress), ref input, ref recordValue, ref readcache.GetValue(newPhysicalAddress),
                                                   ref output, ref upsertInfo, WriteReason.CopyToReadCache);
                 newRecordInfo.PreviousAddress = Constants.kTempInvalidAddress;     // Necessary for ReadCacheEvict, but cannot be kInvalidAddress or we have recordInfo.IsNull
             }

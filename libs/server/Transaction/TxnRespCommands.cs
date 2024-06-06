@@ -100,8 +100,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
 
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
-            RespCommandsInfo commandInfo = RespCommandsInfo.findCommand(cmd, subCommand);
-            if (commandInfo == null)
+            if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, subCommand, true, logger))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
@@ -113,10 +112,11 @@ namespace Garnet.server
 
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
-            bool invalidNumArgs = commandInfo.arity > 0 ? count != (commandInfo.arity) : count < -commandInfo.arity;
+            var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
+            bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
-            bool isWatch = (commandInfo.command == RespCommand.WATCH || commandInfo.command == RespCommand.WATCHMS || commandInfo.command == RespCommand.WATCHOS);
+            bool isWatch = (commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCHMS || commandInfo.Command == RespCommand.WATCHOS);
 
             if (invalidNumArgs || isWatch)
             {
@@ -127,7 +127,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    string err = string.Format(CmdStrings.GenericErrWrongNumArgs, commandInfo.nameStr);
+                    string err = string.Format(CmdStrings.GenericErrWrongNumArgs, commandInfo.Name);
                     while (!RespWriteUtils.WriteError(err, ref dcurr, dend))
                         SendAndReset();
                     txnManager.Abort();
@@ -250,6 +250,9 @@ namespace Garnet.server
 
         private bool NetworkRUNTXP(int count, byte* ptr)
         {
+            if (count < 1)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP), count);
+
             if (!RespReadUtils.ReadIntWithLengthHeader(out int txid, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
@@ -275,7 +278,9 @@ namespace Garnet.server
             }
             else
             {
-                while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {txid}, expected {numParams}, actual {count - 1}", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(
+                           string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txid, numParams, count - 1), ref dcurr,
+                           dend))
                     SendAndReset();
                 return true;
             }

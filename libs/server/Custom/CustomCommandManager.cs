@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 
 namespace Garnet.server
@@ -21,6 +22,11 @@ namespace Garnet.server
         internal int ObjectTypeId = 0;
         internal int TransactionProcId = 0;
 
+        internal int CustomCommandsInfoCount => this.customCommandsInfo.Count;
+        internal IEnumerable<RespCommandsInfo> CustomCommandsInfo => this.customCommandsInfo.Values;
+
+        private readonly Dictionary<string, RespCommandsInfo> customCommandsInfo = new(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>
         /// Create new custom command manager
         /// </summary>
@@ -31,23 +37,25 @@ namespace Garnet.server
             transactionProcMap = new CustomTransaction[MaxRegistrations]; // can increase up to byte.MaxValue
         }
 
-        internal int Register(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, long expirationTicks)
+        internal int Register(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, long expirationTicks)
         {
             int id = Interlocked.Increment(ref CommandId) - 1;
             if (id >= MaxRegistrations)
                 throw new Exception("Out of registration space");
 
             commandMap[id] = new CustomCommand(name, (byte)id, 1, numParams, type, customFunctions, expirationTicks);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             return id;
         }
 
-        internal int Register(string name, int numParams, Func<CustomTransactionProcedure> proc)
+        internal int Register(string name, int numParams, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
         {
             int id = Interlocked.Increment(ref TransactionProcId) - 1;
             if (id >= MaxRegistrations)
                 throw new Exception("Out of registration space");
 
             transactionProcMap[id] = new CustomTransaction(name, (byte)id, numParams, proc);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
             return id;
         }
 
@@ -66,6 +74,7 @@ namespace Garnet.server
             } while (objectCommandMap[type] != null);
 
             objectCommandMap[type] = new CustomObjectCommandWrapper((byte)type, factory);
+
             return type;
         }
 
@@ -82,19 +91,21 @@ namespace Garnet.server
             objectCommandMap[objectTypeId] = new CustomObjectCommandWrapper((byte)objectTypeId, factory);
         }
 
-        internal int Register(string name, int numParams, CommandType commandType, int objectTypeId)
+        internal int Register(string name, int numParams, CommandType commandType, int objectTypeId, RespCommandsInfo commandInfo)
         {
             var wrapper = objectCommandMap[objectTypeId];
 
             int subCommand = Interlocked.Increment(ref wrapper.CommandId) - 1;
             if (subCommand >= byte.MaxValue)
                 throw new Exception("Out of registration space");
+
             wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, 1, numParams, commandType, wrapper.factory);
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
 
             return subCommand;
         }
 
-        internal (int objectTypeId, int subCommand) Register(string name, int numParams, CommandType commandType, CustomObjectFactory factory)
+        internal (int objectTypeId, int subCommand) Register(string name, int numParams, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo)
         {
             int objectTypeId = -1;
             for (int i = 0; i < ObjectTypeId; i++)
@@ -116,6 +127,8 @@ namespace Garnet.server
             if (subCommand >= byte.MaxValue)
                 throw new Exception("Out of registration space");
             wrapper.commandMap[subCommand] = new CustomObjectCommand(name, (byte)objectTypeId, (byte)subCommand, 1, numParams, commandType, wrapper.factory);
+
+            if (commandInfo != null) customCommandsInfo.Add(name, commandInfo);
 
             return (objectTypeId, subCommand);
         }
@@ -162,6 +175,15 @@ namespace Garnet.server
             }
             cmd = null;
             return false;
+        }
+
+        internal bool TryGetCustomCommandInfo(string cmdName, out RespCommandsInfo respCommandsInfo)
+        {
+            respCommandsInfo = default;
+            if (!this.customCommandsInfo.ContainsKey(cmdName)) return false;
+
+            respCommandsInfo = this.customCommandsInfo[cmdName];
+            return true;
         }
     }
 }

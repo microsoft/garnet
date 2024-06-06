@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.Utility;
 
@@ -46,13 +45,6 @@ namespace Tsavorite.core
         internal long LowestReadCachePhysicalAddress;
 
         /// <summary>
-        /// If we are doing RecordIsolation and FreeList revivification, we need to record the min revivifiable address *before* we did Find(OrCreate)Tag.
-        /// Otherwise we might be below the "current" MinRevifiableAddress during traceback, but if that is higher that the MinRevivifiableAddress at the
-        /// time of Find(OrCreate)Tag, then the entry in the <see cref="HashEntryInfo"/> may have been elided and revivified.
-        /// </summary>
-        internal long InitialMinRevivifiableAddress;
-
-        /// <summary>
         /// If <see cref="HasInMemorySrc"/>, this is the allocator (hlog or readcache) that <see cref="LogicalAddress"/> is in.
         /// </summary>
         internal AllocatorBase<Key, Value> Log;
@@ -62,9 +54,7 @@ namespace Tsavorite.core
             internal const int None = 0;
             internal const int TransientSLock = 0x0001;    // LockTable
             internal const int TransientXLock = 0x0002;    // LockTable
-            internal const int RecIsoSLock = 0x0004;       // RecordIsolation
-            internal const int RecIsoXLock = 0x0008;       // RecordIsolation
-            internal const int LockBits = TransientSLock | TransientXLock | RecIsoSLock | RecIsoXLock;
+            internal const int LockBits = TransientSLock | TransientXLock;
 
             internal const int MainLogSrc = 0x0100;
             internal const int ReadCacheSrc = 0x0200;
@@ -89,8 +79,6 @@ namespace Tsavorite.core
 
                 append(TransientSLock, nameof(TransientSLock));
                 append(TransientXLock, nameof(TransientXLock));
-                append(RecIsoSLock, nameof(RecIsoSLock));
-                append(RecIsoXLock, nameof(RecIsoXLock));
                 append(MainLogSrc, nameof(MainLogSrc));
                 append(ReadCacheSrc, nameof(ReadCacheSrc));
                 return sb.ToString();
@@ -116,24 +104,6 @@ namespace Tsavorite.core
         internal void SetHasTransientXLock() => internalState |= InternalStates.TransientXLock;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void ClearHasTransientXLock() => internalState &= ~InternalStates.TransientXLock;
-
-        /// <summary>
-        /// Set (and cleared) by this class, to indicate whether we have taken a RecordIsolation Shared lock.
-        /// </summary>
-        internal readonly bool HasRecordIsolationSLock => (internalState & InternalStates.RecIsoSLock) != 0;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasRecordIsolationSLock() => internalState |= InternalStates.RecIsoSLock;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasRecordIsolationSLock() => internalState &= ~InternalStates.RecIsoSLock;
-
-        /// <summary>
-        /// Set (and cleared) by this class, to indicate whether we have taken a RecordIsolation Exclusive lock.
-        /// </summary>
-        internal readonly bool HasRecordIsolationXLock => (internalState & InternalStates.RecIsoXLock) != 0;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetHasRecordIsolationXLock() => internalState |= InternalStates.RecIsoXLock;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void ClearHasRecordIsolationXLock() => internalState &= ~InternalStates.RecIsoXLock;
 
         /// <summary>
         /// Indicates whether we have any type of non-Manual lock.
@@ -182,112 +152,10 @@ namespace Tsavorite.core
             ClearHasReadCacheSrc();
 
             // HasTransientLock = ...;   Do not clear this; it is in the LockTable and must be preserved until unlocked
-            // recordIsolationResult = ...; Do not clear this either
 
             LatestLogicalAddress = LogicalAddress = AbsoluteAddress(latestLogicalAddress);
             Log = srcLog;
         }
-
-        #region RecordIsolation locking
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryLockExclusive(ref RecordInfo recordInfo)
-        {
-            Debug.Assert(!HasRecordIsolationXLock, "Should not try to XLock a recordInfo when we already have an XLock");
-            if (recordInfo.TryLockExclusive())
-            {
-                SetHasRecordIsolationXLock();
-                return true;
-            }
-            return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnlockExclusive(ref RecordInfo recordInfo, long headAddress)
-        {
-            // Do not Debug.Assert(this.HasRecordIsolationXLock, "Should not try to XUnlock a recordInfo when we don't have an XLock"); as this is called on cleanup.
-
-            if (HasRecordIsolationXLock)
-            {
-                // For RecordIsolation, clear if we've not gone below HeadAddress; if we have, we rely on recordInfo.ClearBitsForDiskImages clearing locks and Seal.
-                if (LogicalAddress >= headAddress)
-                    recordInfo.UnlockExclusive();
-                ClearHasRecordIsolationXLock();
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryLockShared(ref RecordInfo recordInfo)
-        {
-            Debug.Assert(!HasLock, $"Should not try to SLock a recordInfo when we already have a Lock ({LockStateString()})");
-            if (recordInfo.TryLockShared())
-            {
-                SetHasRecordIsolationSLock();
-                return true;
-            }
-            return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnlockShared(ref RecordInfo recordInfo, long headAddress)
-        {
-            // Do not Debug.Assert(this.HasRecordIsolationLock, "Should not try to SUnlock a recordInfo when we don't have an SLock"); as this is called on cleanup.
-
-            if (HasRecordIsolationSLock)
-            {
-                // For RecordIsolation, clear if we've not gone below HeadAddress; if we have, we rely on recordInfo.ClearBitsForDiskImages clearing locks and Seal.
-                if (LogicalAddress >= headAddress)
-                    recordInfo.UnlockShared();
-                ClearHasRecordIsolationSLock();
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryLock(ref RecordInfo recordInfo, bool exclusive)
-        {
-            Debug.Assert(!HasLock, $"Should not try to Lock a recordInfo when we already have a Lock ({LockStateString()})");
-            return exclusive ? TryLockExclusive(ref recordInfo) : TryLockShared(ref recordInfo);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Unlock(ref RecordInfo recordInfo, bool exclusive)
-        {
-            Debug.Assert(HasLock, $"Should not try to Unlock a recordInfo when we don't have a Lock ({LockStateString()})");
-            if (exclusive)
-            {
-                if (HasRecordIsolationXLock)
-                {
-                    recordInfo.UnlockExclusive();
-                    ClearHasRecordIsolationXLock();
-                }
-            }
-            else if (HasRecordIsolationSLock)
-            {
-                recordInfo.UnlockShared();
-                ClearHasRecordIsolationSLock();
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnlockExclusiveAndSealInvalidate(ref RecordInfo recordInfo)
-        {
-            Debug.Assert(!HasRecordIsolationSLock, "Should not try to XUnlockAndSealInvalidate a recordInfo when we have an SLock");
-            if (HasRecordIsolationXLock)
-                recordInfo.UnlockExclusiveAndSealInvalidate();
-            else
-                recordInfo.SealAndInvalidate();
-            ClearHasRecordIsolationXLock();
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void UnlockExclusiveAndSeal(ref RecordInfo recordInfo)
-        {
-            Debug.Assert(!HasRecordIsolationSLock, "Should not try to XUnlockAndSealInvalidate a recordInfo when we have an SLock");
-
-            // This is called with or without RecordIsolation, so does not require an X Lock.
-            recordInfo.UnlockExclusiveAndSeal();
-            ClearHasRecordIsolationXLock();
-        }
-        #endregion RecordIsolation locking
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly string LockStateString() => InternalStates.ToString(internalState & InternalStates.LockBits);
@@ -298,7 +166,7 @@ namespace Tsavorite.core
             var llaRC = IsReadCache(LatestLogicalAddress) ? isRC : string.Empty;
             var laRC = IsReadCache(LogicalAddress) ? isRC : string.Empty;
             return $"lla {AbsoluteAddress(LatestLogicalAddress)}{llaRC}, la {AbsoluteAddress(LogicalAddress)}{laRC}, lrcla {AbsoluteAddress(LowestReadCacheLogicalAddress)},"
-                 + $" hasInMemorySrc {InternalStates.ToString(internalState & InternalStates.InMemSrcBits)}, hasLocks {LockStateString()}, InitMinRevivAddr {InitialMinRevivifiableAddress}";
+                 + $" hasInMemorySrc {InternalStates.ToString(internalState & InternalStates.InMemSrcBits)}, hasLocks {LockStateString()}";
         }
     }
 }

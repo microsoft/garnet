@@ -12,7 +12,7 @@ namespace Tsavorite.core
     {
         /// <summary>
         /// Checks if record in the Tsavorite log is logically deleted.
-        /// If the record was deleted via <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}.Delete(ref Key, Context, long)"/>
+        /// If the record was deleted via <see cref="BasicContext{Key, Value, Input, Output, Context, Functions}.Delete(ref Key, Context)"/>
         /// then this function is not called for such a record.
         /// </summary>
         /// <remarks>

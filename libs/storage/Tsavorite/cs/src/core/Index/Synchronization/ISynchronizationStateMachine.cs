@@ -56,7 +56,7 @@ namespace Tsavorite.core
         /// <param name="prev"></param>
         /// <param name="tsavorite"></param>
         /// <param name="ctx"></param>
-        /// <param name="tsavoriteSession"></param>
+        /// <param name="sessionFunctions"></param>
         /// <param name="valueTasks"></param>
         /// <param name="token"></param>
         /// <typeparam name="Key"></typeparam>
@@ -64,16 +64,16 @@ namespace Tsavorite.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="TsavoriteSession"></typeparam>
+        /// <typeparam name="TSessionFunctionsWrapper"></typeparam>
         /// <returns></returns>
-        void OnThreadEnteringState<Key, Value, Input, Output, Context, TsavoriteSession>(SystemState current,
+        void OnThreadEnteringState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(SystemState current,
             SystemState prev,
             TsavoriteKV<Key, Value> tsavorite,
             TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession tsavoriteSession,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TsavoriteSession : ITsavoriteSession;
+            where TSessionFunctionsWrapper : ISessionEpochControl;
     }
 
     /// <summary>
@@ -115,7 +115,7 @@ namespace Tsavorite.core
         /// <param name="prev"></param>
         /// <param name="tsavorite"></param>
         /// <param name="ctx"></param>
-        /// <param name="tsavoriteSession"></param>
+        /// <param name="sessionFunctions"></param>
         /// <param name="valueTasks"></param>
         /// <param name="token"></param>
         /// <typeparam name="Key"></typeparam>
@@ -123,17 +123,17 @@ namespace Tsavorite.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="TsavoriteSession"></typeparam>
+        /// <typeparam name="TSessionFunctionsWrapper"></typeparam>
         /// <returns></returns>
-        void OnThreadState<Key, Value, Input, Output, Context, TsavoriteSession>(
+        void OnThreadState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
             TsavoriteKV<Key, Value> tsavorite,
             TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession tsavoriteSession,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TsavoriteSession : ITsavoriteSession;
+            where TSessionFunctionsWrapper : ISessionEpochControl;
     }
 
     /// <summary>
@@ -185,19 +185,19 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public void OnThreadEnteringState<Key, Value, Input, Output, Context, TsavoriteSession>(
+        public void OnThreadEnteringState<Key, Value, Input, Output, Context, TSessionFunctionsWrapper>(
             SystemState current,
             SystemState prev,
             TsavoriteKV<Key, Value> tsavorite,
             TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> ctx,
-            TsavoriteSession tsavoriteSession,
+            TSessionFunctionsWrapper sessionFunctions,
             List<ValueTask> valueTasks,
             CancellationToken token = default)
-            where TsavoriteSession : ITsavoriteSession
+            where TSessionFunctionsWrapper : ISessionEpochControl
         {
             foreach (var task in tasks)
             {
-                task.OnThreadState(current, prev, tsavorite, ctx, tsavoriteSession, valueTasks, token);
+                task.OnThreadState(current, prev, tsavorite, ctx, sessionFunctions, valueTasks, token);
             }
         }
     }

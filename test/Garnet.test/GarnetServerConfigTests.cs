@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using CommandLine;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using NUnit.Framework;
@@ -32,7 +33,7 @@ namespace Garnet.test
         public void DefaultConfigurationOptionsCoverage()
         {
             string json;
-            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource);
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, Assembly.GetExecutingAssembly());
             using (var stream = streamProvider.Read(ServerSettingsManager.DefaultOptionsEmbeddedFileName))
             {
                 using (var streamReader = new StreamReader(stream))
@@ -80,12 +81,12 @@ namespace Garnet.test
             // No import path, include command line args, export to file
             // Check values from command line override values from defaults.conf
             static string GetFullExtensionBinPath(string testProjectName) => Path.GetFullPath(testProjectName, TestUtils.RootTestsProjectPath);
-            var args = new string[] { "--config-export-path", configPath, "-p", "4m", "-m", "8g", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", $"{GetFullExtensionBinPath("Garnet.test")},{GetFullExtensionBinPath("Garnet.test.cluster")}" };
+            var args = new string[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--extension-bin-paths", $"{GetFullExtensionBinPath("Garnet.test")},{GetFullExtensionBinPath("Garnet.test.cluster")}" };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
             Assert.IsTrue(parseSuccessful);
             Assert.AreEqual(invalidOptions.Count, 0);
             Assert.AreEqual("4m", options.PageSize);
-            Assert.AreEqual("8g", options.MemorySize);
+            Assert.AreEqual("128m", options.MemorySize);
             Assert.AreEqual("2g", options.SegmentSize);
             Assert.AreEqual(53, options.Port);
             Assert.AreEqual(2, options.RevivObjBinRecordCount);
@@ -101,7 +102,7 @@ namespace Garnet.test
             Assert.IsTrue(parseSuccessful);
             Assert.AreEqual(invalidOptions.Count, 0);
             Assert.IsTrue(options.PageSize == "4m");
-            Assert.IsTrue(options.MemorySize == "8g");
+            Assert.IsTrue(options.MemorySize == "128m");
 
             // Import from previous export command, include command line args, export to file
             // Check values from import path override values from default.conf, and values from command line override values from default.conf and import path
@@ -110,7 +111,7 @@ namespace Garnet.test
             Assert.IsTrue(parseSuccessful);
             Assert.AreEqual(invalidOptions.Count, 0);
             Assert.AreEqual("12m", options.PageSize);
-            Assert.AreEqual("8g", options.MemorySize);
+            Assert.AreEqual("128m", options.MemorySize);
             Assert.AreEqual("1g", options.SegmentSize);
             Assert.AreEqual(0, options.Port);
             Assert.IsFalse(options.Recover);
@@ -204,19 +205,19 @@ namespace Garnet.test
                 Assert.IsTrue(options.PageSize == "32m");
                 Assert.IsTrue(options.MemorySize == "16g");
 
-                var args = new string[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "8g" };
+                var args = new string[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m" };
                 parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
                 Assert.IsTrue(parseSuccessful);
                 Assert.AreEqual(invalidOptions.Count, 0);
                 Assert.IsTrue(options.PageSize == "4m");
-                Assert.IsTrue(options.MemorySize == "8g");
+                Assert.IsTrue(options.MemorySize == "128m");
 
                 args = ["--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-import", "true", "--config-import-path", configPath];
                 parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions);
                 Assert.IsTrue(parseSuccessful);
                 Assert.AreEqual(invalidOptions.Count, 0);
                 Assert.IsTrue(options.PageSize == "4m");
-                Assert.IsTrue(options.MemorySize == "8g");
+                Assert.IsTrue(options.MemorySize == "128m");
 
                 // Delete blob
                 deviceFactory.Initialize(AzureTestDirectory);

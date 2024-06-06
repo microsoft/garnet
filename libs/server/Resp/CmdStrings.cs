@@ -10,16 +10,6 @@ namespace Garnet.server
     /// </summary>
     static partial class CmdStrings
     {
-        public static ReadOnlySpan<byte> GetConfig(ReadOnlySpan<byte> key)
-        {
-            if (key.SequenceEqual("timeout"u8)) return "*2\r\n$7\r\ntimeout\r\n$1\r\n0\r\n"u8;
-            else if (key.SequenceEqual("save"u8)) return "*2\r\n$4\r\nsave\r\n$0\r\n\r\n"u8;
-            else if (key.SequenceEqual("appendonly"u8)) return "*2\r\n$10\r\nappendonly\r\n$2\r\nno\r\n"u8;
-            else if (key.SequenceEqual("slave-read-only"u8)) return "$3\r\nyes\r\n"u8;
-            else if (key.SequenceEqual("databases"u8)) return "$2\r\n16\r\n"u8;
-            else return RESP_EMPTYLIST;
-        }
-
         /// <summary>
         /// Request strings
         /// </summary>
@@ -41,7 +31,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> ACL => "ACL"u8;
         public static ReadOnlySpan<byte> AUTH => "AUTH"u8;
         public static ReadOnlySpan<byte> auth => "auth"u8;
+        public static ReadOnlySpan<byte> SETNAME => "SETNAME"u8;
         public static ReadOnlySpan<byte> INFO => "INFO"u8;
+        public static ReadOnlySpan<byte> info => "info"u8;
+        public static ReadOnlySpan<byte> DOCS => "DOCS"u8;
+        public static ReadOnlySpan<byte> docs => "docs"u8;
         public static ReadOnlySpan<byte> COMMAND => "COMMAND"u8;
         public static ReadOnlySpan<byte> LATENCY => "LATENCY"u8;
         public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;
@@ -54,6 +48,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> HELP => "HELP"u8;
         public static ReadOnlySpan<byte> help => "help"u8;
         public static ReadOnlySpan<byte> PING => "PING"u8;
+        public static ReadOnlySpan<byte> HELLO => "HELLO"u8;
         public static ReadOnlySpan<byte> TIME => "TIME"u8;
         public static ReadOnlySpan<byte> RESET => "RESET"u8;
         public static ReadOnlySpan<byte> reset => "reset"u8;
@@ -77,6 +72,14 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> type => "type"u8;
         public static ReadOnlySpan<byte> REGISTERCS => "REGISTERCS"u8;
         public static ReadOnlySpan<byte> registercs => "registercs"u8;
+        public static ReadOnlySpan<byte> ASYNC => "ASYNC"u8;
+        public static ReadOnlySpan<byte> async => "async"u8;
+        public static ReadOnlySpan<byte> ON => "ON"u8;
+        public static ReadOnlySpan<byte> on => "on"u8;
+        public static ReadOnlySpan<byte> OFF => "OFF"u8;
+        public static ReadOnlySpan<byte> off => "off"u8;
+        public static ReadOnlySpan<byte> BARRIER => "BARRIER"u8;
+        public static ReadOnlySpan<byte> barrier => "barrier"u8;
 
         /// <summary>
         /// Response strings
@@ -87,12 +90,14 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_1 => ":1\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_0 => ":0\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_N1 => ":-1\r\n"u8;
+        public static ReadOnlySpan<byte> RESP_RETURN_VAL_N2 => ":-2\r\n"u8;
+        public static ReadOnlySpan<byte> SUSCRIBE_PONG => "*2\r\n$4\r\npong\r\n$0\r\n\r\n"u8;
         public static ReadOnlySpan<byte> RESP_PONG => "+PONG\r\n"u8;
         public static ReadOnlySpan<byte> RESP_EMPTY => "$0\r\n\r\n"u8;
         public static ReadOnlySpan<byte> RESP_QUEUED => "+QUEUED\r\n"u8;
 
         /// <summary>
-        /// Simple error respone strings, i.e. these are of the form "-errorString\r\n"
+        /// Simple error response strings, i.e. these are of the form "-errorString\r\n"
         /// </summary>
         public static ReadOnlySpan<byte> RESP_ERR_NOAUTH => "NOAUTH Authentication required."u8;
         public static ReadOnlySpan<byte> RESP_ERR_WRONG_TYPE => "WRONGTYPE Operation against a key holding the wrong kind of value."u8;
@@ -100,9 +105,10 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_EXEC_ABORT => "EXECABORT Transaction discarded because of previous errors."u8;
 
         /// <summary>
-        /// Generic error respone strings, i.e. these are of the form "-ERR error message\r\n"
+        /// Generic error response strings, i.e. these are of the form "-ERR error message\r\n"
         /// </summary>
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UNK_CMD => "ERR unknown command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NOT_SUPPORTED_RESP2 => "ERR command not supported in RESP2"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CLUSTER_DISABLED => "ERR This instance has cluster support disabled"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WRONG_ARGUMENTS => "ERR wrong number of arguments for 'config|set' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NOSUCHKEY => "ERR no such key"u8;
@@ -115,8 +121,11 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_OFFSETOUTOFRANGE => "ERR offset is out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CURSORVALUE => "ERR cursor value should be equal or greater than 0."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND => "ERR malformed REGISTERCS command."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_MALFORMED_COMMAND_INFO_JSON => "ERR malformed command info JSON."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_GETTING_BINARY_FILES => "ERR unable to access one or more binary files."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_GETTING_CMD_INFO_FILE => "ERR unable to access command info file."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS => "ERR one or more binary file are not contained in allowed paths."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_CMD_INFO_FILE_NOT_IN_ALLOWED_PATHS => "ERR command info file is not contained in allowed paths."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_LOADING_ASSEMBLIES => "ERR unable to load one or more assemblies."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED => "ERR one or more assemblies loaded is not digitally signed."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INSTANTIATING_CLASS => "ERR unable to instantiate one or more classes from given assemblies."u8;
@@ -124,11 +133,26 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER => "ERR value is not an integer or out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_UKNOWN_SUBCOMMAND => "ERR Unknown subcommand. Try LATENCY HELP."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_INVALID_INDEX => "ERR invalid database index."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_CLUSTER_MODE => "ERR SELECT is not allowed in cluster mode"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION => "ERR Unsupported protocol version"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ASYNC_PROTOCOL_CHANGE => "ERR protocol change is not allowed with pending async operations"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_FLOAT => "ERR value is not a valid float"u8;
+        public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
+        public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
+        public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "syntax error"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
+
+
         /// <summary>
         /// Response string templates
         /// </summary>
         public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
-        public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
+        public const string GenericErrUnknownOptionConfigSet = "ERR Unknown option or number of arguments for CONFIG SET - '{0}'";
+        public const string GenericErrUnknownOption = "ERR Unknown option or number of arguments for '{0}' command";
+        public const string GenericErrUnknownSubCommand = "ERR unknown subcommand '{0}'. Try {1} HELP";
+        public const string GenericErrWrongNumArgsTxn =
+            "ERR Invalid number of parameters to stored proc {0}, expected {1}, actual {2}";
 
         /// <summary>
         /// Object types

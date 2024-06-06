@@ -16,9 +16,11 @@ Garnet supports registering custom commands and transactions implemented in C#, 
 ## Server-Side Command Registration
 
 To register a new custom command from the server-side, use the GarnetServer instance's RegisterApi, and call either `NewCommand` or `NewTransactionProc` according to the custom command type that you are trying to register.
-1. **Custom Raw String Commands**: To register a new command using a concrete class implementing `CustomRawStringFunctions`, call `RegisterApi.NewCommand(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, long expirationTicks = 0)`, where `customFunctions` is an instance of the new concrete class.
-2. **Custom Object Commands**: To register a new command using a concrete class implementing `CustomObjectFactory`, call `RegisterApi.NewCommand(string name, int numParams, CommandType commandType, CustomObjectFactory factory)`, where `factory` is an instance of the new concrete class.
-2. **Custom Transaction**: To register a new transaction using a concrete class implementing `CustomTransactionProcedure`, call `NewTransactionProc(string name, int numParams, Func<CustomTransactionProcedure> proc)`, where `proc` is a `Func` that returns an instance of the new concrete class.
+1. **Custom Raw String Commands**: To register a new command using a concrete class implementing `CustomRawStringFunctions`, call `RegisterApi.NewCommand(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo = null, long expirationTicks = 0)`, where `customFunctions` is an instance of the new concrete class.
+2. **Custom Object Commands**: To register a new command using a concrete class implementing `CustomObjectFactory`, call `RegisterApi.NewCommand(string name, int numParams, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo = null)`, where `factory` is an instance of the new concrete class.
+3. **Custom Transaction**: To register a new transaction using a concrete class implementing `CustomTransactionProcedure`, call `NewTransactionProc(string name, int numParams, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)`, where `proc` is a `Func` that returns an instance of the new concrete class.
+
+Note that each call to the RegisterApi has an optional `RespCommandsInfo commandInfo` parameter. This parameter allows you to supply Garnet with metadata regarding the custom command that will be visible to the client when running the [`COMMAND`](../commands/server.md#command) or [`COMMAND INFO`](../commands/server.md#command-info) commands.
 
 ## Client-Side Command Registration
 To register a new custom command from the client-side, use the dedicated REGISTER command in the client app (**note:** this is an **admin command**). <br/>
@@ -35,10 +37,10 @@ Example (in garnet.config):
 **Note #2**: By default, Garnet only allows loading of digitally signed assemblies. To remove that requirement (not recommended), set the configuration parameter `ExtensionAllowOnlySignedAssemblies` to `false`.
 
 ### REGISTER Command
-To run the REGISTER command, run the REGISTER keyword followed by one or more new command subcommands, followed by the SRC keyword, which is followed by one or more paths to C# binary files or directories containing C# binary files (*.dll / *.exe).<br/>
+To run the REGISTER command, run the REGISTER keyword followed by one or more new command subcommands, followed by the optional INFO keyword which is followed by a path pointing to a JSON file containing a serialized array of `RespCommandsInfo` objects, containing command metadata (\*.json), followed by the SRC keyword, which is followed by one or more paths to C# binary files or directories containing C# binary files (\*.dll / \*.exe).<br/>
 #### Full command syntax:
 ```
-REGISTER cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...] SRC path [path ...]
+REGISTER cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...] [INFO path] SRC path [path ...]
 ```
 Each new command that you intend to register, is specified by either of the command type keywords, followed by its parameters.
 #### New command sub-command syntax:
@@ -67,6 +69,9 @@ Returns +OK on success, otherwise --ERR message if any
 
 ### REGISTER Errors
 * **ERR malformed REGISTER command** - Error in the parsing of the REGISTER command
+* **ERR unable to access command info file.** - Error accessing command info file specified after the INFO keyword
+* **ERR command info file is not contained in allowed paths.** - Command info file specific is not contained in the allowed path list according to the server configuration (`ExtensionBinPaths` in garnet.config)
+* **ERR malformed command info JSON.** - Error deserializing command info JSON file
 * **ERR unable to access one or more binary files** - Error accessing or enumerating one or more files or folders specified in path list
 * **ERR one or more binary file are not contained in allowed paths** - One or more of the binary paths specified are not contained in the allowed path list according to the server configuration (`ExtensionBinPaths` in garnet.config)
 * **ERR unable to load one or more assemblies** - Error loading one or more assemblies from binary files retrieved from path list (assembly load is attempted on all *.dll / *.exe files specified or found in directories specified)

@@ -9,13 +9,18 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
+using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Threading;
 using Garnet.client;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.Auth;
+using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -40,6 +45,12 @@ namespace Garnet.test
         /// Whether to use a test progress logger
         /// </summary>
         static readonly bool useTestLogger = false;
+
+        private static int procId = Process.GetCurrentProcess().Id;
+        internal static string CustomRespCommandInfoJsonPath = "CustomRespCommandsInfo.json";
+
+        private static bool CustomCommandsInfoInitialized;
+        private static IReadOnlyDictionary<string, RespCommandsInfo> RespCustomCommandsInfo;
 
         internal static string AzureTestContainer
         {
@@ -67,6 +78,48 @@ namespace Garnet.test
                 }
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Get command info for custom commands defined in custom commands json file
+        /// </summary>
+        /// <param name="customCommandsInfo">Mapping between command name and command info</param>
+        /// <param name="logger">Logger</param>
+        /// <returns></returns>
+        internal static bool TryGetCustomCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> customCommandsInfo, ILogger logger = null)
+        {
+            customCommandsInfo = default;
+
+            if (!CustomCommandsInfoInitialized && !TryInitializeCustomCommandsInfo(logger)) return false;
+
+            customCommandsInfo = RespCustomCommandsInfo;
+            return true;
+        }
+
+        private static bool TryInitializeCustomCommandsInfo(ILogger logger)
+        {
+            if (!TryGetRespCommandsInfo(CustomRespCommandInfoJsonPath, logger, out var tmpCustomCommandsInfo))
+                return false;
+
+            RespCustomCommandsInfo = tmpCustomCommandsInfo;
+            CustomCommandsInfoInitialized = true;
+            return true;
+        }
+
+        private static bool TryGetRespCommandsInfo(string resourcePath, ILogger logger, out IReadOnlyDictionary<string, RespCommandsInfo> commandsInfo)
+        {
+            commandsInfo = default;
+
+            var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.EmbeddedResource, null, Assembly.GetExecutingAssembly());
+            var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
+
+            var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(resourcePath,
+                streamProvider, out var tmpCommandsInfo, logger);
+
+            if (!importSucceeded) return false;
+
+            commandsInfo = tmpCommandsInfo;
+            return true;
         }
 
         static bool IsAzuriteRunning()
@@ -141,7 +194,7 @@ namespace Garnet.test
             IAuthenticationSettings authenticationSettings = null;
             if (useAcl)
             {
-                authenticationSettings = new AclAuthenticationSettings(aclFile, defaultPassword);
+                authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, defaultPassword);
             }
             else if (defaultPassword != null)
             {
@@ -260,13 +313,14 @@ namespace Garnet.test
             int CommitFrequencyMs = 0,
             bool DisableStorageTier = false,
             bool EnableIncrementalSnapshots = false,
-            bool FastCommit = false,
+            bool FastCommit = true,
             string authUsername = null,
             string authPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
             X509CertificateCollection certificates = null,
-            ILoggerFactory loggerFactory = null)
+            ILoggerFactory loggerFactory = null,
+            AadAuthenticationSettings authenticationSettings = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -304,7 +358,8 @@ namespace Garnet.test
                     useAcl: useAcl,
                     aclFile: aclFile,
                     certificates: certificates,
-                    logger: loggerFactory?.CreateLogger("GarnetServer"));
+                    logger: loggerFactory?.CreateLogger("GarnetServer"),
+                    aadAuthenticationSettings: authenticationSettings);
 
                 Assert.IsNotNull(opts);
                 int iter = 0;
@@ -342,12 +397,13 @@ namespace Garnet.test
             int CommitFrequencyMs = 0,
             bool DisableStorageTier = false,
             bool EnableIncrementalSnapshots = false,
-            bool FastCommit = false,
+            bool FastCommit = true,
             string authUsername = null,
             string authPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
             X509CertificateCollection certificates = null,
+            AadAuthenticationSettings aadAuthenticationSettings = null,
             ILogger logger = null)
         {
             if (UseAzureStorage)
@@ -363,9 +419,13 @@ namespace Garnet.test
             if (!UseAzureStorage) _CheckpointDir = new DirectoryInfo(string.IsNullOrEmpty(_CheckpointDir) ? "." : _CheckpointDir).FullName;
 
             IAuthenticationSettings authenticationSettings = null;
-            if (useAcl)
+            if (useAcl && aadAuthenticationSettings != null)
             {
-                authenticationSettings = new AclAuthenticationSettings(aclFile, authPassword);
+                authenticationSettings = new AclAuthenticationAadSettings(aclFile, authPassword, aadAuthenticationSettings);
+            }
+            else if (useAcl)
+            {
+                authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, authPassword);
             }
             else if (authPassword != null)
             {
@@ -401,8 +461,13 @@ namespace Garnet.test
                     clientCertificateRequired: true,
                     certificateRevocationCheckMode: X509RevocationMode.NoCheck,
                     issuerCertificatePath: null,
-                    null, 0, true, null, null,
-                    new SslClientAuthenticationOptions
+                    certSubjectName: null,
+                    certificateRefreshFrequency: 0,
+                    enableCluster: true,
+                    clientTargetHost: null,
+                    serverCertificateRequired: true,
+                    tlsServerOptionsOverride: null,
+                    clusterTlsClientOptionsOverride: new SslClientAuthenticationOptions
                     {
                         ClientCertificates = certificates ?? [new X509Certificate2(certFile, certPassword)],
                         TargetHost = "GarnetTest",
@@ -465,7 +530,10 @@ namespace Garnet.test
             string authPassword = null,
             X509CertificateCollection certificates = null)
         {
-            var cmds = RespInfo.GetCommands();
+            var cmds = RespCommandsInfo.TryGetRespCommandNames(out var names)
+                ? new HashSet<string>(names)
+                : new HashSet<string>();
+
             if (disablePubSub)
             {
                 cmds.Remove("SUBSCRIBE");
@@ -545,7 +613,7 @@ namespace Garnet.test
             return new GarnetClientSession(Address, Port, sslOptions);
         }
 
-        public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, bool countResponseLength = false)
+        public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -558,7 +626,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new LightClientRequest(Address, Port, 0, onReceive, sslOptions, countResponseLength);
+            return new LightClientRequest(Address, Port, 0, onReceive, sslOptions, countResponseType);
         }
 
         public static EndPointCollection GetEndPoints(int shards, int port = default)
@@ -671,6 +739,55 @@ namespace Garnet.test
                 }
             }
             throw new Exception($"Certicate errors found {sslPolicyErrors}!");
+        }
+
+        public static void CreateTestLibrary(string[] namespaces, string[] referenceFiles, string[] filesToCompile, string dstFilePath)
+        {
+            if (File.Exists(dstFilePath))
+            {
+                File.Delete(dstFilePath);
+            }
+
+            foreach (var referenceFile in referenceFiles)
+            {
+                Assert.IsTrue(File.Exists(referenceFile), $"File '{Path.GetFullPath(referenceFile)}' does not exist.");
+            }
+
+            var references = referenceFiles.Select(f => MetadataReference.CreateFromFile(f));
+
+            foreach (var fileToCompile in filesToCompile)
+            {
+                Assert.IsTrue(File.Exists(fileToCompile), $"File '{Path.GetFullPath(fileToCompile)}' does not exist.");
+            }
+
+            var parseFunc = new Func<string, SyntaxTree>(filePath =>
+            {
+                var source = File.ReadAllText(filePath);
+                var stringText = SourceText.From(source, Encoding.UTF8);
+                return SyntaxFactory.ParseSyntaxTree(stringText,
+                    CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest), string.Empty);
+            });
+
+            var syntaxTrees = filesToCompile.Select(f => parseFunc(f));
+
+            var compilationOptions = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+                .WithAllowUnsafe(true)
+                .WithOverflowChecks(true)
+                .WithOptimizationLevel(OptimizationLevel.Release)
+                .WithUsings(namespaces);
+
+
+            var compilation = CSharpCompilation.Create(Path.GetFileName(dstFilePath), syntaxTrees, references, compilationOptions);
+
+            try
+            {
+                var result = compilation.Emit(dstFilePath);
+                Assert.IsTrue(result.Success);
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail(ex.Message);
+            }
         }
     }
 }

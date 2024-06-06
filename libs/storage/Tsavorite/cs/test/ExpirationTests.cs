@@ -44,7 +44,7 @@ namespace Tsavorite.test.Expiration
             None,                       // Default value
             Incremented,                // Initial increment was done
             ExpireDelete,               // Record was expired so deleted
-            ExpireRollover,             // Record was expired and reinitialized within the IFunctions call
+            ExpireRollover,             // Record was expired and reinitialized within the ISessionFunctions call
             Updated,                    // Record was updated normally
             NotUpdated,                 // Record was not updated
             Deleted,                    // Record was expired with AndStop (no reinitialization done)
@@ -152,7 +152,7 @@ namespace Tsavorite.test.Expiration
 #pragma warning restore format
         };
 
-        public class ExpirationFunctions : FunctionsBase<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty>
+        public class ExpirationFunctions : SessionFunctionsBase<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty>
         {
             private static unsafe void VerifyValue(int key, ref SpanByte valueSpanByte)
             {
@@ -515,6 +515,7 @@ namespace Tsavorite.test.Expiration
         ExpirationFunctions functions;
         TsavoriteKV<SpanByte, SpanByte> store;
         ClientSession<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions> session;
+        BasicContext<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions> bContext;
 
         [SetUp]
         public void Setup()
@@ -529,6 +530,7 @@ namespace Tsavorite.test.Expiration
 
             functions = new ExpirationFunctions();
             session = store.NewSession<ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions>(functions);
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -559,7 +561,7 @@ namespace Tsavorite.test.Expiration
                     valueSpan[j] = GetValue(i);
                 var valueSpanByte = valueSpan.AsSpanByte();
 
-                session.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default, 0);
+                bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
             }
         }
 
@@ -570,11 +572,11 @@ namespace Tsavorite.test.Expiration
             var keySpanByte = keySpan.AsSpanByte();
             ExpirationOutput output = new();
 
-            var status = session.Read(ref keySpanByte, ref output, Empty.Default, 0);
+            var status = bContext.Read(ref keySpanByte, ref output, Empty.Default);
             if (status.IsPending)
             {
                 Assert.AreNotEqual(FlushMode.NoFlush, flushMode);
-                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 (status, output) = GetSinglePendingResult(completedOutputs);
             }
 
@@ -589,11 +591,11 @@ namespace Tsavorite.test.Expiration
             var keySpanByte = keySpan.AsSpanByte();
 
             ExpirationOutput output = new();
-            var status = session.RMW(ref keySpanByte, ref input, ref output);
+            var status = bContext.RMW(ref keySpanByte, ref input, ref output);
             if (status.IsPending)
             {
                 Assert.AreNotEqual(FlushMode.NoFlush, flushMode);
-                session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 (status, output) = GetSinglePendingResult(completedOutputs);
             }
 
