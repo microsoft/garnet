@@ -17,8 +17,6 @@ namespace Garnet.server.Auth
 
         /// <summary>
         /// Can authenticator authenticate
-        /// 
-        /// The returned value must be constant for the lifetime of the process
         /// </summary>
         bool CanAuthenticate { get; }
 

@@ -1075,14 +1075,16 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND command.
         /// </summary>
-        /// <param name="bufSpan">The remaining command bytes</param>
-        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <param name="ptr">Pointer to start of arguments in command buffer</param>
+        /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkCOMMAND(byte* ptr, int count)
         {
             // No additonal args allowed
             if (count != 0)
             {
+                ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
+
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
@@ -1101,14 +1103,16 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND COUNT subcommand.
         /// </summary>
-        /// <param name="bufSpan">The remaining command bytes</param>
-        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <param name="ptr">Pointer to start of arguments in command buffer</param>
+        /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND_COUNT(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkCOMMAND_COUNT(byte* ptr, int count)
         {
             // No additonal args allowed
             if (count != 0)
             {
+                ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
+
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
@@ -1135,11 +1139,13 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND DOCS subcommand.
         /// </summary>
-        /// <param name="bufSpan">The remaining command bytes</param>
-        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <param name="ptr">Pointer to start of arguments in command buffer</param>
+        /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND_DOCS(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkCOMMAND_DOCS(byte* ptr, int count)
         {
+            ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
+
             // Placeholder for handling DOCS sub-command - returning Nil in the meantime.
             if (!DrainCommands(bufSpan, count))
                 return false;
@@ -1153,10 +1159,10 @@ namespace Garnet.server
         /// <summary>
         /// Processes COMMAND INFO subcommand.
         /// </summary>
-        /// <param name="bufSpan">The remaining command bytes</param>
-        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <param name="ptr">Pointer to start of arguments in command buffer</param>
+        /// <param name="count">The number of arguments remaining in command buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND_INFO(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkCOMMAND_INFO(byte* ptr, int count)
         {
             if (count == 0)
             {
@@ -1167,6 +1173,8 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
                     SendAndReset();
+
+                ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
 
                 for (var i = 0; i < count; i++)
                 {

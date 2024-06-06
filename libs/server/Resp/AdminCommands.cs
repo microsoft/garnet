@@ -55,7 +55,7 @@ namespace Garnet.server
                     }
 
                     // NOTE: Some authenticators cannot accept username/password pairs
-                    if (!_authenticatorCanAuthenticate)
+                    if (!_authenticator.CanAuthenticate)
                     {
                         while (!RespWriteUtils.WriteError("ERR Client sent AUTH, but configured authenticator does not accept passwords"u8, ref dcurr, dend))
                             SendAndReset();
@@ -87,7 +87,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (_authenticatorCanAuthenticate && !_authenticator.IsAuthenticated)
+            if (_authenticator.CanAuthenticate && !_authenticator.IsAuthenticated)
             {
                 // If the current session is unauthenticated, we stop parsing, because no other commands are allowed
                 if (!DrainCommands(bufSpan, count))
@@ -715,6 +715,7 @@ namespace Garnet.server
         /// (NOTE: This function does not check keyspaces)
         /// </summary>
         /// <param name="cmd">Command be processed</param>
+        /// <param name="ptr">Pointer to start of arguments in command buffer</param>
         /// <param name="count">Number of parameters left in the command specification.</param>
         /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
