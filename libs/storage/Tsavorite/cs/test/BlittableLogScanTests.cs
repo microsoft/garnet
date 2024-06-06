@@ -53,7 +53,7 @@ namespace Tsavorite.test
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
             store = new TsavoriteKV<KeyStruct, ValueStruct>(1L << 20,
-                new LogSettings { LogDevice = log, MemorySizeBits = 24, PageSizeBits = PageSizeBits }, concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
+                new LogSettings { LogDevice = log, MemorySizeBits = 24, PageSizeBits = PageSizeBits }, comparer: comparer);
         }
 
         [TearDown]

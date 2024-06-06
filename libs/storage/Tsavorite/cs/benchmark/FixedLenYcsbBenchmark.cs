@@ -79,11 +79,11 @@ namespace Tsavorite.benchmark
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new TsavoriteKV<Key, Value>
                     (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 25, SegmentSizeBits = 30, MemorySizeBits = 28 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, concurrencyControlMode: testLoader.Options.ConcurrencyControlMode, revivificationSettings: revivificationSettings);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, revivificationSettings: revivificationSettings);
             else
                 store = new TsavoriteKV<Key, Value>
                     (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, concurrencyControlMode: testLoader.Options.ConcurrencyControlMode, revivificationSettings: revivificationSettings);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, revivificationSettings: revivificationSettings);
         }
 
         internal void Dispose()

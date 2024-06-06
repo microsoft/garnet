@@ -614,9 +614,7 @@ namespace Tsavorite.test.recovery
             using var store1 = new TsavoriteKV<long, long>
                 (size,
                 logSettings: new LogSettings { LogDevice = log, MutableFraction = 1, PageSizeBits = 10, MemorySizeBits = 14, ReadCacheSettings = useReadCache ? new ReadCacheSettings() : null },
-                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir },
-                concurrencyControlMode: ConcurrencyControlMode.LockTable
-                );
+                checkpointSettings: new CheckpointSettings { CheckpointDir = TestUtils.MethodTestDir });
 
             using var s1 = store1.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
             var bc1 = s1.BasicContext;

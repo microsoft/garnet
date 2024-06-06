@@ -50,7 +50,7 @@ namespace Tsavorite.test.LockTable
             comparer ??= new LongTsavoriteEqualityComparer();
 
             store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
-                                            comparer: comparer, concurrencyControlMode: ConcurrencyControlMode.LockTable);
+                                            comparer: comparer);
         }
 
         [TearDown]
@@ -64,26 +64,29 @@ namespace Tsavorite.test.LockTable
             DeleteDirectory(MethodTestDir);
         }
 
-        void TryLock(long key, LockType lockType, bool transient, int expectedCurrentReadLocks, bool expectedLockResult)
+        void TryLock(long key, LockType lockType, int expectedCurrentReadLocks, bool expectedLockResult)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
             PopulateHei(ref hei);
 
             // Check for existing lock
-            var lockState = store.LockTable.GetLockState(ref key, ref hei);
+            var lockState = store.LockTable.GetLockState(ref hei);
             Assert.AreEqual(expectedCurrentReadLocks, lockState.NumLockedShared);
 
-            if (transient)
-                Assert.AreEqual(expectedLockResult, store.LockTable.TryLockTransient(ref key, ref hei, lockType));
+            if (lockType == LockType.Shared)
+                Assert.AreEqual(expectedLockResult, store.LockTable.TryLockShared(ref hei));
             else
-                Assert.AreEqual(expectedLockResult, store.LockTable.TryLockManual(ref key, ref hei, lockType));
+                Assert.AreEqual(expectedLockResult, store.LockTable.TryLockExclusive(ref hei));
         }
 
         void Unlock(long key, LockType lockType)
         {
             HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
             PopulateHei(ref hei);
-            store.LockTable.Unlock(ref key, ref hei, lockType);
+            if (lockType == LockType.Shared)
+                store.LockTable.UnlockShared(ref hei);
+            else
+                store.LockTable.UnlockExclusive(ref hei);
         }
 
         internal void PopulateHei(ref HashEntryInfo hei) => PopulateHei(store, ref hei);
@@ -92,7 +95,7 @@ namespace Tsavorite.test.LockTable
 
         internal void AssertLockCounts(ref HashEntryInfo hei, bool expectedX, long expectedS)
         {
-            var lockState = store.LockTable.GetLockState(ref SingleBucketKey, ref hei);
+            var lockState = store.LockTable.GetLockState(ref hei);
             Assert.AreEqual(expectedX, lockState.IsLockedExclusive);
             Assert.AreEqual(expectedS, lockState.NumLockedShared);
         }
@@ -104,7 +107,7 @@ namespace Tsavorite.test.LockTable
         {
             HashEntryInfo hei = new(store.comparer.GetHashCode64(ref key));
             PopulateHei(store, ref hei);
-            var lockState = store.LockTable.GetLockState(ref key, ref hei);
+            var lockState = store.LockTable.GetLockState(ref hei);
             Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
             Assert.AreEqual(expectedS, lockState.NumLockedShared, "SLock mismatch");
         }
@@ -126,7 +129,7 @@ namespace Tsavorite.test.LockTable
         {
             HashEntryInfo hei = new(key.KeyHash);
             PopulateHei(store, ref hei);
-            var lockState = store.LockTable.GetLockState(ref key.Key, ref hei);
+            var lockState = store.LockTable.GetLockState(ref hei);
             Assert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
             Assert.AreEqual(expectedS, lockState.NumLockedShared > 0, "SLock mismatch");
         }
@@ -169,17 +172,17 @@ namespace Tsavorite.test.LockTable
 
             // No entries
             long key = 1;
-            TryLock(key, LockType.Shared, transient: true, expectedCurrentReadLocks: 0, expectedLockResult: true);
+            TryLock(key, LockType.Shared, expectedCurrentReadLocks: 0, expectedLockResult: true);
             AssertLockCounts(ref hei, false, 1);
 
             // Add a non-transient lock
-            TryLock(key, LockType.Shared, transient: false, expectedCurrentReadLocks: 1, expectedLockResult: true);
+            TryLock(key, LockType.Shared, expectedCurrentReadLocks: 1, expectedLockResult: true);
             AssertLockCounts(ref hei, false, 2);
 
             // Now both transient and manual x locks with the same key should fail
-            TryLock(key, LockType.Exclusive, transient: true, expectedCurrentReadLocks: 2, expectedLockResult: false);
+            TryLock(key, LockType.Exclusive, expectedCurrentReadLocks: 2, expectedLockResult: false);
             AssertLockCounts(ref hei, false, 2);
-            TryLock(key, LockType.Exclusive, transient: false, expectedCurrentReadLocks: 2, expectedLockResult: false);
+            TryLock(key, LockType.Exclusive, expectedCurrentReadLocks: 2, expectedLockResult: false);
             AssertLockCounts(ref hei, false, 2);
 
             // Now unlock
@@ -189,7 +192,7 @@ namespace Tsavorite.test.LockTable
             AssertLockCounts(ref hei, false, 0);
 
             // Now exclusive should succeed
-            TryLock(key, LockType.Exclusive, transient: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
+            TryLock(key, LockType.Exclusive, expectedCurrentReadLocks: 0, expectedLockResult: true);
             AssertLockCounts(ref hei, true, 0);
             Unlock(key, LockType.Exclusive);
             AssertLockCounts(ref hei, false, 0);
@@ -203,17 +206,17 @@ namespace Tsavorite.test.LockTable
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
-            TryLock(1, LockType.Shared, transient: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
+            TryLock(1, LockType.Shared, expectedCurrentReadLocks: 0, expectedLockResult: true);
             AssertLockCounts(ref hei, false, 1);
 
-            TryLock(2, LockType.Shared, transient: false, expectedCurrentReadLocks: 1, expectedLockResult: true);
+            TryLock(2, LockType.Shared, expectedCurrentReadLocks: 1, expectedLockResult: true);
             AssertLockCounts(ref hei, false, 2);
 
-            TryLock(3, LockType.Shared, transient: false, expectedCurrentReadLocks: 2, expectedLockResult: true);
+            TryLock(3, LockType.Shared, expectedCurrentReadLocks: 2, expectedLockResult: true);
             AssertLockCounts(ref hei, false, 3);
 
             // Exclusive lock should fail
-            TryLock(4, LockType.Exclusive, transient: false, expectedCurrentReadLocks: 3, expectedLockResult: false);
+            TryLock(4, LockType.Exclusive, expectedCurrentReadLocks: 3, expectedLockResult: false);
             AssertLockCounts(ref hei, false, 3);
 
             // Now unlock
@@ -225,7 +228,7 @@ namespace Tsavorite.test.LockTable
             AssertLockCounts(ref hei, false, 0);
 
             // Now exclusive should succeed
-            TryLock(4, LockType.Exclusive, transient: false, expectedCurrentReadLocks: 0, expectedLockResult: true);
+            TryLock(4, LockType.Exclusive, expectedCurrentReadLocks: 0, expectedLockResult: true);
             AssertLockCounts(ref hei, true, 0);
             Unlock(4, LockType.Exclusive);
             AssertLockCounts(ref hei, false, 0);
@@ -402,8 +405,10 @@ namespace Tsavorite.test.LockTable
                     {
                         HashEntryInfo hei = new(threadStructs[ii].KeyHash);
                         PopulateHei(ref hei);
-                        while (!store.LockTable.TryLockManual(ref threadStructs[ii].Key, ref hei, threadStructs[ii].LockType))
-                            ;
+                        if (threadStructs[ii].LockType == LockType.Shared)
+                            while (!store.LockTable.TryLockShared(ref hei)) { }
+                        else
+                            while (!store.LockTable.TryLockExclusive(ref hei)) { }
                     }
 
                     // Pretend to do work
@@ -414,7 +419,10 @@ namespace Tsavorite.test.LockTable
                     {
                         HashEntryInfo hei = new(threadStructs[ii].KeyHash);
                         PopulateHei(ref hei);
-                        store.LockTable.Unlock(ref threadStructs[ii].Key, ref hei, threadStructs[ii].LockType);
+                        if (threadStructs[ii].LockType == LockType.Shared)
+                            store.LockTable.UnlockShared(ref hei);
+                        else
+                            store.LockTable.UnlockExclusive(ref hei);
                     }
                     Array.Clear(threadStructs);
                 }

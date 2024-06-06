@@ -23,12 +23,6 @@ namespace Tsavorite.core
         void EndLockable();
 
         /// <summary>
-        /// If true, then keys must use one of the <see cref="ITsavoriteContext{TKey}.GetKeyHash(ref TKey)"/> overloads to obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
-        /// </summary>
-        /// <remarks>Whether this returns true depends on the <see cref="ConcurrencyControlMode"/> on <see cref="TsavoriteKVSettings{Key, Value}"/>, or passed to the TsavoriteKV constructor.</remarks>
-        bool NeedKeyHash { get; }
-
-        /// <summary>
         /// Compare two structures that implement ILockableKey.
         /// </summary>
         /// <typeparam name="TLockableKey">The type of the app data struct or class containing key info</typeparam>

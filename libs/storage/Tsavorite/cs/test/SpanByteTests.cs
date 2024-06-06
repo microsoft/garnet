@@ -201,8 +201,7 @@ namespace Tsavorite.test.spanbyte
             using var log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "vl-iter.log"), deleteOnClose: true);
             using var store = new TsavoriteKV<SpanByte, SpanByte>
                 (128,
-                new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }, // 1KB page
-                null, null, null, concurrencyControlMode: ConcurrencyControlMode.None);
+                new LogSettings { LogDevice = log, MemorySizeBits = 17, PageSizeBits = 10 }); // 1KB page
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
             var bContext = session.BasicContext;
 
