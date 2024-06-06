@@ -4,21 +4,10 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Provides thread management and callback to checkpoint completion (called state machine).
-    /// </summary>
-    /// <remarks>This is broken out into a non-generic base interfaces to allow the use of <see cref="NullTsavoriteSession"/> 
-    /// in <see cref="TsavoriteKV{Key, Value}.ThreadStateMachineStep"/>.</remarks>
-    internal interface ITsavoriteSession
-    {
-        void UnsafeResumeThread();
-        void UnsafeSuspendThread();
-    }
-
-    /// <summary>
     /// Provides thread management and all callbacks. A wrapper for IFunctions and additional methods called by TsavoriteImpl; the wrapped
     /// IFunctions methods provide additional parameters to support the wrapper functionality, then call through to the user implementations. 
     /// </summary>
-    internal interface ITsavoriteSession<Key, Value, Input, Output, Context> : ITsavoriteSession, IVariableLengthInput<Value, Input>
+    internal interface ISessionFunctionsWrapper<Key, Value, Input, Output, Context> : ISessionEpochControl, IVariableLengthInput<Value, Input>
     {
         bool IsManualLocking { get; }
         TsavoriteKV<Key, Value> Store { get; }
@@ -45,7 +34,7 @@ namespace Tsavorite.core
         #region CopyUpdater
         bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref RMWInfo rmwInfo);
         bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
-        void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
+        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
         #endregion CopyUpdater
 
         #region InPlaceUpdater
@@ -69,6 +58,11 @@ namespace Tsavorite.core
         void DisposeDeserializedFromDisk(ref Key key, ref Value value, ref RecordInfo recordInfo);
         void DisposeForRevivification(ref Key key, ref Value value, int newKeySize, ref RecordInfo recordInfo);
         #endregion Disposal
+
+        #region Utilities
+        /// <inheritdoc/>
+        void ConvertOutputToHeap(ref Input input, ref Output output);
+        #endregion Utilities
 
         #region Transient locking
         bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx);

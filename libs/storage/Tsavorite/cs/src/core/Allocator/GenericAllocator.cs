@@ -202,7 +202,7 @@ namespace Tsavorite.core
 
         public override int GetValueLength(ref Value value) => ValueSize;
 
-        public override (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TsavoriteSession tsavoriteSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
         {
             return (RecordSize, RecordSize, KeySize);
         }
@@ -214,7 +214,7 @@ namespace Tsavorite.core
 
         public override int GetFixedRecordSize() => RecordSize;
 
-        public override (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, TsavoriteSession tsavoriteSession)
+        public override (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref Key key, ref Input input, TSessionFunctionsWrapper sessionFunctions)
         {
             return (RecordSize, RecordSize, KeySize);
         }

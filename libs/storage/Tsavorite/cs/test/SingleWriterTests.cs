@@ -8,7 +8,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.SingleWriter
 {
-    internal class SingleWriterTestFunctions : SimpleFunctions<int, int>
+    internal class SingleWriterTestFunctions : SimpleSimpleFunctions<int, int>
     {
         internal WriteReason actualReason;
 
@@ -36,6 +36,7 @@ namespace Tsavorite.test.SingleWriter
 
         private TsavoriteKV<int, int> store;
         private ClientSession<int, int, int, int, Empty, SingleWriterTestFunctions> session;
+        private BasicContext<int, int, int, int, Empty, SingleWriterTestFunctions> bContext;
         private IDevice log;
 
         [SetUp]
@@ -61,6 +62,7 @@ namespace Tsavorite.test.SingleWriter
 
             store = new TsavoriteKV<int, int>(1L << 20, logSettings, new CheckpointSettings { CheckpointDir = MethodTestDir });
             session = store.NewSession<int, int, Empty, SingleWriterTestFunctions>(functions);
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -80,7 +82,7 @@ namespace Tsavorite.test.SingleWriter
             int input = (int)WriteReason.Upsert;
             int output = 0;
             for (int key = 0; key < numRecords; key++)
-                Assert.False(session.Upsert(key, input, key * valueMult, ref output).IsPending);
+                Assert.False(bContext.Upsert(key, input, key * valueMult, ref output).IsPending);
         }
 
         [Test]
@@ -98,9 +100,9 @@ namespace Tsavorite.test.SingleWriter
             int key = 42;
             WriteReason expectedReason = readCopyDestination == ReadCopyDestination.ReadCache ? WriteReason.CopyToReadCache : WriteReason.CopyToTail;
             int input = (int)expectedReason;
-            var status = session.Read(key, input, out int output);
+            var status = bContext.Read(key, input, out int output);
             Assert.IsTrue(status.IsPending);
-            session.CompletePending(wait: true);
+            bContext.CompletePending(wait: true);
             Assert.AreEqual(expectedReason, functions.actualReason);
 
             functions.actualReason = NoReason;
@@ -108,9 +110,9 @@ namespace Tsavorite.test.SingleWriter
             expectedReason = WriteReason.CopyToTail;
             input = (int)expectedReason;
             ReadOptions readOptions = new() { CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog) };
-            status = session.Read(ref key, ref input, ref output, ref readOptions, out _);
+            status = bContext.Read(ref key, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(status.IsPending && !status.IsCompleted);
-            session.CompletePendingWithOutputs(out var outputs, wait: true);
+            bContext.CompletePendingWithOutputs(out var outputs, wait: true);
             (status, output) = GetSinglePendingResult(outputs);
             Assert.IsTrue(!status.IsPending && status.IsCompleted && status.IsCompletedSuccessfully);
             Assert.IsTrue(status.Found && !status.NotFound && status.Record.Copied);
@@ -165,7 +167,7 @@ namespace Tsavorite.test.SingleWriter
             }
         }
 
-        internal class StructWithStringTestFunctions : SimpleFunctions<StructWithString, StructWithString>
+        internal class StructWithStringTestFunctions : SimpleSimpleFunctions<StructWithString, StructWithString>
         {
         }
 
@@ -177,6 +179,7 @@ namespace Tsavorite.test.SingleWriter
 
         private TsavoriteKV<StructWithString, StructWithString> store;
         private ClientSession<StructWithString, StructWithString, StructWithString, StructWithString, Empty, StructWithStringTestFunctions> session;
+        private BasicContext<StructWithString, StructWithString, StructWithString, StructWithString, Empty, StructWithStringTestFunctions> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -200,6 +203,7 @@ namespace Tsavorite.test.SingleWriter
 
             functions = new();
             session = store.NewSession<StructWithString, StructWithString, Empty, StructWithStringTestFunctions>(functions);
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -222,7 +226,7 @@ namespace Tsavorite.test.SingleWriter
             {
                 StructWithString key = new(ii, keyPrefix);
                 StructWithString value = new(ii, valuePrefix);
-                session.Upsert(ref key, ref value);
+                bContext.Upsert(ref key, ref value);
                 if (ii % 3_000 == 0)
                 {
                     store.TakeHybridLogCheckpointAsync(CheckpointType.FoldOver).GetAwaiter().GetResult();
@@ -239,10 +243,10 @@ namespace Tsavorite.test.SingleWriter
             void readKey(int keyInt)
             {
                 StructWithString key = new(keyInt, keyPrefix);
-                var (status, output) = session.Read(key);
+                var (status, output) = bContext.Read(key);
                 if (status.IsPending)
                 {
-                    session.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     using (completedOutputs)
                         (status, output) = GetSinglePendingResult(completedOutputs);
                 }

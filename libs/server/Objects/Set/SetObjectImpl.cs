@@ -146,7 +146,7 @@ namespace Garnet.server
             int countDone = 0;
             while (count > 0)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var field, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var field, ref ptr, end))
                     break;
 
                 if (countDone < prevDone) // skip processing previously done entries
@@ -156,7 +156,7 @@ namespace Garnet.server
                     continue;
                 }
 
-                if (set.Remove(field))
+                if (set.Remove(field.ToArray()))
                 {
                     countDone++;
                     this.UpdateSize(field, false);

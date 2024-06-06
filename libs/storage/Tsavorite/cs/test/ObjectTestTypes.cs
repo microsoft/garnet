@@ -56,7 +56,7 @@ namespace Tsavorite.test
         public override string ToString() => value.ToString();
     }
 
-    public class MyFunctions : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, Empty>
+    public class MyFunctions : SessionFunctionsBase<MyKey, MyValue, MyInput, MyOutput, Empty>
     {
         public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -119,7 +119,7 @@ namespace Tsavorite.test
         }
     }
 
-    public class MyFunctions2 : FunctionsBase<MyValue, MyValue, MyInput, MyOutput, Empty>
+    public class MyFunctions2 : SessionFunctionsBase<MyValue, MyValue, MyInput, MyOutput, Empty>
     {
         public override bool InitialUpdater(ref MyValue key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -182,7 +182,7 @@ namespace Tsavorite.test
         }
     }
 
-    public class MyFunctionsDelete : FunctionsBase<MyKey, MyValue, MyInput, MyOutput, int>
+    public class MyFunctionsDelete : SessionFunctionsBase<MyKey, MyValue, MyInput, MyOutput, int>
     {
         public override bool InitialUpdater(ref MyKey key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -255,7 +255,7 @@ namespace Tsavorite.test
         }
     }
 
-    public class MixedFunctions : FunctionsBase<int, MyValue, MyInput, MyOutput, Empty>
+    public class MixedFunctions : SessionFunctionsBase<int, MyValue, MyInput, MyOutput, Empty>
     {
         public override bool InitialUpdater(ref int key, ref MyInput input, ref MyValue value, ref MyOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
@@ -341,7 +341,7 @@ namespace Tsavorite.test
         public MyLargeValue value;
     }
 
-    public class MyLargeFunctions : FunctionsBase<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
+    public class MyLargeFunctions : SessionFunctionsBase<MyKey, MyLargeValue, MyInput, MyLargeOutput, Empty>
     {
         public override void ReadCompletionCallback(ref MyKey key, ref MyInput input, ref MyLargeOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {

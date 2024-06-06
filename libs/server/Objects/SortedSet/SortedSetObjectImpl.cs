@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -48,7 +47,7 @@ namespace Garnet.server
             {
                 if (!RespReadUtils.ReadDoubleWithLengthHeader(out var score, out var parsed, ref ptr, end))
                     return;
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref ptr, end))
                     return;
 
                 if (c < _input->done)
@@ -58,20 +57,21 @@ namespace Garnet.server
 
                 if (parsed)
                 {
-                    if (!sortedSetDict.TryGetValue(member, out var _scoreStored))
+                    var memberArray = member.ToArray();
+                    if (!sortedSetDict.TryGetValue(memberArray, out var _scoreStored))
                     {
                         _output->opsDone++;
-                        sortedSetDict.Add(member, score);
-                        sortedSet.Add((score, member));
+                        sortedSetDict.Add(memberArray, score);
+                        sortedSet.Add((score, memberArray));
 
                         this.UpdateSize(member);
                     }
                     else if (_scoreStored != score)
                     {
-                        sortedSetDict[member] = score;
-                        var success = sortedSet.Remove((_scoreStored, member));
+                        sortedSetDict[memberArray] = score;
+                        var success = sortedSet.Remove((_scoreStored, memberArray));
                         Debug.Assert(success);
-                        success = sortedSet.Add((score, member));
+                        success = sortedSet.Add((score, memberArray));
                         Debug.Assert(success);
                     }
                 }
@@ -93,7 +93,7 @@ namespace Garnet.server
 
             for (int c = 0; c < count; c++)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var value, ref ptr, end))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var value, ref ptr, end))
                     return;
 
                 if (c < _input->done)
@@ -101,11 +101,12 @@ namespace Garnet.server
 
                 _output->countDone++;
 
-                if (sortedSetDict.TryGetValue(value, out var _key))
+                var valueArray = value.ToArray();
+                if (sortedSetDict.TryGetValue(valueArray, out var _key))
                 {
                     _output->opsDone++;
-                    sortedSetDict.Remove(value);
-                    sortedSet.Remove((_key, value));
+                    sortedSetDict.Remove(valueArray);
+                    sortedSet.Remove((_key, valueArray));
 
                     this.UpdateSize(value, false);
                 }
@@ -149,7 +150,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
                 _output.bytesDone = 0;
@@ -201,7 +202,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -234,16 +235,16 @@ namespace Garnet.server
             _output->countDone = Int32.MinValue;
 
             // read min
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamByteArray, ref input_currptr, end))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamSpan, ref input_currptr, end))
                 return;
 
             // read max
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, end))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var maxParamSpan, ref input_currptr, end))
                 return;
 
             //check if parameters are valid
-            if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) ||
-                !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
+            if (!TryParseParameter(minParamSpan, out var minValue, out var minExclusive) ||
+                !TryParseParameter(maxParamSpan, out var maxValue, out var maxExclusive))
             {
                 count = int.MaxValue;
             }
@@ -287,7 +288,7 @@ namespace Garnet.server
             try
             {
                 // read increment
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var incrementByteArray, ref input_currptr, input + length))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var incrementBytes, ref input_currptr, input + length))
                     return;
 
                 // read member
@@ -295,8 +296,7 @@ namespace Garnet.server
                     return;
 
                 //check if increment value is valid
-                if (!Utf8Parser.TryParse(incrementByteArray, out double incrValue, out var incrBytesConsumed, default) ||
-                    incrBytesConsumed != incrementByteArray.Length)
+                if (!NumUtils.TryParse(incrementBytes, out double incrValue))
                 {
                     countDone = int.MaxValue;
                 }
@@ -317,7 +317,7 @@ namespace Garnet.server
                     }
 
                     // write the new score
-                    while (!RespWriteUtils.WriteAsciiBulkString(sortedSetDict[memberByteArray].ToString(CultureInfo.InvariantCulture), ref curr, end))
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(sortedSetDict[memberByteArray], ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     countDone = 1;
                 }
@@ -381,38 +381,41 @@ namespace Garnet.server
                     int i = 0;
                     while (i < count - 2)
                     {
-                        if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var token, ref input_currptr, input + length))
+                        if (!RespReadUtils.TrySliceWithLengthHeader(out var token, ref input_currptr, input + length))
                             return;
-                        switch (Encoding.ASCII.GetString(token).ToUpperInvariant())
+
+                        if (token.EqualsUpperCaseSpanIgnoringCase("BYSCORE"u8))
                         {
-                            case "BYSCORE":
-                                options.ByScore = true;
-                                break;
-                            case "BYLEX":
-                                options.ByLex = true;
-                                break;
-                            case "REV":
-                                options.Reverse = true;
-                                break;
-                            case "LIMIT":
-                                // read the next two tokens
-                                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var offset, ref input_currptr, input + length))
-                                    return;
-                                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var countLimit, ref input_currptr, input + length))
-                                    return;
-                                if (TryParseParameter(offset, out var offsetLimit, out _) &&
-                                    TryParseParameter(countLimit, out var countLimitNumber, out _))
-                                {
-                                    options.Limit = ((int)offsetLimit, (int)countLimitNumber);
-                                    options.ValidLimit = true;
-                                    i += 2;
-                                }
-                                break;
-                            case "WITHSCORES":
-                                options.WithScores = true;
-                                break;
-                            default:
-                                break;
+                            options.ByScore = true;
+                        }
+                        else if (token.EqualsUpperCaseSpanIgnoringCase("BYLEX"u8))
+                        {
+                            options.ByLex = true;
+                        }
+                        else if (token.EqualsUpperCaseSpanIgnoringCase("REV"u8))
+                        {
+                            options.Reverse = true;
+                        }
+                        else if (token.EqualsUpperCaseSpanIgnoringCase("LIMIT"u8))
+                        {
+                            // read the next two tokens
+                            if (!RespReadUtils.TrySliceWithLengthHeader(out var offset, ref input_currptr, input + length) ||
+                                !RespReadUtils.TrySliceWithLengthHeader(out var countLimit, ref input_currptr, input + length))
+                            {
+                                return;
+                            }
+
+                            if (TryParseParameter(offset, out var offsetLimit, out _) &&
+                                TryParseParameter(countLimit, out var countLimitNumber, out _))
+                            {
+                                options.Limit = ((int)offsetLimit, (int)countLimitNumber);
+                                options.ValidLimit = true;
+                                i += 2;
+                            }
+                        }
+                        else if (token.EqualsUpperCaseSpanIgnoringCase("WITHSCORES"u8))
+                        {
+                            options.WithScores = true;
                         }
                         i++;
                     }
@@ -438,13 +441,13 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteArrayLength(options.WithScores ? scoredElements.Count * 2 : scoredElements.Count, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        foreach (var item in scoredElements)
+                        foreach (var (score, element) in scoredElements)
                         {
-                            while (!RespWriteUtils.WriteBulkString(item.Item2, ref curr, end))
+                            while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             if (options.WithScores)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
@@ -494,13 +497,13 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteArrayLength(options.WithScores ? n * 2 : n, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            foreach (var item in iterator)
+                            foreach (var (score, element) in iterator)
                             {
-                                while (!RespWriteUtils.WriteBulkString(item.Item2, ref curr, end))
+                                while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 if (options.WithScores)
                                 {
-                                    while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                                    while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                                 }
                             }
@@ -527,13 +530,13 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteArrayLength(options.WithScores ? elementsInLex.Count * 2 : elementsInLex.Count, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        foreach (var item in elementsInLex)
+                        foreach (var (score, element) in elementsInLex)
                         {
-                            while (!RespWriteUtils.WriteBulkString(item.Item2, ref curr, end))
+                            while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             if (options.WithScores)
                             {
-                                while (!RespWriteUtils.WriteAsciiBulkString(item.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             }
                         }
@@ -590,23 +593,20 @@ namespace Garnet.server
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
 
-            byte* startParam = null;
-            int pstartsize = 0;
-
-            byte* stopParam = null;
-            int pstopsize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref startParam, ref pstartsize, ref input_currptr, input + length))
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var startBytes, ref input_currptr, input + length) ||
+                !RespReadUtils.TrySliceWithLengthHeader(out var stopBytes, ref input_currptr, input + length))
+            {
                 return;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref stopParam, ref pstopsize, ref input_currptr, input + length))
-                return;
+            }
 
             _output->bytesDone = (int)(input_currptr - input_startptr);
             _output->countDone = int.MaxValue;
 
-            if (!NumUtils.TryBytesToInt(startParam, pstartsize, out int start) || !NumUtils.TryBytesToInt(stopParam, pstopsize, out int stop))
+            if (!NumUtils.TryParse(startBytes, out int start) ||
+                !NumUtils.TryParse(stopBytes, out int stop))
+            {
                 return;
+            }
 
             _output->countDone = 0;
 
@@ -661,16 +661,15 @@ namespace Garnet.server
             // command could be partially executed
             _output->countDone = int.MinValue;
 
-            // read min
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamByteArray, ref input_currptr, input + length))
+            // read min and max
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamBytes, ref input_currptr, input + length) ||
+                !RespReadUtils.TrySliceWithLengthHeader(out var maxParamBytes, ref input_currptr, input + length))
+            {
                 return;
+            }
 
-            // read max
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, input + length))
-                return;
-
-            if (!TryParseParameter(minParamByteArray, out var minValue, out var minExclusive) ||
-                !TryParseParameter(maxParamByteArray, out var maxValue, out var maxExclusive))
+            if (!TryParseParameter(minParamBytes, out var minValue, out var minExclusive) ||
+                !TryParseParameter(maxParamBytes, out var maxValue, out var maxExclusive))
             {
                 _output->countDone = int.MaxValue;
             }
@@ -741,14 +740,14 @@ namespace Garnet.server
 
                 foreach (var item in indexes)
                 {
-                    var element = sortedSetDict.ElementAt(item);
+                    var (element, score) = sortedSetDict.ElementAt(item);
 
-                    while (!RespWriteUtils.WriteBulkString(element.Key, ref curr, end))
+                    while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     if (withScores)
                     {
-                        while (!RespWriteUtils.WriteAsciiBulkString(element.Value.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
@@ -787,15 +786,14 @@ namespace Garnet.server
             //using minValue for partial execution detection
             _output->countDone = int.MinValue;
 
-            // read min
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var minParamByteArray, ref input_currptr, end))
+            // read min and max
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamBytes, ref input_currptr, end) ||
+                !RespReadUtils.TrySliceWithLengthHeader(out var maxParamBytes, ref input_currptr, end))
+            {
                 return;
+            }
 
-            // read max
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var maxParamByteArray, ref input_currptr, end))
-                return;
-
-            var rem = GetElementsInRangeByLex(minParamByteArray, maxParamByteArray, false, false, op != SortedSetOperation.ZLEXCOUNT, out int count);
+            var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, op != SortedSetOperation.ZLEXCOUNT, out int count);
 
             _output->countDone = count;
             _output->opsDone = rem.Count;
@@ -833,10 +831,10 @@ namespace Garnet.server
 
                 if (_input->count == 3) // ZRANK key member WITHSCORE
                 {
-                    if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var token, ref input_currptr, input + length))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var token, ref input_currptr, input + length))
                         return;
 
-                    if (Encoding.ASCII.GetString(token).ToUpperInvariant() == "WITHSCORE")
+                    if (token.EqualsUpperCaseSpanIgnoringCase("WITHSCORE"u8))
                     {
                         withScore = true;
                     }
@@ -876,7 +874,7 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteInteger(rank, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                            while (!RespWriteUtils.WriteAsciiBulkString(score.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                            while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
                         else
@@ -913,7 +911,14 @@ namespace Garnet.server
         /// <param name="errorCode">errorCode</param>
         /// <param name="limit">offset and count values</param>
         /// <returns></returns>
-        private List<(double, byte[])> GetElementsInRangeByLex(byte[] minParamByteArray, byte[] maxParamByteArray, bool doReverse, bool validLimit, bool rem, out int errorCode, (int, int) limit = default)
+        private List<(double, byte[])> GetElementsInRangeByLex(
+            ReadOnlySpan<byte> minParamByteArray,
+            ReadOnlySpan<byte> maxParamByteArray,
+            bool doReverse,
+            bool validLimit,
+            bool rem,
+            out int errorCode,
+            (int, int) limit = default)
         {
             var elementsInLex = new List<(double, byte[])>();
 
@@ -1072,14 +1077,14 @@ namespace Garnet.server
                     }
                     var max = op == SortedSetOperation.ZPOPMAX ? sortedSet.Max : sortedSet.Min;
                     var success = sortedSet.Remove(max);
-                    success = sortedSetDict.Remove(max.Item2);
+                    success = sortedSetDict.Remove(max.Element);
 
-                    this.UpdateSize(max.Item2, false);
+                    this.UpdateSize(max.Element, false);
 
-                    while (!RespWriteUtils.WriteBulkString(max.Item2, ref curr, end))
+                    while (!RespWriteUtils.WriteBulkString(max.Element, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                    while (!RespWriteUtils.WriteAsciiBulkString(max.Item1.ToString(CultureInfo.InvariantCulture), ref curr, end))
+                    while (!RespWriteUtils.TryWriteDoubleBulkString(max.Score, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     countDone++;
@@ -1121,8 +1126,7 @@ namespace Garnet.server
                 exclusive = true;
             }
 
-            if (Utf8Parser.TryParse(val, out valueDouble, out int bytesConsumed, default) &&
-                bytesConsumed == val.Length)
+            if (NumUtils.TryParse(val, out valueDouble))
             {
                 return true;
             }

@@ -513,7 +513,24 @@ namespace Garnet.test
             Assert.AreEqual("value3", (string?)val3);
             Assert.False(set3);
 #nullable disable
+        }
 
+        [Test]
+        public void CheckEmptyHashKeyRemoved()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var key = new RedisKey("user1:hash");
+            var db = redis.GetDatabase(0);
+
+            db.HashSet(key, [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021")]);
+
+            var result = db.HashDelete(key, new RedisValue("Title"));
+            Assert.IsTrue(result);
+            result = db.HashDelete(key, new RedisValue("Year"));
+            Assert.IsTrue(result);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
         }
 
         #endregion

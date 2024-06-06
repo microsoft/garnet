@@ -11,8 +11,8 @@ namespace Garnet.server
     /// Garnet API implementation
     /// </summary>
     public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
-        where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
+        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
     {
         #region SortedSet Methods
 

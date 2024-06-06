@@ -16,8 +16,8 @@ namespace Garnet.server
     /// Garnet API implementation
     /// </summary>
     public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
-        where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
+        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
     {
         readonly StorageSession storageSession;
         TContext context;
@@ -330,7 +330,7 @@ namespace Garnet.server
             => storageSession.DbSize();
 
         /// <inheritdoc />
-        public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> Keys, long count = 10, Span<byte> type = default)
+        public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> Keys, long count = 10, ReadOnlySpan<byte> type = default)
             => storageSession.DbScan(patternB, allKeys, cursor, out storeCursor, out Keys, count, type);
 
         /// <inheritdoc />

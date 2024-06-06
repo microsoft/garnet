@@ -38,12 +38,11 @@ namespace Garnet.server
             if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
                 return true;
 
-            keyPtr -= sizeof(int); // length header
-            *(int*)keyPtr = ksize;
+            var key = new SpanByte(ksize, (nint)keyPtr);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             SpanByte input = default;
-            var status = storageApi.GET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref o);
+            var status = storageApi.GET(ref key, ref input, ref o);
 
             switch (status)
             {
@@ -311,12 +310,10 @@ namespace Garnet.server
             if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
                 return true;
 
-            keyPtr -= sizeof(int);
-            valPtr -= sizeof(int);
-            *(int*)keyPtr = ksize;
-            *(int*)valPtr = vsize;
+            var key = new SpanByte(ksize, (nint)keyPtr);
+            var value = new SpanByte(vsize, (nint)valPtr);
+            var status = storageApi.SET(ref key, ref value);
 
-            var status = storageApi.SET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
@@ -513,8 +510,7 @@ namespace Garnet.server
             {
                 if (error)
                 {
-                    Span<byte> tmp = default;
-                    if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref tmp, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out _, ref ptr, recvBufferPtr + bytesRead))
                         return false;
                     count--;
                     continue;

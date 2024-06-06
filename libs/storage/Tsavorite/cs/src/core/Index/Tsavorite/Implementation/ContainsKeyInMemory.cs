@@ -8,13 +8,13 @@ namespace Tsavorite.core
     public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status InternalContainsKeyInMemory<Input, Output, Context, TsavoriteSession>(
-            ref Key key, TsavoriteSession tsavoriteSession, out long logicalAddress, long fromAddress = -1)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal Status InternalContainsKeyInMemory<Input, Output, Context, TSessionFunctionsWrapper>(
+            ref Key key, TSessionFunctionsWrapper sessionFunctions, out long logicalAddress, long fromAddress = -1)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             OperationStackContext<Key, Value> stackCtx = new(comparer.GetHashCode64(ref key));
 
-            if (tsavoriteSession.Ctx.phase == Phase.IN_PROGRESS_GROW)
+            if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
             if (FindTag(ref stackCtx.hei))

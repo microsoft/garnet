@@ -47,10 +47,10 @@ namespace Tsavorite.core
         };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryAllocateRecord<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref PendingContext<Input, Output, Context> pendingContext,
+        bool TryAllocateRecord<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<Input, Output, Context> pendingContext,
                                                        ref OperationStackContext<Key, Value> stackCtx, int actualSize, ref int allocatedSize, int newKeySize, AllocateOptions options,
                                                        out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             status = OperationStatus.SUCCESS;
 
@@ -58,19 +58,19 @@ namespace Tsavorite.core
             var minMutableAddress = GetMinRevivifiableAddress();
             var minRevivAddress = minMutableAddress;
 
-            if (options.Recycle && pendingContext.retryNewLogicalAddress != Constants.kInvalidAddress && GetAllocationForRetry(tsavoriteSession, ref pendingContext, minRevivAddress, ref allocatedSize, newKeySize, out newLogicalAddress, out newPhysicalAddress))
+            if (options.Recycle && pendingContext.retryNewLogicalAddress != Constants.kInvalidAddress && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, ref allocatedSize, newKeySize, out newLogicalAddress, out newPhysicalAddress))
                 return true;
             if (RevivificationManager.UseFreeRecordPool)
             {
                 if (!options.IgnoreHeiAddress && stackCtx.hei.Address >= minMutableAddress)
                     minRevivAddress = stackCtx.hei.Address;
-                if (tsavoriteSession.Ctx.IsInV1)
+                if (sessionFunctions.Ctx.IsInV1)
                 {
                     var fuzzyStartAddress = _hybridLogCheckpoint.info.startLogicalAddress;
                     if (fuzzyStartAddress > minRevivAddress)
                         minRevivAddress = fuzzyStartAddress;
                 }
-                if (TryTakeFreeRecord<Input, Output, Context, TsavoriteSession>(tsavoriteSession, actualSize, ref allocatedSize, newKeySize, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
+                if (TryTakeFreeRecord<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, actualSize, ref allocatedSize, newKeySize, minRevivAddress, out newLogicalAddress, out newPhysicalAddress))
                     return true;
             }
 
@@ -87,7 +87,7 @@ namespace Tsavorite.core
                         return true;
 
                     // This allocation is below the necessary address so put it on the free list or abandon it, then repeat the loop.
-                    if (!RevivificationManager.UseFreeRecordPool || !RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref tsavoriteSession.Ctx.RevivificationStats))
+                    if (!RevivificationManager.UseFreeRecordPool || !RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
                         hlog.GetInfo(newPhysicalAddress).SetInvalid();  // Skip on log scan
                     continue;
                 }
@@ -159,9 +159,9 @@ namespace Tsavorite.core
         }
 
         // Do not inline, to keep TryAllocateRecord lean
-        bool GetAllocationForRetry<Input, Output, Context, TsavoriteSession>(TsavoriteSession tsavoriteSession, ref PendingContext<Input, Output, Context> pendingContext, long minAddress,
+        bool GetAllocationForRetry<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<Input, Output, Context> pendingContext, long minAddress,
                 ref int allocatedSize, int newKeySize, out long newLogicalAddress, out long newPhysicalAddress)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // Use an earlier allocation from a failed operation, if possible.
             newLogicalAddress = pendingContext.retryNewLogicalAddress;
@@ -182,7 +182,7 @@ namespace Tsavorite.core
 
             // Dispose the record for either reuse or abandonment.
             ClearExtraValueSpace(ref recordInfo, ref recordValue, usedValueLength, fullValueLength);
-            tsavoriteSession.DisposeForRevivification(ref hlog.GetKey(newPhysicalAddress), ref recordValue, newKeySize, ref recordInfo);
+            sessionFunctions.DisposeForRevivification(ref hlog.GetKey(newPhysicalAddress), ref recordValue, newKeySize, ref recordInfo);
 
             if (newLogicalAddress <= minAddress || fullRecordLength < allocatedSize)
             {

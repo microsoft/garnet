@@ -237,7 +237,7 @@ namespace Garnet.test
 
             Assert.AreEqual(0, size);
 
-            SortedSetEntry? retEntry = db.SortedSetPop(key);
+            var retEntry = db.SortedSetPop(key);
 
             Assert.IsNull(retEntry);
         }

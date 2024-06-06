@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectStoreFunctions : IFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectStoreFunctions : ISessionFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
         public bool SingleWriter(ref byte[] key, ref SpanByte input, ref IGarnetObject src, ref IGarnetObject dst, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)

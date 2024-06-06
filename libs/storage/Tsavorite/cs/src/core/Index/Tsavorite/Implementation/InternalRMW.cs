@@ -19,7 +19,7 @@ namespace Tsavorite.core
         /// <param name="output">Location to store output computed from input and value.</param>
         /// <param name="userContext">user context corresponding to operation used during completion callback.</param>
         /// <param name="pendingContext">pending context created when the operation goes pending.</param>
-        /// <param name="tsavoriteSession">Callback functions.</param>
+        /// <param name="sessionFunctions">Callback functions.</param>
         /// <returns>
         /// <list type="table">
         ///     <listheader>
@@ -45,19 +45,19 @@ namespace Tsavorite.core
         /// </list>
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalRMW<Input, Output, Context, TsavoriteSession>(ref Key key, long keyHash, ref Input input, ref Output output, ref Context userContext,
-                                    ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal OperationStatus InternalRMW<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, long keyHash, ref Input input, ref Output output, ref Context userContext,
+                                    ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             var latchOperation = LatchOperation.None;
 
             OperationStackContext<Key, Value> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
 
-            if (tsavoriteSession.Ctx.phase == Phase.IN_PROGRESS_GROW)
+            if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
-            if (!FindOrCreateTagAndTryTransientXLock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx, out OperationStatus status))
+            if (!FindOrCreateTagAndTryTransientXLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
                 return status;
 
             RecordInfo dummyRecordInfo = RecordInfo.InitialValid;
@@ -82,9 +82,9 @@ namespace Tsavorite.core
                 }
 
                 // Check for CPR consistency after checking if source is readcache.
-                if (tsavoriteSession.Ctx.phase != Phase.REST)
+                if (sessionFunctions.Ctx.phase != Phase.REST)
                 {
-                    var latchDestination = CheckCPRConsistencyRMW(tsavoriteSession.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
+                    var latchDestination = CheckCPRConsistencyRMW(sessionFunctions.Ctx.phase, ref stackCtx, ref status, ref latchOperation);
                     switch (latchDestination)
                     {
                         case LatchDestination.Retry:
@@ -104,8 +104,8 @@ namespace Tsavorite.core
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
                     RMWInfo rmwInfo = new()
                     {
-                        Version = tsavoriteSession.Ctx.version,
-                        SessionID = tsavoriteSession.Ctx.sessionID,
+                        Version = sessionFunctions.Ctx.version,
+                        SessionID = sessionFunctions.Ctx.sessionID,
                         Address = stackCtx.recSrc.LogicalAddress,
                         KeyHash = stackCtx.hei.hash
                     };
@@ -118,13 +118,13 @@ namespace Tsavorite.core
                         // If we're doing revivification and this is in the revivifiable range, try to revivify--otherwise we'll create a new record.
                         if (RevivificationManager.IsEnabled && stackCtx.recSrc.LogicalAddress >= GetMinRevivifiableAddress())
                         {
-                            if (!tsavoriteSession.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
+                            if (!sessionFunctions.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
                             {
                                 status = OperationStatus.NOTFOUND;
                                 goto LatchRelease;
                             }
 
-                            if (TryRevivifyInChain(ref key, ref input, ref output, ref pendingContext, tsavoriteSession, ref stackCtx, ref srcRecordInfo, ref rmwInfo, out status, ref recordValue)
+                            if (TryRevivifyInChain(ref key, ref input, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo, ref rmwInfo, out status, ref recordValue)
                                     || status != OperationStatus.SUCCESS)
                                 goto LatchRelease;
                         }
@@ -132,13 +132,13 @@ namespace Tsavorite.core
                     }
 
                     // rmwInfo's lengths are filled in and GetValueLengths and SetLength are called inside InPlaceUpdater.
-                    if (tsavoriteSession.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref rmwInfo, out status, ref srcRecordInfo)
+                    if (sessionFunctions.InPlaceUpdater(stackCtx.recSrc.PhysicalAddress, ref key, ref input, ref recordValue, ref output, ref rmwInfo, out status, ref srcRecordInfo)
                         || (rmwInfo.Action == RMWAction.ExpireAndStop))
                     {
-                        MarkPage(stackCtx.recSrc.LogicalAddress, tsavoriteSession.Ctx);
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
 
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
-                        // Our ITsavoriteSession.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
+                        // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         // status has been set by InPlaceUpdater
@@ -170,12 +170,12 @@ namespace Tsavorite.core
 
                     // Disk Region: Need to issue async io requests. Locking will be checked on pending completion.
                     status = OperationStatus.RECORD_ON_DISK;
-                    CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, ref stackCtx);
+                    CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
                     goto LatchRelease;
                 }
 
                 // No record exists - drop through to create new record.
-                Debug.Assert(!tsavoriteSession.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
+                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
                 {
@@ -183,13 +183,13 @@ namespace Tsavorite.core
                     ref Value value = ref (stackCtx.recSrc.HasInMemorySrc ? ref stackCtx.recSrc.GetValue() : ref tempValue);
 
                     // Here, the input* data for 'doingCU' is the same as recSrc.
-                    status = CreateNewRecordRMW(ref key, ref input, ref value, ref output, ref pendingContext, tsavoriteSession, ref stackCtx, ref srcRecordInfo,
+                    status = CreateNewRecordRMW(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo,
                                                 doingCU: stackCtx.recSrc.HasInMemorySrc && !srcRecordInfo.Tombstone);
                     if (!OperationStatusUtils.IsAppend(status))
                     {
                         // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
                         if (status == OperationStatus.ALLOCATE_FAILED && pendingContext.IsAsync || status == OperationStatus.RECORD_ON_DISK)
-                            CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, tsavoriteSession, ref stackCtx);
+                            CreatePendingRMWContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, ref stackCtx);
                     }
                     goto LatchRelease;
                 }
@@ -197,7 +197,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
-                TransientXUnlock<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref key, ref stackCtx);
+                TransientXUnlock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
 
         LatchRelease:
@@ -219,29 +219,28 @@ namespace Tsavorite.core
         }
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalUpsert if the compiler decides not to inline this.
-        private void CreatePendingRMWContext<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, Output output, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        private void CreatePendingRMWContext<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, Output output, Context userContext,
+                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             pendingContext.type = OperationType.RMW;
             if (pendingContext.key == default)
                 pendingContext.key = hlog.GetKeyContainer(ref key);
             if (pendingContext.input == default)
-                pendingContext.input = tsavoriteSession.GetHeapContainer(ref input);
+                pendingContext.input = sessionFunctions.GetHeapContainer(ref input);
 
             pendingContext.output = output;
-            if (pendingContext.output is IHeapConvertible heapConvertible)
-                heapConvertible.ConvertToHeap();
+            sessionFunctions.ConvertOutputToHeap(ref input, ref pendingContext.output);
 
             pendingContext.userContext = userContext;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 
-        private bool TryRevivifyInChain<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Output output, ref PendingContext<Input, Output, Context> pendingContext,
-                        TsavoriteSession tsavoriteSession, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, ref RMWInfo rmwInfo, out OperationStatus status, ref Value recordValue)
-                    where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        private bool TryRevivifyInChain<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Output output, ref PendingContext<Input, Output, Context> pendingContext,
+                        TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, ref RMWInfo rmwInfo, out OperationStatus status, ref Value recordValue)
+                    where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
-            if (IsFrozen<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref stackCtx, ref srcRecordInfo))
+            if (IsFrozen<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo))
                 goto NeedNewRecord;
 
             // This record is safe to revivify even if its PreviousAddress points to a valid record, because it is revivified for the same key.
@@ -260,15 +259,15 @@ namespace Tsavorite.core
                         rmwInfo.FullValueLength = recordLengths.fullValueLength;
 
                         // RMW uses GetInitialRecordSize because it has only the initial Input, not a Value
-                        var (requiredSize, _, _) = hlog.GetRMWInitialRecordSize(ref key, ref input, tsavoriteSession);
-                        (ok, rmwInfo.UsedValueLength) = TryReinitializeTombstonedValue<Input, Output, Context, TsavoriteSession>(tsavoriteSession,
+                        var (requiredSize, _, _) = hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
+                        (ok, rmwInfo.UsedValueLength) = TryReinitializeTombstonedValue<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions,
                                 ref srcRecordInfo, ref key, ref recordValue, requiredSize, recordLengths);
                     }
 
-                    if (ok && tsavoriteSession.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref rmwInfo, ref srcRecordInfo))
+                    if (ok && sessionFunctions.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref rmwInfo, ref srcRecordInfo))
                     {
                         // Success
-                        MarkPage(stackCtx.recSrc.LogicalAddress, tsavoriteSession.Ctx);
+                        MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
@@ -397,13 +396,13 @@ namespace Tsavorite.core
         /// <typeparam name="Input"></typeparam>
         /// <typeparam name="Output"></typeparam>
         /// <typeparam name="Context"></typeparam>
-        /// <typeparam name="TsavoriteSession"></typeparam>
+        /// <typeparam name="TSessionFunctionsWrapper"></typeparam>
         /// <param name="key">The record Key</param>
         /// <param name="input">Input to the operation</param>
         /// <param name="value">Old value</param>
-        /// <param name="output">The result of IFunctions.SingleWriter</param>
+        /// <param name="output">The result of ISessionFunctions.SingleWriter</param>
         /// <param name="pendingContext">Information about the operation context</param>
-        /// <param name="tsavoriteSession">The current session</param>
+        /// <param name="sessionFunctions">The current session</param>
         /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions. If called from pending IO,
         ///     this is populated from the data read from disk.</param>
@@ -412,10 +411,10 @@ namespace Tsavorite.core
         ///     this is the <see cref="RecordInfo"/> read from disk. If neither of these, it is a default <see cref="RecordInfo"/>.</param>
         /// <param name="doingCU">Whether we are doing a CopyUpdate, either from in-memory or pending IO</param>
         /// <returns></returns>
-        private OperationStatus CreateNewRecordRMW<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref Output output,
-                                                                                          ref PendingContext<Input, Output, Context> pendingContext, TsavoriteSession tsavoriteSession,
+        private OperationStatus CreateNewRecordRMW<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Value value, ref Output output,
+                                                                                          ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions,
                                                                                           ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, bool doingCU)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             bool forExpiration = false;
 
@@ -423,8 +422,8 @@ namespace Tsavorite.core
 
             RMWInfo rmwInfo = new()
             {
-                Version = tsavoriteSession.Ctx.version,
-                SessionID = tsavoriteSession.Ctx.sessionID,
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID,
                 Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
                 KeyHash = stackCtx.hei.hash
             };
@@ -433,7 +432,7 @@ namespace Tsavorite.core
             if (doingCU)
             {
                 rmwInfo.SetRecordInfo(ref srcRecordInfo);
-                if (!tsavoriteSession.NeedCopyUpdate(ref key, ref input, ref value, ref output, ref rmwInfo))
+                if (!sessionFunctions.NeedCopyUpdate(ref key, ref input, ref value, ref output, ref rmwInfo))
                 {
                     if (rmwInfo.Action == RMWAction.CancelOperation)
                         return OperationStatus.CANCELED;
@@ -452,28 +451,28 @@ namespace Tsavorite.core
             if (!doingCU)
             {
                 rmwInfo.ClearRecordInfo();   // There is no existing record
-                if (!tsavoriteSession.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
+                if (!sessionFunctions.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
                     return rmwInfo.Action == RMWAction.CancelOperation ? OperationStatus.CANCELED : OperationStatus.NOTFOUND;
             }
 
             // Allocate and initialize the new record
             var (actualSize, allocatedSize, keySize) = doingCU ?
-                stackCtx.recSrc.Log.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, tsavoriteSession) :
-                hlog.GetRMWInitialRecordSize(ref key, ref input, tsavoriteSession);
+                stackCtx.recSrc.Log.GetRMWCopyDestinationRecordSize(ref key, ref input, ref value, ref srcRecordInfo, sessionFunctions) :
+                hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
 
             AllocateOptions allocOptions = new()
             {
                 Recycle = true,
 
                 // If the source record is elidable we can try to elide from the chain and transfer it to the FreeList if we're doing Revivification
-                IgnoreHeiAddress = stackCtx.recSrc.HasMainLogSrc && CanElide<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref stackCtx, ref srcRecordInfo)
+                IgnoreHeiAddress = stackCtx.recSrc.HasMainLogSrc && CanElide<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo)
             };
 
-            if (!TryAllocateRecord(tsavoriteSession, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, allocOptions,
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, allocOptions,
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: tsavoriteSession.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.IgnoreHeiAddress)
                 newRecordInfo.PreviousAddress = srcRecordInfo.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
@@ -487,7 +486,7 @@ namespace Tsavorite.core
 
             if (!doingCU)
             {
-                if (tsavoriteSession.InitialUpdater(ref key, ref input, ref newRecordValue, ref output, ref rmwInfo, ref newRecordInfo))
+                if (sessionFunctions.InitialUpdater(ref key, ref input, ref newRecordValue, ref output, ref rmwInfo, ref newRecordInfo))
                 {
                     SetExtraValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                     status = forExpiration
@@ -503,7 +502,7 @@ namespace Tsavorite.core
             }
             else
             {
-                if (tsavoriteSession.CopyUpdater(ref key, ref input, ref value, ref newRecordValue, ref output, ref rmwInfo, ref newRecordInfo))
+                if (sessionFunctions.CopyUpdater(ref key, ref input, ref value, ref newRecordValue, ref output, ref rmwInfo, ref newRecordInfo))
                 {
                     SetExtraValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord);
@@ -519,7 +518,7 @@ namespace Tsavorite.core
                 if (rmwInfo.Action == RMWAction.CancelOperation)
                 {
                     // Save allocation for revivification (not retry, because this is canceling of the current operation), or abandon it if that fails.
-                    if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref tsavoriteSession.Ctx.RevivificationStats))
+                    if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
                         stackCtx.ClearNewRecord();
                     else
                         stackCtx.SetNewRecordInvalid(ref newRecordInfo);
@@ -528,7 +527,7 @@ namespace Tsavorite.core
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
                     newRecordInfo.Tombstone = true;
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired | StatusCode.Expired);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
                     goto DoCAS;
                 }
                 else if (rmwInfo.Action == RMWAction.ExpireAndResume)
@@ -536,15 +535,15 @@ namespace Tsavorite.core
                     doingCU = false;
                     forExpiration = true;
 
-                    if (!ReinitializeExpiredRecord<Input, Output, Context, TsavoriteSession>(ref key, ref input, ref newRecordValue, ref output, ref newRecordInfo,
-                                            ref rmwInfo, newLogicalAddress, tsavoriteSession, isIpu: false, out status))
+                    if (!ReinitializeExpiredRecord<Input, Output, Context, TSessionFunctionsWrapper>(ref key, ref input, ref newRecordValue, ref output, ref newRecordInfo,
+                                            ref rmwInfo, newLogicalAddress, sessionFunctions, isIpu: false, out status))
                     {
                         // An IPU was not (or could not) be done. Cancel if requested, else invalidate the allocated record and retry.
                         if (status == OperationStatus.CANCELED)
                             return status;
 
                         // Save allocation for revivification (not retry, because this may have been false because the record was too small), or abandon it if that fails.
-                        if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref tsavoriteSession.Ctx.RevivificationStats))
+                        if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
                             stackCtx.ClearNewRecord();
                         else
                             stackCtx.SetNewRecordInvalid(ref newRecordInfo);
@@ -568,12 +567,23 @@ namespace Tsavorite.core
                 {
                     // If IU, status will be NOTFOUND. ReinitializeExpiredRecord has many paths but is straightforward so no need to assert here.
                     Debug.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
-                    tsavoriteSession.PostInitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo);
+                    sessionFunctions.PostInitialUpdater(ref key, ref input, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo);
                 }
                 else
                 {
                     // Else it was a CopyUpdater so call PCU
-                    tsavoriteSession.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo);
+                    if (!sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
+                    {
+                        if (rmwInfo.Action == RMWAction.ExpireAndStop)
+                        {
+                            newRecordInfo.Tombstone = true;
+                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
+                        }
+                        else
+                        {
+                            Debug.Fail("Can only handle RMWAction.ExpireAndStop on a false return from PostCopyUpdater");
+                        }
+                    }
 
                     // IgnoreHeiAddress means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                     // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.
@@ -586,7 +596,7 @@ namespace Tsavorite.core
                         {
                             // We need to re-get the old record's length because rmwInfo has the new record's info. If freelist-add fails, it remains Sealed/Invalidated.
                             var oldRecordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref hlog.GetValue(stackCtx.recSrc.PhysicalAddress), ref srcRecordInfo);
-                            TryTransferToFreeList<Input, Output, Context, TsavoriteSession>(tsavoriteSession, ref stackCtx, ref srcRecordInfo, oldRecordLengths);
+                            TryTransferToFreeList<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo, oldRecordLengths);
                         }
                     }
                     else
@@ -604,23 +614,23 @@ namespace Tsavorite.core
             ref Value insertedValue = ref hlog.GetValue(newPhysicalAddress);
             ref Key insertedKey = ref hlog.GetKey(newPhysicalAddress);
             if (!doingCU)
-                tsavoriteSession.DisposeInitialUpdater(ref insertedKey, ref input, ref insertedValue, ref output, ref rmwInfo);
+                sessionFunctions.DisposeInitialUpdater(ref insertedKey, ref input, ref insertedValue, ref output, ref rmwInfo);
             else
-                tsavoriteSession.DisposeCopyUpdater(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref rmwInfo);
+                sessionFunctions.DisposeCopyUpdater(ref insertedKey, ref input, ref value, ref insertedValue, ref output, ref rmwInfo);
 
             SetExtraValueLength(ref newRecordValue, ref newRecordInfo, rmwInfo.UsedValueLength, rmwInfo.FullValueLength);
             SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }
 
-        internal bool ReinitializeExpiredRecord<Input, Output, Context, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo,
-                                                                                       long logicalAddress, TsavoriteSession tsavoriteSession, bool isIpu, out OperationStatus status)
-            where TsavoriteSession : ITsavoriteSession<Key, Value, Input, Output, Context>
+        internal bool ReinitializeExpiredRecord<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Value value, ref Output output, ref RecordInfo recordInfo, ref RMWInfo rmwInfo,
+                                                                                       long logicalAddress, TSessionFunctionsWrapper sessionFunctions, bool isIpu, out OperationStatus status)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             // This is called for InPlaceUpdater or CopyUpdater only; CopyUpdater however does not copy an expired record, so we return CreatedRecord.
             var advancedStatusCode = isIpu ? StatusCode.InPlaceUpdatedRecord : StatusCode.CreatedRecord;
             advancedStatusCode |= StatusCode.Expired;
-            if (!tsavoriteSession.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
+            if (!sessionFunctions.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo))
             {
                 if (rmwInfo.Action == RMWAction.CancelOperation)
                 {
@@ -636,15 +646,15 @@ namespace Tsavorite.core
 
             // Try to reinitialize in place
             (var currentSize, _, _) = hlog.GetRecordSize(ref key, ref value);
-            (var requiredSize, _, _) = hlog.GetRMWInitialRecordSize(ref key, ref input, tsavoriteSession);
+            (var requiredSize, _, _) = hlog.GetRMWInitialRecordSize(ref key, ref input, sessionFunctions);
 
             if (currentSize >= requiredSize)
             {
-                if (tsavoriteSession.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
+                if (sessionFunctions.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo))
                 {
                     // If IPU path, we need to complete PostInitialUpdater as well
                     if (isIpu)
-                        tsavoriteSession.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
+                        sessionFunctions.PostInitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
 
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                     return true;

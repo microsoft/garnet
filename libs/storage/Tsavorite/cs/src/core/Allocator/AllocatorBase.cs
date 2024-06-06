@@ -352,8 +352,8 @@ namespace Tsavorite.core
         /// Get copy destination size for RMW, taking Input into account
         /// </summary>
         /// <returns></returns>
-        public abstract (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : IVariableLengthInput<Value, Input>;
+        public abstract (int actualSize, int allocatedSize, int keySize) GetRMWCopyDestinationRecordSize<Input, TVariableLengthInput>(ref Key key, ref Input input, ref Value value, ref RecordInfo recordInfo, TVariableLengthInput varlenInput)
+            where TVariableLengthInput : IVariableLengthInput<Value, Input>;
 
         /// <summary>
         /// Get number of bytes required
@@ -380,10 +380,10 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
-        /// <param name="tsavoriteSession"></param>
+        /// <param name="sessionFunctions"></param>
         /// <returns></returns>
-        public abstract (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TsavoriteSession>(ref Key key, ref Input input, TsavoriteSession tsavoriteSession)
-            where TsavoriteSession : IVariableLengthInput<Value, Input>;
+        public abstract (int actualSize, int allocatedSize, int keySize) GetRMWInitialRecordSize<Input, TSessionFunctionsWrapper>(ref Key key, ref Input input, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : IVariableLengthInput<Value, Input>;
 
         /// <summary>
         /// Get record size

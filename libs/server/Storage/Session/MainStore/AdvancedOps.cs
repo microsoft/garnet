@@ -11,7 +11,7 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         public GarnetStatus GET_WithPending<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, long ctx, out bool pending, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
         {
             var status = context.Read(ref key, ref input, ref output, ctx);
 
@@ -36,7 +36,7 @@ namespace Garnet.server
         }
 
         public bool GET_CompletePending<TContext>((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
         {
             Debug.Assert(outputArr != null);
 
@@ -60,7 +60,7 @@ namespace Garnet.server
         }
 
         public bool GET_CompletePending<TContext>(out CompletedOutputIterator<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long> completedOutputs, bool wait, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
         {
             latencyMetrics?.Start(LatencyMetricsType.PENDING_LAT);
             var ret = context.CompletePendingWithOutputs(out completedOutputs, wait);
@@ -69,7 +69,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus RMW_MainStore<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
         {
             var status = context.RMW(ref key, ref input, ref output);
 
@@ -83,7 +83,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus Read_MainStore<TContext>(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
         {
             var status = context.Read(ref key, ref input, ref output);
 

@@ -14,7 +14,7 @@ namespace Garnet.server
         #region Common ObjectStore Methods
 
         unsafe GarnetStatus RMWObjectStoreOperation<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             var _input = input.SpanByte;
 
@@ -30,10 +30,7 @@ namespace Garnet.server
             Debug.Assert(_output.spanByteAndMemory.IsSpanByte);
 
 
-            if (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated)
-                return GarnetStatus.NOTFOUND;
-
-            return GarnetStatus.OK;
+            return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
         /// <summary>
@@ -47,7 +44,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus RMWObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ArgSlice input, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             var _input = input.SpanByte;
 
@@ -57,10 +54,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
 
-            if (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated)
-                return GarnetStatus.NOTFOUND;
-
-            return GarnetStatus.OK;
+            return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
         /// <summary>
@@ -74,7 +68,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus ReadObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ArgSlice input, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             var _input = input.SpanByte;
 
@@ -185,7 +179,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         unsafe GarnetStatus ReadObjectStoreOperation<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             var _input = input.SpanByte;
 
@@ -215,7 +209,7 @@ namespace Garnet.server
         /// <param name="outputFooter"></param>
         /// <param name="objectStoreContext"></param>
         public GarnetStatus ObjectScan<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
           => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
 
         #endregion

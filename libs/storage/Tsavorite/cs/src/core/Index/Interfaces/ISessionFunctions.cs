@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <typeparam name="Input"></typeparam>
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public interface IFunctions<Key, Value, Input, Output, Context>
+    public interface ISessionFunctions<Key, Value, Input, Output, Context>
     {
         #region Reads
         /// <summary>
@@ -163,7 +163,10 @@ namespace Tsavorite.core
         /// <param name="newValue">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
         /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo);
+        /// <returns>This is the only Post* method that returns non-void. The bool functions the same as CopyUpdater; this is because we do not want to modify
+        /// objects in-memory until we know the "insert at tail" is successful. Therefore, we allow a false return as a signal to inspect <paramref name="rmwInfo.Action"/>
+        /// and handle <see cref="RMWAction.ExpireAndStop"/>.</returns>
+        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo);
         #endregion CopyUpdater
 
         #region InPlaceUpdater
@@ -299,6 +302,15 @@ namespace Tsavorite.core
         /// <param name="newKeySize">If > 0, this is a record from the freelist and we are disposing the key as well as value (it is -1 when revivifying a record in the hash chain or when doing a RETRY; for these the key does not change)</param>
         void DisposeForRevivification(ref Key key, ref Value value, int newKeySize);
         #endregion Dispose
+
+        #region Utilities
+        /// <summary>
+        /// Called by Tsavorite when the operation goes pending, so the app can signal to itself that any pinned
+        /// buffer in the Output is no longer valid and a heap-based buffer must be created.
+        /// </summary>
+        /// <param name="output"></param>
+        void ConvertOutputToHeap(ref Input input, ref Output output);
+        #endregion Utilities
     }
 
     /// <summary>
@@ -306,7 +318,7 @@ namespace Tsavorite.core
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
-    public interface IFunctions<Key, Value> : IFunctions<Key, Value, Value, Value, Empty>
+    public interface ISessionFunctions<Key, Value> : ISessionFunctions<Key, Value, Value, Value, Empty>
     {
     }
 
@@ -316,7 +328,7 @@ namespace Tsavorite.core
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public interface IFunctions<Key, Value, Context> : IFunctions<Key, Value, Value, Value, Context>
+    public interface ISessionFunctions<Key, Value, Context> : ISessionFunctions<Key, Value, Value, Value, Context>
     {
     }
 }
