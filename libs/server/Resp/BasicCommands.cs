@@ -1089,7 +1089,8 @@ namespace Garnet.server
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
-                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for COMMAND.", ref dcurr, dend))
+                string errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, "COMMAND");
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
             else
@@ -1114,7 +1115,8 @@ namespace Garnet.server
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
-                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for COMMAND COUNT.", ref dcurr, dend))
+                string errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "COMMAND COUNT");
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
             }
             else
