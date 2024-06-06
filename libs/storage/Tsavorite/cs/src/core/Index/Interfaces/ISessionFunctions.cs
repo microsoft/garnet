@@ -163,7 +163,10 @@ namespace Tsavorite.core
         /// <param name="newValue">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
         /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo);
+        /// <returns>This is the only Post* method that returns non-void. The bool functions the same as CopyUpdater; this is because we do not want to modify
+        /// objects in-memory until we know the "insert at tail" is successful. Therefore, we allow a false return as a signal to inspect <paramref name="rmwInfo.Action"/>
+        /// and handle <see cref="RMWAction.ExpireAndStop"/>.</returns>
+        bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo);
         #endregion CopyUpdater
 
         #region InPlaceUpdater

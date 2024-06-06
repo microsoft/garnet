@@ -527,7 +527,7 @@ namespace Tsavorite.core
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
                     newRecordInfo.Tombstone = true;
-                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired | StatusCode.Expired);
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CreatedRecord | StatusCode.Expired);
                     goto DoCAS;
                 }
                 else if (rmwInfo.Action == RMWAction.ExpireAndResume)
@@ -572,7 +572,18 @@ namespace Tsavorite.core
                 else
                 {
                     // Else it was a CopyUpdater so call PCU
-                    sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo);
+                    if (!sessionFunctions.PostCopyUpdater(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref rmwInfo, ref newRecordInfo))
+                    {
+                        if (rmwInfo.Action == RMWAction.ExpireAndStop)
+                        {
+                            newRecordInfo.Tombstone = true;
+                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
+                        }
+                        else
+                        {
+                            Debug.Fail("Can only handle RMWAction.ExpireAndStop on a false return from PostCopyUpdater");
+                        }
+                    }
 
                     // IgnoreHeiAddress means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
                     // the new source record that does not point to the old source record, we have elided it, so try to transfer to freelist.
