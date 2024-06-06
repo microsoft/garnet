@@ -42,9 +42,6 @@ namespace Tsavorite.core
         #region Key Locking
 
         /// <inheritdoc/>
-        public bool NeedKeyHash => clientSession.NeedKeyHash;
-
-        /// <inheritdoc/>
         public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
@@ -57,14 +54,14 @@ namespace Tsavorite.core
         public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys, start, count);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoInternalLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        internal static bool DoManualLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
                                                                    TLockableKey[] keys, int start, int count)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
             where TLockableKey : ILockableKey
         {
             // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
             // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
-            // This is the same as DoInternalTryLock but without timeout; it will keep trying until it acquires all locks.
+            // This is the same as DoManualTryLock but without timeout; it will keep trying until it acquires all locks or the hardcoded retry limit is reached.
             var end = start + count - 1;
 
             int retryCount = 0;
@@ -78,20 +75,18 @@ namespace Tsavorite.core
                 if (currBucketIndex != prevBucketIndex)
                 {
                     prevBucketIndex = currBucketIndex;
-                    OperationStatus status = DoInternalLock(clientSession, key);
+                    OperationStatus status = DoManualLock(clientSession, key);
                     if (status == OperationStatus.SUCCESS)
                         continue;   // Success; continue to the next key.
 
                     // Lock failure before we've completed all keys, and we did not lock the current key. Unlock anything we've locked.
-                    DoInternalUnlock(clientSession, keys, start, keyIdx - 1);
+                    DoManualUnlock(clientSession, keys, start, keyIdx - 1);
 
                     // We've released our locks so this refresh will let other threads advance and release their locks, and we will retry with a full timeout.
                     clientSession.store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(status, sessionFunctions);
                     retryCount++;
                     if (retryCount >= KeyLockMaxRetryAttempts)
-                    {
                         return false;
-                    }
                     goto Retry;
                 }
             }
@@ -101,14 +96,14 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoInternalTryLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        internal static bool DoManualTryLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
                                                                    TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
             where TLockableKey : ILockableKey
         {
             // The key codes are sorted, but there may be duplicates; the sorting is such that exclusive locks come first for each key code,
             // which of course allows the session to do shared operations as well, so we take the first occurrence of each key code.
-            // This is the same as DoInternalLock but with timeout.
+            // This is the same as DoManualLock but with timeout.
             var end = start + count - 1;
 
             // We can't start each retry with a full timeout because we might always fail if someone is not unlocking (e.g. another thread hangs
@@ -132,13 +127,13 @@ namespace Tsavorite.core
                         status = OperationStatus.CANCELED;
                     else
                     {
-                        status = DoInternalLock(clientSession, key);
+                        status = DoManualLock(clientSession, key);
                         if (status == OperationStatus.SUCCESS)
                             continue;   // Success; continue to the next key.
                     }
 
                     // Cancellation or lock failure before we've completed all keys; we have not locked the current key. Unlock anything we've locked.
-                    DoInternalUnlock(clientSession, keys, start, keyIdx - 1);
+                    DoManualUnlock(clientSession, keys, start, keyIdx - 1);
 
                     // Lock failure is the only place we check the timeout. If we've exceeded that, or if we've had a cancellation, return false.
                     if (cancellationToken.IsCancellationRequested || DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks)
@@ -156,7 +151,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool DoInternalTryPromoteLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        internal static bool DoManualTryPromoteLock<TSessionFunctionsWrapper, TLockableKey>(TSessionFunctionsWrapper sessionFunctions, ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
                                                                    TLockableKey key, TimeSpan timeout, CancellationToken cancellationToken)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
             where TLockableKey : ILockableKey
@@ -164,8 +159,7 @@ namespace Tsavorite.core
             var startTime = DateTime.UtcNow;
             while (true)
             {
-                OperationStatus status = clientSession.store.InternalPromoteLock(key.KeyHash);
-                if (status == OperationStatus.SUCCESS)
+                if (clientSession.store.InternalPromoteLock(key.KeyHash))
                 {
                     ++clientSession.exclusiveLockCount;
                     --clientSession.sharedLockCount;
@@ -178,7 +172,8 @@ namespace Tsavorite.core
                 if (cancellationToken.IsCancellationRequested || DateTime.UtcNow.Ticks - startTime.Ticks > timeout.Ticks)
                     break;  // out of the retry loop
 
-                clientSession.store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(status, sessionFunctions);
+                // Lock failed, must retry
+                clientSession.store.HandleImmediateNonPendingRetryStatus<Input, Output, Context, TSessionFunctionsWrapper>(OperationStatus.RETRY_LATER, sessionFunctions);
             }
 
             // Failed to promote
@@ -187,22 +182,26 @@ namespace Tsavorite.core
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static OperationStatus DoInternalLock<TLockableKey>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, TLockableKey key)
+        internal static OperationStatus DoManualLock<TLockableKey>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession, TLockableKey key)
             where TLockableKey : ILockableKey
         {
-            OperationStatus status = clientSession.store.InternalLock(key.KeyHash, key.LockType);
-            if (status == OperationStatus.SUCCESS)
+            if (key.LockType == LockType.Shared)
             {
-                if (key.LockType == LockType.Exclusive)
-                    ++clientSession.exclusiveLockCount;
-                else if (key.LockType == LockType.Shared)
-                    ++clientSession.sharedLockCount;
+                if (!clientSession.store.InternalTryLockShared(key.KeyHash))
+                    return OperationStatus.RETRY_LATER;
+                ++clientSession.sharedLockCount;
             }
-            return status;
+            else
+            {
+                if (!clientSession.store.InternalTryLockExclusive(key.KeyHash))
+                    return OperationStatus.RETRY_LATER;
+                ++clientSession.exclusiveLockCount;
+            }
+            return OperationStatus.SUCCESS;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void DoInternalUnlock<TLockableKey>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
+        internal static void DoManualUnlock<TLockableKey>(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession,
                                                                    TLockableKey[] keys, int start, int keyIdx)
             where TLockableKey : ILockableKey
         {
@@ -213,14 +212,20 @@ namespace Tsavorite.core
                 ref var key = ref keys[keyIdx];
                 if (keyIdx == start || clientSession.store.LockTable.GetBucketIndex(key.KeyHash) != clientSession.store.LockTable.GetBucketIndex(keys[keyIdx - 1].KeyHash))
                 {
-                    clientSession.store.InternalUnlock(key.KeyHash, key.LockType);
-                    if (key.LockType == LockType.Exclusive)
-                        --clientSession.exclusiveLockCount;
-                    else if (key.LockType == LockType.Shared)
+                    if (key.LockType == LockType.Shared)
+                    {
+                        clientSession.store.InternalUnlockShared(key.KeyHash);
                         --clientSession.sharedLockCount;
+                    }
+                    else
+                    {
+                        clientSession.store.InternalUnlockExclusive(key.KeyHash);
+                        --clientSession.exclusiveLockCount;
+                    }
                 }
             }
         }
+
 
         /// <inheritdoc/>
         public void Lock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Lock(keys, 0, keys.Length);
@@ -237,7 +242,7 @@ namespace Tsavorite.core
                 clientSession.UnsafeResumeThread(sessionFunctions);
                 try
                 {
-                    lockAquired = DoInternalLock(sessionFunctions, clientSession, keys, start, count);
+                    lockAquired = DoManualLock(sessionFunctions, clientSession, keys, start, count);
                 }
                 finally
                 {
@@ -286,7 +291,7 @@ namespace Tsavorite.core
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return DoInternalTryLock(sessionFunctions, clientSession, keys, start, count, timeout, cancellationToken);
+                return DoManualTryLock(sessionFunctions, clientSession, keys, start, count, timeout, cancellationToken);
             }
             finally
             {
@@ -319,7 +324,7 @@ namespace Tsavorite.core
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                return DoInternalTryPromoteLock(sessionFunctions, clientSession, key, timeout, cancellationToken);
+                return DoManualTryPromoteLock(sessionFunctions, clientSession, key, timeout, cancellationToken);
             }
             finally
             {
@@ -340,7 +345,7 @@ namespace Tsavorite.core
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
-                DoInternalUnlock(clientSession, keys, start, start + count - 1);
+                DoManualUnlock(clientSession, keys, start, start + count - 1);
             }
             finally
             {

@@ -96,7 +96,7 @@ namespace Tsavorite.core
             iterationPhase = IterationPhase.MainKv;
 
             tempKv = new TsavoriteKV<Key, Value>(store.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 }, comparer: store.Comparer,
-                                              loggerFactory: loggerFactory, concurrencyControlMode: ConcurrencyControlMode.None);
+                                              loggerFactory: loggerFactory);
             tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
             tempbContext = tempKvSession.BasicContext;
             mainKvIter = store.Log.Scan(store.Log.BeginAddress, untilAddress);

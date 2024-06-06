@@ -66,7 +66,6 @@ namespace Tsavorite.core
 
         int maxSessionID;
 
-        internal readonly bool IsLocking;  // uses LockTable
         internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
         internal readonly OverflowBucketLockTable<Key, Value> LockTable;
 
@@ -89,7 +88,7 @@ namespace Tsavorite.core
             this(
                 tsavoriteKVSettings.GetIndexSizeCacheLines(), tsavoriteKVSettings.GetLogSettings(),
                 tsavoriteKVSettings.GetCheckpointSettings(), tsavoriteKVSettings.GetSerializerSettings(),
-                tsavoriteKVSettings.EqualityComparer, tsavoriteKVSettings.TryRecoverLatest, tsavoriteKVSettings.ConcurrencyControlMode,
+                tsavoriteKVSettings.EqualityComparer, tsavoriteKVSettings.TryRecoverLatest,
                 null, revivificationSettings: tsavoriteKVSettings.RevivificationSettings)
         { }
 
@@ -102,14 +101,12 @@ namespace Tsavorite.core
         /// <param name="serializerSettings">Serializer settings</param>
         /// <param name="comparer">Tsavorite equality comparer for key</param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
-        /// <param name="concurrencyControlMode">How Tsavorite should do record locking</param>
         /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in (e.g. from <see cref="TsavoriteKVSettings{Key, Value}"/>).</param>
         /// <param name="logger">Logger to use.</param>
         /// <param name="revivificationSettings">Settings for recycling deleted records on the log.</param>
         public TsavoriteKV(long size, LogSettings logSettings,
             CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
             ITsavoriteEqualityComparer<Key> comparer = null, bool tryRecoverLatest = false,
-            ConcurrencyControlMode concurrencyControlMode = ConcurrencyControlMode.LockTable,
             ILoggerFactory loggerFactory = null, ILogger logger = null, RevivificationSettings revivificationSettings = null)
         {
             this.loggerFactory = loggerFactory;
@@ -135,8 +132,6 @@ namespace Tsavorite.core
                     this.comparer = TsavoriteEqualityComparer.Get<Key>();
                 }
             }
-
-            IsLocking = concurrencyControlMode == ConcurrencyControlMode.LockTable;
 
             checkpointSettings ??= new CheckpointSettings();
 
@@ -234,7 +229,7 @@ namespace Tsavorite.core
             sectorSize = (int)logSettings.LogDevice.SectorSize;
             Initialize(size, sectorSize);
 
-            LockTable = new OverflowBucketLockTable<Key, Value>(concurrencyControlMode == ConcurrencyControlMode.LockTable ? this : null);
+            LockTable = new OverflowBucketLockTable<Key, Value>(this);
             RevivificationManager = new(this, isFixedLenReviv, revivificationSettings, logSettings);
 
             systemState = SystemState.Make(Phase.REST, 1);

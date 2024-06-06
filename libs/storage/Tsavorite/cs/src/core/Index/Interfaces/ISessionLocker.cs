@@ -13,10 +13,10 @@ namespace Tsavorite.core
     {
         bool IsManualLocking { get; }
 
-        bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx);
-        bool TryLockTransientShared(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx);
-        void UnlockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx);
-        void UnlockTransientShared(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx);
+        bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx);
+        bool TryLockTransientShared(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx);
+        void UnlockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx);
+        void UnlockTransientShared(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx);
     }
 
     /// <summary>
@@ -29,39 +29,31 @@ namespace Tsavorite.core
     {
         public bool IsManualLocking => false;
 
-        public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx)
+        public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx)
         {
-            if (!store.LockTable.IsEnabled)
-                return true;
-            if (!store.LockTable.TryLockTransientExclusive(ref key, ref stackCtx.hei))
+            if (!store.LockTable.TryLockExclusive(ref stackCtx.hei))
                 return false;
             stackCtx.recSrc.SetHasTransientXLock();
             return true;
         }
 
-        public bool TryLockTransientShared(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx)
+        public bool TryLockTransientShared(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx)
         {
-            if (!store.LockTable.IsEnabled)
-                return true;
-            if (!store.LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
+            if (!store.LockTable.TryLockShared(ref stackCtx.hei))
                 return false;
             stackCtx.recSrc.SetHasTransientSLock();
             return true;
         }
 
-        public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx)
+        public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx)
         {
-            if (!store.LockTable.IsEnabled)
-                return;
-            store.LockTable.UnlockExclusive(ref key, ref stackCtx.hei);
+            store.LockTable.UnlockExclusive(ref stackCtx.hei);
             stackCtx.recSrc.ClearHasTransientXLock();
         }
 
-        public void UnlockTransientShared(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx)
+        public void UnlockTransientShared(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx)
         {
-            if (!store.LockTable.IsEnabled)
-                return;
-            store.LockTable.UnlockShared(ref key, ref stackCtx.hei);
+            store.LockTable.UnlockShared(ref stackCtx.hei);
             stackCtx.recSrc.ClearHasTransientSLock();
         }
     }
@@ -73,38 +65,46 @@ namespace Tsavorite.core
     {
         public bool IsManualLocking => true;
 
-        public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx)
+        public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx)
         {
-            Debug.Assert(store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
+            Debug.Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
                         $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
-                        + $" XLocked {store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
-                        + $" Slocked {store.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
+                        + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
+                        + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
             return true;
         }
 
-        public bool TryLockTransientShared(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx)
+        public bool TryLockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx) => throw new System.NotImplementedException();
+
+        public bool TryLockTransientShared(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx)
         {
-            Debug.Assert(store.LockTable.IsLocked(ref key, ref stackCtx.hei),
+            Debug.Assert(store.LockTable.IsLocked(ref stackCtx.hei),
                         $"Attempting to use a non-Locked (S or X) key in a Lockable context (requesting SLock):"
-                        + $" XLocked {store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
-                        + $" Slocked {store.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
+                        + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
+                        + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
             return true;
         }
 
-        public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx)
+        public bool TryLockTransientShared(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx) => throw new System.NotImplementedException();
+
+        public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx)
         {
-            Debug.Assert(store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei),
+            Debug.Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
                         $"Attempting to unlock a non-XLocked key in a Lockable context (requesting XLock):"
-                        + $" XLocked {store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
-                        + $" Slocked {store.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
+                        + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
+                        + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
         }
 
-        public void UnlockTransientShared(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx)
+        public void UnlockTransientExclusive(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx) => throw new System.NotImplementedException();
+
+        public void UnlockTransientShared(TsavoriteKV<TKey, TValue> store, ref OperationStackContext<TKey, TValue> stackCtx)
         {
-            Debug.Assert(store.LockTable.IsLockedShared(ref key, ref stackCtx.hei),
+            Debug.Assert(store.LockTable.IsLockedShared(ref stackCtx.hei),
                         $"Attempting to use a non-XLocked key in a Lockable context (requesting XLock):"
-                        + $" XLocked {store.LockTable.IsLockedExclusive(ref key, ref stackCtx.hei)},"
-                        + $" Slocked {store.LockTable.IsLockedShared(ref key, ref stackCtx.hei)}");
+                        + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
+                        + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
         }
+
+        public void UnlockTransientShared(TsavoriteKV<TKey, TValue> store, ref TKey key, ref OperationStackContext<TKey, TValue> stackCtx) => throw new System.NotImplementedException();
     }
 }

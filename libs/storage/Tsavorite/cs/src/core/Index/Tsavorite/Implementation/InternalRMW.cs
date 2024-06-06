@@ -176,7 +176,7 @@ namespace Tsavorite.core
                 }
 
                 // No record exists - drop through to create new record.
-                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
+                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Lockable-session RMW() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
                 {
@@ -295,11 +295,14 @@ namespace Tsavorite.core
 
         private LatchDestination CheckCPRConsistencyRMW(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
-            if (!IsLocking)
-                return AcquireCPRLatchRMW(phase, ref stackCtx, ref status, ref latchOperation);
-
-            // This is AcquireCPRLatchRMW without the bucket latching, since we already have a latch on either the bucket or the recordInfo.
-            // See additional comments in AcquireCPRLatchRMW.
+            // The idea of CPR is that if a thread in version V tries to perform an operation and notices a record in V+1, it needs to back off and run CPR_SHIFT_DETECTED.
+            // Similarly, a V+1 thread cannot update a V record; it needs to do a read-copy-update (or upsert at tail) instead of an in-place update.
+            // For background info: Prior to HashBucket-based locking, we had to lock the bucket in the following way:
+            //  1. V threads take shared lock on bucket
+            //  2. V+1 threads take exclusive lock on bucket, refreshing until they can
+            //  3. If V thread cannot take shared lock, that means the system is in V+1 so we can immediately refresh and go to V+1 (do CPR_SHIFT_DETECTED)
+            //  4. If V thread manages to get shared lock, but encounters a V+1 record, it knows the system is in V+1 so it will do CPR_SHIFT_DETECTED
+            // Now we no longer need to do the bucket latching, since we already have a latch on the bucket.
 
             switch (phase)
             {
@@ -318,71 +321,6 @@ namespace Tsavorite.core
 
                     if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
                         return LatchDestination.CreateNewRecord;    // Record is in memory so force creation of a (V+1) record
-                    break;  // Normal Processing; the record is below HeadAddress so the operation will go pending
-
-                default:
-                    break;
-            }
-            return LatchDestination.NormalProcessing;
-        }
-
-        private LatchDestination AcquireCPRLatchRMW(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
-        {
-            // The idea of CPR is that if a thread in version V tries to perform an operation and notices a record in V+1, it needs to back off and run CPR_SHIFT_DETECTED.
-            // Similarly, a V+1 thread cannot update a V record; it needs to do a read-copy-update (or upsert at tail) instead of an in-place update.
-            //  1. V threads take shared lock on bucket
-            //  2. V+1 threads take exclusive lock on bucket, refreshing until they can
-            //  3. If V thread cannot take shared lock, that means the system is in V+1 so we can immediately refresh and go to V+1 (do CPR_SHIFT_DETECTED)
-            //  4. If V thread manages to get shared lock, but encounters a V+1 record, it knows the system is in V+1 so it will do CPR_SHIFT_DETECTED
-
-            switch (phase)
-            {
-                case Phase.PREPARE: // Thread is in V
-                    if (HashBucket.TryAcquireSharedLatch(ref stackCtx.hei))
-                    {
-                        // Set to release shared latch (default)
-                        latchOperation = LatchOperation.Shared;
-
-                        // Here (and in InternalRead, AcquireLatchUpsert, and AcquireLatchDelete) we still check the tail record of the bucket (entry.Address)
-                        // rather than the traced record (logicalAddress), because allowing in-place updates for version V when the bucket has arrived at V+1 may have
-                        // complications we haven't investigated yet. This is safer but potentially unnecessary, and this case is so rare that the potential
-                        // inefficiency is not a concern.
-                        if (IsEntryVersionNew(ref stackCtx.hei.entry))
-                        {
-                            status = OperationStatus.CPR_SHIFT_DETECTED;
-                            return LatchDestination.Retry;  // Pivot Thread for retry (do not operate on v+1 record when thread is in V)
-                        }
-                        break; // Normal Processing; thread is in V, record is in V
-                    }
-
-                    // Could not acquire Shared latch; system must be in V+1 (or we have too many shared latches).
-                    status = OperationStatus.CPR_SHIFT_DETECTED;
-                    return LatchDestination.Retry;  // Pivot Thread for retry
-
-                case Phase.IN_PROGRESS: // Thread is in v+1
-                    if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
-                        break;      // Normal Processing; V+1 thread encountered a record in V+1
-
-                    if (HashBucket.TryAcquireExclusiveLatch(ref stackCtx.hei))
-                    {
-                        // Set to release exclusive latch (default)
-                        latchOperation = LatchOperation.Exclusive;
-                        if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
-                            return LatchDestination.CreateNewRecord;    // Record is in memory so force creation of a (V+1) record
-                        break; // Normal Processing; the record is below HeadAddress so the operation will go pending
-                    }
-
-                    // Could not acquire exclusive latch; likely a conflict on the bucket.
-                    status = OperationStatus.RETRY_LATER;
-                    return LatchDestination.Retry;  // Refresh and retry
-
-                case Phase.WAIT_INDEX_CHECKPOINT:   // Thread is in V+1
-                case Phase.WAIT_FLUSH:
-                    if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
-                        break;      // Normal Processing; V+1 thread encountered a record in V+1
-
-                    if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
-                        return LatchDestination.CreateNewRecord; // Record is in memory so force creation of a (V+1) record
                     break;  // Normal Processing; the record is below HeadAddress so the operation will go pending
 
                 default:

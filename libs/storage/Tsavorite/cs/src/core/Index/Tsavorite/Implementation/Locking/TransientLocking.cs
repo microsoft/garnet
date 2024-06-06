@@ -56,17 +56,15 @@ namespace Tsavorite.core
         internal void LockForScan(ref OperationStackContext<Key, Value> stackCtx, ref Key key, ref RecordInfo recordInfo)
         {
             Debug.Assert(!stackCtx.recSrc.HasLock, $"Should not call LockForScan if recSrc already has a lock ({stackCtx.recSrc.LockStateString()})");
-            if (IsLocking)
-            {
-                // This will always be a transient lock as it is not session-based
-                stackCtx = new(comparer.GetHashCode64(ref key));
-                FindTag(ref stackCtx.hei);
-                stackCtx.SetRecordSourceToHashEntry(hlog);
 
-                while (!LockTable.TryLockTransientShared(ref key, ref stackCtx.hei))
-                    epoch.ProtectAndDrain();
-                stackCtx.recSrc.SetHasTransientSLock();
-            }
+            // This will always be a transient lock as it is not session-based
+            stackCtx = new(comparer.GetHashCode64(ref key));
+            FindTag(ref stackCtx.hei);
+            stackCtx.SetRecordSourceToHashEntry(hlog);
+
+            while (!LockTable.TryLockShared(ref stackCtx.hei))
+                epoch.ProtectAndDrain();
+            stackCtx.recSrc.SetHasTransientSLock();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -74,7 +72,7 @@ namespace Tsavorite.core
         {
             if (stackCtx.recSrc.HasTransientSLock)
             {
-                LockTable.UnlockShared(ref key, ref stackCtx.hei);
+                LockTable.UnlockShared(ref stackCtx.hei);
                 stackCtx.recSrc.ClearHasTransientSLock();
             }
         }
