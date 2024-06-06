@@ -107,7 +107,8 @@ namespace Tsavorite.core
                         Version = sessionFunctions.Ctx.version,
                         SessionID = sessionFunctions.Ctx.sessionID,
                         Address = stackCtx.recSrc.LogicalAddress,
-                        KeyHash = stackCtx.hei.hash
+                        KeyHash = stackCtx.hei.hash,
+                        IsFromPending = pendingContext.type != OperationType.NONE,
                     };
 
                     rmwInfo.SetRecordInfo(ref srcRecordInfo);
@@ -425,7 +426,8 @@ namespace Tsavorite.core
                 Version = sessionFunctions.Ctx.version,
                 SessionID = sessionFunctions.Ctx.sessionID,
                 Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
-                KeyHash = stackCtx.hei.hash
+                KeyHash = stackCtx.hei.hash,
+                IsFromPending = pendingContext.type != OperationType.NONE,
             };
 
             // Perform Need*
