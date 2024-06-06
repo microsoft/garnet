@@ -97,9 +97,7 @@ namespace Tsavorite.test
             objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.obj.log"));
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
-                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable
-                      );
+                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() });
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
             var bContext = session.BasicContext;
@@ -173,8 +171,7 @@ namespace Tsavorite.test
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
-                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: ConcurrencyControlMode.None);
+                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() });
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
             var bContext = session.BasicContext;
@@ -244,7 +241,7 @@ namespace Tsavorite.test
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
+                      comparer: comparer);
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;
@@ -336,7 +333,7 @@ namespace Tsavorite.test
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
+                      comparer: comparer);
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, ScanFunctions>(new ScanFunctions());
             var bContext = session.BasicContext;

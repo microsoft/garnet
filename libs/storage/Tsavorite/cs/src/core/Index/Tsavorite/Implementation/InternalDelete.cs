@@ -184,7 +184,7 @@ namespace Tsavorite.core
                 }
 
                 // Either on-disk or no record exists - drop through to create new record.
-                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Delete() of an on-disk or non-existent key requires a LockTable lock");
+                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Lockable-session Delete() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
                 // Immutable region or new record
