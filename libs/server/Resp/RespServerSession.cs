@@ -68,7 +68,7 @@ namespace Garnet.server
         internal LockableGarnetApi lockableGarnetApi;
 
         readonly IGarnetAuthenticator _authenticator;
-        
+
         /// <summary>
         /// The user currently authenticated in this session
         /// </summary>
