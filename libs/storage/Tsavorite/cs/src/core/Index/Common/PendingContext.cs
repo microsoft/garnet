@@ -28,6 +28,7 @@ namespace Tsavorite.core
             internal const ushort kNoOpFlags = 0;
             internal const ushort kNoKey = 0x0001;
             internal const ushort kIsAsync = 0x0002;
+            internal const ushort kIsReadAtAddress = 0x0004;
 
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
             internal WriteReason writeReason;   // for ConditionalCopyToTail; one byte enum
@@ -74,6 +75,12 @@ namespace Tsavorite.core
             {
                 readonly get => (operationFlags & kIsAsync) != 0;
                 set => operationFlags = value ? (ushort)(operationFlags | kIsAsync) : (ushort)(operationFlags & ~kIsAsync);
+            }
+
+            internal bool IsReadAtAddress
+            {
+                readonly get => (operationFlags & kIsReadAtAddress) != 0;
+                set => operationFlags = value ? (ushort)(operationFlags | kIsReadAtAddress) : (ushort)(operationFlags & ~kIsReadAtAddress);
             }
 
             // RecordInfo is not used as such during the pending phase, so we reuse the space here.
