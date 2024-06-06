@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -718,28 +719,54 @@ namespace Garnet.server
         /// <param name="count">Number of parameters left in the command specification.</param>
         /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLPermissions(RespCommand cmd, ReadOnlySpan<byte> bufSpan, int count, out bool processingCompleted)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool CheckACLPermissions(RespCommand cmd, byte* ptr, int count, out bool processingCompleted)
         {
-            Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
+            Debug.Assert(_user != null);
 
-            if (!cmd.IsNoAuth() && (!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd)))
+            if (!_user.CanAccessCommand(cmd))
             {
-                if (!DrainCommands(bufSpan, count))
-                {
-                    processingCompleted = false;
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                        SendAndReset();
-                    processingCompleted = true;
-                }
+                ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
+
+                processingCompleted = OnACLFailure(this, cmd, bufSpan, count);
                 return false;
             }
 
             processingCompleted = true;
 
             return true;
+
+            // Failing should be rare, and is not important for performance so hide this behind
+            // a method call to keep icache pressure down
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            static bool OnACLFailure(RespServerSession self, RespCommand cmd, ReadOnlySpan<byte> bufSpan, int count)
+            {
+                // If we're rejecting a command, we may need to cleanup some ambient state too
+                if (cmd == RespCommand.CustomCmd)
+                {
+                    self.currentCustomCommand = null;
+                }
+                else if (cmd == RespCommand.CustomObjCmd)
+                {
+                    self.currentCustomObjectCommand = null;
+                }
+                else if (cmd == RespCommand.CustomTxn)
+                {
+                    self.currentCustomTransaction = null;
+                }
+
+                if (!self.DrainCommands(bufSpan, count))
+                {
+                    return false;
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref self.dcurr, self.dend))
+                        self.SendAndReset();
+
+                    return true;
+                }
+            }
         }
 
         void CommitAof()

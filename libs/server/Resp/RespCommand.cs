@@ -277,6 +277,9 @@ namespace Garnet.server
     /// </summary>
     public static class RespCommandExtensions
     {
+        private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX];
+        private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR];
+
         /// <summary>
         /// Turns any not-quite-a-real-command entries in <see cref="RespCommand"/> into the equivalent command
         /// for ACL'ing purposes.
@@ -293,6 +296,20 @@ namespace Garnet.server
                     RespCommand.SETKEEPTTLXX => RespCommand.SET,
                     RespCommand.BITOP_AND or RespCommand.BITOP_NOT or RespCommand.BITOP_OR or RespCommand.BITOP_XOR => RespCommand.BITOP,
                     _ => cmd
+                };
+        }
+
+        /// <summary>
+        /// Reverses <see cref="NormalizeForACLs(RespCommand)"/>, producing all the equivalent <see cref="RespCommand"/>s which are covered by <paramref name="cmd"/>.
+        /// </summary>
+        public static ReadOnlySpan<RespCommand> ExpandForACLs(this RespCommand cmd)
+        {
+            return
+                cmd switch
+                {
+                    RespCommand.SET => ExpandedSET,
+                    RespCommand.BITOP => ExpandedBITOP,
+                    _ => default
                 };
         }
 

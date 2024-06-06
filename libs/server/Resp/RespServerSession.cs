@@ -25,6 +25,8 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
+        static readonly User UnauthenticatedUser = new User("");
+
         readonly GarnetSessionMetrics sessionMetrics;
         readonly GarnetLatencyMetricsSession LatencyMetrics;
 
@@ -70,7 +72,7 @@ namespace Garnet.server
         /// <summary>
         /// The user currently authenticated in this session
         /// </summary>
-        User _user = null;
+        User _user = UnauthenticatedUser;
 
         readonly ILogger logger = null;
 
@@ -147,6 +149,8 @@ namespace Garnet.server
             storageSession.txnManager = txnManager;
 
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
+            clusterSession?.SetUser(this._user);
+
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
@@ -391,27 +395,9 @@ namespace Garnet.server
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
-
-            // Do ACL validation up front if we don't have to do any additional parsing to do so
-            //
-            // All commands with sub-commands have to do validation post-parsing
-            if (!CheckACLPermissions(cmd, bufSpan, count, out bool success))
+            // Do ACL validation up front
+            if (!CheckACLPermissions(cmd, ptr, count, out bool success))
             {
-                // If we're rejecting a command, we may need to cleanup some ambient state too
-                if (cmd == RespCommand.CustomCmd)
-                {
-                    currentCustomCommand = null;
-                }
-                else if (cmd == RespCommand.CustomObjCmd)
-                {
-                    currentCustomObjectCommand = null;
-                }
-                else if (cmd == RespCommand.CustomTxn)
-                {
-                    currentCustomTransaction = null;
-                }
-
                 return success;
             }
 
@@ -455,13 +441,14 @@ namespace Garnet.server
                 RespCommand.RUNTXP => NetworkRUNTXP(count, ptr),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                RespCommand.COMMAND => NetworkCOMMAND(bufSpan, count),
-                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(bufSpan, count),
-                RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(bufSpan, count),
-                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(bufSpan, count),
+                RespCommand.COMMAND => NetworkCOMMAND(new(ptr, (int)((recvBufferPtr + bytesRead) - ptr)), count),
+                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(new(ptr, (int)((recvBufferPtr + bytesRead) - ptr)), count),
+                RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(new(ptr, (int)((recvBufferPtr + bytesRead) - ptr)), count),
+                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(new(ptr, (int)((recvBufferPtr + bytesRead) - ptr)), count),
 
                 _ => ProcessArrayCommands(cmd, count, ref storageApi)
             };
+
             return success;
         }
 

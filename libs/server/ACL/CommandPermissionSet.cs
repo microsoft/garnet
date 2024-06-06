@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 namespace Garnet.server.ACL
 {
@@ -12,51 +13,33 @@ namespace Garnet.server.ACL
     /// </summary>
     public sealed class CommandPermissionSet
     {
-        /// <summary>
-        /// Users may have all commands or no commands added, in which case we can quickly check that.
-        /// </summary>
-        private enum AllState : byte
-        {
-            Invalid = 0,
-
-            /// <summary>
-            /// All commands, even those we don't know about, are allowed.
-            /// </summary>
-            AllPermitted,
-
-            /// <summary>
-            /// All commands are disabled.
-            /// </summary>
-            AllForbidden,
-
-            /// <summary>
-            /// Individual commands are enabled.
-            /// </summary>
-            PerCommand,
-        }
-
         // Do not move these, initialization order is important
         private static readonly ushort CommandListLength = GetCommandListLength();
 
-        public static readonly CommandPermissionSet All = new(AllState.AllPermitted, "+@all");
-        public static readonly CommandPermissionSet None = new(AllState.AllForbidden, "");
-
+        public static readonly CommandPermissionSet All = new("+@all");
+        public static readonly CommandPermissionSet None = new("");
 
         // Each bit corresponds to RespCommand + subcommand
         private readonly ulong[] _commandList;
 
-        private AllState _all;
-
-        private CommandPermissionSet(AllState all, string description)
-            : this(all, new ulong[CommandListLength], description)
+        private CommandPermissionSet(string description)
+            : this(new ulong[CommandListLength], description)
         {
         }
 
-        private CommandPermissionSet(AllState all, ulong[] commandList, string description)
+        private CommandPermissionSet(ulong[] commandList, string description)
         {
-            this._all = all;
             this._commandList = commandList;
             this.Description = description;
+
+            // Certain commands can always be run, so initialize with them
+            foreach (RespCommand command in Enum.GetValues<RespCommand>())
+            {
+                if (command.IsNoAuth())
+                {
+                    AddCommand(command);
+                }
+            }
         }
 
         /// <summary>
@@ -70,21 +53,19 @@ namespace Garnet.server.ACL
         /// <summary>
         /// Returns true if the given command + subCommand pair can be run.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool CanRunCommand(RespCommand command)
         {
-            if (this._all == AllState.AllPermitted)
+            // Special case "everything is permitted" 
+            if (this == All)
             {
                 return true;
             }
 
-            if (this._all == AllState.AllForbidden)
-            {
-                return false;
-            }
+            // We do not special case "nothing is permitted" because we're just going to
+            // error anyway, so we can be a bit slow
 
-            RespCommand effectiveCommand = command.NormalizeForACLs();
-
-            int index = (int)effectiveCommand;
+            int index = (int)command;
             int ulongIndex = index / 64;
             int bitIndex = index % 64;
 
@@ -98,20 +79,16 @@ namespace Garnet.server.ACL
         {
             ulong[] copy = new ulong[this._commandList.Length];
 
-            if (this._all == AllState.AllPermitted)
+            if (this == All)
             {
                 Array.Fill(copy, ulong.MaxValue);
-            }
-            else if (this._all == AllState.AllForbidden)
-            {
-                Array.Clear(copy);
             }
             else
             {
                 Array.Copy(this._commandList, copy, this._commandList.Length);
             }
 
-            return new(this._all, copy, Description);
+            return new(copy, Description);
         }
 
         /// <summary>
@@ -125,13 +102,20 @@ namespace Garnet.server.ACL
         {
             Debug.Assert(command.NormalizeForACLs() == command, "Cannot control access to this command, it's an implementation detail");
 
-            this._all = AllState.PerCommand;
-
             int index = (int)command;
             int ulongIndex = index / 64;
             int bitIndex = index % 64;
 
             _commandList[ulongIndex] |= (1UL << bitIndex);
+
+            foreach (RespCommand additionalCommand in command.ExpandForACLs())
+            {
+                index = (int)additionalCommand;
+                ulongIndex = index / 64;
+                bitIndex = index % 64;
+
+                _commandList[ulongIndex] |= (1UL << bitIndex);
+            }
         }
 
         /// <summary>
@@ -145,13 +129,26 @@ namespace Garnet.server.ACL
         {
             Debug.Assert(command.NormalizeForACLs() == command, "Cannot control access to this command, it's an implementation detail");
 
-            this._all = AllState.PerCommand;
+            // Can't remove access to these commands
+            if (command.IsNoAuth())
+            {
+                return;
+            }
 
             int index = (int)command;
             int ulongIndex = index / 64;
             int bitIndex = index % 64;
 
             _commandList[ulongIndex] &= ~(1UL << bitIndex);
+
+            foreach (RespCommand additionalCommand in command.ExpandForACLs())
+            {
+                index = (int)additionalCommand;
+                ulongIndex = index / 64;
+                bitIndex = index % 64;
+
+                _commandList[ulongIndex] &= ~(1UL << bitIndex);
+            }
         }
 
         /// <summary>
@@ -167,10 +164,6 @@ namespace Garnet.server.ACL
             if (this == CommandPermissionSet.All)
             {
                 return other == CommandPermissionSet.All;
-            }
-            else if (this == CommandPermissionSet.None)
-            {
-                return other == CommandPermissionSet.None;
             }
             else
             {

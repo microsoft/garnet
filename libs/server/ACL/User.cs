@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -46,6 +47,7 @@ namespace Garnet.server.ACL
         /// <summary>
         /// Checks whether the user can access the given command.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool CanAccessCommand(RespCommand command)
         => this._enabledCommands.CanRunCommand(command);
 
