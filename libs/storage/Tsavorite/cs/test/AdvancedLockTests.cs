@@ -79,11 +79,12 @@ namespace Tsavorite.test.LockTests
                 return true;
             }
 
-            public override void PostCopyUpdater(ref int key, ref Input input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo)
+            public override bool PostCopyUpdater(ref int key, ref Input input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo)
             {
                 base.PostCopyUpdater(ref key, ref input, ref oldValue, ref newValue, ref output, ref rmwInfo);
                 if (input.doTest)
                     readEvent.Set();
+                return true;
             }
 
             public override bool InPlaceUpdater(ref int key, ref Input input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
