@@ -148,7 +148,7 @@ namespace Tsavorite.core
                 if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
                 {
                     // On-Disk Region
-                    Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
+                    Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLocked(ref stackCtx.hei), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
 
                     // Note: we do not lock here; we wait until reading from disk, then lock in the ContinuePendingRead chain.
                     if (hlog.IsNullDevice)
@@ -158,7 +158,7 @@ namespace Tsavorite.core
                 }
 
                 // No record found
-                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLocked(ref key, ref stackCtx.hei), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
+                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLocked(ref stackCtx.hei), "A Lockable-session Read() of a non-existent key requires a LockTable lock");
                 return OperationStatus.NOTFOUND;
             }
             finally
@@ -336,7 +336,7 @@ namespace Tsavorite.core
             return status;
         }
 
-        // No AggressiveInlining; this is called only for the pending case and may improve inlining of DoInternalRead in the normal case if the compiler decides not to inline this.
+        // No AggressiveInlining; this is called only for the pending case and may improve inlining of InternalRead in the normal case if the compiler decides not to inline this.
         private void CreatePendingReadContext<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, Output output, Context userContext,
                 ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions, long logicalAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>

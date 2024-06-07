@@ -182,8 +182,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             functions = new LockableUnsafeFunctions();
 
             store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22, ReadCacheSettings = readCacheSettings },
-                                            checkpointSettings: checkpointSettings, comparer: comparer,
-                                            concurrencyControlMode: ConcurrencyControlMode.LockTable);
+                                            checkpointSettings: checkpointSettings, comparer: comparer);
             session = store.NewSession<long, long, Empty, LockableUnsafeFunctions>(functions);
             bContext = session.BasicContext;
         }
@@ -879,7 +878,7 @@ namespace Tsavorite.test.LockableUnsafeContext
             HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
             PopulateHei(ref hei);
 
-            var lockState = store.LockTable.GetLockState(ref key, ref hei);
+            var lockState = store.LockTable.GetLockState(ref hei);
 
             Assert.IsTrue(lockState.IsFound);
             Assert.IsTrue(lockState.IsLockedExclusive);
@@ -1158,7 +1157,7 @@ namespace Tsavorite.test.LockableUnsafeContext
                     ref var key = ref keyVec[idx];
                     HashEntryInfo hei = new(key.KeyHash);
                     PopulateHei(ref hei);
-                    var lockState = store.LockTable.GetLockState(ref key.Key, ref hei);
+                    var lockState = store.LockTable.GetLockState(ref hei);
                     Assert.IsTrue(lockState.IsFound);
                     Assert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
                     if (key.LockType == LockType.Shared)

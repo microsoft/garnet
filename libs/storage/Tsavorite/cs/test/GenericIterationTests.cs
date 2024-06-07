@@ -28,12 +28,10 @@ namespace Tsavorite.test
 
         private void InternalSetup(ScanIteratorType scanIteratorType, bool largeMemory)
         {
-            // Default ConcurrencyControlMode for this iterator type.
-            var concurrencyControlMode = scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable;
-            InternalSetup(concurrencyControlMode, largeMemory);
+            InternalSetup(largeMemory);
         }
 
-        private void InternalSetup(ConcurrencyControlMode concurrencyControlMode, bool largeMemory)
+        private void InternalSetup(bool largeMemory)
         {
             // Broke this out as we have different requirements by test.
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericIterationTests.log"), deleteOnClose: true);
@@ -42,8 +40,7 @@ namespace Tsavorite.test
             store = new TsavoriteKV<MyKey, MyValue>
                 (128,
                 logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = largeMemory ? 25 : 14, PageSizeBits = largeMemory ? 20 : 9 },
-                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                concurrencyControlMode: concurrencyControlMode);
+                serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() });
             session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());
             bContext = session.BasicContext;
         }
@@ -202,9 +199,9 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void GenericIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ScanMode scanMode)
+        public unsafe void GenericIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ScanMode scanMode)
         {
-            InternalSetup(concurrencyControlMode, largeMemory: true);
+            InternalSetup(largeMemory: true);
 
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;
