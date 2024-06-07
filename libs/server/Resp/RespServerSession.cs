@@ -25,8 +25,6 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        static readonly User UnauthenticatedUser = new User("");
-
         readonly GarnetSessionMetrics sessionMetrics;
         readonly GarnetLatencyMetricsSession LatencyMetrics;
 
@@ -72,7 +70,7 @@ namespace Garnet.server
         /// <summary>
         /// The user currently authenticated in this session
         /// </summary>
-        User _user = UnauthenticatedUser;
+        User _user = null;
 
         readonly ILogger logger = null;
 

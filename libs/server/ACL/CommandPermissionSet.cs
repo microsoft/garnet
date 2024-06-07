@@ -31,15 +31,6 @@ namespace Garnet.server.ACL
         {
             this._commandList = commandList;
             this.Description = description;
-
-            // Certain commands can always be run, so initialize with them
-            foreach (RespCommand command in Enum.GetValues<RespCommand>())
-            {
-                if (command.IsNoAuth())
-                {
-                    AddCommand(command);
-                }
-            }
         }
 
         /// <summary>

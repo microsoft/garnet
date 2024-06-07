@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -1533,6 +1534,9 @@ namespace Garnet.server
                 {
                     return RespCommand.CLUSTER_SEND_CKPT_METADATA;
                 }
+
+                string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, Encoding.UTF8.GetString(subCommand), "CLUSTER");
+                specificErrorMsg = Encoding.UTF8.GetBytes(errMsg);
             }
             else if (command.SequenceEqual(CmdStrings.LATENCY))
             {

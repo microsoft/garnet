@@ -299,7 +299,9 @@ namespace Garnet.server
             }
             catch (Exception e)
             {
-                while (!RespWriteUtils.WriteError("ERR Could not get transaction procedure", ref dcurr, dend))
+                logger?.LogError(e, "Getting customer transaction in RUNTXP failed");
+
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_TRANSACTION_PROCEDURE, ref dcurr, dend))
                     SendAndReset();
 
                 return true;

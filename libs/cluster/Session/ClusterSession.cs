@@ -2,10 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
 using Garnet.networking;
@@ -73,37 +71,26 @@ namespace Garnet.cluster
             this.dcurr = dcurr;
             this.dend = dend;
             this.readHead = readHead;
-            result = false;
-
+            bool ret;
             try
             {
                 if (command.IsClusterSubCommand())
                 {
                     result = ProcessClusterCommands(command, bufSpan, count);
+                    ret = true;
                 }
                 else
                 {
-                    switch (command)
+                    (ret, result) = command switch
                     {
-                        case RespCommand.MIGRATE:
-                            result = TryMIGRATE(count, recvBufferPtr + readHead);
-                            break;
-
-                        case RespCommand.FAILOVER:
-                            result = TryFAILOVER(count, recvBufferPtr + readHead);
-                            break;
-
-                        case RespCommand.SECONDARYOF:
-                        case RespCommand.REPLICAOF:
-                            result = TryREPLICAOF(count, recvBufferPtr + readHead);
-                            break;
-
-                        default:
-                            return false;
-                    }
+                        RespCommand.MIGRATE => (true, TryMIGRATE(count, recvBufferPtr + readHead)),
+                        RespCommand.FAILOVER => (true, TryFAILOVER(count, recvBufferPtr + readHead)),
+                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => (true, TryREPLICAOF(count, recvBufferPtr + readHead)),
+                        _ => (false, false)
+                    };
                 }
 
-                return true;
+                return ret;
             }
             finally
             {

@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server.ACL;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -722,9 +723,9 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool CheckACLPermissions(RespCommand cmd, byte* ptr, int count, out bool processingCompleted)
         {
-            Debug.Assert(_user != null);
+            Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
 
-            if (!_user.CanAccessCommand(cmd))
+            if ((!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd)) && !cmd.IsNoAuth())
             {
                 ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
 
