@@ -38,21 +38,20 @@ namespace Garnet.server
 
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkConfigGet(ReadOnlySpan<byte> bufSpan, int count, out bool errorFlag)
+        private bool NetworkConfigGet(ReadOnlySpan<byte> bufSpan, int count)
         {
-            errorFlag = false;
-            if (count < 2)
+            if (count == 0)
             {
-                if (!DrainCommands(bufSpan, count - 1))
-                    return false;
-                errorFlag = true;
+                while (!RespWriteUtils.WriteError($"ERR wrong number of arguments for 'config|get' command", ref dcurr, dend))
+                    SendAndReset();
+
                 return true;
             }
 
             // Extract requested parameters
             HashSet<ServerConfigType> parameters = [];
             var returnAll = false;
-            for (var i = 0; i < count - 1; i++)
+            for (var i = 0; i < count; i++)
             {
                 var parameter = GetCommand(bufSpan, out bool success2);
                 if (!success2) return false;

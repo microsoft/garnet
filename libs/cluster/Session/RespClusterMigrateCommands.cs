@@ -24,11 +24,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
-
             // Expecting exactly 3 arguments
             if (count != 3)
             {

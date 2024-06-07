@@ -87,4 +87,13 @@ namespace Garnet.server.ACL
         public ACLUserAlreadyExistsException(string user)
         : base($"A user with name '{user}' already exists.") { }
     }
+
+    /// <summary>
+    /// Exception indicating a given command does not exist.
+    /// </summary>
+    class AclCommandDoesNotExistException : ACLException
+    {
+        public AclCommandDoesNotExistException(string command)
+        : base($"Command '{command}' does not exist") { }
+    }
 }

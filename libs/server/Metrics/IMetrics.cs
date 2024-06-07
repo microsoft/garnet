@@ -39,13 +39,9 @@ namespace Garnet.server
 
         public void add_total_write_commands_processed(ulong count);
 
-        public void incr_total_write_commands_processed(byte cmd);
-
         public ulong get_total_write_commands_processed();
 
         public void add_total_read_commands_processed(ulong count);
-
-        public void incr_total_read_commands_processed(byte cmd);
 
         public ulong get_total_read_commands_processed();
     }

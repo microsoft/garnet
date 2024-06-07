@@ -383,7 +383,7 @@ namespace Garnet.server
         /// <summary>
         /// REGISTERCS - Registers one or more custom commands / transactions
         /// </summary>
-        private bool NetworkREGISTERCS(int count, byte* ptr, CustomCommandManager customCommandManager)
+        private bool NetworkRegisterCs(int count, byte* ptr, CustomCommandManager customCommandManager)
         {
             var leftTokens = count;
             var readPathsOnly = false;
@@ -554,6 +554,7 @@ namespace Garnet.server
         private bool NetworkMSET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+
             if (NetworkArraySlotVerify(count / 2, ptr, interleavedKeys: true, readOnly: false, out bool retVal))
             {
                 return retVal;
@@ -672,7 +673,6 @@ namespace Garnet.server
         private bool NetworkDEL<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-
             if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: false, out bool retVal))
             {
                 return retVal;
@@ -762,7 +762,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkKEYS<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkKEYS<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             byte* pattern = null;
@@ -914,12 +914,19 @@ namespace Garnet.server
         private bool NetworkMODULE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (count != 1)
+                return AbortWithWrongNumberOfArguments("MODULE", count);
+
+            ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
+            if (!DrainCommands(bufSpan, 1))
+            {
+                return false;
+            }
+
             // TODO: pending implementation for module support.
-            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();
 
-            // Advance pointers
-            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 

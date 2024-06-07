@@ -23,11 +23,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
-
             // Expecting at least 1 slot or at most maximum number of slots
             if (count < 1 || count >= ClusterConfig.MAX_HASH_SLOT_VALUE)
             {
@@ -74,11 +69,6 @@ namespace Garnet.cluster
         private bool NetworkClusterAddSlotsRange(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting even number of arguments
             if (count == 0 || (count & 0x1) != 0)
@@ -159,11 +149,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
-
             // Expecting exactly 1 argument
             if (count != 1)
             {
@@ -216,11 +201,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
-
             // Expecting at least 1 slot or at most maximum number of slots
             if (count < 1 || count >= ClusterConfig.MAX_HASH_SLOT_VALUE)
             {
@@ -267,11 +247,6 @@ namespace Garnet.cluster
         private bool NetworkClusterDelSlotsRange(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting even number of arguments
             if (count == 0 || (count & 0x1) != 0)
@@ -320,11 +295,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
-
             // Expecting exactly 1 argument
             if (count != 1)
             {
@@ -358,11 +328,6 @@ namespace Garnet.cluster
         private bool NetworkClusterDelKeysInSlotRange(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting even number of arguments
             if (count == 0 || (count & 0x1) != 0)
@@ -402,11 +367,6 @@ namespace Garnet.cluster
         private bool NetworkClusterGetKeysInSlot(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 1 argument
             if (count != 2)
@@ -488,10 +448,6 @@ namespace Garnet.cluster
         private bool NetworkClusterSetSlot(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting 2 or 3 arguments
             if (count is < 2 or > 3)
@@ -576,11 +532,6 @@ namespace Garnet.cluster
         private bool NetworkClusterSetSlotsRange(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting at least 3 (STABLE + range) arguments.
             if (count < 3)
@@ -677,11 +628,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
-
             // Expecting exactly 0 argument
             if (count != 0)
             {
@@ -708,11 +654,6 @@ namespace Garnet.cluster
         private bool NetworkClusterSlotState(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 0 arguments
             if (count != 0)
