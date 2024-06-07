@@ -38,6 +38,8 @@ namespace Tsavorite.core
         readonly int nativeSegmentSizeBits;
         int resultOffset;
 
+        private bool disableFileBuffering;
+
         #region Native storage interface
 
         const string NativeLibraryName = "native_device";
@@ -132,6 +134,7 @@ namespace Tsavorite.core
                 : base(filename, GetSectorSize(filename), capacity)
         {
             Debug.Assert(numCompletionThreads >= 1);
+            this.disableFileBuffering = disableFileBuffering;
 
             // Native device uses a fixed segment size
             nativeSegmentSizeBits = 30;
