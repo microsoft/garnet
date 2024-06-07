@@ -59,7 +59,7 @@ namespace Tsavorite.core
 
                         // During the pending operation, a record for the key may have been added to the log or readcache. Don't look for this if we are reading at address (rather than key).
                         if (!pendingContext.IsReadAtAddress)
-                        { 
+                        {
                             if (TryFindRecordInMemory(ref key, ref stackCtx, ref pendingContext))
                             {
                                 srcRecordInfo = ref stackCtx.recSrc.GetInfo();
