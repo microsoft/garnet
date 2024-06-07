@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -84,7 +85,10 @@ namespace Tsavorite.core
                     {
                         _work(workItem);
                     }
-                    catch { }
+                    catch (Exception e)
+                    {
+                        Debug.WriteLine(e);
+                    }
                     Interlocked.Decrement(ref _count);
                 }
 

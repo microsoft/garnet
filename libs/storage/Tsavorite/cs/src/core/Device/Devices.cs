@@ -41,7 +41,8 @@ namespace Tsavorite.core
                     }
                     else
                     {
-                        return new NativeStorageDevice(logPath, deleteOnClose, disableFileBuffering, capacity, logger: logger);
+                        return new ManagedLocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice);
+                        // return new NativeStorageDevice(logPath, deleteOnClose, disableFileBuffering, capacity, logger: logger);
                     }
                 }
                 else
