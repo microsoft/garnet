@@ -220,6 +220,11 @@ namespace Tsavorite.core
         public bool PreserveCopyUpdaterSourceRecord { get; set; }
 
         /// <summary>
+        /// Whether the call is from sync or async (pending) path
+        /// </summary>
+        public bool IsFromPending { get; internal set; }
+
+        /// <summary>
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public RMWAction Action { get; set; }
