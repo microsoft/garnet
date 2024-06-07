@@ -139,7 +139,7 @@ namespace Tsavorite.core
                 }
 
                 // No record exists, or readonly or below. Drop through to create new record.
-                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref key, ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
+                Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
                 status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo);
@@ -254,11 +254,7 @@ namespace Tsavorite.core
 
         private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
-            if (!IsLocking)
-                return AcquireCPRLatchUpsert(phase, ref stackCtx, ref status, ref latchOperation);
-
-            // This is AcquireCPRLatchUpsert without the bucket latching, since we already have a latch on either the bucket or the recordInfo.
-            // See additional comments in AcquireCPRLatchRMW.
+            // See explanatory comments in CheckCPRConsistencyRMW.
 
             switch (phase)
             {
@@ -271,56 +267,6 @@ namespace Tsavorite.core
 
                 case Phase.IN_PROGRESS: // Thread is in V+1
                 case Phase.WAIT_INDEX_CHECKPOINT:
-                case Phase.WAIT_FLUSH:
-                    if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
-                        break;      // Normal Processing; V+1 thread encountered a record in V+1
-                    return LatchDestination.CreateNewRecord;    // Upsert never goes pending; always force creation of a (V+1) record
-
-                default:
-                    break;
-            }
-            return LatchDestination.NormalProcessing;
-        }
-
-        private LatchDestination AcquireCPRLatchUpsert(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
-        {
-            // See additional comments in AcquireCPRLatchRMW.
-
-            switch (phase)
-            {
-                case Phase.PREPARE: // Thread is in V
-                    if (HashBucket.TryAcquireSharedLatch(ref stackCtx.hei))
-                    {
-                        // Set to release shared latch (default)
-                        latchOperation = LatchOperation.Shared;
-                        if (IsEntryVersionNew(ref stackCtx.hei.entry))
-                        {
-                            status = OperationStatus.CPR_SHIFT_DETECTED;
-                            return LatchDestination.Retry;  // Pivot Thread for retry (do not operate on V+1 record when thread is in V)
-                        }
-                        break; // Normal Processing; thread is in V, record is in V
-                    }
-
-                    // Could not acquire Shared latch; system must be in V+1 (or we have too many shared latches).
-                    status = OperationStatus.CPR_SHIFT_DETECTED;
-                    return LatchDestination.Retry;  // Pivot Thread for retry
-
-                case Phase.IN_PROGRESS: // Thread is in V+1
-                    if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
-                        break;      // Normal Processing; V+1 thread encountered a record in V+1
-
-                    if (HashBucket.TryAcquireExclusiveLatch(ref stackCtx.hei))
-                    {
-                        // Set to release exclusive latch (default)
-                        latchOperation = LatchOperation.Exclusive;
-                        return LatchDestination.CreateNewRecord; // Upsert never goes pending; always force creation of a (v+1) record
-                    }
-
-                    // Could not acquire exclusive latch; likely a conflict on the bucket.
-                    status = OperationStatus.RETRY_LATER;
-                    return LatchDestination.Retry;  // Retry after refresh
-
-                case Phase.WAIT_INDEX_CHECKPOINT:   // Thread is in v+1
                 case Phase.WAIT_FLUSH:
                     if (IsRecordVersionNew(stackCtx.recSrc.LogicalAddress))
                         break;      // Normal Processing; V+1 thread encountered a record in V+1

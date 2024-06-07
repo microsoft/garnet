@@ -82,7 +82,7 @@ namespace Tsavorite.test.LockTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
-            store = new TsavoriteKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, comparer: new LocalComparer(), concurrencyControlMode: ConcurrencyControlMode.LockTable);
+            store = new TsavoriteKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, comparer: new LocalComparer());
             session = store.NewSession<int, int, Empty, Functions>(new Functions());
             bContext = session.BasicContext;
         }

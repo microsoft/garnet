@@ -59,7 +59,6 @@ namespace Tsavorite.test.ReadCacheTests
             ReadCacheSettings readCacheSettings = default;
             string filename = Path.Join(MethodTestDir, "BasicTests.log");
 
-            var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCacheMode rcm)
@@ -71,11 +70,6 @@ namespace Tsavorite.test.ReadCacheTests
                             PageSizeBits = 12,
                             SecondChanceFraction = 0.1,
                         };
-                    continue;
-                }
-                if (arg is ConcurrencyControlMode ccm)
-                {
-                    concurrencyControlMode = ccm;
                     continue;
                 }
                 if (arg is DeviceType deviceType)
@@ -94,7 +88,7 @@ namespace Tsavorite.test.ReadCacheTests
                     MemorySizeBits = 15,
                     PageSizeBits = 12,
                     ReadCacheSettings = readCacheSettings,
-                }, concurrencyControlMode: concurrencyControlMode);
+                });
         }
 
         [TearDown]
@@ -112,8 +106,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
         //[Repeat(300)]
-        public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode,
-                                                [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ReadCacheMode readCacheMode)
+        public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode, [Values] ReadCacheMode readCacheMode)
         {
             if (numThreads == 1 && keyContentionMode == KeyContentionMode.Contention)
                 Assert.Ignore("Skipped because 1 thread cannot have contention");

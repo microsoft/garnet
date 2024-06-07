@@ -33,8 +33,7 @@ namespace Tsavorite.core
         /// <param name="value">The value for the record being read</param>
         /// <param name="dst">The location where <paramref name="value"/> is to be copied</param>
         /// <param name="readInfo">Information about this read operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for locking if <see cref="ConcurrencyControlMode.None"/>
-        ///     is used, or for variable-length record length modification</param>
+        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the value was available, else false (e.g. the value was expired)</returns>
         bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo);
 
@@ -61,8 +60,7 @@ namespace Tsavorite.core
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
         /// <param name="reason">The operation for which this write is being done</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for locking if <see cref="ConcurrencyControlMode.None"/>
-        ///     is used, or for variable-length record length modification</param>
+        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
         bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo);
 
@@ -87,8 +85,7 @@ namespace Tsavorite.core
         /// <param name="dst">The location where <paramref name="src"/> is to be copied; because this method is called only for in-place updates, there is a previous value there.</param>
         /// <param name="output">The location where the result of the update may be placed</param>
         /// <param name="upsertInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for locking if <see cref="ConcurrencyControlMode.None"/>
-        ///     is used, or for variable-length record length modification</param>
+        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the value was written, else false</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
         bool ConcurrentWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo);
@@ -113,8 +110,7 @@ namespace Tsavorite.core
         /// <param name="value">The destination to be updated; because this is an insert, there is no previous value there.</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for locking if <see cref="ConcurrencyControlMode.None"/>
-        ///     is used, or for variable-length record length modification</param>
+        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
         bool InitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
 
@@ -149,8 +145,7 @@ namespace Tsavorite.core
         /// <param name="newValue">The destination to be updated; because this is an copy to a new location, there is no previous value there.</param>
         /// <param name="output">The location where <paramref name="newValue"/> is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for locking if <see cref="ConcurrencyControlMode.None"/>
-        ///     is used, or for variable-length record length modification</param>
+        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the write was performed, else false (e.g. cancellation)</returns>
         bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
 
@@ -178,8 +173,7 @@ namespace Tsavorite.core
         /// <param name="value">The destination to be updated; because this is an in-place update, there is a previous value there.</param>
         /// <param name="output">The location where the result of the <paramref name="input"/> operation on <paramref name="value"/> is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for locking if <see cref="ConcurrencyControlMode.None"/>
-        ///     is used, or for variable-length record length modification</param>
+        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <returns>True if the value was successfully updated, else false (e.g. the value was expired)</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
         bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo);
@@ -216,8 +210,7 @@ namespace Tsavorite.core
         /// <param name="key">The key for the record to be deleted</param>
         /// <param name="value">The value for the record being deleted; because this method is called only for in-place updates, there is a previous value there. Usually this is ignored or assigned 'default'.</param>
         /// <param name="deleteInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for locking if <see cref="ConcurrencyControlMode.None"/>
-        ///     is used, or for variable-length record length modification</param>
+        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the deleted record should be added, else false (e.g. cancellation)</returns>
         bool SingleDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo);
@@ -237,8 +230,7 @@ namespace Tsavorite.core
         /// <param name="key">The key for the record to be deleted</param>
         /// <param name="value">The value for the record being deleted; because this method is called only for in-place updates, there is a previous value there. Usually this is ignored or assigned 'default'.</param>
         /// <param name="deleteInfo">Information about this update operation and its context</param>
-        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for locking if <see cref="ConcurrencyControlMode.None"/>
-        ///     is used, or for variable-length record length modification</param>
+        /// <param name="recordInfo">A reference to the RecordInfo for the record; used for variable-length record length modification</param>
         /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
         bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo);

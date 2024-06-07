@@ -102,12 +102,8 @@ namespace Tsavorite.core
         {
             bContext = new(this);
             uContext = new(this);
-
-            if (store.LockTable.IsEnabled)
-            {
-                lContext = new(this);
-                luContext = new(this);
-            }
+            lContext = new(this);
+            luContext = new(this);
 
             this.loggerFactory = loggerFactory;
             logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
@@ -146,28 +142,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Return a new interface to Tsavorite operations that supports manual locking and epoch control.
         /// </summary>
-        public LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> LockableUnsafeContext
-        {
-            get
-            {
-                if (!store.LockTable.IsEnabled)
-                    throw new TsavoriteException($"LockableUnsafeContext requires {nameof(ConcurrencyControlMode.LockTable)}");
-                return luContext;
-            }
-        }
+        public LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> LockableUnsafeContext => luContext;
 
         /// <summary>
         /// Return a session wrapper that supports manual locking.
         /// </summary>
-        public LockableContext<Key, Value, Input, Output, Context, Functions> LockableContext
-        {
-            get
-            {
-                if (!store.LockTable.IsEnabled)
-                    throw new TsavoriteException($"LockableContext requires {nameof(ConcurrencyControlMode.LockTable)}");
-                return lContext;
-            }
-        }
+        public LockableContext<Key, Value, Input, Output, Context, Functions> LockableContext => lContext;
 
         /// <summary>
         /// Return a session wrapper struct that passes through to client session
@@ -211,9 +191,6 @@ namespace Tsavorite.core
                 UnsafeSuspendThread();
             }
         }
-
-        /// <inheritdoc/>
-        public bool NeedKeyHash => store.LockTable.IsEnabled && store.LockTable.NeedKeyHash;
 
         /// <inheritdoc/>
         public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => store.LockTable.CompareKeyHashes(key1, key2);
