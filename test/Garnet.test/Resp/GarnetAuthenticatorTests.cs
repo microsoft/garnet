@@ -62,7 +62,7 @@ namespace Garnet.test.Resp
             auth.AuthenticateCallback =
                 (p, u) =>
                 {
-                    if(authCalls == 0)
+                    if (authCalls == 0)
                     {
                         Assert.AreEqual("default", Encoding.UTF8.GetString(u));
                     }
