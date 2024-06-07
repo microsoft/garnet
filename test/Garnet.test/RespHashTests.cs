@@ -533,6 +533,61 @@ namespace Garnet.test
             Assert.IsFalse(keyExists);
         }
 
+        [Test]
+        public void CheckHashOperationsOnWrongTypeObjectSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
+            var key1Values = new[] { new RedisValue("Hello"), new RedisValue("World") };
+            var key2Values = new[] { new RedisValue("Hola"), new RedisValue("Mundo") };
+            var values = new[] { key1Values, key2Values };
+            var hashFields = new[]
+            {
+                new[] { new RedisValue("K1_H1"), new RedisValue("K1_H2") },
+                new[] { new RedisValue("K2_H1"), new RedisValue("K2_H2") }
+            };
+            var hashEntries = hashFields.Select((h, idx) => h
+                    .Zip(values[idx], (n, v) => new HashEntry(n, v)).ToArray()).ToArray();
+
+            // Set up different type objects
+            RespTests.SetUpTestObjects(db, GarnetObjectType.List, keys, values);
+
+            // HGET
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashGet(keys[0], hashFields[0][0]));
+            // HMGET
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashGet(keys[0], hashFields[0]));
+            // HSET
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashSet(keys[0], hashFields[0][0], values[0][0]));
+            // HMSET
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashSet(keys[0], hashEntries[0]));
+            // HSETNX
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashSet(keys[0], hashFields[0][0], values[0][0], When.NotExists));
+            // HLEN
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashLength(keys[0]));
+            // HDEL
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashDelete(keys[0], hashFields[0]));
+            // HEXISTS
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashExists(keys[0], hashFields[0][0]));
+            // HGETALL
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashGetAll(keys[0]));
+            // HKEYS
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashKeys(keys[0]));
+            // HVALS
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashValues(keys[0]));
+            // HINCRBY
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashIncrement(keys[0], hashFields[0][0], 2L));
+            // HINCRBYFLOAT
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashIncrement(keys[0], hashFields[0][0], 2.2));
+            // HRANDFIELD
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashRandomField(keys[0]));
+            // HSCAN
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashScan(keys[0], new RedisValue("*")).FirstOrDefault());
+            //HSTRLEN
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashStringLength(keys[0], hashFields[0][0]));
+        }
+
         #endregion
 
         #region LightClientTests

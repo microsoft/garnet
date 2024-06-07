@@ -1263,7 +1263,7 @@ namespace Garnet.test
             // LPOP
             RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPop(keys[0]));
             // LPUSH
-            RespTests.CheckCommandOnWrongTypeObjectSE( () => db.ListLeftPush(keys[0], values[0]));
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPush(keys[0], values[0]));
             // LPUSHX
             RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPush(keys[0], values[0], When.Exists));
             // RPOP

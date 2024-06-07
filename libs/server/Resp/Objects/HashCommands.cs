@@ -74,33 +74,48 @@ namespace Garnet.server
                 inputPtr->count = inputCount;
                 inputPtr->done = hashOpsCount;
 
-                storageApi.HashSet(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
+                var status = storageApi.HashSet(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
 
                 *inputPtr = save; // reset input buffer
 
-                hashItemsDoneCount += output.countDone;
-                hashOpsCount += output.opsDone;
-
-                // Reset buffer and return if HSET did not process the entire command tokens
-                if (hashItemsDoneCount < inputCount)
-                    return false;
-
-                // Move head, write result to output, reset session counters
-                ptr += output.bytesDone;
-                readHead = (int)(ptr - recvBufferPtr);
-
-                if (hop == HashOperation.HMSET)
+                if (status != GarnetStatus.OK)
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    var tokens = ReadLeftToken(count - 1, ref ptr);
+                    if (tokens < count - 1)
+                        return false;
                 }
-                else
+
+                switch (status)
                 {
-                    while (!RespWriteUtils.WriteInteger(hashOpsCount, ref dcurr, dend))
-                        SendAndReset();
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    default:
+                        hashItemsDoneCount += output.countDone;
+                        hashOpsCount += output.opsDone;
+
+                        // Reset buffer and return if HSET did not process the entire command tokens
+                        if (hashItemsDoneCount < inputCount)
+                            return false;
+
+                        // Move head, write result to output, reset session counters
+                        ptr += output.bytesDone;
+                        if (hop == HashOperation.HMSET)
+                        {
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        else
+                        {
+                            while (!RespWriteUtils.WriteInteger(hashOpsCount, ref dcurr, dend))
+                                SendAndReset();
+                        }
+                        break;
                 }
             }
 
+            readHead = (int)(ptr - recvBufferPtr);
             hashItemsDoneCount = hashOpsCount = 0;
             return true;
         }
@@ -161,7 +176,7 @@ namespace Garnet.server
                 // Prepare GarnetObjectStore output
                 var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
-                var status = GarnetStatus.NOTFOUND;
+                GarnetStatus status;
 
                 var includeCountParameter = false;
                 if (op == HashOperation.HRANDFIELD)
@@ -174,6 +189,13 @@ namespace Garnet.server
 
                 // Reset input buffer
                 *inputPtr = save;
+
+                if (status != GarnetStatus.OK)
+                {
+                    var tokens = ReadLeftToken(count - 1, ref ptr);
+                    if (tokens < count - 1)
+                        return false;
+                }
 
                 switch (status)
                 {
@@ -200,7 +222,10 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteDirect(respBytes, ref dcurr, dend))
                                 SendAndReset();
                         }
-                        ReadLeftToken(count - 1, ref ptr);
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
                         break;
                 }
             }
@@ -276,6 +301,10 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
                         break;
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
+                        break;
                 }
             }
 
@@ -336,6 +365,13 @@ namespace Garnet.server
                 // Restore input buffer
                 *inputPtr = save;
 
+                if (status != GarnetStatus.OK)
+                {
+                    var tokens = ReadLeftToken(count - 1, ref ptr);
+                    if (tokens < count - 1)
+                        return false;
+                }
+
                 switch (status)
                 {
                     case GarnetStatus.OK:
@@ -347,7 +383,10 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
-                        ReadLeftToken(count - 1, ref ptr);
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
                         break;
                 }
             }
@@ -411,6 +450,13 @@ namespace Garnet.server
                 // Restore input buffer
                 *inputPtr = save;
 
+                if (status != GarnetStatus.OK)
+                {
+                    var tokens = ReadLeftToken(count - 1, ref ptr);
+                    if (tokens < count - 1)
+                        return false;
+                }
+
                 switch (status)
                 {
                     case GarnetStatus.OK:
@@ -426,8 +472,10 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
-                        hashItemsDoneCount = hashOpsCount = 0;
-                        ReadLeftToken(count - 1, ref ptr);
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
                         break;
                 }
             }
@@ -489,6 +537,13 @@ namespace Garnet.server
                 // Restore input buffer
                 *inputPtr = save;
 
+                if (status != GarnetStatus.OK)
+                {
+                    var tokens = ReadLeftToken(count - 1, ref ptr);
+                    if (tokens < count - 1)
+                        return false;
+                }
+
                 switch (status)
                 {
                     case GarnetStatus.OK:
@@ -500,7 +555,10 @@ namespace Garnet.server
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
                             SendAndReset();
-                        ReadLeftToken(count - 1, ref ptr);
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
                         break;
                 }
             }
@@ -570,6 +628,13 @@ namespace Garnet.server
             // Restore input buffer
             *inputPtr = save;
 
+            if (status != GarnetStatus.OK)
+            {
+                var tokens = ReadLeftToken(count - 1, ref ptr);
+                if (tokens < count - 1)
+                    return false;
+            }
+
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -585,7 +650,10 @@ namespace Garnet.server
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                         SendAndReset();
-                    ReadLeftToken(count - 1, ref ptr);
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
                     break;
             }
 
@@ -654,15 +722,30 @@ namespace Garnet.server
                 // Restore input
                 *inputPtr = save;
 
-                // Process output
-                var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                if (objOutputHeader.opsDone == Int32.MinValue)
+                if (status != GarnetStatus.OK)
                 {
-                    // Command was partially done
-                    return false;
+                    var tokens = ReadLeftToken(count - 1, ref ptr);
+                    if (tokens < count - 1)
+                        return false;
                 }
-                ptr += objOutputHeader.bytesDone;
 
+                switch (status)
+                {
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    default:
+                        // Process output
+                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                        if (objOutputHeader.opsDone == Int32.MinValue)
+                        {
+                            // Command was partially done
+                            return false;
+                        }
+                        ptr += objOutputHeader.bytesDone;
+                        break;
+                }
             }
             // Reset counters
             hashItemsDoneCount = hashOpsCount = 0;

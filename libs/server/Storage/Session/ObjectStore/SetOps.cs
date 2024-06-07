@@ -41,10 +41,10 @@ namespace Garnet.server
             rmwInput->count = 1;
             rmwInput->done = 0;
 
-            _ = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             saddCount = output.opsDone;
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>
@@ -158,10 +158,10 @@ namespace Garnet.server
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
-            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             sremCount = output.countDone;
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>
@@ -192,7 +192,7 @@ namespace Garnet.server
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             count = output.countDone;
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>
@@ -396,10 +396,10 @@ namespace Garnet.server
 
                 var srcGetStatus = GET(arrSrcKey, out var srcObject, ref objectLockableContext);
 
-                if (srcGetStatus == GarnetStatus.NOTFOUND) 
+                if (srcGetStatus == GarnetStatus.NOTFOUND)
                     return GarnetStatus.NOTFOUND;
 
-                if (srcObject.garnetObject is not SetObject srcSetObject) 
+                if (srcObject.garnetObject is not SetObject srcSetObject)
                     return GarnetStatus.WRONGTYPE;
 
                 // If the keys are the same, no operation is performed.

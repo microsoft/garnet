@@ -839,7 +839,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             garnetStatus = GarnetStatus.OK;
-            var keys = new [] { sourceKey, destinationKey };
+            var keys = new[] { sourceKey, destinationKey };
             node = null;
 
             if (NetworkKeyArraySlotVerify(ref keys, false))
