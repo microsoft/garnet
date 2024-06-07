@@ -29,6 +29,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <TargetPath>runtimes/linux-x64/native/libnative_device.so</TargetPath>
     </ContentWithTargetPath>
+    <ContentWithTargetPath Include="Device/runtimes/linux-x64/native/libspdk_device.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>runtimes/linux-x64/native/libspdk_device.so</TargetPath>
+    </ContentWithTargetPath>
   </ItemGroup>
 
   <ItemGroup>

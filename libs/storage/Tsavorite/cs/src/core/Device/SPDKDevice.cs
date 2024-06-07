@@ -20,7 +20,7 @@ namespace Tsavorite.core
 
         private const string spdk_library_name = "spdk_device";
         private const string spdk_library_path =
-                             "runtimes/linux-x64/spdk/libspdk_device.so";
+                             "runtimes/linux-x64/native/libspdk_device.so";
         public delegate void AsyncIOCallback(IntPtr context, int result,
                                              ulong bytesTransferred);
         private IntPtr spdk_device;
@@ -51,7 +51,7 @@ namespace Tsavorite.core
             {
                 error_code = -error_code;
             }
-            GCHandle handle = (GCHandle)context;
+            GCHandle handle = GCHandle.FromIntPtr(context);
             ManagedCallback managed_callback =
                                 (handle.Target as ManagedCallback);
             managed_callback.call((uint)error_code, (uint)num_bytes);
@@ -114,6 +114,8 @@ namespace Tsavorite.core
             this._callback_delegate = this._callback;
             this.ThrottleLimit = 1024;
 
+            spdk_device_init();
+
             this.spdk_device = spdk_device_create(SPDKDevice.nsid);
 
             this.completion_cancellation_token = new();
@@ -140,14 +142,16 @@ namespace Tsavorite.core
 
             try
             {
+                GCHandle handle = GCHandle.Alloc(new ManagedCallback(callback,
+                                                                     context),
+                                                GCHandleType.Normal);
                 int _result = spdk_device_read_async(
                     this.spdk_device,
                     this.get_address(segment_id, source_address),
                     destination_address,
                     read_length,
                     this._callback_delegate,
-                    (IntPtr)GCHandle.Alloc(new ManagedCallback(callback,
-                                                                context))
+                    GCHandle.ToIntPtr(handle)
                 );
                 if (_result != 0)
                 {
@@ -179,14 +183,16 @@ namespace Tsavorite.core
 
             try
             {
+                GCHandle handle = GCHandle.Alloc(new ManagedCallback(callback,
+                                                                     context),
+                                                GCHandleType.Normal);
                 int _result = spdk_device_write_async(
                     this.spdk_device,
                     source_address,
                     this.get_address(segment_id, destination_address),
                     write_length,
                     this._callback_delegate,
-                    (IntPtr)GCHandle.Alloc(new ManagedCallback(callback,
-                                                                context))
+                    GCHandle.ToIntPtr(handle)
                 );
                 if (_result != 0)
                 {
@@ -216,7 +222,7 @@ namespace Tsavorite.core
                                                 AsyncCallback callback,
                                                 IAsyncResult result)
         {
-            // TODO: chyin implement RemoveSegmentAsync
+            callback(result);
             return;
         }
 

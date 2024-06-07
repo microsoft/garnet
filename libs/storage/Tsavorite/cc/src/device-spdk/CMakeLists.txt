@@ -23,6 +23,12 @@ if (UNIX)
     target_link_libraries(spdk_device PRIVATE "-Wl,-Bstatic" "-Wl,--whole-archive" ${spdk_lib_LDFLAGS})
     target_link_libraries(spdk_device PRIVATE "-Wl,-Bdynamic" "-Wl,--no-whole-archive" ${spdk_syslibs_STATIC_LDFLAGS})
 
+    cmake_print_variables(CMAKE_CURRENT_SOURCE_DIR)
+    add_custom_command(
+      TARGET spdk_device POST_BUILD
+      COMMAND cp "$<TARGET_FILE:spdk_device>" "${CMAKE_CURRENT_SOURCE_DIR}/../../../cs/src/core/Device/runtimes/linux-x64/native/"
+    )
+
     add_executable(spdk_device_test_main test_main.c)
     add_dependencies(spdk_device_test_main spdk_device)
     set_target_properties(spdk_device_test_main PROPERTIES LINKER_LANGUAGE C)

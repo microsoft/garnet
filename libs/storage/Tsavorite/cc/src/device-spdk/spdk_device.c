@@ -223,7 +223,7 @@ get_internal_io_context(struct spdk_device *device, uint32_t io_length,
     io_context->io_length = io_length;
     io_context->read_dest = read_dest;
     io_context->complete_callback = callback;
-    io_context->complete_callback_context = callback;
+    io_context->complete_callback_context = context;
     io_context->device = device;
 
 exit:
