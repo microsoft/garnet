@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
@@ -165,6 +166,54 @@ namespace Garnet.server
             return true;
         }
 
+        private bool LoadAssemblies(IEnumerable<string> binaryPaths, out Assembly[] loadedAssemblies, out ReadOnlySpan<byte> errorMessage)
+        {
+            loadedAssemblies = null;
+            errorMessage = default;
+
+            // Get all binary file paths from inputs binary paths
+            if (!FileUtils.TryGetFiles(binaryPaths, out var files, out _, [".dll", ".exe"],
+                    SearchOption.AllDirectories))
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_BINARY_FILES;
+                return false;
+            }
+
+            // Check that all binary files are contained in allowed binary paths
+            var binaryFiles = files.ToArray();
+            if (binaryFiles.Any(f =>
+                    storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
+                return false;
+            }
+
+            // Get all assemblies from binary files
+            if (!FileUtils.TryLoadAssemblies(binaryFiles, out var assemblies, out _))
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
+                return false;
+            }
+
+            loadedAssemblies = assemblies.ToArray();
+
+            // If necessary, check that all assemblies are digitally signed
+            if (!storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies)
+            {
+                foreach (var loadedAssembly in loadedAssemblies)
+                {
+                    var publicKey = loadedAssembly.GetName().GetPublicKey();
+                    if (publicKey == null || publicKey.Length == 0)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
         /// <summary>
         /// Register all custom commands / transactions
         /// </summary>
@@ -214,45 +263,8 @@ namespace Garnet.server
                 }
             }
 
-            // Get all binary file paths from inputs binary paths
-            if (!FileUtils.TryGetFiles(binaryPaths, out var files, out _, [".dll", ".exe"],
-                    SearchOption.AllDirectories))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_BINARY_FILES;
+            if (!LoadAssemblies(binaryPaths, out var loadedAssemblies, out errorMessage))
                 return false;
-            }
-
-            // Check that all binary files are contained in allowed binary paths
-            var binaryFiles = files.ToArray();
-            if (binaryFiles.Any(f =>
-                    storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
-                return false;
-            }
-
-            // Get all assemblies from binary files
-            if (!FileUtils.TryLoadAssemblies(binaryFiles, out var assemblies, out _))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
-                return false;
-            }
-
-            var loadedAssemblies = assemblies.ToArray();
-
-            // If necessary, check that all assemblies are digitally signed
-            if (!storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies)
-            {
-                foreach (var loadedAssembly in loadedAssemblies)
-                {
-                    var publicKey = loadedAssembly.GetName().GetPublicKey();
-                    if (publicKey == null || publicKey.Length == 0)
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
-                        return false;
-                    }
-                }
-            }
 
             foreach (var c in classNameToRegisterArgs.Keys)
             {
@@ -798,13 +810,68 @@ namespace Garnet.server
         private bool NetworkMODULE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count != 1)
+            if (count < 2)
                 return AbortWithWrongNumberOfArguments("MODULE", count);
 
-            // TODO: pending implementation for module support.
+            // Read sub-command
+            if (!RespReadUtils.TrySliceWithLengthHeader(out var subCommand, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (subCommand.SequenceEqual(CmdStrings.LOAD) || subCommand.SequenceEqual(CmdStrings.load))
+            {
+                if (count < 3)
+                    return AbortWithWrongNumberOfArguments("MODULE LOAD", count);
+
+                // Read path to module file
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var modulePath, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                var modulePathStr = Encoding.ASCII.GetString(modulePath);
+
+                // Read module args
+                var leftTokens = count - 3;
+                List<string> moduleArgs = new();
+                while (leftTokens > 0)
+                {
+                    if (!RespReadUtils.ReadStringWithLengthHeader(out var arg, ref ptr, recvBufferPtr + bytesRead))
+                        return false;
+                    leftTokens--;
+
+                    moduleArgs.Add(arg);
+                }
+
+                if (TryLoadModule(modulePathStr, moduleArgs, out var errorMsg))
+                {
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteDirect(errorMsg, ref dcurr, dend))
+                        SendAndReset();
+                }
+
+            }
+
+            // TODO: check
+            //if (!DrainCommands(1))
+            //{
+            //    return false;
+            //}
+
+            // TODO: pending implementation for other module commands support.
             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();
 
+            return true;
+        }
+
+        private bool TryLoadModule(string modulePathStr, List<string> moduleArgs, out ReadOnlySpan<byte> errorMessage)
+        {
+            if (!LoadAssemblies([modulePathStr], out var loadedAssemblies, out errorMessage))
+                return false;
+
+            // Get types from loaded assemblies
             return true;
         }
 
