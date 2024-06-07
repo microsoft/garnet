@@ -142,10 +142,9 @@ namespace Garnet.cluster
         /// Handle cluster subcommands.
         /// </summary>
         /// <param name="command">Subcommand to execute.</param>
-        /// <param name="bufSpan">Remaining parameters in the command buffer.</param>
         /// <param name="count">Number of parameters in teh command buffer</param>
         /// <returns>True if command is fully processed, false if more processing is needed.</returns>
-        private bool ProcessClusterCommands(RespCommand command, ReadOnlySpan<byte> bufSpan, int count)
+        private bool ProcessClusterCommands(RespCommand command, int count)
         {
             bool result;
             bool invalidParameters;
@@ -153,52 +152,52 @@ namespace Garnet.cluster
             result =
                 command switch
                 {
-                    RespCommand.CLUSTER_ADDSLOTS => NetworkClusterAddSlots(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(bufSpan, count, out invalidParameters),
+                    RespCommand.CLUSTER_ADDSLOTS => NetworkClusterAddSlots(count, out invalidParameters),
+                    RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(count, out invalidParameters),
                     RespCommand.CLUSTER_AOFSYNC => NetworkClusterAOFSync(count, out invalidParameters),
                     RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(count, out invalidParameters),
                     RespCommand.CLUSTER_BANLIST => NetworkClusterBanList(count, out invalidParameters),
                     RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER => NetworkClusterBeginReplicaRecover(count, out invalidParameters),
-                    RespCommand.CLUSTER_BUMPEPOCH => NetworkClusterBumpEpoch(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_COUNTKEYSINSLOT => NetworkClusterCountKeysInSlot(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_DELKEYSINSLOT => NetworkClusterDelKeysInSlot(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_DELKEYSINSLOTRANGE => NetworkClusterDelKeysInSlotRange(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_DELSLOTS => NetworkClusterDelSlots(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_DELSLOTSRANGE => NetworkClusterDelSlotsRange(bufSpan, count, out invalidParameters),
+                    RespCommand.CLUSTER_BUMPEPOCH => NetworkClusterBumpEpoch(count, out invalidParameters),
+                    RespCommand.CLUSTER_COUNTKEYSINSLOT => NetworkClusterCountKeysInSlot(count, out invalidParameters),
+                    RespCommand.CLUSTER_DELKEYSINSLOT => NetworkClusterDelKeysInSlot(count, out invalidParameters),
+                    RespCommand.CLUSTER_DELKEYSINSLOTRANGE => NetworkClusterDelKeysInSlotRange(count, out invalidParameters),
+                    RespCommand.CLUSTER_DELSLOTS => NetworkClusterDelSlots(count, out invalidParameters),
+                    RespCommand.CLUSTER_DELSLOTSRANGE => NetworkClusterDelSlotsRange(count, out invalidParameters),
                     RespCommand.CLUSTER_ENDPOINT => NetworkClusterEndpoint(count, out invalidParameters),
-                    RespCommand.CLUSTER_FAILOVER => NetworkClusterFailover(bufSpan, count, out invalidParameters),
+                    RespCommand.CLUSTER_FAILOVER => NetworkClusterFailover(count, out invalidParameters),
                     RespCommand.CLUSTER_FAILREPLICATIONOFFSET => NetworkClusterFailReplicationOffset(count, out invalidParameters),
                     RespCommand.CLUSTER_FAILSTOPWRITES => NetworkClusterFailStopWrites(count, out invalidParameters),
-                    RespCommand.CLUSTER_FORGET => NetworkClusterForget(bufSpan, count, out invalidParameters),
+                    RespCommand.CLUSTER_FORGET => NetworkClusterForget(count, out invalidParameters),
                     RespCommand.CLUSTER_GOSSIP => NetworkClusterGossip(count, out invalidParameters),
-                    RespCommand.CLUSTER_GETKEYSINSLOT => NetworkClusterGetKeysInSlot(bufSpan, count, out invalidParameters),
+                    RespCommand.CLUSTER_GETKEYSINSLOT => NetworkClusterGetKeysInSlot(count, out invalidParameters),
                     RespCommand.CLUSTER_HELP => NetworkClusterHelp(count, out invalidParameters),
                     RespCommand.CLUSTER_INFO => NetworkClusterInfo(count, out invalidParameters),
                     RespCommand.CLUSTER_INITIATE_REPLICA_SYNC => NetworkClusterInitiateReplicaSync(count, out invalidParameters),
                     RespCommand.CLUSTER_KEYSLOT => NetworkClusterKeySlot(count, out invalidParameters),
-                    RespCommand.CLUSTER_MEET => NetworkClusterMeet(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_MIGRATE => NetworkClusterMigrate(bufSpan, count, out invalidParameters),
+                    RespCommand.CLUSTER_MEET => NetworkClusterMeet(count, out invalidParameters),
+                    RespCommand.CLUSTER_MIGRATE => NetworkClusterMigrate(count, out invalidParameters),
                     RespCommand.CLUSTER_MTASKS => NetworkClusterMTasks(count, out invalidParameters),
                     RespCommand.CLUSTER_MYID => NetworkClusterMyId(count, out invalidParameters),
                     RespCommand.CLUSTER_MYPARENTID => NetworkClusterMyParentId(count, out invalidParameters),
                     RespCommand.CLUSTER_NODES => NetworkClusterNodes(count, out invalidParameters),
-                    RespCommand.CLUSTER_REPLICAS => NetworkClusterReplicas(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_REPLICATE => NetworkClusterReplicate(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_RESET => NetworkClusterReset(bufSpan, count, out invalidParameters),
+                    RespCommand.CLUSTER_REPLICAS => NetworkClusterReplicas(count, out invalidParameters),
+                    RespCommand.CLUSTER_REPLICATE => NetworkClusterReplicate(count, out invalidParameters),
+                    RespCommand.CLUSTER_RESET => NetworkClusterReset(count, out invalidParameters),
                     RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT => NetworkClusterSendCheckpointFileSegment(count, out invalidParameters),
                     RespCommand.CLUSTER_SEND_CKPT_METADATA => NetworkClusterSendCheckpointMetadata(count, out invalidParameters),
-                    RespCommand.CLUSTER_SETCONFIGEPOCH => NetworkClusterSetConfigEpoch(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_SETSLOT => NetworkClusterSetSlot(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_SETSLOTSRANGE => NetworkClusterSetSlotsRange(bufSpan, count, out invalidParameters),
+                    RespCommand.CLUSTER_SETCONFIGEPOCH => NetworkClusterSetConfigEpoch(count, out invalidParameters),
+                    RespCommand.CLUSTER_SETSLOT => NetworkClusterSetSlot(count, out invalidParameters),
+                    RespCommand.CLUSTER_SETSLOTSRANGE => NetworkClusterSetSlotsRange(count, out invalidParameters),
                     RespCommand.CLUSTER_SHARDS => NetworkClusterShards(count, out invalidParameters),
-                    RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(bufSpan, count, out invalidParameters),
-                    RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(bufSpan, count, out invalidParameters),
-                    _ => throw new Exception($"Unexpected cluster subcommad: {command}")
+                    RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(count, out invalidParameters),
+                    RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(count, out invalidParameters),
+                    _ => throw new Exception($"Unexpected cluster subcommand: {command}")
                 };
 
             if (invalidParameters)
             {
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
 
                 // Have to lookup the RESP name now that we're in the failure case

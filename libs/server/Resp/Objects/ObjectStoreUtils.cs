@@ -54,9 +54,7 @@ namespace Garnet.server
         private bool AbortWithErrorMessage(int count, ReadOnlySpan<byte> errorMessage)
         {
             // Abort command and discard any remaining tokens on the input buffer
-            var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-
-            if (!DrainCommands(bufSpan, count))
+            if (!DrainCommands(count))
                 return false;
 
             // Print error message to result stream

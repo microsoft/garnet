@@ -12,11 +12,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER REPLICAS command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterReplicas(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterReplicas(int count, out bool invalidParameters)
         {
             invalidParameters = false;
 
@@ -47,11 +46,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER REPLICATE command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterReplicate(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterReplicate(int count, out bool invalidParameters)
         {
             invalidParameters = false;
 

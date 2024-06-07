@@ -589,26 +589,19 @@ namespace Garnet.server
         private bool ProcessOtherCommands<TGarnetApi>(RespCommand command, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ReadOnlySpan<byte> bufSpan = new(recvBufferPtr, bytesRead);
-
             if (command == RespCommand.CLIENT)
             {
-                for (int i = 0; i < count; i++)
-                {
-                    GetCommand(bufSpan, out bool success1);
-                    if (!success1) return false;
-                }
+                if (!DrainCommands(count))
+                    return false;
 
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command == RespCommand.SUBSCRIBE)
             {
-                for (int i = 0; i < count; i++)
-                {
-                    GetCommand(bufSpan, out bool success1);
-                    if (!success1) return false;
-                }
+                if (!DrainCommands(count))
+                    return false;
+
                 while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
                     SendAndReset();
             }
@@ -620,11 +613,8 @@ namespace Garnet.server
             else if (command == RespCommand.CustomTxn)
             {
                 byte* ptr = recvBufferPtr + readHead;
-                for (int i = 0; i < count; i++)
-                {
-                    GetCommand(bufSpan, out bool success1);
-                    if (!success1) return false;
-                }
+                if (!DrainCommands(count))
+                    return false;
 
                 if (currentCustomTransaction.NumParams < int.MaxValue && count != currentCustomTransaction.NumParams)
                 {
@@ -646,11 +636,8 @@ namespace Garnet.server
             else if (command == RespCommand.CustomCmd)
             {
                 byte* ptr = recvBufferPtr + readHead;
-                for (int i = 0; i < count; i++)
-                {
-                    GetCommand(bufSpan, out bool success1);
-                    if (!success1) return false;
-                }
+                if (!DrainCommands(count))
+                    return false;
 
                 if (count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
                 {
@@ -672,11 +659,8 @@ namespace Garnet.server
             else if (command == RespCommand.CustomObjCmd)
             {
                 byte* ptr = recvBufferPtr + readHead;
-                for (int i = 0; i < count; i++)
-                {
-                    GetCommand(bufSpan, out bool success1);
-                    if (!success1) return false;
-                }
+                if (!DrainCommands(count))
+                    return false;
 
                 if (count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
                 {
@@ -698,21 +682,21 @@ namespace Garnet.server
 
             else
             {
-                return ProcessAdminCommands(command, bufSpan, count, ref storageApi);
-            }
-            return true;
-        }
-        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
-        {
-            for (var i = 0; i < count; i++)
-            {
-                GetCommand(bufSpan, out bool success1);
-                if (!success1) return false;
+                return ProcessAdminCommands(command, count, ref storageApi);
             }
             return true;
         }
 
-        Span<byte> GetCommand(ReadOnlySpan<byte> bufSpan, out bool success)
+        bool DrainCommands(int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                if (!SkipCommand()) return false;
+            }
+            return true;
+        }
+
+        Span<byte> GetCommand(out bool success)
         {
             var ptr = recvBufferPtr + readHead;
             var end = recvBufferPtr + bytesRead;
@@ -744,6 +728,36 @@ namespace Garnet.server
             success = true;
 
             return result;
+        }
+
+        bool SkipCommand()
+        {
+            var ptr = recvBufferPtr + readHead;
+            var end = recvBufferPtr + bytesRead;
+
+            // Try the command length
+            if (!RespReadUtils.ReadLengthHeader(out int length, ref ptr, end))
+            {
+                return false;
+            }
+
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // Try to read the command value
+            ptr += length;
+            if (ptr + 2 > end)
+            {
+                return false;
+            }
+
+            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
+            {
+                RespParsingException.ThrowUnexpectedToken(*ptr);
+            }
+
+            readHead += length + 2;
+
+            return true;
         }
 
         public ArgSlice GetCommandAsArgSlice(out bool success)
