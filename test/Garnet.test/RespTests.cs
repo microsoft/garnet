@@ -3,14 +3,17 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using StackExchange.Redis;
+using AggregateException = System.AggregateException;
 
 namespace Garnet.test
 {
@@ -1544,7 +1547,9 @@ namespace Garnet.test
 
             // do ListRightPush using the same key, expected error
             var ex = Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"));
-            Assert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value", ex.Message);
+            var expectedError = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedError, ex.Message);
         }
 
         [Test]
@@ -2037,6 +2042,50 @@ namespace Garnet.test
             expectedResponse = $"${firstValue.Length}\r\n{firstValue}\r\n";
             response = lightClientRequest.Execute($"GET {firstKey}", expectedResponse.Length);
             Assert.AreEqual(expectedResponse, response);
+        }
+
+        public static void CheckCommandOnWrongTypeObjectSE(Action testAction)
+        {
+            var expectedError = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
+            try
+            {
+                testAction();
+                Assert.Fail();
+            }
+            catch (RedisServerException e)
+            {
+                Assert.AreEqual(expectedError, e.Message);
+            }
+            catch (AggregateException ae)
+            {
+                var rse = ae.InnerExceptions.FirstOrDefault(e => e is RedisServerException);
+                Assert.IsNotNull(rse);
+                Assert.AreEqual(expectedError, rse.Message);
+            }
+        }
+
+        public static void SetUpTestObjects(IDatabase db, GarnetObjectType objectType, RedisKey[] keys,
+            RedisValue[][] values)
+        {
+            switch (objectType)
+            {
+                case GarnetObjectType.Set:
+                    for (var i = 0; i < keys.Length; i++)
+                    {
+                        var added = db.SetAdd(keys[i], values[i]);
+                        Assert.AreEqual(values[i].Select(v => v.ToString()).Distinct().Count(), added);
+                    }
+                    break;
+                case GarnetObjectType.List:
+                    for (var i = 0; i < keys.Length; i++)
+                    {
+                        var added = db.ListRightPush(keys[i], values[i]);
+                        Assert.AreEqual(values[i].Length, added);
+                    }
+                    break;
+                default:
+                    throw new NotSupportedException();
+            }
         }
     }
 }

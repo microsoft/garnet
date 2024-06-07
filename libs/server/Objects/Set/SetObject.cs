@@ -115,6 +115,7 @@ namespace Garnet.server
                     // Indicates an incorrect type of key
                     output.Length = 0;
                     sizeChange = 0;
+                    removeKey = false;
                     return true;
                 }
 

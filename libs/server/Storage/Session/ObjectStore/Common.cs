@@ -32,7 +32,6 @@ namespace Garnet.server
 
             Debug.Assert(_output.spanByteAndMemory.IsSpanByte);
 
-
             return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 

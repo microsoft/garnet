@@ -378,13 +378,6 @@ namespace Garnet.server
         {
             smoveResult = 0;
 
-            // If the keys are the same, no operation is performed.
-            var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
-            if (sameKey)
-            {
-                return GarnetStatus.OK;
-            }
-
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
@@ -398,19 +391,57 @@ namespace Garnet.server
 
             try
             {
-                var sremStatus = SetRemove(sourceKey, member, out var sremOps, ref objectLockableContext);
+                var arrDstKey = destinationKey.ToArray();
+                var arrSrcKey = sourceKey.ToArray();
 
-                if (sremStatus == GarnetStatus.NOTFOUND)
-                {
+                var srcGetStatus = GET(arrSrcKey, out var srcObject, ref objectLockableContext);
+
+                if (srcGetStatus == GarnetStatus.NOTFOUND) 
                     return GarnetStatus.NOTFOUND;
-                }
 
-                if (sremOps != 1)
-                {
+                if (srcObject.garnetObject is not SetObject srcSetObject) 
+                    return GarnetStatus.WRONGTYPE;
+
+                // If the keys are the same, no operation is performed.
+                var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
+                if (sameKey)
                     return GarnetStatus.OK;
+
+                var dstGetStatus = GET(arrDstKey, out var dstObject, ref objectLockableContext);
+
+                SetObject dstSetObject;
+                if (dstGetStatus == GarnetStatus.OK)
+                {
+                    if (dstObject.garnetObject is not SetObject tmpDstSetObject)
+                        return GarnetStatus.WRONGTYPE;
+
+                    dstSetObject = tmpDstSetObject;
+                }
+                else
+                {
+                    dstSetObject = new SetObject();
                 }
 
-                _ = SetAdd(destinationKey, member, out smoveResult, ref objectLockableContext);
+                var arrMember = member.ToArray();
+
+                var removed = srcSetObject.Set.Remove(arrMember);
+                if (!removed) return GarnetStatus.OK;
+
+                srcSetObject.UpdateSize(arrMember, false);
+
+                dstSetObject.Set.Add(arrMember);
+                dstSetObject.UpdateSize(arrMember);
+
+                if (dstGetStatus == GarnetStatus.NOTFOUND)
+                {
+                    var setStatus = SET(arrDstKey, dstSetObject, ref objectLockableContext);
+                    if (setStatus == GarnetStatus.OK)
+                        smoveResult = 1;
+                }
+                else
+                {
+                    smoveResult = 1;
+                }
             }
             finally
             {
@@ -452,15 +483,13 @@ namespace Garnet.server
 
             try
             {
-                output = SetIntersect(keys, ref setObjectStoreLockableContext);
+                return SetIntersect(keys, ref setObjectStoreLockableContext, out output);
             }
             finally
             {
                 if (createTransaction)
                     txnManager.Commit(true);
             }
-
-            return GarnetStatus.OK;
         }
 
         /// <summary>
@@ -499,67 +528,85 @@ namespace Garnet.server
 
             try
             {
-                var members = SetIntersect(keys, ref setObjectStoreLockableContext);
+                var status = SetIntersect(keys, ref setObjectStoreLockableContext, out var members);
 
-                var newSetObject = new SetObject();
-                foreach (var item in members)
+                if (status == GarnetStatus.OK)
                 {
-                    _ = newSetObject.Set.Add(item);
-                    newSetObject.UpdateSize(item);
+                    var newSetObject = new SetObject();
+                    foreach (var item in members)
+                    {
+                        _ = newSetObject.Set.Add(item);
+                        newSetObject.UpdateSize(item);
+                    }
+                    _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                    count = members.Count;
                 }
-                _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
-                count = members.Count;
+
+                return status;
             }
             finally
             {
                 if (createTransaction)
                     txnManager.Commit(true);
             }
-
-            return GarnetStatus.OK;
         }
 
 
-        private HashSet<byte[]> SetIntersect<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+        private GarnetStatus SetIntersect<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
+            output = new HashSet<byte[]>(ByteArrayComparer.Instance);
+
             if (keys.Length == 0)
             {
-                return new HashSet<byte[]>(ByteArrayComparer.Instance);
+                return GarnetStatus.OK;
             }
 
-            HashSet<byte[]> result;
             var status = GET(keys[0].ToArray(), out var first, ref objectContext);
-            if (status == GarnetStatus.OK && first.garnetObject is SetObject firstObject)
+            if (status == GarnetStatus.OK)
             {
-                result = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
+                if (first.garnetObject is not SetObject firstObject)
+                {
+                    output = default;
+                    return GarnetStatus.WRONGTYPE;
+                }
+
+                output = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
             }
             else
             {
-                return new HashSet<byte[]>(ByteArrayComparer.Instance);
+                return GarnetStatus.OK;
             }
 
 
             for (var i = 1; i < keys.Length; i++)
             {
                 // intersection of anything with empty set is empty set
-                if (result.Count == 0)
+                if (output.Count == 0)
                 {
-                    return result;
+                    output.Clear();
+                    return GarnetStatus.OK;
                 }
 
                 status = GET(keys[i].ToArray(), out var next, ref objectContext);
-                if (status == GarnetStatus.OK && next.garnetObject is SetObject nextObject)
+                if (status == GarnetStatus.OK)
                 {
-                    result.IntersectWith(nextObject.Set);
+                    if (next.garnetObject is not SetObject nextObject)
+                    {
+                        output = default;
+                        return GarnetStatus.WRONGTYPE;
+                    }
+
+                    output.IntersectWith(nextObject.Set);
                 }
                 else
                 {
-                    return new HashSet<byte[]>(ByteArrayComparer.Instance);
+                    output.Clear();
+                    return GarnetStatus.OK;
                 }
             }
 
-            return result;
+            return GarnetStatus.OK;
         }
 
         /// <summary>
@@ -592,15 +639,13 @@ namespace Garnet.server
 
             try
             {
-                output = SetUnion(keys, ref setObjectStoreLockableContext);
+                return SetUnion(keys, ref setObjectStoreLockableContext, out output);
             }
             finally
             {
                 if (createTransaction)
                     txnManager.Commit(true);
             }
-
-            return GarnetStatus.OK;
         }
 
         /// <summary>
@@ -637,45 +682,53 @@ namespace Garnet.server
 
             try
             {
-                var members = SetUnion(keys, ref setObjectStoreLockableContext);
+                var status = SetUnion(keys, ref setObjectStoreLockableContext, out var members);
 
-                var newSetObject = new SetObject();
-                foreach (var item in members)
+                if (status == GarnetStatus.OK)
                 {
-                    _ = newSetObject.Set.Add(item);
-                    newSetObject.UpdateSize(item);
+                    var newSetObject = new SetObject();
+                    foreach (var item in members)
+                    {
+                        _ = newSetObject.Set.Add(item);
+                        newSetObject.UpdateSize(item);
+                    }
+                    _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                    count = members.Count;
                 }
-                _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
-                count = members.Count;
+
+                return status;
             }
             finally
             {
                 if (createTransaction)
                     txnManager.Commit(true);
             }
-
-            return GarnetStatus.OK;
         }
 
-        private HashSet<byte[]> SetUnion<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+        private GarnetStatus SetUnion<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
-            var result = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            output = new HashSet<byte[]>(ByteArrayComparer.Instance);
             if (keys.Length == 0)
             {
-                return result;
+                return GarnetStatus.OK;
             }
 
             foreach (var item in keys)
             {
                 if (GET(item.ToArray(), out var currObject, ref objectContext) == GarnetStatus.OK)
                 {
-                    var currSet = ((SetObject)currObject.garnetObject).Set;
-                    result.UnionWith(currSet);
+                    if (currObject.garnetObject is not SetObject setObject)
+                    {
+                        output = default;
+                        return GarnetStatus.WRONGTYPE;
+                    }
+
+                    output.UnionWith(setObject.Set);
                 }
             }
 
-            return result;
+            return GarnetStatus.OK;
         }
 
         /// <summary>
@@ -806,15 +859,13 @@ namespace Garnet.server
 
             try
             {
-                members = SetDiff(keys, ref setObjectStoreLockableContext);
+                return SetDiff(keys, ref setObjectStoreLockableContext, out members);
             }
             finally
             {
                 if (createTransaction)
                     txnManager.Commit(true);
             }
-
-            return GarnetStatus.OK;
         }
 
         /// <summary>
@@ -851,47 +902,53 @@ namespace Garnet.server
 
             try
             {
-                var diffSet = SetDiff(keys, ref setObjectStoreLockableContext);
+                var status = SetDiff(keys, ref setObjectStoreLockableContext, out var diffSet);
 
-                var newSetObject = new SetObject();
-                foreach (var item in diffSet)
+                if (status == GarnetStatus.OK)
                 {
-                    _ = newSetObject.Set.Add(item);
-                    newSetObject.UpdateSize(item);
+                    var newSetObject = new SetObject();
+                    foreach (var item in diffSet)
+                    {
+                        _ = newSetObject.Set.Add(item);
+                        newSetObject.UpdateSize(item);
+                    }
+                    _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                    count = diffSet.Count;
                 }
-                _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
-                count = diffSet.Count;
+
+                return status;
             }
             finally
             {
                 if (createTransaction)
                     txnManager.Commit(true);
             }
-
-            return GarnetStatus.OK;
         }
 
-        private HashSet<byte[]> SetDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext)
+        private GarnetStatus SetDiff<TObjectContext>(ArgSlice[] keys, ref TObjectContext objectContext, out HashSet<byte[]> output)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
-            var result = new HashSet<byte[]>();
+            output = new HashSet<byte[]>();
             if (keys.Length == 0)
             {
-                return result;
+                return GarnetStatus.OK;
             }
 
             // first SetObject
             var status = GET(keys[0].ToArray(), out var first, ref objectContext);
             if (status == GarnetStatus.OK)
             {
-                if (first.garnetObject is SetObject firstObject)
+                if (first.garnetObject is not SetObject firstObject)
                 {
-                    result = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
+                    output = default;
+                    return GarnetStatus.WRONGTYPE;
                 }
+
+                output = new HashSet<byte[]>(firstObject.Set, ByteArrayComparer.Instance);
             }
             else
             {
-                return result;
+                return GarnetStatus.OK;
             }
 
             // after SetObjects
@@ -900,14 +957,17 @@ namespace Garnet.server
                 status = GET(keys[i].ToArray(), out var next, ref objectContext);
                 if (status == GarnetStatus.OK)
                 {
-                    if (next.garnetObject is SetObject nextObject)
+                    if (next.garnetObject is not SetObject nextObject)
                     {
-                        result.ExceptWith(nextObject.Set);
+                        output = default;
+                        return GarnetStatus.WRONGTYPE;
                     }
+
+                    output.ExceptWith(nextObject.Set);
                 }
             }
 
-            return result;
+            return GarnetStatus.OK;
         }
     }
 }

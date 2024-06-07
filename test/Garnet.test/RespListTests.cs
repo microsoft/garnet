@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -925,7 +926,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HSET myhash onekey onepair");
             lightClientRequest.SendCommand("LINSERT myhash BEFORE one two");
-            var expectedResponse = "-ERR wrong key type used in LINSERT command.\r\n";
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -1223,7 +1224,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("RPUSHX mylist value-one");
             var len = lightClientRequest.SendCommand("LLEN mylist");
 
-            var expectedResponse = ":0\r\n";
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
             var actualValue = Encoding.ASCII.GetString(len).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -1243,6 +1244,52 @@ namespace Garnet.test
 
             var keyExists = db.KeyExists(key);
             Assert.IsFalse(keyExists);
+        }
+
+        [Test]
+        public void CheckListOperationsOnWrongTypeObjectSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
+            var key1Values = new[] { new RedisValue("Hello"), new RedisValue("World") };
+            var key2Values = new[] { new RedisValue("Hola"), new RedisValue("Mundo") };
+            var values = new[] { key1Values, key2Values };
+
+            // Set up different type objects
+            RespTests.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
+
+            // LPOP
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPop(keys[0]));
+            // LPUSH
+            RespTests.CheckCommandOnWrongTypeObjectSE( () => db.ListLeftPush(keys[0], values[0]));
+            // LPUSHX
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPush(keys[0], values[0], When.Exists));
+            // RPOP
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPop(keys[0]));
+            // RPUSH
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPush(keys[0], values[0]));
+            // RPUSHX
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPush(keys[0], values[0], When.Exists));
+            // LLEN
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListLength(keys[0]));
+            // LTRIM
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListTrim(keys[0], 2, 5));
+            // LRANGE
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRange(keys[0], 2, 5));
+            // LINDEX
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListGetByIndex(keys[0], 2));
+            // LINSERT
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListInsertAfter(keys[0], values[0][0], values[0][1]));
+            // LREM
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRemove(keys[0], values[0][0]));
+            // RPOPLPUSH
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPopLeftPush(keys[0], keys[1]));
+            // LMOVE
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListMove(keys[0], keys[1], ListSide.Left, ListSide.Right));
+            // LSET
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListSetByIndex(keys[0], 2, values[0][1]));
         }
     }
 }
