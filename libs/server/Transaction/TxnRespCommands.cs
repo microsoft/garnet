@@ -16,7 +16,7 @@ namespace Garnet.server
         /// <summary>
         /// MULTI
         /// </summary>
-        private bool NetworkMULTI()
+        private bool NetworkMULTI(byte* ptr)
         {
             if (txnManager.state != TxnState.None)
             {
@@ -36,7 +36,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkEXEC()
+        private bool NetworkEXEC(byte* ptr)
         {
             // pass over the EXEC in buffer during execution
             if (txnManager.state == TxnState.Running)
@@ -95,12 +95,12 @@ namespace Garnet.server
         /// <summary>
         /// Skip the commands, first phase of the transactions processing.
         /// </summary>
-        private bool NetworkSKIP(RespCommand cmd, byte subCommand, int count)
+        private bool NetworkSKIP(RespCommand cmd, int count)
         {
             ReadOnlySpan<byte> bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
 
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
-            if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, subCommand, true, logger))
+            if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, txnOnly: true, logger))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
@@ -116,7 +116,7 @@ namespace Garnet.server
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
             // Watch not allowed during TXN
-            bool isWatch = (commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCHMS || commandInfo.Command == RespCommand.WATCHOS);
+            bool isWatch = commandInfo.Command == RespCommand.WATCH || commandInfo.Command == RespCommand.WATCH_MS || commandInfo.Command == RespCommand.WATCH_OS;
 
             if (invalidNumArgs || isWatch)
             {
@@ -140,7 +140,7 @@ namespace Garnet.server
             }
 
             // Get and add keys to txn key list
-            int skipped = txnManager.GetKeys(cmd, count, out ReadOnlySpan<byte> error, subCommand);
+            int skipped = txnManager.GetKeys(cmd, count, out ReadOnlySpan<byte> error);
 
             if (skipped < 0)
             {
@@ -193,40 +193,60 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Watch
+        /// Common implementation of various WATCH commands and subcommands.
         /// </summary>
-        private bool NetworkWATCH(int count, StoreType type = StoreType.All)
+        /// <param name="count">Remaining keys in the command buffer.</param>
+        /// <param name="type">Store type that's bein gwatch</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool CommonWATCH(int count, StoreType type)
         {
-            bool success;
-
-            if (count > 1)
+            // Have to provide at least one key
+            if (count == 0)
             {
-                List<ArgSlice> keys = new();
+                while (!RespWriteUtils.WriteError(CmdStrings.GenericErrWrongNumArgs, ref dcurr, dend))
+                    SendAndReset();
 
-                for (int c = 0; c < count - 1; c++)
-                {
-                    var key = GetCommandAsArgSlice(out success);
-                    if (!success) return false;
-                    keys.Add(key);
-                }
-
-                foreach (var key in keys)
-                    txnManager.Watch(key, type);
+                return true;
             }
-            else
+
+            List<ArgSlice> keys = new();
+
+            for (int c = 0; c < count; c++)
             {
-                for (int c = 0; c < count; c++)
-                {
-                    var key = GetCommandAsArgSlice(out success);
-                    if (!success) return false;
-                    txnManager.Watch(key, type);
-                }
+                var nextKey = GetCommandAsArgSlice(out bool success);
+                if (!success) return false;
+
+                keys.Add(nextKey);
+            }
+
+            foreach (var toWatch in keys)
+            {
+                txnManager.Watch(toWatch, type);
             }
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
+
             return true;
         }
+
+        /// <summary>
+        /// WATCH MS key [key ..]
+        /// </summary>
+        private bool NetworkWATCH_MS(int count)
+        => CommonWATCH(count, StoreType.Main);
+
+        /// <summary>
+        /// WATCH OS key [key ..]
+        /// </summary>
+        private bool NetworkWATCH_OS(int count)
+        => CommonWATCH(count, StoreType.Object);
+
+        /// <summary>
+        /// Watch key [key ...]
+        /// </summary>
+        private bool NetworkWATCH(int count)
+        => CommonWATCH(count, StoreType.All);
 
         /// <summary>
         /// UNWATCH
@@ -270,8 +290,23 @@ namespace Garnet.server
             // Shift read head
             readHead = (int)(ptr - recvBufferPtr);
 
+            CustomTransactionProcedure proc;
+            int numParams;
 
-            var (proc, numParams) = customCommandManagerSession.GetCustomTransactionProcedure(txid, txnManager, scratchBufferManager);
+            try
+            {
+                (proc, numParams) = customCommandManagerSession.GetCustomTransactionProcedure(txid, txnManager, scratchBufferManager);
+            }
+            catch (Exception e)
+            {
+                logger?.LogError(e, "Getting customer transaction in RUNTXP failed");
+
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NO_TRANSACTION_PROCEDURE, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
             if (count - 1 == numParams)
             {
                 TryTransactionProc((byte)txid, start, ptr, proc);

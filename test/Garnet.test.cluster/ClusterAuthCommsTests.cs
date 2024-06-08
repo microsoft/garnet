@@ -46,7 +46,7 @@ namespace Garnet.test.cluster
             }
             else
             {
-                // Create instances, feed generated acl file and use default user for cluster auth
+                // Create instances, feed generated acl file and use admin user for cluster auth
                 context.CreateInstances(nodes, useAcl: true, clusterCreds: context.credManager.GetUserCredentials("admin"));
             }
 
@@ -199,8 +199,8 @@ namespace Garnet.test.cluster
             ClusterStartupWithoutAuthCreds(useDefaultUserForInterNodeComms: true);
 
             ServerCredential[] cc = [
-                new ServerCredential("admin", "adminplaceholder", IsAdmin: true, IsClearText: false),
-                new ServerCredential("default", "defaultplaceholder2", IsAdmin: false, IsClearText: true),
+                new ServerCredential("admin", "adminplaceholder", IsAdmin: true, UsedForClusterAuth: false, IsClearText: false),
+                new ServerCredential("default", "defaultplaceholder2", IsAdmin: false, UsedForClusterAuth: true, IsClearText: true),
             ];
 
             // Wait for all nodes to converge

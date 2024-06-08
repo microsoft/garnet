@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -72,41 +71,26 @@ namespace Garnet.cluster
             this.dcurr = dcurr;
             this.dend = dend;
             this.readHead = readHead;
-            result = false;
-
+            bool ret;
             try
             {
-                if (command == RespCommand.CLUSTER)
+                if (command.IsClusterSubCommand())
                 {
-                    result = ProcessClusterCommands(bufSpan, count);
-                }
-                else if (command == RespCommand.MIGRATE)
-                {
-                    result = TryMIGRATE(count, recvBufferPtr + readHead);
-                }
-                else if (command == RespCommand.FAILOVER)
-                {
-                    if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
-                    {
-                        return success;
-                    }
-
-                    result = TryFAILOVER(count, recvBufferPtr + readHead);
-                }
-                else if ((command == RespCommand.REPLICAOF) || (command == RespCommand.SECONDARYOF))
-                {
-                    if (!CheckACLAdminPermissions(bufSpan, count, out bool success))
-                    {
-                        return success;
-                    }
-
-                    result = TryREPLICAOF(count, recvBufferPtr + readHead);
+                    result = ProcessClusterCommands(command, bufSpan, count);
+                    ret = true;
                 }
                 else
                 {
-                    return false;
+                    (ret, result) = command switch
+                    {
+                        RespCommand.MIGRATE => (true, TryMIGRATE(count, recvBufferPtr + readHead)),
+                        RespCommand.FAILOVER => (true, TryFAILOVER(count, recvBufferPtr + readHead)),
+                        RespCommand.SECONDARYOF or RespCommand.REPLICAOF => (true, TryREPLICAOF(count, recvBufferPtr + readHead)),
+                        _ => (false, false)
+                    };
                 }
-                return true;
+
+                return ret;
             }
             finally
             {
@@ -168,53 +152,6 @@ namespace Garnet.cluster
         public void SetUser(User user)
         {
             this.user = user;
-        }
-
-        /// <summary>
-        /// Performs @admin command group permission checks for the current user and the given command.
-        /// (NOTE: This function is temporary until per-command permissions are implemented)
-        /// </summary>
-        /// <param name="bufSpan">Buffer containing the current command in RESP3 style.</param>
-        /// <param name="count">Number of parameters left in the command specification.</param>
-        /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
-        /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLAdminPermissions(ReadOnlySpan<byte> bufSpan, int count, out bool processingCompleted)
-        {
-            Debug.Assert(!authenticator.IsAuthenticated || (user != null));
-
-            if (!authenticator.IsAuthenticated || (!user.CanAccessCategory(CommandCategory.Flag.Admin)))
-            {
-                if (!DrainCommands(bufSpan, count))
-                {
-                    processingCompleted = false;
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                        SendAndReset();
-                    processingCompleted = true;
-                }
-                return false;
-            }
-
-            processingCompleted = true;
-
-            return true;
-        }
-
-        /// <summary>
-        /// Performs @admin command group permission checks for the current user and the given command.
-        /// (NOTE: This function is temporary until per-command permissions are implemented)
-        /// Does not write to response buffer. Caller responsible for handling error.
-        /// </summary>
-        /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
-        bool CheckACLAdminPermissions()
-        {
-            Debug.Assert(!authenticator.IsAuthenticated || (user != null));
-
-            if (!authenticator.IsAuthenticated || (!user.CanAccessCategory(CommandCategory.Flag.Admin)))
-                return false;
-            return true;
         }
 
         bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)

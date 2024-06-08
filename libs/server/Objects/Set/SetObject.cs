@@ -104,7 +104,7 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SetObject(set, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange)
+        public override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
             fixed (byte* _input = input.AsSpan())
             fixed (byte* _output = output.SpanByte.AsSpan())
@@ -147,10 +147,12 @@ namespace Garnet.server
                 }
                 sizeChange = this.Size - prevSize;
             }
+
+            removeKey = set.Count == 0;
             return true;
         }
 
-        internal void UpdateSize(byte[] item, bool add = true)
+        internal void UpdateSize(ReadOnlySpan<byte> item, bool add = true)
         {
             var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.HashSetEntryOverhead;
             this.Size += add ? size : -size;

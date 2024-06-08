@@ -12,26 +12,26 @@ namespace Tsavorite.core
     /// <summary>
     /// Tsavorite Context implementation that allows manual control of record locking and epoch management. For advanced use only.
     /// </summary>
-    public readonly struct LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key, Value, Input, Output, Context>, ILockableContext<Key>, IUnsafeContext
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
+    public readonly struct LockableUnsafeContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key, Value, Input, Output, Context, Functions>, ILockableContext<Key>, IUnsafeContext
+        where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
     {
         readonly ClientSession<Key, Value, Input, Output, Context, Functions> clientSession;
-        internal readonly LockableContext<Key, Value, Input, Output, Context, Functions>.InternalTsavoriteSession TsavoriteSession;
+        readonly SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, LockableSessionLocker<Key, Value>> sessionFunctions;
 
-        /// <summary>Indicates whether this struct has been initialized</summary>
+        /// <inheritdoc/>
         public bool IsNull => clientSession is null;
 
         internal LockableUnsafeContext(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
         {
             this.clientSession = clientSession;
-            TsavoriteSession = new LockableContext<Key, Value, Input, Output, Context, Functions>.InternalTsavoriteSession(clientSession);
+            sessionFunctions = new(clientSession);
         }
 
         #region Begin/EndUnsafe
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void BeginUnsafe() => clientSession.UnsafeResumeThread();
+        public void BeginUnsafe() => clientSession.UnsafeResumeThread(sessionFunctions);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -42,16 +42,13 @@ namespace Tsavorite.core
         #region Begin/EndLockable
 
         /// <inheritdoc/>
-        public void BeginLockable() => clientSession.AcquireLockable();
+        public void BeginLockable() => clientSession.AcquireLockable(sessionFunctions);
 
         /// <inheritdoc/>
         public void EndLockable() => clientSession.ReleaseLockable();
         #endregion Begin/EndLockable
 
         #region Key Locking
-
-        /// <inheritdoc/>
-        public bool NeedKeyHash => clientSession.NeedKeyHash;
 
         /// <inheritdoc/>
         public int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(key1, key2);
@@ -76,7 +73,7 @@ namespace Tsavorite.core
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
             while (true)
             {
-                if (LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalLock(TsavoriteSession, clientSession, keys, start, count))
+                if (LockableContext<Key, Value, Input, Output, Context, Functions>.DoManualLock(sessionFunctions, clientSession, keys, start, count))
                 {
                     break;
                 }
@@ -123,7 +120,7 @@ namespace Tsavorite.core
             clientSession.CheckIsAcquiredLockable();
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
 
-            return LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalTryLock(TsavoriteSession, clientSession, keys, start, count, timeout, cancellationToken);
+            return LockableContext<Key, Value, Input, Output, Context, Functions>.DoManualTryLock(sessionFunctions, clientSession, keys, start, count, timeout, cancellationToken);
         }
 
         /// <inheritdoc/>
@@ -148,7 +145,7 @@ namespace Tsavorite.core
             clientSession.CheckIsAcquiredLockable();
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
 
-            return LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalTryPromoteLock(TsavoriteSession, clientSession, key, timeout, cancellationToken);
+            return LockableContext<Key, Value, Input, Output, Context, Functions>.DoManualTryPromoteLock(sessionFunctions, clientSession, key, timeout, cancellationToken);
         }
 
         /// <inheritdoc/>
@@ -161,17 +158,20 @@ namespace Tsavorite.core
             clientSession.CheckIsAcquiredLockable();
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Unlock()");
 
-            LockableContext<Key, Value, Input, Output, Context, Functions>.DoInternalUnlock(clientSession, keys, start, start + count - 1);
+            LockableContext<Key, Value, Input, Output, Context, Functions>.DoManualUnlock(clientSession, keys, start, start + count - 1);
         }
 
         /// <summary>
-        /// The session id of TsavoriteSession
+        /// The id of the current Tsavorite Session
         /// </summary>
         public int SessionID { get { return clientSession.ctx.sessionID; } }
 
         #endregion Key Locking
 
         #region ITsavoriteContext
+
+        /// <inheritdoc/>
+        public ClientSession<Key, Value, Input, Output, Context, Functions> Session => clientSession;
 
         /// <inheritdoc/>
         public long GetKeyHash(Key key) => clientSession.store.GetKeyHash(ref key);
@@ -183,30 +183,30 @@ namespace Tsavorite.core
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.UnsafeCompletePending(TsavoriteSession, false, wait, spinWaitForCommit);
+            return clientSession.UnsafeCompletePending(sessionFunctions, false, wait, spinWaitForCommit);
         }
 
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.UnsafeCompletePendingWithOutputs(TsavoriteSession, out completedOutputs, wait, spinWaitForCommit);
+            return clientSession.UnsafeCompletePendingWithOutputs(sessionFunctions, out completedOutputs, wait, spinWaitForCommit);
         }
 
         /// <inheritdoc/>
         public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
-            => clientSession.CompletePendingAsync(waitForCommit, token);
+            => clientSession.CompletePendingAsync(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         public ValueTask<CompletedOutputIterator<Key, Value, Input, Output, Context>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
-            => clientSession.CompletePendingWithOutputsAsync(waitForCommit, token);
+            => clientSession.CompletePendingWithOutputsAsync(sessionFunctions, waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref Key key, ref Input input, ref Output output, Context userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextRead(ref key, ref input, ref output, userContext, TsavoriteSession);
+            return clientSession.store.ContextRead(ref key, ref input, ref output, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -214,7 +214,7 @@ namespace Tsavorite.core
         public Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, Context userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextRead(ref key, ref input, ref output, ref readOptions, out _, userContext, TsavoriteSession);
+            return clientSession.store.ContextRead(ref key, ref input, ref output, ref readOptions, out _, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -290,7 +290,7 @@ namespace Tsavorite.core
         public Status Read(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, TsavoriteSession);
+            return clientSession.store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -298,7 +298,7 @@ namespace Tsavorite.core
         public Status ReadAtAddress(long address, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, TsavoriteSession);
+            return clientSession.store.ContextReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -306,82 +306,7 @@ namespace Tsavorite.core
         public Status ReadAtAddress(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, TsavoriteSession);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, Context userContext = default, CancellationToken cancellationToken = default)
-        {
-            ReadOptions readOptions = default;
-            return ReadAsync(ref key, ref input, ref readOptions, userContext, cancellationToken);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref Input input, ref ReadOptions readOptions, Context userContext = default, CancellationToken cancellationToken = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ReadAsync(TsavoriteSession, ref key, ref input, ref readOptions, userContext, cancellationToken);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, Context context = default, CancellationToken token = default)
-            => ReadAsync(ref key, ref input, context, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Input input, ref ReadOptions readOptions, Context context = default, CancellationToken token = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ReadAsync(TsavoriteSession, ref key, ref input, ref readOptions, context, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, Context userContext = default, CancellationToken token = default)
-        {
-            ReadOptions readOptions = default;
-            return ReadAsync(ref key, ref readOptions, userContext, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(ref Key key, ref ReadOptions readOptions, Context userContext = default, CancellationToken token = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            Input input = default;
-            return clientSession.store.ReadAsync(TsavoriteSession, ref key, ref input, ref readOptions, userContext, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, Context context = default, CancellationToken token = default)
-            => ReadAsync(ref key, context, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAsync(Key key, ref ReadOptions readOptions, Context context = default, CancellationToken token = default)
-            => ReadAsync(ref key, ref readOptions, context, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Input input, ref ReadOptions readOptions,
-                                                                                                          Context userContext = default, CancellationToken cancellationToken = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            Key key = default;
-            return clientSession.store.ReadAtAddressAsync(TsavoriteSession, address, ref key, ref input, ref readOptions, userContext, cancellationToken, noKey: true);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.ReadAsyncResult<Input, Output, Context>> ReadAtAddressAsync(long address, ref Key key, ref Input input, ref ReadOptions readOptions,
-                                                                                                          Context userContext = default, CancellationToken cancellationToken = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ReadAtAddressAsync(TsavoriteSession, address, ref key, ref input, ref readOptions, userContext, cancellationToken, noKey: false);
+            return clientSession.store.ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -417,7 +342,7 @@ namespace Tsavorite.core
         private Status Upsert(ref Key key, long keyHash, ref Input input, ref Value desiredValue, ref Output output, Context userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, TsavoriteSession);
+            return clientSession.store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -435,7 +360,7 @@ namespace Tsavorite.core
         public Status Upsert(ref Key key, long keyHash, ref Input input, ref Value desiredValue, ref Output output, out RecordMetadata recordMetadata, Context userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, TsavoriteSession);
+            return clientSession.store.ContextUpsert(ref key, keyHash, ref input, ref desiredValue, ref output, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -457,59 +382,6 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(Key key, Input input, Value desiredValue, ref Output output, ref UpsertOptions upsertOptions, Context userContext = default)
             => Upsert(ref key, ref input, ref desiredValue, ref output, ref upsertOptions, userContext);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Value desiredValue, Context userContext = default, CancellationToken token = default)
-        {
-            Input input = default;
-            return UpsertAsync(ref key, ref input, ref desiredValue, userContext, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, CancellationToken token = default)
-        {
-            Input input = default;
-            return UpsertAsync(ref key, ref input, ref desiredValue, ref upsertOptions, userContext, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, Context userContext = default, CancellationToken token = default)
-        {
-            UpsertOptions upsertOptions = default;
-            return UpsertAsync(ref key, ref input, ref desiredValue, ref upsertOptions, userContext, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(ref Key key, ref Input input, ref Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, CancellationToken token = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.UpsertAsync<Input, Output, Context, LockableContext<Key, Value, Input, Output, Context, Functions>.InternalTsavoriteSession>(
-                    TsavoriteSession, ref key, ref input, ref desiredValue, ref upsertOptions, userContext, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, Context userContext = default, CancellationToken token = default)
-            => UpsertAsync(ref key, ref desiredValue, userContext, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, CancellationToken token = default)
-            => UpsertAsync(ref key, ref desiredValue, ref upsertOptions, userContext, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Input input, Value desiredValue, Context userContext = default, CancellationToken token = default)
-            => UpsertAsync(ref key, ref input, ref desiredValue, userContext, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.UpsertAsyncResult<Input, Output, Context>> UpsertAsync(Key key, Input input, Value desiredValue, ref UpsertOptions upsertOptions, Context userContext = default, CancellationToken token = default)
-            => UpsertAsync(ref key, ref input, ref desiredValue, ref upsertOptions, userContext, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -536,7 +408,7 @@ namespace Tsavorite.core
         public Status RMW(ref Key key, long keyHash, ref Input input, ref Output output, out RecordMetadata recordMetadata, Context userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, TsavoriteSession);
+            return clientSession.store.ContextRMW(ref key, keyHash, ref input, ref output, out recordMetadata, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -589,33 +461,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, Context context = default, CancellationToken token = default)
-        {
-            RMWOptions rmwOptions = default;
-            return RMWAsync(ref key, ref input, ref rmwOptions, context, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(ref Key key, ref Input input, ref RMWOptions rmwOptions, Context context = default, CancellationToken token = default)
-        {
-            Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.RmwAsync<Input, Output, Context, LockableContext<Key, Value, Input, Output, Context, Functions>.InternalTsavoriteSession>(
-                    TsavoriteSession, ref key, ref input, ref rmwOptions, context, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(Key key, Input input, Context context = default, CancellationToken token = default)
-            => RMWAsync(ref key, ref input, context, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.RmwAsyncResult<Input, Output, Context>> RMWAsync(Key key, Input input, ref RMWOptions rmwOptions, Context context = default, CancellationToken token = default)
-            => RMWAsync(ref key, ref input, ref rmwOptions, context, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Delete(ref Key key, Context userContext = default)
             => Delete(ref key, clientSession.store.comparer.GetHashCode64(ref key), userContext);
 
@@ -630,8 +475,8 @@ namespace Tsavorite.core
         public Status Delete(ref Key key, long keyHash, Context userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextDelete<Input, Output, Context, LockableContext<Key, Value, Input, Output, Context, Functions>.InternalTsavoriteSession>(
-                    ref key, keyHash, userContext, TsavoriteSession);
+            return clientSession.store.ContextDelete<Input, Output, Context, SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, LockableSessionLocker<Key, Value>>>(
+                    ref key, keyHash, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
@@ -646,46 +491,19 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, Context userContext = default, CancellationToken token = default)
-        {
-            DeleteOptions deleteOptions = default;
-            return DeleteAsync(ref key, ref deleteOptions, userContext, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(ref Key key, ref DeleteOptions deleteOptions, Context userContext = default, CancellationToken token = default)
-        {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.DeleteAsync<Input, Output, Context, LockableContext<Key, Value, Input, Output, Context, Functions>.InternalTsavoriteSession>(
-                    TsavoriteSession, ref key, ref deleteOptions, userContext, token);
-        }
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, Context userContext = default, CancellationToken token = default)
-            => DeleteAsync(ref key, userContext, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ValueTask<TsavoriteKV<Key, Value>.DeleteAsyncResult<Input, Output, Context>> DeleteAsync(Key key, ref DeleteOptions deleteOptions, Context userContext = default, CancellationToken token = default)
-            => DeleteAsync(ref key, ref deleteOptions, userContext, token);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ResetModified(ref Key key)
-            => clientSession.UnsafeResetModified(ref key);
+            => clientSession.UnsafeResetModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool IsModified(Key key)
-            => clientSession.UnsafeIsModified(ref key);
+            => clientSession.UnsafeIsModified(sessionFunctions, ref key);
 
         /// <inheritdoc/>
         public void Refresh()
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            clientSession.store.InternalRefresh<Input, Output, Context, LockableContext<Key, Value, Input, Output, Context, Functions>.InternalTsavoriteSession>(TsavoriteSession);
+            clientSession.store.InternalRefresh<Input, Output, Context, SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, LockableSessionLocker<Key, Value>>>(sessionFunctions);
         }
 
         #endregion ITsavoriteContext

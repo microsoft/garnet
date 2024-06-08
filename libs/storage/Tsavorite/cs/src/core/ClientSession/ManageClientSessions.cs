@@ -20,7 +20,7 @@ namespace Tsavorite.core
         /// <returns>Session instance</returns>
         public ClientSession<Key, Value, Input, Output, Context, Functions> NewSession<Input, Output, Context, Functions>(Functions functions, string sessionName = null,
                 ReadCopyOptions readCopyOptions = default)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
         {
             if (functions == null)
                 throw new ArgumentNullException(nameof(functions));

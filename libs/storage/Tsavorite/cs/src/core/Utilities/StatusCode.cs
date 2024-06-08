@@ -55,7 +55,7 @@ namespace Tsavorite.core
         NotFound = 0x01,
 
         /// <summary>
-        /// The operation was canceled (e.g. by an IFunctions method setting info.CancelOperation). This is not combined with advanced enum values.
+        /// The operation was canceled (e.g. by an ISessionFunctions method setting info.CancelOperation). This is not combined with advanced enum values.
         /// </summary>
         Canceled = 0x02,
 
@@ -123,7 +123,12 @@ namespace Tsavorite.core
         // unused 0x70,
 
         /// <summary>
-        /// Indicates that an existing record key was auto-expired. This is a flag that is combined with lower Advanced values.
+        /// Individual record-status values that are not masked together.
+        /// </summary>
+        RecordStatusMask = 0x70,
+
+        /// <summary>
+        /// Indicates that an existing record key was auto-expired. This is a flag that is combined with RecordStatusMask values.
         /// </summary>
         /// <remarks>
         /// See basic codes for details of usage.

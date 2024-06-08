@@ -53,7 +53,7 @@ namespace Tsavorite.test
 
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
             store = new TsavoriteKV<KeyStruct, ValueStruct>(1L << 20,
-                new LogSettings { LogDevice = log, MemorySizeBits = 24, PageSizeBits = PageSizeBits }, concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
+                new LogSettings { LogDevice = log, MemorySizeBits = 24, PageSizeBits = PageSizeBits }, comparer: comparer);
         }
 
         [TearDown]
@@ -99,6 +99,7 @@ namespace Tsavorite.test
         public void BlittableDiskWriteScan([Values] ScanIteratorType scanIteratorType)
         {
             using var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             using var s = store.Log.Subscribe(new LogObserver());
             var start = store.Log.TailAddress;
@@ -107,7 +108,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value, Empty.Default);
+                bContext.Upsert(ref key1, ref value, Empty.Default);
             }
             store.Log.FlushAndEvict(true);
 
@@ -139,6 +140,7 @@ namespace Tsavorite.test
         public void BlittableScanJumpToBeginAddressTest()
         {
             using var session = store.NewSession<InputStruct, OutputStruct, Empty, Functions>(new Functions());
+            var bContext = session.BasicContext;
 
             const int numRecords = 200;
             const int numTailRecords = 10;
@@ -153,7 +155,7 @@ namespace Tsavorite.test
                 }
                 var key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key, ref value, Empty.Default);
+                bContext.Upsert(ref key, ref value, Empty.Default);
             }
 
             using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress);
@@ -200,12 +202,13 @@ namespace Tsavorite.test
             var recordSize = BlittableAllocator<KeyStruct, ValueStruct>.RecordSize;
 
             using var session = store.NewSession<InputStruct, OutputStruct, Empty, ScanFunctions>(new ScanFunctions());
+            var bContext = session.BasicContext;
 
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs();
@@ -243,7 +246,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i + totalRecords, kfield2 = i + totalRecords + 1 };
                 var value = new ValueStruct { vfield1 = i + totalRecords, vfield2 = i + totalRecords + 1 };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
             scanCursorFuncs.Initialize(verifyKeys);
             Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
@@ -264,7 +267,7 @@ namespace Tsavorite.test
             InputStruct input = default;
             OutputStruct output = default;
             ReadOptions readOptions = default;
-            var readStatus = session.ReadAtAddress(store.hlog.HeadAddress, ref input, ref output, ref readOptions, out _);
+            var readStatus = bContext.ReadAtAddress(store.hlog.HeadAddress, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(readStatus.Found, $"Could not read at HeadAddress; {readStatus}");
 
             scanCursorFuncs.Initialize(verifyKeys);
@@ -286,12 +289,13 @@ namespace Tsavorite.test
             var recordSize = BlittableAllocator<KeyStruct, ValueStruct>.RecordSize;
 
             using var session = store.NewSession<InputStruct, OutputStruct, Empty, ScanFunctions>(new ScanFunctions());
+            var bContext = session.BasicContext;
 
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs();

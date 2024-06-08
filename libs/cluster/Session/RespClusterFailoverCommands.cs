@@ -20,10 +20,6 @@ namespace Garnet.cluster
         private bool NetworkClusterFailover(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting 1 or 2 arguments
             if (count is < 0 or > 2)
@@ -122,13 +118,12 @@ namespace Garnet.cluster
             }
 
             var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var nodeIdBytes, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadStringWithLengthHeader(out var nodeId, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (nodeIdBytes.Length > 0)
+            if (!string.IsNullOrEmpty(nodeId))
             {// Make this node a primary after receiving a request from a replica that is trying to takeover
-                var nodeId = Encoding.ASCII.GetString(nodeIdBytes);
                 clusterProvider.clusterManager.TryStopWrites(nodeId);
             }
             else

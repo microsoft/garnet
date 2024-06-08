@@ -1,9 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-// Define below to enable continuous performance report for dashboard
-// #define DASHBOARD
-
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -22,7 +19,7 @@ namespace Tsavorite.benchmark
         readonly ManualResetEventSlim waiter = new();
         readonly int numaStyle;
         readonly int readPercent, upsertPercent, rmwPercent;
-        readonly FunctionsSB functions;
+        readonly SessionSpanByteFunctions functions;
         readonly Input[] input_;
 
         readonly KeySpanByte[] init_keys_;
@@ -55,21 +52,7 @@ namespace Tsavorite.benchmark
             readPercent = testLoader.ReadPercent;
             upsertPercent = testLoader.UpsertPercent;
             rmwPercent = testLoader.RmwPercent;
-            functions = new FunctionsSB();
-
-#if DASHBOARD
-            statsWritten = new AutoResetEvent[threadCount];
-            for (int i = 0; i < threadCount; i++)
-            {
-                statsWritten[i] = new AutoResetEvent(false);
-            }
-            threadThroughput = new double[threadCount];
-            threadAverageLatency = new double[threadCount];
-            threadMaximumLatency = new double[threadCount];
-            threadProgress = new long[threadCount];
-            writeStats = new bool[threadCount];
-            freq = Stopwatch.Frequency;
-#endif
+            functions = new SessionSpanByteFunctions();
 
             input_ = new Input[8];
             for (int i = 0; i < 8; i++)
@@ -105,11 +88,11 @@ namespace Tsavorite.benchmark
             if (testLoader.Options.UseSmallMemoryLog)
                 store = new TsavoriteKV<SpanByte, SpanByte>
                     (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, PageSizeBits = 22, SegmentSizeBits = 26, MemorySizeBits = 26 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, concurrencyControlMode: testLoader.Options.ConcurrencyControlMode, revivificationSettings: revivificationSettings);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, revivificationSettings: revivificationSettings);
             else
                 store = new TsavoriteKV<SpanByte, SpanByte>
                     (testLoader.GetHashTableSize(), new LogSettings { LogDevice = device, PreallocateLog = true, MemorySizeBits = 35 },
-                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, concurrencyControlMode: testLoader.Options.ConcurrencyControlMode, revivificationSettings: revivificationSettings);
+                    new CheckpointSettings { CheckpointDir = testLoader.BackupPath }, revivificationSettings: revivificationSettings);
         }
 
         internal void Dispose()
@@ -145,14 +128,7 @@ namespace Tsavorite.benchmark
             long writes_done = 0;
             long deletes_done = 0;
 
-#if DASHBOARD
-            var tstart = Stopwatch.GetTimestamp();
-            var tstop1 = tstart;
-            var lastWrittenValue = 0;
-            int count = 0;
-#endif
-
-            var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
@@ -198,22 +174,6 @@ namespace Tsavorite.benchmark
                         uContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
                         ++deletes_done;
                     }
-
-#if DASHBOARD
-                    count += (int)kChunkSize;
-
-                    //Check if stats collector is requesting for statistics
-                    if (writeStats[thread_idx])
-                    {
-                        var tstart1 = tstop1;
-                        tstop1 = Stopwatch.GetTimestamp();
-                        threadProgress[thread_idx] = count;
-                        threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
-                        lastWrittenValue = count;
-                        writeStats[thread_idx] = false;
-                        statsWritten[thread_idx].Set();
-                    }
-#endif
                 }
 
                 uContext.CompletePending(true);
@@ -223,13 +183,7 @@ namespace Tsavorite.benchmark
                 uContext.EndUnsafe();
             }
 
-            session.Dispose();
-
             sw.Stop();
-
-#if DASHBOARD
-            statsWritten[thread_idx].Set();
-#endif
 
             Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
             Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
@@ -262,14 +216,8 @@ namespace Tsavorite.benchmark
             long writes_done = 0;
             long deletes_done = 0;
 
-#if DASHBOARD
-            var tstart = Stopwatch.GetTimestamp();
-            var tstop1 = tstart;
-            var lastWrittenValue = 0;
-            int count = 0;
-#endif
-
-            var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            var bContext = session.BasicContext;
 
             while (!done)
             {
@@ -286,58 +234,37 @@ namespace Tsavorite.benchmark
                     if (idx % 512 == 0)
                     {
                         if (!testLoader.Options.UseSafeContext)
-                            session.Refresh();
-                        session.CompletePending(false);
+                            bContext.Refresh();
+                        bContext.CompletePending(false);
                     }
 
                     int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                     if (r < readPercent)
                     {
-                        session.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
+                        bContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
                         ++reads_done;
                         continue;
                     }
                     if (r < upsertPercent)
                     {
-                        session.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
+                        bContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
                         ++writes_done;
                         continue;
                     }
                     if (r < rmwPercent)
                     {
-                        session.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
+                        bContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
                         ++writes_done;
                         continue;
                     }
-                    session.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
+                    bContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
                     ++deletes_done;
                 }
-
-#if DASHBOARD
-                count += (int)kChunkSize;
-
-                //Check if stats collector is requesting for statistics
-                if (writeStats[thread_idx])
-                {
-                    var tstart1 = tstop1;
-                    tstop1 = Stopwatch.GetTimestamp();
-                    threadProgress[thread_idx] = count;
-                    threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
-                    lastWrittenValue = count;
-                    writeStats[thread_idx] = false;
-                    statsWritten[thread_idx].Set();
-                }
-#endif
             }
 
-            session.CompletePending(true);
-            session.Dispose();
+            bContext.CompletePending(true);
 
             sw.Stop();
-
-#if DASHBOARD
-            statsWritten[thread_idx].Set();
-#endif
 
             Console.WriteLine($"Thread {thread_idx} done; {reads_done} reads, {writes_done} writes, {deletes_done} deletes in {sw.ElapsedMilliseconds} ms.");
             Interlocked.Add(ref total_ops_done, reads_done + writes_done + deletes_done);
@@ -345,11 +272,6 @@ namespace Tsavorite.benchmark
 
         internal unsafe (double insPerSec, double opsPerSec, long tailAddress) Run(TestLoader testLoader)
         {
-#if DASHBOARD
-            var dash = new Thread(() => DoContinuousMeasurements());
-            dash.Start();
-#endif
-
             Thread[] workers = new Thread[testLoader.Options.ThreadCount];
 
             Console.WriteLine("Executing setup.");
@@ -370,16 +292,13 @@ namespace Tsavorite.benchmark
                 }
 
                 foreach (Thread worker in workers)
-                {
                     worker.Start();
-                }
 
                 waiter.Set();
                 var sw = Stopwatch.StartNew();
                 foreach (Thread worker in workers)
-                {
                     worker.Join();
-                }
+
                 sw.Stop();
                 waiter.Reset();
 
@@ -415,11 +334,10 @@ namespace Tsavorite.benchmark
                 else
                     workers[idx] = new Thread(() => RunYcsbUnsafeContext(x));
             }
+
             // Start threads.
             foreach (Thread worker in workers)
-            {
                 worker.Start();
-            }
 
             waiter.Set();
             var swatch = Stopwatch.StartNew();
@@ -451,16 +369,10 @@ namespace Tsavorite.benchmark
             swatch.Stop();
 
             done = true;
-
             foreach (Thread worker in workers)
-            {
                 worker.Join();
-            }
-            waiter.Reset();
 
-#if DASHBOARD
-            dash.Join();
-#endif
+            waiter.Reset();
 
             double seconds = swatch.ElapsedMilliseconds / 1000.0;
             Console.WriteLine(TestStats.GetAddressesLine(AddressLineNum.After, store.Log.BeginAddress, store.Log.HeadAddress, store.Log.ReadOnlyAddress, store.Log.TailAddress));
@@ -482,16 +394,9 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
-
-#if DASHBOARD
-            var tstart = Stopwatch.GetTimestamp();
-            var tstop1 = tstart;
-            var lastWrittenValue = 0;
-            int count = 0;
-#endif
 
             Span<byte> value = stackalloc byte[kValueSize];
             ref SpanByte _value = ref SpanByte.Reinterpret(value);
@@ -516,20 +421,6 @@ namespace Tsavorite.benchmark
 
                         uContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
                     }
-#if DASHBOARD
-                count += (int)kChunkSize;
-
-                //Check if stats collector is requesting for statistics
-                if (writeStats[thread_idx])
-                {
-                    var tstart1 = tstop1;
-                    tstop1 = Stopwatch.GetTimestamp();
-                    threadThroughput[thread_idx] = (count - lastWrittenValue) / ((tstop1 - tstart1) / freq);
-                    lastWrittenValue = count;
-                    writeStats[thread_idx] = false;
-                    statsWritten[thread_idx].Set();
-                }
-#endif
                 }
                 uContext.CompletePending(true);
             }
@@ -537,7 +428,6 @@ namespace Tsavorite.benchmark
             {
                 uContext.EndUnsafe();
             }
-            session.Dispose();
         }
 
         private void SetupYcsbSafeContext(int thread_idx)
@@ -551,7 +441,8 @@ namespace Tsavorite.benchmark
             }
             waiter.Wait();
 
-            var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, FunctionsSB>(functions);
+            using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SessionSpanByteFunctions>(functions);
+            var bContext = session.BasicContext;
 
             Span<byte> value = stackalloc byte[kValueSize];
             ref SpanByte _value = ref SpanByte.Reinterpret(value);
@@ -564,85 +455,20 @@ namespace Tsavorite.benchmark
                 {
                     if (idx % 256 == 0)
                     {
-                        session.Refresh();
+                        bContext.Refresh();
 
                         if (idx % 65536 == 0)
                         {
-                            session.CompletePending(false);
+                            bContext.CompletePending(false);
                         }
                     }
 
-                    session.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
+                    bContext.Upsert(ref SpanByte.Reinterpret(ref init_keys_[idx]), ref _value, Empty.Default);
                 }
             }
 
-            session.CompletePending(true);
-            session.Dispose();
+            bContext.CompletePending(true);
         }
-
-#if DASHBOARD
-        int measurementInterval = 2000;
-        bool measureLatency;
-        bool[] writeStats;
-        private EventWaitHandle[] statsWritten;
-        double[] threadThroughput;
-        double[] threadAverageLatency;
-        double[] threadMaximumLatency;
-        long[] threadProgress;
-        double freq;
-
-        void DoContinuousMeasurements()
-        {
-            double totalThroughput, totalLatency, maximumLatency;
-            double totalProgress;
-            int ver = 0;
-
-            using (var client = new WebClient())
-            {
-                while (!done)
-                {
-                    ver++;
-
-                    Thread.Sleep(measurementInterval);
-
-                    totalProgress = 0;
-                    totalThroughput = 0;
-                    totalLatency = 0;
-                    maximumLatency = 0;
-
-                    for (int i = 0; i < threadCount; i++)
-                    {
-                        writeStats[i] = true;
-                    }
-
-
-                    for (int i = 0; i < threadCount; i++)
-                    {
-                        statsWritten[i].WaitOne();
-                        totalThroughput += threadThroughput[i];
-                        totalProgress += threadProgress[i];
-                        if (measureLatency)
-                        {
-                            totalLatency += threadAverageLatency[i];
-                            if (threadMaximumLatency[i] > maximumLatency)
-                            {
-                                maximumLatency = threadMaximumLatency[i];
-                            }
-                        }
-                    }
-
-                    if (measureLatency)
-                    {
-                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3} \t {4} \t {5}", ver, totalThroughput / (double)1000000, totalLatency / threadCount, maximumLatency, store.Log.TailAddress, totalProgress);
-                    }
-                    else
-                    {
-                        Console.WriteLine("{0} \t {1:0.000} \t {2} \t {3}", ver, totalThroughput / (double)1000000, store.Log.TailAddress, totalProgress);
-                    }
-                }
-            }
-        }
-#endif
 
         #region Load Data
 

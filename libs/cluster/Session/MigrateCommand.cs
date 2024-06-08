@@ -278,14 +278,6 @@ namespace Garnet.cluster
             if (!HandleCommandParsingErrors(pstate, targetAddress, targetPort, slotParseError))
                 return true;
 
-            // Check if session is authorized to perform migration.
-            if (!CheckACLAdminPermissions())
-            {
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
             #endregion
 
             logger?.LogDebug("MIGRATE COPY:{copyOption} REPLACE:{replaceOption} OpType:{opType}", copyOption, replaceOption, (keysWithSize != null ? "KEYS" : "SLOTS"));

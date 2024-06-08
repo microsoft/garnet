@@ -17,12 +17,7 @@ namespace Tsavorite.test.ReadCacheTests
     [TestFixture]
     internal class RandomReadCacheTests
     {
-        public class Context
-        {
-            public Status Status { get; set; }
-        }
-
-        class Functions : SpanByteFunctions<Context>
+        class Functions : SpanByteFunctions<Empty>
         {
             public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
                 => SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
@@ -32,25 +27,24 @@ namespace Tsavorite.test.ReadCacheTests
                 var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
                 var inputString = new string(MemoryMarshal.Cast<byte, char>(input.AsReadOnlySpan()));
                 var valueString = new string(MemoryMarshal.Cast<byte, char>(value.AsReadOnlySpan()));
-                Assert.AreEqual(long.Parse(keyString) * 2, long.Parse(valueString));
-                Assert.AreEqual(long.Parse(inputString), long.Parse(valueString));
+                var actualValue = long.Parse(valueString);
+                Assert.AreEqual(long.Parse(keyString) * 2, actualValue);
+                Assert.AreEqual(long.Parse(inputString), actualValue);
 
                 value.CopyTo(ref dst, MemoryPool<byte>.Shared);
                 return true;
             }
 
-            public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, Context context, Status status, RecordMetadata recordMetadata)
+            public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, Empty context, Status status, RecordMetadata recordMetadata)
             {
                 Assert.IsTrue(status.Found);
                 var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
                 var inputString = new string(MemoryMarshal.Cast<byte, char>(input.AsReadOnlySpan()));
                 var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
-                Assert.AreEqual(long.Parse(keyString) * 2, long.Parse(outputString));
-                Assert.AreEqual(long.Parse(inputString), long.Parse(outputString));
-                context.Status = status;
-
-                // Need to do this here because we don't get Output below
-                output.Memory?.Dispose();
+                var actualValue = long.Parse(outputString);
+                Assert.AreEqual(long.Parse(keyString) * 2, actualValue);
+                Assert.AreEqual(long.Parse(inputString), actualValue);
+                Assert.IsNotNull(output.Memory, $"key {keyString}, in ReadCC");
             }
         }
 
@@ -65,7 +59,6 @@ namespace Tsavorite.test.ReadCacheTests
             ReadCacheSettings readCacheSettings = default;
             string filename = Path.Join(MethodTestDir, "BasicTests.log");
 
-            var concurrencyControlMode = ConcurrencyControlMode.None;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is ReadCacheMode rcm)
@@ -77,11 +70,6 @@ namespace Tsavorite.test.ReadCacheTests
                             PageSizeBits = 12,
                             SecondChanceFraction = 0.1,
                         };
-                    continue;
-                }
-                if (arg is ConcurrencyControlMode ccm)
-                {
-                    concurrencyControlMode = ccm;
                     continue;
                 }
                 if (arg is DeviceType deviceType)
@@ -100,7 +88,7 @@ namespace Tsavorite.test.ReadCacheTests
                     MemorySizeBits = 15,
                     PageSizeBits = 12,
                     ReadCacheSettings = readCacheSettings,
-                }, concurrencyControlMode: concurrencyControlMode);
+                });
         }
 
         [TearDown]
@@ -118,8 +106,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
         //[Repeat(300)]
-        public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode,
-                                                [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ReadCacheMode readCacheMode)
+        public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode, [Values] ReadCacheMode readCacheMode)
         {
             if (numThreads == 1 && keyContentionMode == KeyContentionMode.Contention)
                 Assert.Ignore("Skipped because 1 thread cannot have contention");
@@ -128,7 +115,9 @@ namespace Tsavorite.test.ReadCacheTests
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
 
-            void LocalRead(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Context, Functions> sessionContext, int i)
+            const int PendingMod = 16;
+
+            void LocalRead(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, Functions> sessionContext, int i, ref int numPending, bool isLast)
             {
                 var keyString = $"{i}";
                 var inputString = $"{i * 2}";
@@ -137,45 +126,69 @@ namespace Tsavorite.test.ReadCacheTests
 
                 fixed (byte* kptr = key, iptr = input)
                 {
-                    var context = new Context();
                     var sbKey = SpanByte.FromPinnedSpan(key);
                     var sbInput = SpanByte.FromPinnedSpan(input);
                     SpanByteAndMemory output = default;
 
-                    var status = sessionContext.Read(ref sbKey, ref sbInput, ref output, context);
+                    var status = sessionContext.Read(ref sbKey, ref sbInput, ref output);
 
                     if (status.Found)
                     {
                         var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
                         Assert.AreEqual(i * 2, long.Parse(outputString));
-                        output.Memory?.Dispose();
-                        return;
+                        output.Memory.Dispose();
                     }
+                    else
+                    {
+                        Assert.IsTrue(status.IsPending, $"was not Pending: {keyString}; status {status}");
+                        ++numPending;
+                    }
+                }
 
-                    Assert.IsTrue(status.IsPending, $"was not Pending: {keyString}; status {status}");
-                    sessionContext.CompletePending(wait: true);
+                if (numPending > 0 && ((numPending % PendingMod) == 0 || isLast))
+                {
+                    sessionContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    using (completedOutputs)
+                    {
+                        while (completedOutputs.Next())
+                        {
+                            var status = completedOutputs.Current.Status;
+                            var output = completedOutputs.Current.Output;
+                            // Note: do NOT overwrite 'key' here
+                            long keyLong = long.Parse(new string(MemoryMarshal.Cast<byte, char>(completedOutputs.Current.Key.AsReadOnlySpan())));
+
+                            Assert.IsTrue(status.Found, $"key {keyLong}, {status}, wasPending {true}, pt 1");
+                            Assert.IsNotNull(output.Memory, $"key {keyLong}, wasPending {true}, pt 2");
+                            var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
+                            Assert.AreEqual(keyLong * 2, long.Parse(outputString), $"key {keyLong}, wasPending {true}, pt 3");
+                            output.Memory.Dispose();
+                        }
+                    }
                 }
             }
 
             void LocalRun(int startKey, int endKey)
             {
-                var session = store.NewSession<SpanByte, SpanByteAndMemory, Context, Functions>(new Functions());
+                var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, Functions>(new Functions());
                 var sessionContext = session.BasicContext;
+
+                int numPending = 0;
 
                 // read through the keys in order (works)
                 for (int i = startKey; i < endKey; i++)
-                    LocalRead(sessionContext, i);
+                    LocalRead(sessionContext, i, ref numPending, i == endKey - 1);
 
                 // pick random keys to read
                 var r = new Random(2115);
                 for (int i = startKey; i < endKey; i++)
-                    LocalRead(sessionContext, r.Next(startKey, endKey));
+                    LocalRead(sessionContext, r.Next(startKey, endKey), ref numPending, i == endKey - 1);
             }
 
             const int MaxKeys = 8000;
 
             { // Write the values first (single-threaded, all keys)
-                var session = store.NewSession<SpanByte, SpanByteAndMemory, Context, Functions>(new Functions());
+                var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, Functions>(new Functions());
+                var bContext = session.BasicContext;
                 for (int i = 0; i < MaxKeys; i++)
                 {
                     var keyString = $"{i}";
@@ -186,7 +199,7 @@ namespace Tsavorite.test.ReadCacheTests
                     {
                         var sbKey = SpanByte.FromPinnedSpan(key);
                         var sbValue = SpanByte.FromPinnedSpan(value);
-                        var status = session.Upsert(sbKey, sbValue);
+                        var status = bContext.Upsert(sbKey, sbValue);
                         Assert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                     }
                 }

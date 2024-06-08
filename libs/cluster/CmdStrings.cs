@@ -13,50 +13,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Request strings
         /// </summary>
-        public static ReadOnlySpan<byte> INFO => "INFO"u8;
-        public static ReadOnlySpan<byte> CLUSTER => "CLUSTER"u8;
-        public static ReadOnlySpan<byte> NODES => "NODES"u8;
-        public static ReadOnlySpan<byte> ADDSLOTS => "ADDSLOTS"u8;
-        public static ReadOnlySpan<byte> ADDSLOTSRANGE => "ADDSLOTSRANGE"u8;
-        public static ReadOnlySpan<byte> BUMPEPOCH => "BUMPEPOCH"u8;
-        public static ReadOnlySpan<byte> BANLIST => "BANLIST"u8;
-        public static ReadOnlySpan<byte> COUNTKEYSINSLOT => "COUNTKEYSINSLOT"u8;
-        public static ReadOnlySpan<byte> DELKEYSINSLOT => "DELKEYSINSLOT"u8;
-        public static ReadOnlySpan<byte> DELKEYSINSLOTRANGE => "DELKEYSINSLOTRANGE"u8;
-        public static ReadOnlySpan<byte> DELSLOTS => "DELSLOTS"u8;
-        public static ReadOnlySpan<byte> DELSLOTSRANGE => "DELSLOTSRANGE"u8;
-        public static ReadOnlySpan<byte> FAILOVER => "FAILOVER"u8;
-        public static ReadOnlySpan<byte> FORGET => "FORGET"u8;
-        public static ReadOnlySpan<byte> GETKEYSINSLOT => "GETKEYSINSLOT"u8;
-        public static ReadOnlySpan<byte> KEYSLOT => "KEYSLOT"u8;
-        public static ReadOnlySpan<byte> HELP => "HELP"u8;
-        public static ReadOnlySpan<byte> MEET => "MEET"u8;
-        public static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
-        public static ReadOnlySpan<byte> MTASKS => "MTASKS"u8;
-        public static ReadOnlySpan<byte> MYID => "MYID"u8;
-        public static ReadOnlySpan<byte> MYPARENTID => "MYPARENTID"u8;
-        public static ReadOnlySpan<byte> ENDPOINT => "ENDPOINT"u8;
-        public static ReadOnlySpan<byte> REPLICAS => "REPLICAS"u8;
-        public static ReadOnlySpan<byte> REPLICATE => "REPLICATE"u8;
-        public static ReadOnlySpan<byte> SET_CONFIG_EPOCH => "SET-CONFIG-EPOCH"u8;
-        public static ReadOnlySpan<byte> SETSLOT => "SETSLOT"u8;
-        public static ReadOnlySpan<byte> SETSLOTSRANGE => "SETSLOTSRANGE"u8;
-        public static ReadOnlySpan<byte> SHARDS => "SHARDS"u8;
-        public static ReadOnlySpan<byte> SLOTS => "SLOTS"u8;
-        public static ReadOnlySpan<byte> SLOTSTATE => "SLOTSTATE"u8;
-        public static ReadOnlySpan<byte> GOSSIP => "GOSSIP"u8;
         public static ReadOnlySpan<byte> WITHMEET => "WITHMEET"u8;
-        public static ReadOnlySpan<byte> RESET => "RESET"u8;
 
         /// <summary>
         /// Internode communication cluster commands
         /// </summary>
-        public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
-        public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;
-        public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
-        public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
-        public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
-        public static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
         public static ReadOnlySpan<byte> failstopwrites => "FAILSTOPWRITES"u8;
         public static ReadOnlySpan<byte> failreplicationoffset => "FAILREPLICATIONOFFSET"u8;
 
@@ -65,14 +26,7 @@ namespace Garnet.cluster
         /// Response strings
         /// </summary>
         public static ReadOnlySpan<byte> RESP_OK => "+OK\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_RETURN_VAL_1 => ":1\r\n"u8;
-        public static ReadOnlySpan<byte> RESP_RETURN_VAL_0 => ":0\r\n"u8;
         public static ReadOnlySpan<byte> RESP_RETURN_VAL_N1 => ":-1\r\n"u8;
-
-        /// <summary>
-        /// Response string templates
-        /// </summary>
-        public const string GenericErrMissingParam = "ERR wrong number of arguments for '{0}' command";
 
         /// <summary>
         /// Generic error respone strings, i.e. these are sent in the form "-ERR responseString\r\n"
@@ -107,12 +61,16 @@ namespace Garnet.cluster
         /// <summary>
         /// Simple error respone strings, i.e. these are of the form "-errorString\r\n"
         /// </summary>
-        public static ReadOnlySpan<byte> RESP_ERR_NOAUTH => "NOAUTH Authentication required."u8;
         public static ReadOnlySpan<byte> RESP_ERR_CROSSLOT => "CROSSSLOT Keys in request do not hash to the same slot"u8;
         public static ReadOnlySpan<byte> RESP_ERR_CLUSTERDOWN => "CLUSTERDOWN Hash slot not served"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MIGRATING => "MIGRATING"u8;
         public static ReadOnlySpan<byte> RESP_ERR_CREATE_SYNC_SESSION_ERROR => "PRIMARY-ERR Failed creating replica sync session task"u8;
         public static ReadOnlySpan<byte> RESP_ERR_RETRIEVE_SYNC_SESSION_ERROR => "PRIMARY-ERR Failed retrieving replica sync session"u8;
         public static ReadOnlySpan<byte> RESP_ERR_IOERR => "IOERR Migrate keys failed"u8;
+
+        /// <summary>
+        /// Response string templates
+        /// </summary>
+        public const string GenericErrWrongNumArgs = "ERR wrong number of arguments for '{0}' command";
     }
 }

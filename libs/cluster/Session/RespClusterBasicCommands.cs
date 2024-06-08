@@ -22,11 +22,6 @@ namespace Garnet.cluster
         private bool NetworkClusterBumpEpoch(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            // Check admin permissions for command
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 0 arguments
             if (count != 0)
@@ -61,10 +56,6 @@ namespace Garnet.cluster
         private bool NetworkClusterForget(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting 1 or 2 arguments
             if (count is < 1 or > 2)
@@ -170,10 +161,6 @@ namespace Garnet.cluster
         private bool NetworkClusterMeet(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 2 arguments
             if (count != 2)
@@ -183,14 +170,13 @@ namespace Garnet.cluster
             }
 
             var ptr = recvBufferPtr + readHead;
-            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var ipaddress, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadStringWithLengthHeader(out var ipaddressStr, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
             if (!RespReadUtils.ReadIntWithLengthHeader(out var port, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            var ipaddressStr = Encoding.ASCII.GetString(ipaddress);
             logger?.LogTrace("CLUSTER MEET {ipaddressStr} {port}", ipaddressStr, port);
             clusterProvider.clusterManager.RunMeetTask(ipaddressStr, port);
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -205,7 +191,7 @@ namespace Garnet.cluster
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterMyid(int count, out bool invalidParameters)
+        private bool NetworkClusterMyId(int count, out bool invalidParameters)
         {
             invalidParameters = false;
 
@@ -317,11 +303,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
-
             // Expecting exactly 1 arguments
             if (count != 1)
             {
@@ -403,10 +384,10 @@ namespace Garnet.cluster
             var gossipWithMeet = false;
             if (count > 1)
             {
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var withMeet, ref ptr, recvBufferPtr + bytesRead))
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var withMeetSpan, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                Debug.Assert(withMeet.SequenceEqual(CmdStrings.WITHMEET.ToArray()));
-                if (withMeet.SequenceEqual(CmdStrings.WITHMEET.ToArray()))
+                Debug.Assert(withMeetSpan.SequenceEqual(CmdStrings.WITHMEET));
+                if (withMeetSpan.SequenceEqual(CmdStrings.WITHMEET))
                     gossipWithMeet = true;
             }
 
@@ -459,11 +440,6 @@ namespace Garnet.cluster
         private bool NetworkClusterReset(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting 0, 1 or 2 arguments
             if (count > 2)

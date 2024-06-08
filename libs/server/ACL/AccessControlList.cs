@@ -129,9 +129,9 @@ namespace Garnet.server.ACL
 
             while (!_users.TryGetValue(DefaultUserName, out defaultUser))
             {
-                // Default user is always admin
+                // Default user always has full access
                 defaultUser = new User(DefaultUserName);
-                defaultUser.AddCategory(CommandCategory.Flag.Admin);
+                defaultUser.AddCategory(RespAclCategories.All);
 
                 // Automatically created default users are always enabled
                 defaultUser.IsEnabled = true;
@@ -209,6 +209,44 @@ namespace Garnet.server.ACL
 
             // Atomically replace the user list
             _users = acl._users;
+        }
+
+        /// <summary>
+        /// Save current
+        /// </summary>
+        /// <param name="aclConfigurationFile"></param>
+        public void Save(string aclConfigurationFile)
+        {
+            if (string.IsNullOrEmpty(aclConfigurationFile))
+            {
+                throw new ACLException($"ACL configuration file not set.");
+            }
+
+            // Lock to ensure one flush at a time
+            lock (this)
+            {
+                StreamWriter streamWriter = null;
+                try
+                {
+                    // Initialize so as to allow the streamwriter buffer to fill in memory and do a manual flush afterwards
+                    streamWriter = new StreamWriter(path: aclConfigurationFile, append: false, encoding: Encoding.UTF8, bufferSize: 1 << 16)
+                    {
+                        AutoFlush = false
+                    };
+
+                    // Write lines into buffer
+                    foreach (var user in _users)
+                        streamWriter.WriteLine(user.Value.DescribeUser());
+
+                    // Flush data buffer
+                    streamWriter.Flush();
+                }
+                finally
+                {
+                    // Finally ensure streamWriter is closed
+                    streamWriter?.Close();
+                }
+            }
         }
 
         /// <summary>

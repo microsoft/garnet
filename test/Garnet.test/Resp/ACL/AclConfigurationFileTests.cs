@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Garnet.server.ACL;
 using NUnit.Framework;
+using StackExchange.Redis;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -72,7 +73,7 @@ namespace Garnet.test.Resp.ACL
         {
             // Create an input with 3 user definitions (including default)
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
-            File.WriteAllText(configurationFile, "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin\r\nuser default on nopass +@admin");
+            File.WriteAllText(configurationFile, "user testA on >password123 +@admin +@slow\r\nuser testB on >passw0rd >password +@admin\r\nuser default on nopass +@admin +@slow");
 
             // Start up Garnet with a defined default user password
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
@@ -107,8 +108,8 @@ namespace Garnet.test.Resp.ACL
         public async Task AclLoad()
         {
             // Create a modified ACL that (1) removes two users, (2) adds one user, (3) removes one password and (4) removes the default user
-            string originalConfigurationFile = "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin\r\nuser testC on >passw0rd\r\nuser default on nopass +@admin";
-            string modifiedConfigurationFile = "user testD on >password123\r\nuser testB on >passw0rd +@admin";
+            string originalConfigurationFile = "user testA on >password123 +@admin +@slow\r\nuser testB on >passw0rd >password +@admin +@slow\r\nuser testC on >passw0rd\r\nuser default on nopass +@admin +@slow";
+            string modifiedConfigurationFile = "user testD on >password123\r\nuser testB on >passw0rd +@admin +@slow";
 
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
 
@@ -293,6 +294,60 @@ namespace Garnet.test.Resp.ACL
 
             // Ensure Garnet starts up and just ignores the malformed statement
             Assert.Throws<ACLException>(() => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile));
+        }
+
+        [Test]
+        public void AclSave()
+        {
+            // Create a modified ACL that (1) removes two users, (2) adds one user, (3) removes one password and (4) removes the default user
+            var originalConfigurationFile =
+                "user testA on >password123 +@admin\r\n" +
+                "user testB on >passw0rd >password +@admin\r\n" +
+                "user testC on >passw0rd\r\nuser default on nopass +@all";
+            var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
+            var updateUser = "testD";
+            var updatePass = "placeholder";
+
+            File.WriteAllText(configurationFile, originalConfigurationFile);
+
+            // Start up Garnet
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Update existing user
+            var resp = (string)db.Execute("ACL", ["SETUSER", updateUser, $">{updatePass}"]);
+            Assert.AreEqual("OK", resp);
+
+            // List users
+            var users = (string[])db.Execute("ACL", "USERS");
+            Assert.IsTrue(users.ToHashSet().Contains(updateUser));
+
+            // Reload acl config
+            resp = (string)db.Execute("ACL", "LOAD");
+            Assert.AreEqual("OK", resp);
+
+            // Retrieve users after reload and ensure user does not exist
+            users = (string[])db.Execute("ACL", "USERS");
+            Assert.IsFalse(users.ToHashSet().Contains(updateUser));
+
+            // Update existing user
+            resp = (string)db.Execute("ACL", ["SETUSER", updateUser, $">{updatePass}"]);
+            Assert.AreEqual("OK", resp);
+
+            // Save in memory ACL
+            resp = (string)db.Execute("ACL", "SAVE");
+            Assert.AreEqual("OK", resp);
+
+            // Reload acl config
+            resp = (string)db.Execute("ACL", "LOAD");
+            Assert.AreEqual("OK", resp);
+
+            // Retrieve users after save and ensure user does exist
+            users = (string[])db.Execute("ACL", "USERS");
+            Assert.IsTrue(users.ToHashSet().Contains(updateUser));
         }
     }
 }

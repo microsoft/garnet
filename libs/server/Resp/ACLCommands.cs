@@ -18,53 +18,25 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// Processes subcommands for the "ACL" RESP-Command.
-        /// NOTE: This function assumes the ACL token was already parsed.
+        /// Processes ACL LIST subcommand.
         /// </summary>
         /// <param name="bufSpan">The remaining command bytes</param>
         /// <param name="count">The number of arguments remaining in bufSpan</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool ProcessACLCommands(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkAclList(ReadOnlySpan<byte> bufSpan, int count)
         {
-            // Only proceed if current authenticator can be used with ACL commands.
-            // Currently only GarnetACLAuthenticator is supported.
-            if (!_authenticator.HasACLSupport || (_authenticator.GetType().BaseType != typeof(GarnetACLAuthenticator)))
-            {
-                if (!DrainCommands(bufSpan, count))
-                    return false;
-                while (!RespWriteUtils.WriteError($"ERR ACL commands are not supported by the configured authenticator.", ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
-            // Check that a subcommand is specified
-            if (count < 1)
+            // No additonal args allowed
+            if (count != 0)
             {
                 if (!DrainCommands(bufSpan, count))
                     return false;
 
-                var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "ACL");
-                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LIST.", ref dcurr, dend))
                     SendAndReset();
-
-                return true;
             }
-
-            var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
-
-            // Mandatory: <subcommand>
-            var subcommandSpan = GetCommand(bufSpan, out bool success1);
-            if (!success1) return false;
-
-            var subcommand = Encoding.ASCII.GetString(subcommandSpan);
-
-            // Subcommand: LIST
-            if (subcommand.Equals("LIST", StringComparison.OrdinalIgnoreCase) && (count == 1))
+            else
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
-                {
-                    return success;
-                }
+                GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
                 var users = aclAuthenticator.GetAccessControlList().GetUsers();
                 while (!RespWriteUtils.WriteArrayLength(users.Count, ref dcurr, dend))
@@ -76,13 +48,30 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-            // Subcommand: USERS
-            else if (subcommand.Equals("USERS", StringComparison.OrdinalIgnoreCase) && (count == 1))
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes ACL USERS subcommand.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkAclUsers(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            // No additonal args allowed
+            if (count != 0)
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
-                {
-                    return success;
-                }
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL USERS.", ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
                 var users = aclAuthenticator.GetAccessControlList().GetUsers();
                 while (!RespWriteUtils.WriteArrayLength(users.Count, ref dcurr, dend))
@@ -94,12 +83,31 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-            // Subcommand: CAT
-            else if (subcommand.Equals("CAT", StringComparison.OrdinalIgnoreCase) && (count == 1))
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes ACL CAT subcommand.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkAclCat(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            // No additonal args allowed
+            if (count != 0)
             {
-                var categories = CommandCategory.ListCategories();
-                while (!RespWriteUtils.WriteArrayLength(categories.Count, ref dcurr, dend))
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL CAT.", ref dcurr, dend))
                     SendAndReset();
+            }
+            else
+            {
+                var categories = ACLParser.ListCategories();
+                RespWriteUtils.WriteArrayLength(categories.Count, ref dcurr, dend);
 
                 foreach (var category in categories)
                 {
@@ -107,16 +115,33 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-            // Subcommand: SETUSER <username> [<ops>...]
-            else if (subcommand.Equals("SETUSER", StringComparison.OrdinalIgnoreCase) && (count >= 2))
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes ACL SETUSER subcommand.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkAclSetUser(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            // Have to have at least the username
+            if (count == 0)
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
-                {
-                    return success;
-                }
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SETUSER.", ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
                 // REQUIRED: username
-                var usernameSpan = GetCommand(bufSpan, out success);
+                var usernameSpan = GetCommand(bufSpan, out bool success);
                 if (!success) return false;
 
                 // Modify or create the user with the given username
@@ -134,7 +159,7 @@ namespace Garnet.server
                     }
 
                     // Remaining parameters are ACL operations
-                    for (; opsParsed < count - 2; opsParsed++)
+                    for (; opsParsed < count - 1; opsParsed++)
                     {
                         var op = GetCommand(bufSpan, out bool successOp);
                         Debug.Assert(successOp);
@@ -158,13 +183,30 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
-            // Subcommand: DELUSER [<username> ...]
-            else if (subcommand.Equals("DELUSER", StringComparison.OrdinalIgnoreCase) && (count >= 1))
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes ACL DELUSER subcommand.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkAclDelUser(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            // Have to have at least the username
+            if (count == 0)
             {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
-                {
-                    return success;
-                }
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL DELUSER.", ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
                 var attemptedDeletes = 0;
                 var successfulDeletes = 0;
@@ -172,9 +214,9 @@ namespace Garnet.server
                 try
                 {
                     // Attempt to delete the users with the given names
-                    for (; attemptedDeletes < count - 1; attemptedDeletes++)
+                    for (; attemptedDeletes < count; attemptedDeletes++)
                     {
-                        var username = GetCommand(bufSpan, out success);
+                        var username = GetCommand(bufSpan, out bool success);
                         if (!success) return false;
 
                         if (aclAuthenticator.GetAccessControlList().DeleteUser(Encoding.ASCII.GetString(username)))
@@ -200,22 +242,60 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteInteger(successfulDeletes, ref dcurr, dend))
                     SendAndReset();
             }
-            // Subcommand: WHOAMI
-            else if (subcommand.Equals("WHOAMI", StringComparison.OrdinalIgnoreCase) && (count == 1))
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes ACL WHOAMI subcommand.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkAclWhoAmI(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            // No additonal args allowed
+            if (count != 0)
             {
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL WHOAMI.", ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                GarnetACLAuthenticator aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
+
                 // Return the name of the currently authenticated user.
                 Debug.Assert(aclAuthenticator.GetUser() != null);
+
                 while (!RespWriteUtils.WriteSimpleString(aclAuthenticator.GetUser().Name, ref dcurr, dend))
                     SendAndReset();
             }
-            // Subcommand: LOAD
-            else if (subcommand.Equals("LOAD", StringComparison.OrdinalIgnoreCase) && (count == 1))
-            {
-                if (!CheckACLAdminPermissions(bufSpan, count - 2, out bool success))
-                {
-                    return success;
-                }
 
+            return true;
+        }
+
+        /// <summary>
+        /// Processes ACL LOAD subcommand.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkAclLoad(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            // No additional args allowed
+            if (count != 0)
+            {
+                if (!DrainCommands(bufSpan, count))
+                    return false;
+
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LOAD.", ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
                 // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
                 Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
                 Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
@@ -236,15 +316,48 @@ namespace Garnet.server
                         SendAndReset();
                 }
             }
-            // Unknown or invalidly specified ACL subcommand
-            else
+
+            return true;
+        }
+
+        /// <summary>
+        /// Processes ACL SAVE subcommand.
+        /// </summary>
+        /// <param name="bufSpan">The remaining command bytes</param>
+        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
+        private bool NetworkAclSave(ReadOnlySpan<byte> bufSpan, int count)
+        {
+            if (count != 0)
             {
-                if (!DrainCommands(bufSpan, count - 1))
+                if (!DrainCommands(bufSpan, count))
                     return false;
 
-                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL command '{subcommand}'.", ref dcurr, dend))
+                while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SAVE.", ref dcurr, dend))
                     SendAndReset();
             }
+
+            // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
+            Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
+            Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
+            var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
+
+            try
+            {
+                storeWrapper.accessControlList.Save(aclAuthenticationSettings.AclConfigurationFile);
+                logger?.LogInformation("ACL configuration file '{filepath}' saved!", aclAuthenticationSettings.AclConfigurationFile);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "ACL SAVE faulted");
+                while (!RespWriteUtils.WriteError($"ERR {ex.Message}", ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
 
             return true;
         }

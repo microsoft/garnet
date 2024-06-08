@@ -204,10 +204,11 @@ namespace Garnet.test
             card = db.SortedSetLength(key);
             Assert.AreEqual(0, card);
 
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 200;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(response.IsNull);
 
             // 1 entry added
             added = db.SortedSetAdd(key, [entries[0]]);
@@ -232,10 +233,11 @@ namespace Garnet.test
             var response_keys = db.SortedSetRangeByRankWithScores(key, 0, 100);
             Assert.IsEmpty(response_keys);
 
+            keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 200;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(response.IsNull);
 
             // 10 entries are added
             added = db.SortedSetAdd(key, entries);
@@ -266,10 +268,11 @@ namespace Garnet.test
             removed = db.SortedSetRemove(key, entries.Select(e => e.Element).ToArray());
             Assert.AreEqual(entries.Length - 1, removed);
 
+            keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 200;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(response.IsNull);
         }
 
         [Test]
@@ -314,10 +317,11 @@ namespace Garnet.test
                 Assert.AreEqual(entries[6 - i], last3[i]);
             Assert.AreEqual(0, db.SortedSetLength(key));
 
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+
             response = db.Execute("MEMORY", "USAGE", key);
-            actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 192;
-            Assert.AreEqual(expectedResponse, actualValue);
+            Assert.IsTrue(response.IsNull);
         }
 
         [Test]
@@ -686,6 +690,23 @@ namespace Garnet.test
 
             var range = await db.SortedSetRangeByRankWithScoresAsync(key, start: 1);
             Assert.AreEqual(0, range.Length);
+        }
+
+        [Test]
+        public void CheckEmptySortedSetKeyRemoved()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var key = new RedisKey("user1:sortedset");
+            var db = redis.GetDatabase(0);
+
+            var added = db.SortedSetAdd(key, entries);
+            Assert.AreEqual(entries.Length, added);
+
+            var actualMembers = db.SortedSetPop(key, entries.Length);
+            Assert.AreEqual(entries.Length, actualMembers.Length);
+
+            var keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
         }
 
         #endregion

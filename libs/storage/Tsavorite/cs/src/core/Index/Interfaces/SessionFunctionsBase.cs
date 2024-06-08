@@ -8,14 +8,14 @@ using System;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Default empty functions base class to make it easy for users to provide their own implementation of IFunctions
+    /// Default empty functions base class to make it easy for users to provide their own implementation of ISessionFunctions
     /// </summary>
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     /// <typeparam name="Input"></typeparam>
     /// <typeparam name="Output"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public abstract class FunctionsBase<Key, Value, Input, Output, Context> : IFunctions<Key, Value, Input, Output, Context>
+    public abstract class SessionFunctionsBase<Key, Value, Input, Output, Context> : ISessionFunctions<Key, Value, Input, Output, Context>
     {
         /// <inheritdoc/>
         public virtual bool ConcurrentReader(ref Key key, ref Input input, ref Value value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo) => true;
@@ -40,7 +40,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public virtual bool CopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
         /// <inheritdoc/>
-        public virtual void PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) { }
+        public virtual bool PostCopyUpdater(ref Key key, ref Input input, ref Value oldValue, ref Value newValue, ref Output output, ref RMWInfo rmwInfo) => true;
         /// <inheritdoc/>
         public virtual bool InPlaceUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
 
@@ -70,6 +70,9 @@ namespace Tsavorite.core
         public virtual int GetRMWModifiedValueLength(ref Value value, ref Input input) => throw new TsavoriteException("GetRMWModifiedValueLength is only available for SpanByte Functions");
         /// <inheritdoc/>
         public virtual int GetRMWInitialValueLength(ref Input input) => throw new TsavoriteException("GetRMWInitialValueLength is only available for SpanByte Functions");
+
+        /// <inheritdoc/>
+        public virtual void ConvertOutputToHeap(ref Input input, ref Output output) { }
     }
 
     /// <summary>
@@ -78,11 +81,11 @@ namespace Tsavorite.core
     /// <typeparam name="Key"></typeparam>
     /// <typeparam name="Value"></typeparam>
     /// <typeparam name="Context"></typeparam>
-    public class SimpleFunctions<Key, Value, Context> : FunctionsBase<Key, Value, Value, Value, Context>
+    public class SimpleSessionFunctions<Key, Value, Context> : SessionFunctionsBase<Key, Value, Value, Value, Context>
     {
         private readonly Func<Value, Value, Value> merger;
-        public SimpleFunctions() => merger = (l, r) => l;
-        public SimpleFunctions(Func<Value, Value, Value> merger) => this.merger = merger;
+        public SimpleSessionFunctions() => merger = (l, r) => l;
+        public SimpleSessionFunctions(Func<Value, Value, Value> merger) => this.merger = merger;
 
         /// <inheritdoc/>
         public override bool ConcurrentReader(ref Key key, ref Value input, ref Value value, ref Value dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
@@ -122,9 +125,9 @@ namespace Tsavorite.core
         public override bool InPlaceUpdater(ref Key key, ref Value input, ref Value value, ref Value output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { value = output = merger(input, value); return true; }
     }
 
-    public class SimpleFunctions<Key, Value> : SimpleFunctions<Key, Value, Empty>
+    public class SimpleSimpleFunctions<Key, Value> : SimpleSessionFunctions<Key, Value, Empty>
     {
-        public SimpleFunctions() : base() { }
-        public SimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
+        public SimpleSimpleFunctions() : base() { }
+        public SimpleSimpleFunctions(Func<Value, Value, Value> merger) : base(merger) { }
     }
 }

@@ -97,11 +97,11 @@ namespace Tsavorite.test
             objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.obj.log"));
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
-                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable
-                      );
+                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() });
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
+
             using var s = store.Log.Subscribe(new LogObserver());
 
             var start = store.Log.TailAddress;
@@ -109,7 +109,7 @@ namespace Tsavorite.test
             {
                 var _key = new MyKey { key = i };
                 var _value = new MyValue { value = i };
-                session.Upsert(ref _key, ref _value, Empty.Default);
+                bContext.Upsert(ref _key, ref _value, Empty.Default);
                 if (i % 100 == 0)
                     store.Log.FlushAndEvict(true);
             }
@@ -171,10 +171,10 @@ namespace Tsavorite.test
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
-                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: ConcurrencyControlMode.None);
+                      serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() });
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            var bContext = session.BasicContext;
 
             const int numRecords = 200;
             const int numTailRecords = 10;
@@ -189,7 +189,7 @@ namespace Tsavorite.test
                 }
                 var key = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key, ref value, Empty.Default);
+                bContext.Upsert(ref key, ref value, Empty.Default);
             }
 
             using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress);
@@ -241,15 +241,16 @@ namespace Tsavorite.test
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
+                      comparer: comparer);
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, ScanFunctions>(new ScanFunctions());
+            var bContext = session.BasicContext;
 
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs();
@@ -287,7 +288,7 @@ namespace Tsavorite.test
             {
                 var key1 = new MyKey { key = i + totalRecords };
                 var value = new MyValue { value = i + totalRecords };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
             scanCursorFuncs.Initialize(verifyKeys);
             Assert.IsFalse(session.ScanCursor(ref cursor, long.MaxValue, scanCursorFuncs, long.MaxValue), "Expected scan to finish and return false, pt 1");
@@ -308,7 +309,7 @@ namespace Tsavorite.test
             MyInput input = new();
             MyOutput output = new();
             ReadOptions readOptions = default;
-            var readStatus = session.ReadAtAddress(store.hlog.HeadAddress, ref input, ref output, ref readOptions, out _);
+            var readStatus = bContext.ReadAtAddress(store.hlog.HeadAddress, ref input, ref output, ref readOptions, out _);
             Assert.IsTrue(readStatus.Found, $"Could not read at HeadAddress; {readStatus}");
 
             scanCursorFuncs.Initialize(verifyKeys);
@@ -332,15 +333,16 @@ namespace Tsavorite.test
             store = new(128,
                       logSettings: new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MutableFraction = 0.1, MemorySizeBits = 20, PageSizeBits = 15, SegmentSizeBits = 18 },
                       serializerSettings: new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() },
-                      concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
+                      comparer: comparer);
 
             using var session = store.NewSession<MyInput, MyOutput, Empty, ScanFunctions>(new ScanFunctions());
+            var bContext = session.BasicContext;
 
             for (int i = 0; i < totalRecords; i++)
             {
                 var key1 = new MyKey { key = i };
                 var value = new MyValue { value = i };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
 
             var scanCursorFuncs = new ScanCursorFuncs();

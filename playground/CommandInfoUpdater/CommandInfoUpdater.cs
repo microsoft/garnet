@@ -162,8 +162,7 @@ namespace CommandInfoUpdater
                 if (subCommandsToAdd.Length > 0)
                 {
                     commandsToAdd.Add(
-                        new SupportedCommand(supportedCommand.Command, supportedCommand.RespCommand,
-                            supportedCommand.ArrayCommand, subCommandsToAdd), false);
+                        new SupportedCommand(supportedCommand.Command, supportedCommand.RespCommand, subCommandsToAdd), false);
                 }
             }
 
@@ -195,8 +194,7 @@ namespace CommandInfoUpdater
                 if (subCommandsToRemove.Length > 0)
                 {
                     commandsToRemove.Add(
-                        new SupportedCommand(existingCommand.Key, existingCommand.Value.Command,
-                            existingCommand.Value.ArrayCommand, subCommandsToRemove), false);
+                        new SupportedCommand(existingCommand.Key, existingCommand.Value.Command, subCommandsToRemove), false);
                 }
             }
 
@@ -293,9 +291,9 @@ namespace CommandInfoUpdater
             var tmpCommandsInfo = new Dictionary<string, RespCommandsInfo>();
 
             // Get a map of supported commands to Garnet's RespCommand & ArrayCommand for the parser
-            var supportedCommands = new ReadOnlyDictionary<string, (RespCommand, byte?)>(
+            var supportedCommands = new ReadOnlyDictionary<string, RespCommand>(
                 SupportedCommand.SupportedCommandsMap.ToDictionary(kvp => kvp.Key,
-                    kvp => (kvp.Value.RespCommand, kvp.Value.ArrayCommand), StringComparer.OrdinalIgnoreCase));
+                    kvp => kvp.Value.RespCommand, StringComparer.OrdinalIgnoreCase));
 
             // Parse the response
             fixed (byte* respPtr = response)
@@ -369,7 +367,6 @@ namespace CommandInfoUpdater
                 var updatedCommand = new RespCommandsInfo
                 {
                     Command = existingCommand.Command,
-                    ArrayCommand = existingCommand.ArrayCommand,
                     Name = existingCommand.Name,
                     Arity = existingCommand.Arity,
                     Flags = existingCommand.Flags,
@@ -425,7 +422,6 @@ namespace CommandInfoUpdater
                 var updatedCommand = new RespCommandsInfo
                 {
                     Command = baseCommand.Command,
-                    ArrayCommand = baseCommand.ArrayCommand,
                     Name = baseCommand.Name,
                     Arity = baseCommand.Arity,
                     Flags = baseCommand.Flags,

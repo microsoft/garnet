@@ -2243,7 +2243,7 @@ namespace Garnet.test
             Assert.AreEqual(14, count);
         }
 
-        [Test, Order(33)]
+        [Test, Order(34)]
         [Category("BITPOS")]
         public void BitmapBitPosFixedTests()
         {
@@ -2299,10 +2299,11 @@ namespace Garnet.test
             try
             {
                 db.Execute("BITOP", args);
+                Assert.Fail("Should be unreachable, arguments are incorrect");
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("syntax error", ex.Message);
+                Assert.AreEqual("ERR syntax error", ex.Message);
             }
         }
 
@@ -2321,6 +2322,7 @@ namespace Garnet.test
             try
             {
                 db.Execute("BITOP", args);
+                Assert.Fail("Should be unreachable, too many arguments");
             }
             catch (Exception ex)
             {

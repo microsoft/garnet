@@ -9,12 +9,13 @@ namespace Garnet.test
     /// <summary>
     /// Server credential instance, used to generate ACL file or interact with server.
     /// </summary>
-    public struct ServerCredential(string user, string password, bool IsAdmin, bool IsClearText)
+    public struct ServerCredential(string user, string password, bool IsAdmin, bool UsedForClusterAuth, bool IsClearText)
     {
         public string user = user;
         public string password = password;
         public byte[] hash = SHA256.HashData(Encoding.ASCII.GetBytes(password));
         public bool IsAdmin = IsAdmin;
+        public bool UsedForClusterAuth = UsedForClusterAuth;
         public bool IsClearText = IsClearText;
     }
 }

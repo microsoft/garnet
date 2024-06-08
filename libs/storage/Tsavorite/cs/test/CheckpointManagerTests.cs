@@ -53,7 +53,8 @@ namespace Tsavorite.test
                     },
                     checkpointSettings: new CheckpointSettings { CheckpointManager = checkpointManager }
                 );
-                using var s = store.NewSession<long, long, Empty, SimpleFunctions<long, long>>(new SimpleFunctions<long, long>());
+                using var s = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+                var bContext = s.BasicContext;
 
                 var logCheckpoints = new Dictionary<Guid, int>();
                 var indexCheckpoints = new Dictionary<Guid, int>();
@@ -62,7 +63,7 @@ namespace Tsavorite.test
                 for (var i = 0; i < 10; i++)
                 {
                     // Do some dummy update
-                    s.Upsert(0, random.Next());
+                    bContext.Upsert(0, random.Next());
 
                     var checkpointType = random.Next(5);
                     Guid result = default;

@@ -50,6 +50,88 @@ namespace Garnet.test
             Assert.IsEmpty(duplicateIds, "Found ambiguous command IDs");
         }
 
+        /// <summary>
+        /// Test that we recognize "write" ops correctly for metric purposes.
+        /// </summary>
+        [Test]
+        public void OneIfWrite()
+        {
+            var wrong = new List<RespCommand>();
+
+            foreach (var cmd in Enum.GetValues<RespCommand>())
+            {
+                if (cmd == RespCommand.NONE || cmd == RespCommand.INVALID)
+                {
+                    continue;
+                }
+
+                if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
+                {
+                    continue;
+                }
+
+                var isWrite = info.AclCategories.HasFlag(RespAclCategories.Write);
+                var expected = isWrite ? 1UL : 0;
+
+                if (expected != cmd.OneIfWrite())
+                {
+                    wrong.Add(cmd);
+                }
+            }
+
+            Assert.IsEmpty(wrong, "These commands are incorrectly classified w.r.t. OneIfWrite");
+        }
+
+        /// <summary>
+        /// Test that we recognize "read" ops correctly for metric purposes.
+        /// </summary>
+        [Test]
+        public void OneIfRead()
+        {
+            var wrong = new List<RespCommand>();
+
+            foreach (var cmd in Enum.GetValues<RespCommand>())
+            {
+                if (cmd == RespCommand.NONE || cmd == RespCommand.INVALID)
+                {
+                    continue;
+                }
+
+                if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
+                {
+                    continue;
+                }
+
+                var isRead = info.AclCategories.HasFlag(RespAclCategories.Read);
+                var expected = isRead ? 1UL : 0;
+
+                if (expected != cmd.OneIfRead())
+                {
+                    wrong.Add(cmd);
+                }
+            }
+
+            Assert.IsEmpty(wrong, "These commands are incorrectly classified w.r.t. OneIfRead");
+        }
+
+        /// <summary>
+        /// Test that we recognize "cluster" ops correctly.
+        /// </summary>
+        [Test]
+        public void IsClusterSubCommand()
+        {
+            Assert.True(RespCommandsInfo.TryGetRespCommandInfo("CLUSTER", out var clusterCommand), "Couldn't load CLUSTER command details");
+            Assert.IsNotNull(clusterCommand.SubCommands, "CLUSTER didn't have any subcommands");
+
+            IEnumerable<RespCommand> clusterSubCommands = clusterCommand.SubCommands.Select(static s => s.SubCommand.Value);
+            foreach (var cmd in Enum.GetValues<RespCommand>())
+            {
+                var expectedRes = clusterSubCommands.Contains(cmd);
+                var actualRes = cmd.IsClusterSubCommand();
+
+                Assert.AreEqual(expectedRes, actualRes, $"Mismatch for {cmd}");
+            }
+        }
 
         [Test]
         public void SingleSetGet()
@@ -1288,7 +1370,7 @@ namespace Garnet.test
 
             db.KeyExpire(keyA, TimeSpan.FromSeconds(expire));
             var time = db.KeyTimeToLive(keyA);
-            Assert.IsTrue(time.Value.Seconds > 0);
+            Assert.IsTrue(time.Value.TotalSeconds > 0);
 
             response = db.KeyPersist(keyA);
             Assert.IsTrue(response);

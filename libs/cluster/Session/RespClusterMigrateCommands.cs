@@ -24,11 +24,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
-
             // Expecting exactly 3 arguments
             if (count != 3)
             {
@@ -86,7 +81,7 @@ namespace Garnet.cluster
                         continue;
                     }
 
-                    var slot = HashSlotUtils.HashSlot(key.ToPointer(), key.LengthWithoutMetadata);
+                    var slot = HashSlotUtils.HashSlot(ref key);
                     if (!currentConfig.IsImportingSlot(slot))//Slot is not in importing state
                     {
                         migrateState = 1;

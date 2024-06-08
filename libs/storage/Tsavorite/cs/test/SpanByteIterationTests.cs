@@ -70,10 +70,11 @@ namespace Tsavorite.test
         {
             log = CreateTestDevice(deviceType, $"{MethodTestDir}{deviceType}.log");
             store = new TsavoriteKV<SpanByte, SpanByte>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
-                 concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable);
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
 
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
+
             SpanBytePushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 500;
@@ -106,7 +107,7 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                session.Upsert(ref key, ref value);
+                bContext.Upsert(ref key, ref value);
             }
             iterateAndVerify(1, totalRecords);
 
@@ -114,7 +115,7 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i * 2;
-                session.Upsert(ref key, ref value);
+                bContext.Upsert(ref key, ref value);
             }
             iterateAndVerify(2, totalRecords);
 
@@ -122,7 +123,7 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                session.Upsert(ref key, ref value);
+                bContext.Upsert(ref key, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
@@ -130,14 +131,14 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                session.Upsert(ref key, ref value);
+                bContext.Upsert(ref key, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
                 keySpan[0] = i;
-                session.Delete(ref key);
+                bContext.Delete(ref key);
             }
             iterateAndVerify(0, totalRecords / 2);
 
@@ -145,7 +146,7 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i * 3;
-                session.Upsert(ref key, ref value);
+                bContext.Upsert(ref key, ref value);
             }
             iterateAndVerify(3, totalRecords);
 
@@ -163,6 +164,7 @@ namespace Tsavorite.test
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
 
             using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+            var bContext = session.BasicContext;
             SpanBytePushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 2000;
@@ -190,7 +192,7 @@ namespace Tsavorite.test
             {
                 keySpan[0] = i;
                 valueSpan[0] = i;
-                session.Upsert(ref key, ref value);
+                bContext.Upsert(ref key, ref value);
             }
 
             scanAndVerify(42, useScan: true);
@@ -230,11 +232,12 @@ namespace Tsavorite.test
                 var value = valueSpan.AsSpanByte();
 
                 using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+                var bContext = session.BasicContext;
                 for (int i = 0; i < totalRecords; i++)
                 {
                     keySpan[0] = i;
                     valueSpan[0] = i * (tid + 1);
-                    session.Upsert(ref key, ref value);
+                    bContext.Upsert(ref key, ref value);
                 }
             }
 
@@ -247,11 +250,12 @@ namespace Tsavorite.test
                 var value = valueSpan.AsSpanByte();
 
                 using var session = store.NewSession<SpanByte, int[], Empty, VLVectorFunctions>(new VLVectorFunctions());
+                var bContext = session.BasicContext;
                 for (int i = 0; i < totalRecords; i++)
                 {
                     keySpan[0] = i;
                     valueSpan[0] = i;
-                    session.Upsert(ref key, ref value);
+                    bContext.Upsert(ref key, ref value);
                 }
             }
 

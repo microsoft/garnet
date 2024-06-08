@@ -2,8 +2,9 @@
 // Licensed under the MIT license.
 
 using NUnit.Framework;
+using Tsavorite.core;
 
-namespace Tsavorite.core.Tests
+namespace Tsavorite.test
 {
     [TestFixture]
     public class ConcurrentCounterTests
@@ -75,7 +76,7 @@ namespace Tsavorite.core.Tests
         }
 
         [Test]
-        public void IncrementndTotal_WithMultipleThreads_ReturnsCorrectValue()
+        public void IncrementedTotal_WithMultipleThreads_ReturnsCorrectValue()
         {
             // Arrange
             var numThreads = 10;

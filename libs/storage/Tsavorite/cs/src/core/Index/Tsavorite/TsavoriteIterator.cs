@@ -16,7 +16,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>Tsavorite iterator</returns>
         public ITsavoriteScanIterator<Key, Value> Iterate<Input, Output, Context, Functions>(Functions functions, long untilAddress = -1)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
         {
             if (untilAddress == -1)
                 untilAddress = Log.TailAddress;
@@ -31,7 +31,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Report records until this address (tail by default)</param>
         /// <returns>Tsavorite iterator</returns>
         public bool Iterate<Input, Output, Context, Functions, TScanFunctions>(Functions functions, ref TScanFunctions scanFunctions, long untilAddress = -1)
-            where Functions : IFunctions<Key, Value, Input, Output, Context>
+            where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
             where TScanFunctions : IScanIteratorFunctions<Key, Value>
         {
             if (untilAddress == -1)
@@ -72,11 +72,12 @@ namespace Tsavorite.core
     }
 
     internal sealed class TsavoriteKVIterator<Key, Value, Input, Output, Context, Functions> : ITsavoriteScanIterator<Key, Value>
-        where Functions : IFunctions<Key, Value, Input, Output, Context>
+        where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
     {
         private readonly TsavoriteKV<Key, Value> store;
         private readonly TsavoriteKV<Key, Value> tempKv;
         private readonly ClientSession<Key, Value, Input, Output, Context, Functions> tempKvSession;
+        private readonly BasicContext<Key, Value, Input, Output, Context, Functions> tempbContext;
         private readonly ITsavoriteScanIterator<Key, Value> mainKvIter;
         private readonly IPushScanIterator<Key> pushScanIterator;
         private ITsavoriteScanIterator<Key, Value> tempKvIter;
@@ -95,8 +96,9 @@ namespace Tsavorite.core
             iterationPhase = IterationPhase.MainKv;
 
             tempKv = new TsavoriteKV<Key, Value>(store.IndexSize, new LogSettings { LogDevice = new NullDevice(), ObjectLogDevice = new NullDevice(), MutableFraction = 1 }, comparer: store.Comparer,
-                                              loggerFactory: loggerFactory, concurrencyControlMode: ConcurrencyControlMode.None);
+                                              loggerFactory: loggerFactory);
             tempKvSession = tempKv.NewSession<Input, Output, Context, Functions>(functions);
+            tempbContext = tempKvSession.BasicContext;
             mainKvIter = store.Log.Scan(store.Log.BeginAddress, untilAddress);
             pushScanIterator = mainKvIter as IPushScanIterator<Key>;
         }
@@ -237,11 +239,11 @@ namespace Tsavorite.core
             if (recordInfo.Tombstone)
             {
                 // Check if it's in-memory first so we don't spuriously create a tombstone record.
-                if (tempKvSession.ContainsKeyInMemory(ref key, out _).Found)
-                    tempKvSession.Delete(ref key);
+                if (tempbContext.ContainsKeyInMemory(ref key, out _).Found)
+                    tempbContext.Delete(ref key);
             }
             else
-                tempKvSession.Upsert(ref key, ref mainKvIter.GetValue());
+                tempbContext.Upsert(ref key, ref mainKvIter.GetValue());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -259,8 +261,8 @@ namespace Tsavorite.core
                     if (mainKvRecordInfo.PreviousAddress >= store.Log.BeginAddress)
                     {
                         // Check if it's in-memory first so we don't spuriously create a tombstone record.
-                        if (tempKvSession.ContainsKeyInMemory(ref key, out _).Found)
-                            tempKvSession.Delete(ref key);
+                        if (tempbContext.ContainsKeyInMemory(ref key, out _).Found)
+                            tempbContext.Delete(ref key);
                     }
 
                     // If the record is not deleted, we can let the caller process it directly within mainKvIter.

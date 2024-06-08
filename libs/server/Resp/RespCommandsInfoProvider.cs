@@ -94,7 +94,8 @@ namespace Garnet.server
 
             try
             {
-                var respCommands = JsonSerializer.Deserialize<RespCommandsInfo[]>(streamReader.ReadToEnd(), SerializerOptions)!;
+                string respJson = streamReader.ReadToEnd();
+                var respCommands = JsonSerializer.Deserialize<RespCommandsInfo[]>(respJson, SerializerOptions)!;
 
                 var tmpRespCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
                 foreach (var respCommandsInfo in respCommands)

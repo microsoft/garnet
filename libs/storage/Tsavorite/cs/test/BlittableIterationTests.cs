@@ -62,10 +62,11 @@ namespace Tsavorite.test
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"{deviceType}.log"));
             store = new TsavoriteKV<KeyStruct, ValueStruct>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 },
-                 concurrencyControlMode: scanIteratorType == ScanIteratorType.Pull ? ConcurrencyControlMode.None : ConcurrencyControlMode.LockTable);
+                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
 
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
+            var bContext = session.BasicContext;
+
             BlittablePushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 500;
@@ -92,7 +93,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(1, totalRecords);
 
@@ -100,7 +101,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = 2 * i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(2, totalRecords);
 
@@ -108,7 +109,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
@@ -116,14 +117,14 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(0, totalRecords);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                session.Delete(ref key1);
+                bContext.Delete(ref key1);
             }
             iterateAndVerify(0, totalRecords / 2);
 
@@ -131,7 +132,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = 3 * i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
             iterateAndVerify(3, totalRecords);
 
@@ -149,6 +150,7 @@ namespace Tsavorite.test
                  (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
 
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
+            var bContext = session.BasicContext;
             BlittablePushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 2000;
@@ -170,7 +172,7 @@ namespace Tsavorite.test
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                session.Upsert(ref key1, ref value);
+                bContext.Upsert(ref key1, ref value);
             }
 
             scanAndVerify(42, useScan: true);
@@ -180,13 +182,12 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void BlittableIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ConcurrencyControlMode concurrencyControlMode, [Values] ScanMode scanMode)
+        public unsafe void BlittableIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ScanMode scanMode)
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "lock_test.log"));
             // Must be large enough to contain all records in memory to exercise locking
             store = new TsavoriteKV<KeyStruct, ValueStruct>(1L << 20,
-                 new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20, SegmentSizeBits = 22 },
-                 concurrencyControlMode: concurrencyControlMode);
+                 new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20, SegmentSizeBits = 22 });
 
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;
@@ -205,24 +206,26 @@ namespace Tsavorite.test
             void LocalUpdate(int tid)
             {
                 using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
+                var bContext = session.BasicContext;
                 for (var iteration = 0; iteration < 2; ++iteration)
                 {
                     for (int i = 0; i < totalRecords; i++)
                     {
                         var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                         var value = new ValueStruct { vfield1 = (tid + 1) * i, vfield2 = i + 1 };
-                        session.Upsert(ref key1, ref value, 0);
+                        bContext.Upsert(ref key1, ref value, 0);
                     }
                 }
             }
 
             { // Initial population
                 using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
+                var bContext = session.BasicContext;
                 for (int i = 0; i < totalRecords; i++)
                 {
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                     var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                    session.Upsert(ref key1, ref value);
+                    bContext.Upsert(ref key1, ref value);
                 }
             }
 

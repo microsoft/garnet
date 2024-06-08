@@ -8,7 +8,7 @@ using static Tsavorite.core.Utility;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// What actions to take following the RMW IFunctions method call, such as cancellation or record expiration.
+    /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
     public enum UpsertAction
     {
@@ -24,7 +24,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
     /// </summary>
     public struct UpsertInfo
     {
@@ -67,7 +67,7 @@ namespace Tsavorite.core
         public int FullValueLength { get; internal set; }
 
         /// <summary>
-        /// What actions Tsavorite should perform on a false return from the IFunctions method
+        /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public UpsertAction Action { get; set; }
 
@@ -144,7 +144,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// What actions to take following the RMW IFunctions method call, such as cancellation or record expiration.
+    /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
     public enum RMWAction
     {
@@ -170,7 +170,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
     /// </summary>
     public struct RMWInfo
     {
@@ -220,7 +220,12 @@ namespace Tsavorite.core
         public bool PreserveCopyUpdaterSourceRecord { get; set; }
 
         /// <summary>
-        /// What actions Tsavorite should perform on a false return from the IFunctions method
+        /// Whether the call is from sync or async (pending) path
+        /// </summary>
+        public bool IsFromPending { get; internal set; }
+
+        /// <summary>
+        /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public RMWAction Action { get; set; }
 
@@ -254,7 +259,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// What actions to take following the RMW IFunctions method call, such as cancellation or record expiration.
+    /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
     public enum DeleteAction
     {
@@ -269,7 +274,7 @@ namespace Tsavorite.core
         CancelOperation
     }
     /// <summary>
-    /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-update callbacks. 
     /// </summary>
     public struct DeleteInfo
     {
@@ -312,13 +317,13 @@ namespace Tsavorite.core
         public int FullValueLength { get; internal set; }
 
         /// <summary>
-        /// What actions Tsavorite should perform on a false return from the IFunctions method
+        /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public DeleteAction Action { get; set; }
     }
 
     /// <summary>
-    /// What actions to take following the RMW IFunctions method call, such as cancellation or record expiration.
+    /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
     public enum ReadAction
     {
@@ -339,7 +344,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Information passed to <see cref="IFunctions{Key, Value, Input, Output, Context}"/> record-read callbacks. 
+    /// Information passed to <see cref="ISessionFunctions{Key, Value, Input, Output, Context}"/> record-read callbacks. 
     /// </summary>
     public struct ReadInfo
     {
@@ -366,7 +371,7 @@ namespace Tsavorite.core
         public bool IsFromPending { get; internal set; }
 
         /// <summary>
-        /// What actions Tsavorite should perform on a false return from the IFunctions method
+        /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public ReadAction Action { get; set; }
     }

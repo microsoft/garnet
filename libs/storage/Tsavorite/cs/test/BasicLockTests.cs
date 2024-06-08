@@ -14,7 +14,7 @@ namespace Tsavorite.test.LockTests
     [TestFixture]
     public class BasicLockTests
     {
-        internal class Functions : SimpleFunctions<int, int>
+        internal class Functions : SimpleSimpleFunctions<int, int>
         {
             internal bool throwOnInitialUpdater;
             internal long initialUpdaterThrowAddress;
@@ -71,6 +71,7 @@ namespace Tsavorite.test.LockTests
 
         private TsavoriteKV<int, int> store;
         private ClientSession<int, int, int, int, Empty, Functions> session;
+        private BasicContext<int, int, int, int, Empty, Functions> bContext;
         private IDevice log;
 
         const int numRecords = 100;
@@ -81,8 +82,9 @@ namespace Tsavorite.test.LockTests
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
-            store = new TsavoriteKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, comparer: new LocalComparer(), concurrencyControlMode: ConcurrencyControlMode.LockTable);
+            store = new TsavoriteKV<int, int>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null }, comparer: new LocalComparer());
             session = store.NewSession<int, int, Empty, Functions>(new Functions());
+            bContext = session.BasicContext;
         }
 
         [TearDown]
@@ -106,7 +108,7 @@ namespace Tsavorite.test.LockTests
             for (int key = 0; key < numRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
+                Assert.IsFalse(bContext.Upsert(key, key * valueMult).IsPending);
             }
 
             // Update
@@ -118,7 +120,7 @@ namespace Tsavorite.test.LockTests
             for (int key = 0; key < numRecords; key++)
             {
                 var expectedValue = key * valueMult + numThreads * numIters;
-                Assert.IsFalse(session.Read(key, out int value).IsPending);
+                Assert.IsFalse(bContext.Read(key, out int value).IsPending);
                 Assert.AreEqual(expectedValue, value);
             }
         }
@@ -130,13 +132,13 @@ namespace Tsavorite.test.LockTests
                 for (int iter = 0; iter < numIters; iter++)
                 {
                     if ((iter & 7) == 7)
-                        Assert.IsFalse(session.Read(key).status.IsPending);
+                        Assert.IsFalse(bContext.Read(key).status.IsPending);
 
                     // These will both just increment the stored value, ignoring the input argument.
                     if (useRMW)
-                        session.RMW(key, default);
+                        bContext.RMW(key, default);
                     else
-                        session.Upsert(key, default);
+                        bContext.Upsert(key, default);
                 }
             }
         }
@@ -149,13 +151,13 @@ namespace Tsavorite.test.LockTests
             for (int key = 0; key < numRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
+                Assert.IsFalse(bContext.Upsert(key, key * valueMult).IsPending);
             }
 
             // Insert a colliding key so we don't elide the deleted key from the hash chain.
             int deleteKey = numRecords / 2;
             int collidingKey = deleteKey + numRecords;
-            Assert.IsFalse(session.Upsert(collidingKey, collidingKey * valueMult).IsPending);
+            Assert.IsFalse(bContext.Upsert(collidingKey, collidingKey * valueMult).IsPending);
 
             // Now make sure we did collide
             HashEntryInfo hei = new(store.comparer.GetHashCode64(ref deleteKey));
@@ -174,7 +176,7 @@ namespace Tsavorite.test.LockTests
             Assert.IsFalse(recordInfo.Tombstone, "Tombstone should be false");
 
             // In-place delete.
-            Assert.IsFalse(session.Delete(deleteKey).IsPending);
+            Assert.IsFalse(bContext.Delete(deleteKey).IsPending);
             Assert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Delete");
 
             if (flushMode == FlushMode.ReadOnly)
@@ -182,8 +184,8 @@ namespace Tsavorite.test.LockTests
 
             var status = updateOp switch
             {
-                UpdateOp.RMW => session.RMW(deleteKey, default),
-                UpdateOp.Upsert => session.Upsert(deleteKey, default),
+                UpdateOp.RMW => bContext.RMW(deleteKey, default),
+                UpdateOp.Upsert => bContext.Upsert(deleteKey, default),
                 UpdateOp.Delete => throw new InvalidOperationException("UpdateOp.Delete not expected in this test"),
                 _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
             };
@@ -203,7 +205,7 @@ namespace Tsavorite.test.LockTests
             for (int key = 0; key < numRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                Assert.IsFalse(session.Upsert(key, key * valueMult).IsPending);
+                Assert.IsFalse(bContext.Upsert(key, key * valueMult).IsPending);
             }
 
             long expectedThrowAddress = store.Log.TailAddress;
@@ -221,9 +223,9 @@ namespace Tsavorite.test.LockTests
             {
                 var status = updateOp switch
                 {
-                    UpdateOp.RMW => session.RMW(insertKey, default),
-                    UpdateOp.Upsert => session.Upsert(insertKey, default),
-                    UpdateOp.Delete => session.Delete(deleteKey),
+                    UpdateOp.RMW => bContext.RMW(insertKey, default),
+                    UpdateOp.Upsert => bContext.Upsert(insertKey, default),
+                    UpdateOp.Delete => bContext.Delete(deleteKey),
                     _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
                 };
                 Assert.IsFalse(status.IsPending);
