@@ -977,7 +977,7 @@ namespace Garnet.test
             response = lightClientRequest.Execute("ZADD board 560 Tom", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
 
-            expectedResponse = "-ERR max or min value is not a float value.\r\n";
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT)}\r\n";
             response = lightClientRequest.Execute("ZCOUNT board 5 b", expectedResponse.Length, bytesSent);
             Assert.AreEqual(expectedResponse, response);
         }
@@ -1312,7 +1312,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYLEX myzset =a .", bytesSent);
-            expectedResponse = "-ERR max or min value not in a valid range.\r\n";
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING)}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -1322,7 +1322,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYRANK board a b", bytesSent);
-            expectedResponse = "-ERR start or stop value is not in an integer or out of range.\r\n";
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER)}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -1362,7 +1362,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommandChunks("ZREMRANGEBYSCORE board a b", bytesSent);
-            expectedResponse = "-ERR max or min value is not a float value.\r\n";
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT)}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
