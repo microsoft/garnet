@@ -835,7 +835,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus Increment<TContext>(ArgSlice key, long increment, out OperationError operationError, out long output, ref TContext context)
-            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long>
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
         {
             var cmd = RespCommand.INCRBY;
             if (increment < 0)
