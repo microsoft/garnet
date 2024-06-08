@@ -161,19 +161,19 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx) =>
-            _sessionLocker.TryLockTransientExclusive(Store, ref key, ref stackCtx);
+            _sessionLocker.TryLockTransientExclusive(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
-            => _sessionLocker.TryLockTransientShared(Store, ref key, ref stackCtx);
+            => _sessionLocker.TryLockTransientShared(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
-            => _sessionLocker.UnlockTransientExclusive(Store, ref key, ref stackCtx);
+            => _sessionLocker.UnlockTransientExclusive(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
-            => _sessionLocker.UnlockTransientShared(Store, ref key, ref stackCtx);
+            => _sessionLocker.UnlockTransientShared(Store, ref stackCtx);
         #endregion Transient locking
 
         #region Internal utilities

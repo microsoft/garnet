@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using Garnet.common;
 using Tsavorite.core;
@@ -37,7 +38,6 @@ namespace Garnet.server
         private unsafe bool SortedSetAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-
             if (count < 3)
             {
                 return AbortWithWrongNumberOfArguments("ZADD", count);
@@ -266,9 +266,8 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
-        /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRange<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRange<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
@@ -313,6 +312,15 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
+                        RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
+                        RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
+
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.flags = 0;
@@ -350,22 +358,6 @@ namespace Garnet.server
             //update readHead
             readHead = (int)(ptr - recvBufferPtr);
             return true;
-        }
-
-        /// <summary>
-        /// Returns the specified range of elements in the sorted set stored at key.
-        /// The ordering is reversed.
-        /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
-        /// <param name="storageApi"></param>
-        /// <returns></returns>
-        private unsafe bool SortedSetReverseRange<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
-           where TGarnetApi : IGarnetApi
-        {
-            //ZREVRANGE key start stop [WITHSCORES]
-            return SortedSetRange(count, ptr, SortedSetOperation.ZREVRANGE, ref storageApi);
         }
 
         /// <summary>
@@ -536,14 +528,13 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
-        /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetPop<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetPop<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             if (count < 1 || count > 2)
             {
-                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZPOPMAX ? "ZPOPMAX" : "ZPOPMIN", count);
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
             else
             {
@@ -575,6 +566,14 @@ namespace Garnet.server
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.ZPOPMIN => SortedSetOperation.ZPOPMIN,
+                        RespCommand.ZPOPMAX => SortedSetOperation.ZPOPMAX,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -711,15 +710,14 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
-        /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetLengthByValue<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetLengthByValue<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             if (count != 3)
             {
                 zaddDoneCount = zaddAddCount = 0;
-                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZLEXCOUNT ? "ZLEXCOUNT" : "ZREMRANGEBYLEX", count);
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
             else
             {
@@ -727,7 +725,7 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                bool checkCluster = NetworkSingleKeySlotVerify(key, op != SortedSetOperation.ZREMRANGEBYLEX);
+                bool checkCluster = NetworkSingleKeySlotVerify(key, command != RespCommand.ZREMRANGEBYLEX);
 
                 if (checkCluster)
                 {
@@ -744,6 +742,14 @@ namespace Garnet.server
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.ZREMRANGEBYLEX => SortedSetOperation.ZREMRANGEBYLEX,
+                        RespCommand.ZLEXCOUNT => SortedSetOperation.ZLEXCOUNT,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -891,15 +897,14 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
-        /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRank<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRank<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            //validation of required args
-            if (count < 2 || count > 3)
+            // TODO: WITHSCORE
+            if (count < 2)
             {
-                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZRANK ? "ZRANK" : "ZREVRANK", count);
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
             else
             {
@@ -922,6 +927,14 @@ namespace Garnet.server
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.ZRANK => SortedSetOperation.ZRANK,
+                        RespCommand.ZREVRANK => SortedSetOperation.ZREVRANK,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
@@ -968,14 +981,13 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
-        /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool SortedSetRemoveRange<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool SortedSetRemoveRange<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
             if (count != 3)
             {
-                return AbortWithWrongNumberOfArguments(op == SortedSetOperation.ZREMRANGEBYRANK ? "ZREMRANGEBYRANK" : "ZREMRANGEBYSCORE", count);
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
             else
             {
@@ -999,6 +1011,14 @@ namespace Garnet.server
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.ZREMRANGEBYRANK => SortedSetOperation.ZREMRANGEBYRANK,
+                        RespCommand.ZREMRANGEBYSCORE => SortedSetOperation.ZREMRANGEBYSCORE,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
+
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.flags = 0;
@@ -1016,7 +1036,7 @@ namespace Garnet.server
                     case GarnetStatus.OK:
                         if (output.countDone == int.MaxValue)
                         {
-                            var errorMessage = op == SortedSetOperation.ZREMRANGEBYRANK ?
+                            var errorMessage = command == RespCommand.ZREMRANGEBYRANK ?
                                 "ERR start or stop value is not in an integer or out of range."u8 :
                                 "ERR max or min value is not a float value."u8;
 

@@ -189,7 +189,6 @@ namespace Garnet.server
         private bool NetworkStringGetBit<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -440,14 +439,12 @@ namespace Garnet.server
         private bool NetworkStringBitOperation<TGarnetApi>(int count, byte* ptr, BitmapOperation bitop, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // Check if option provided is valid
-            if (bitop == BitmapOperation.NONE)
+            // Too few keys
+            if (count < 2)
             {
-                ReadOnlySpan<byte> bufSpan = new(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
-                    return false;
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
                     SendAndReset();
+
                 return true;
             }
 
@@ -848,6 +845,5 @@ namespace Garnet.server
             readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
-
     }
 }

@@ -22,11 +22,6 @@ namespace Tsavorite.core
         public long IndexSize = 1L << 26;
 
         /// <summary>
-        /// How Tsavorite should do record locking
-        /// </summary>
-        public ConcurrencyControlMode ConcurrencyControlMode;
-
-        /// <summary>
         /// Device used for main hybrid log
         /// </summary>
         public IDevice LogDevice;
@@ -191,7 +186,7 @@ namespace Tsavorite.core
             var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(MemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
-            retStr += $"; mutable fraction: {MutableFraction}; locking mode: {ConcurrencyControlMode}";
+            retStr += $"; mutable fraction: {MutableFraction};";
             retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
             retStr += $"; read copy options: {ReadCopyOptions}";
             if (ReadCacheEnabled)

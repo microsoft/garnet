@@ -44,7 +44,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> HISTOGRAM => "HISTOGRAM"u8;
         public static ReadOnlySpan<byte> histogram => "histogram"u8;
         public static ReadOnlySpan<byte> REPLICAOF => "REPLICAOF"u8;
-        public static ReadOnlySpan<byte> SECONDARYOF => "SLAVEOF"u8;
+        public static ReadOnlySpan<byte> SLAVEOF => "SLAVEOF"u8;
+        public static ReadOnlySpan<byte> SECONDARYOF => "SECONDARYOF"u8;
         public static ReadOnlySpan<byte> HELP => "HELP"u8;
         public static ReadOnlySpan<byte> help => "help"u8;
         public static ReadOnlySpan<byte> PING => "PING"u8;
@@ -135,12 +136,15 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INDEX_OUT_RANGE => "ERR index out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_INVALID_INDEX => "ERR invalid database index."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SELECT_CLUSTER_MODE => "ERR SELECT is not allowed in cluster mode"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NO_TRANSACTION_PROCEDURE => "ERR Could not get transaction procedure"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS => "ERR wrong number of arguments for command"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS_CONFIG => "ERR wrong number of arguments for 'config' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION => "ERR Unsupported protocol version"u8;
         public static ReadOnlySpan<byte> RESP_ERR_ASYNC_PROTOCOL_CHANGE => "ERR protocol change is not allowed with pending async operations"u8;
         public static ReadOnlySpan<byte> RESP_ERR_NOT_VALID_FLOAT => "ERR value is not a valid float"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
-        public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "syntax error"u8;
+        public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
 
 
@@ -181,5 +185,62 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> txn => "txn"u8;
         public static ReadOnlySpan<byte> SRC => "SRC"u8;
         public static ReadOnlySpan<byte> src => "src"u8;
+
+        public static ReadOnlySpan<byte> AND => "AND"u8;
+        public static ReadOnlySpan<byte> and => "and"u8;
+        public static ReadOnlySpan<byte> OR => "OR"u8;
+        public static ReadOnlySpan<byte> or => "or"u8;
+        public static ReadOnlySpan<byte> XOR => "XOR"u8;
+        public static ReadOnlySpan<byte> xor => "xor"u8;
+        public static ReadOnlySpan<byte> NOT => "NOT"u8;
+        public static ReadOnlySpan<byte> not => "not"u8;
+
+        // subcommand parsing strings
+        public static ReadOnlySpan<byte> CAT => "CAT"u8;
+        public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
+        public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
+        public static ReadOnlySpan<byte> SETUSER => "SETUSER"u8;
+        public static ReadOnlySpan<byte> USERS => "USERS"u8;
+        public static ReadOnlySpan<byte> WHOAMI => "WHOAMI"u8;
+        public static ReadOnlySpan<byte> USAGE => "USAGE"u8;
+        public static ReadOnlySpan<byte> BUMPEPOCH => "BUMPEPOCH"u8;
+        public static ReadOnlySpan<byte> FORGET => "FORGET"u8;
+        public static ReadOnlySpan<byte> MEET => "MEET"u8;
+        public static ReadOnlySpan<byte> MYID => "MYID"u8;
+        public static ReadOnlySpan<byte> NODES => "NODES"u8;
+        public static ReadOnlySpan<byte> SETCONFIGEPOCH => "SET-CONFIG-EPOCH"u8;
+        public static ReadOnlySpan<byte> SHARDS => "SHARDS"u8;
+        public static ReadOnlySpan<byte> ADDSLOTS => "ADDSLOTS"u8;
+        public static ReadOnlySpan<byte> ADDSLOTSRANGE => "ADDSLOTSRANGE"u8;
+        public static ReadOnlySpan<byte> COUNTKEYSINSLOT => "COUNTKEYSINSLOT"u8;
+        public static ReadOnlySpan<byte> DELSLOTS => "DELSLOTS"u8;
+        public static ReadOnlySpan<byte> DELSLOTSRANGE => "DELSLOTSRANGE"u8;
+        public static ReadOnlySpan<byte> GETKEYSINSLOT => "GETKEYSINSLOT"u8;
+        public static ReadOnlySpan<byte> KEYSLOT => "KEYSLOT"u8;
+        public static ReadOnlySpan<byte> SETSLOT => "SETSLOT"u8;
+        public static ReadOnlySpan<byte> SLOTS => "SLOTS"u8;
+        public static ReadOnlySpan<byte> REPLICAS => "REPLICAS"u8;
+        public static ReadOnlySpan<byte> REPLICATE => "REPLICATE"u8;
+
+        // Cluster subcommands which are internal and thus undocumented
+        // 
+        // Because these are internal, they have lower case property names
+        public static ReadOnlySpan<byte> gossip => "GOSSIP"u8;
+        public static ReadOnlySpan<byte> myparentid => "MYPARENTID"u8;
+        public static ReadOnlySpan<byte> delkeysinslot => "DELKEYSINSLOT"u8;
+        public static ReadOnlySpan<byte> delkeysinslotrange => "DELKEYSINSLOTRANGE"u8;
+        public static ReadOnlySpan<byte> setslotsrange => "SETSLOTSRANGE"u8;
+        public static ReadOnlySpan<byte> slotstate => "SLOTSTATE"u8;
+        public static ReadOnlySpan<byte> mtasks => "MTASKS"u8;
+        public static ReadOnlySpan<byte> aofsync => "AOFSYNC"u8;
+        public static ReadOnlySpan<byte> appendlog => "APPENDLOG"u8;
+        public static ReadOnlySpan<byte> banlist => "BANLIST"u8;
+        public static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
+        public static ReadOnlySpan<byte> endpoint => "ENDPOINT"u8;
+        public static ReadOnlySpan<byte> failreplicationoffset => "FAILREPLICATIONOFFSET"u8;
+        public static ReadOnlySpan<byte> failstopwrites => "FAILSTOPWRITES"u8;
+        public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
+        public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
+        public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
     }
 }

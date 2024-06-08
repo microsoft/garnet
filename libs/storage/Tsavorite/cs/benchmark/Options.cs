@@ -33,12 +33,6 @@ namespace Tsavorite.benchmark
                         "\n    (Checkpoints are stored in directories under " + TestLoader.DataPath + " in directories named by distribution, ycsb vs. synthetic data, and key counts)")]
         public bool BackupAndRestore { get; set; }
 
-        [Option('z', "locking", Required = false, Default = ConcurrencyControlMode.None,
-             HelpText = "Locking Implementation:" +
-                       $"\n    {nameof(ConcurrencyControlMode.None)} = No Locking (default)" +
-                       $"\n    {nameof(ConcurrencyControlMode.LockTable)} = Locking using main HashTable buckets")]
-        public ConcurrencyControlMode ConcurrencyControlMode { get; set; }
-
         [Option('i', "iterations", Required = false, Default = 1,
             HelpText = "Number of iterations of the test to run")]
         public int IterationCount { get; set; }
@@ -118,7 +112,7 @@ namespace Tsavorite.benchmark
         {
             static string boolStr(bool value) => value ? "y" : "n";
             return $"b: {Benchmark}; d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
-                        + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; z: {ConcurrencyControlMode}; i: {IterationCount}; hp: {HashPacking};"
+                        + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; i: {IterationCount}; hp: {HashPacking};"
                         + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(UseSyntheticData)}; safectx: {boolStr(UseSafeContext)};"
                         + $" chkptms: {PeriodicCheckpointMilliseconds}; chkpttype: {(PeriodicCheckpointMilliseconds > 0 ? PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(PeriodicCheckpointTryIncremental)}";

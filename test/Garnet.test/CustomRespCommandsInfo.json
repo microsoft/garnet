@@ -1,7 +1,19 @@
 ﻿[
   {
     "Command": "NONE",
-    "ArrayCommand": null,
+    "Name": "DELIFM",
+    "Arity": 3,
+    "Flags": "Write",
+    "FirstKey": 1,
+    "LastKey": -1,
+    "Step": 1,
+    "AclCategories": "Read",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "NONE",
     "Name": "MGETIFPM",
     "Arity": -3,
     "Flags": "ReadOnly",
@@ -15,7 +27,6 @@
   },
   {
     "Command": "NONE",
-    "ArrayCommand": null,
     "Name": "MYDICTGET",
     "Arity": 3,
     "Flags": "ReadOnly",
@@ -29,7 +40,6 @@
   },
   {
     "Command": "NONE",
-    "ArrayCommand": null,
     "Name": "MYDICTSET",
     "Arity": 4,
     "Flags": "DenyOom, Write",
@@ -43,7 +53,6 @@
   },
   {
     "Command": "NONE",
-    "ArrayCommand": null,
     "Name": "READWRITETX",
     "Arity": 4,
     "Flags": "DenyOom, Write",
@@ -57,8 +66,20 @@
   },
   {
     "Command": "NONE",
-    "ArrayCommand": null,
     "Name": "SETIFPM",
+    "Arity": 4,
+    "Flags": "DenyOom, Write",
+    "FirstKey": 1,
+    "LastKey": 3,
+    "Step": 1,
+    "AclCategories": "Write",
+    "Tips": null,
+    "KeySpecifications": null,
+    "SubCommands": null
+  },
+  {
+    "Command": "NONE",
+    "Name": "SETWPIFPGT",
     "Arity": 4,
     "Flags": "DenyOom, Write",
     "FirstKey": 1,

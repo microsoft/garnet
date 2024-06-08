@@ -20,11 +20,6 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
-
             // Expecting exactly 0 arguments
             if (count != 0)
             {
@@ -59,11 +54,6 @@ namespace Garnet.cluster
         private bool NetworkClusterReplicate(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting 1 or 2 arguments
             if (count is < 1 or > 2)

@@ -63,19 +63,9 @@ namespace Tsavorite.test.ReadCacheTests
             var readCacheSettings = new ReadCacheSettings { MemorySizeBits = 15, PageSizeBits = 9 };
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "NativeReadCacheTests.log"), deleteOnClose: true);
 
-            var concurrencyControlMode = ConcurrencyControlMode.None;
-            foreach (var arg in TestContext.CurrentContext.Test.Arguments)
-            {
-                if (arg is ConcurrencyControlMode ccm)
-                {
-                    concurrencyControlMode = ccm;
-                    continue;
-                }
-            }
-
             store = new TsavoriteKV<long, long>
                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 10, ReadCacheSettings = readCacheSettings },
-                comparer: new ChainComparer(mod), concurrencyControlMode: concurrencyControlMode);
+                comparer: new ChainComparer(mod));
         }
 
         [TearDown]
@@ -300,7 +290,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteCacheRecordTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void DeleteCacheRecordTest()
         {
             PopulateAndEvict();
             CreateChain();
@@ -329,7 +319,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void DeleteHalfOfAllReadCacheRecordsTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void DeleteHalfOfAllReadCacheRecordsTest()
         {
             PopulateAndEvict();
             CreateChain();
@@ -382,7 +372,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void UpsertCacheRecordTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void UpsertCacheRecordTest()
         {
             DoUpdateTest(useRMW: false);
         }
@@ -391,7 +381,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void RMWCacheRecordTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void RMWCacheRecordTest()
         {
             DoUpdateTest(useRMW: true);
         }
@@ -441,7 +431,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromCTTTest([Values] ConcurrencyControlMode concurrencyControlMode)
+        public void SpliceInFromCTTTest()
         {
             PopulateAndEvict();
             CreateChain();
@@ -463,7 +453,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromUpsertTest([Values] RecordRegion recordRegion, [Values] ConcurrencyControlMode concurrencyControlMode)
+        public void SpliceInFromUpsertTest([Values] RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -493,7 +483,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromRMWTest([Values] RecordRegion recordRegion, [Values] ConcurrencyControlMode concurrencyControlMode)
+        public void SpliceInFromRMWTest([Values] RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -541,7 +531,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpliceInFromDeleteTest([Values] RecordRegion recordRegion, [Values] ConcurrencyControlMode concurrencyControlMode)
+        public void SpliceInFromDeleteTest([Values] RecordRegion recordRegion)
         {
             PopulateAndEvict(recordRegion);
             CreateChain(recordRegion);
@@ -570,7 +560,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(SmokeTestCategory)]
-        public void VerifyLockCountsAfterReadCacheEvict([Values(ConcurrencyControlMode.LockTable)] ConcurrencyControlMode concurrencyControlMode)
+        public void VerifyLockCountsAfterReadCacheEvict()
         {
             PopulateAndEvict();
             CreateChain();
@@ -613,13 +603,13 @@ namespace Tsavorite.test.ReadCacheTests
                     HashEntryInfo hei = new(store.comparer.GetHashCode64(ref key.Key));
                     OverflowBucketLockTableTests.PopulateHei(store, ref hei);
 
-                    var lockState = store.LockTable.GetLockState(ref key.Key, ref hei);
+                    var lockState = store.LockTable.GetLockState(ref hei);
                     Assert.IsTrue(lockState.IsFound);
                     Assert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
                     Assert.AreEqual(key.LockType != LockType.Exclusive, lockState.NumLockedShared > 0);
 
                     luContext.Unlock(keys, idx, 1);
-                    lockState = store.LockTable.GetLockState(ref key.Key, ref hei);
+                    lockState = store.LockTable.GetLockState(ref hei);
                     Assert.IsFalse(lockState.IsLockedExclusive);
                     Assert.AreEqual(0, lockState.NumLockedShared);
                 }
@@ -694,8 +684,7 @@ namespace Tsavorite.test.ReadCacheTests
                 }
             }
 
-            store = new TsavoriteKV<long, long>(1L << 20, logSettings, comparer: new LongComparerModulo(modRange),
-                concurrencyControlMode: ConcurrencyControlMode.LockTable);
+            store = new TsavoriteKV<long, long>(1L << 20, logSettings, comparer: new LongComparerModulo(modRange));
         }
 
         [TearDown]
@@ -944,8 +933,7 @@ namespace Tsavorite.test.ReadCacheTests
                 }
             }
 
-            store = new TsavoriteKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: new SpanByteComparerModulo(modRange),
-                concurrencyControlMode: ConcurrencyControlMode.LockTable);
+            store = new TsavoriteKV<SpanByte, SpanByte>(1L << 20, logSettings, comparer: new SpanByteComparerModulo(modRange));
         }
 
         [TearDown]

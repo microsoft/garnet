@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Internal;
 
@@ -38,7 +39,7 @@ namespace Garnet.test.Resp.ACL
             Assert.AreEqual("default", response);
 
             // Add the testuser and password
-            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", "nopass", "+@admin");
+            response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", "nopass", "+@admin", "+@slow");
             Assert.IsTrue(response.StartsWith("OK"));
 
             // Change users and verify whoami changes
@@ -60,7 +61,7 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task BasicListTest()
         {
-            const string ExpectedDefaultRule = "user default on nopass +@admin";
+            const string ExpectedDefaultRule = "user default on nopass +@all";
             const string ExpectedTestUserRule = $"user {TestUserA} off";
 
             using var c = TestUtils.GetGarnetClientSession();
@@ -119,6 +120,29 @@ namespace Garnet.test.Resp.ACL
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("ACL subcommand");
             Assert.IsTrue(response.AsSpan().StartsWith("-ERR"u8));
+        }
+
+        /// <summary>
+        /// Test that our check for "has subcommands" matches reality.
+        /// </summary>
+        [Test]
+        public void NoAuthValidation()
+        {
+            foreach (var cmd in Enum.GetValues<RespCommand>())
+            {
+                if (cmd == RespCommand.NONE || cmd == RespCommand.INVALID)
+                {
+                    continue;
+                }
+
+                if (RespCommandsInfo.TryGetRespCommandInfo(cmd, out var info))
+                {
+                    var infoIsNoAuth = info.Flags.HasFlag(RespCommandFlags.NoAuth);
+                    var cmdIsNoAuth = cmd.IsNoAuth();
+
+                    Assert.AreEqual(infoIsNoAuth, cmdIsNoAuth, $"Mismatch for command {cmd}");
+                }
+            }
         }
     }
 }

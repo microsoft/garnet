@@ -514,10 +514,11 @@ namespace Garnet.test
             try
             {
                 db.Execute("CONFIG");
+                Assert.Fail("Shouldn't be reachable, command is incorrect");
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("ERR wrong number of arguments for 'CONFIG' command", ex.Message);
+                Assert.AreEqual("ERR wrong number of arguments for 'config' command", ex.Message);
             }
         }
 
@@ -529,10 +530,11 @@ namespace Garnet.test
             try
             {
                 db.Execute("CONFIG", "GET");
+                Assert.Fail("Shouldn't be reachable, command is incorrect");
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("ERR wrong number of arguments for 'CONFIG|GET' command", ex.Message);
+                Assert.AreEqual("ERR wrong number of arguments for 'config|get' command", ex.Message);
             }
         }
         #endregion

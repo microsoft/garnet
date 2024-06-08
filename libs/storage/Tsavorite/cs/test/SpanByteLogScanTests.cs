@@ -52,7 +52,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
             store = new TsavoriteKV<SpanByte, SpanByte>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = PageSizeBits }, concurrencyControlMode: ConcurrencyControlMode.None, comparer: comparer);
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = PageSizeBits }, comparer: comparer);
         }
 
         [TearDown]
@@ -373,7 +373,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
             using var store = new TsavoriteKV<SpanByte, SpanByte>
-                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 20, PageSizeBits = 15 }, concurrencyControlMode: ConcurrencyControlMode.None);
+                (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 20, PageSizeBits = 15 });
             using var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, SpanByteFunctions<Empty>>(new SpanByteFunctions<Empty>());
             var bContext = session.BasicContext;
 

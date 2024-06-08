@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -26,15 +27,14 @@ namespace Garnet.server
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
         /// <param name="ptr"></param>
-        /// <param name="lop"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListPush<TGarnetApi>(int count, byte* ptr, ListOperation lop, ref TGarnetApi storageApi)
+        private unsafe bool ListPush<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
             if (count < 2)
             {
-                return AbortWithWrongNumberOfArguments(lop.ToString(), count);
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
 
             // Get the key for List
@@ -59,6 +59,16 @@ namespace Garnet.server
             // Prepare length of header in input buffer
             var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
+            ListOperation lop =
+                command switch
+                {
+                    RespCommand.LPUSH => ListOperation.LPUSH,
+                    RespCommand.LPUSHX => ListOperation.LPUSHX,
+                    RespCommand.RPUSH => ListOperation.RPUSH,
+                    RespCommand.RPUSHX => ListOperation.RPUSHX,
+                    _ => throw new Exception($"Unexpected {nameof(ListOperation)}: {command}")
+                };
+
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.List;
             inputPtr->header.flags = 0;
@@ -73,7 +83,7 @@ namespace Garnet.server
 
             var status = GarnetStatus.OK;
 
-            if (lop == ListOperation.LPUSH || lop == ListOperation.LPUSHX)
+            if (command == RespCommand.LPUSH || command == RespCommand.LPUSHX)
                 status = storageApi.ListLeftPush(sskey, input, out output);
             else
                 status = storageApi.ListRightPush(sskey, input, out output);
@@ -113,15 +123,14 @@ namespace Garnet.server
         /// </summary>
         /// <param name="count"></param>
         /// <param name="ptr"></param>
-        /// <param name="lop"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool ListPop<TGarnetApi>(int count, byte* ptr, ListOperation lop, ref TGarnetApi storageApi)
+        private unsafe bool ListPop<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
                             where TGarnetApi : IGarnetApi
         {
             if (count < 1)
             {
-                return AbortWithWrongNumberOfArguments(lop.ToString(), count);
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
 
             // Get the key for List
@@ -156,6 +165,14 @@ namespace Garnet.server
             // Prepare length of header in input buffer
             var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
+            ListOperation lop =
+                command switch
+                {
+                    RespCommand.LPOP => ListOperation.LPOP,
+                    RespCommand.RPOP => ListOperation.RPOP,
+                    _ => throw new Exception($"Unexpected {nameof(ListOperation)}: {command}")
+                };
+
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.List;
             inputPtr->header.flags = 0;
@@ -165,7 +182,7 @@ namespace Garnet.server
 
             GarnetStatus statusOp = GarnetStatus.NOTFOUND;
 
-            if (lop == ListOperation.LPOP)
+            if (command == RespCommand.LPOP)
                 statusOp = storageApi.ListLeftPop(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
             else
                 statusOp = storageApi.ListRightPop(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);

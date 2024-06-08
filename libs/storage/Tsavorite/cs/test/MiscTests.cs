@@ -121,8 +121,7 @@ namespace Tsavorite.test
                 log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog1.log"), deleteOnClose: true);
                 store = new TsavoriteKV<KeyStruct, ValueStruct>
                     (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 },
-                    checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir },
-                    concurrencyControlMode: ConcurrencyControlMode.None);
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir });
 
                 session = store.NewSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);
                 var bContext = session.BasicContext;
@@ -171,8 +170,7 @@ namespace Tsavorite.test
 
                 store = new TsavoriteKV<KeyStruct, ValueStruct>
                     (128, new LogSettings { LogDevice = log, MemorySizeBits = 29 },
-                    checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir },
-                    concurrencyControlMode: ConcurrencyControlMode.None);
+                    checkpointSettings: new CheckpointSettings { CheckpointDir = checkpointDir });
 
                 store.Recover(token);
                 session = store.NewSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite>(copyOnWrite);

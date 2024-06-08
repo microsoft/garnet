@@ -175,6 +175,7 @@ namespace Garnet.test
             bool extensionAllowUnsignedAssemblies = true,
             bool getSG = false,
             int indexResizeFrequencySecs = 60,
+            IAuthenticationSettings authenticationSettings = null,
             ILogger logger = null)
         {
             if (UseAzureStorage)
@@ -191,13 +192,22 @@ namespace Garnet.test
 
             if (logCheckpointDir != null && !UseAzureStorage) _CheckpointDir = new DirectoryInfo(string.IsNullOrEmpty(_CheckpointDir) ? "." : _CheckpointDir).FullName;
 
-            IAuthenticationSettings authenticationSettings = null;
             if (useAcl)
             {
+                if (authenticationSettings != null)
+                {
+                    throw new ArgumentException($"Cannot set both {nameof(useAcl)} and {nameof(authenticationSettings)}");
+                }
+
                 authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, defaultPassword);
             }
             else if (defaultPassword != null)
             {
+                if (authenticationSettings != null)
+                {
+                    throw new ArgumentException($"Cannot set both {nameof(defaultPassword)} and {nameof(authenticationSettings)}");
+                }
+
                 authenticationSettings = new PasswordAuthenticationSettings(defaultPassword);
             }
 
