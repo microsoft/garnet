@@ -75,16 +75,13 @@ namespace Garnet.server
                 // Restore input buffer
                 *inputPtr = save;
 
-                if (status != GarnetStatus.OK)
-                {
-                    var tokens = ReadLeftToken(count - 1, ref ptr);
-                    if (tokens < count - 1)
-                        return false;
-                }
-
                 switch (status)
                 {
                     case GarnetStatus.WRONGTYPE:
+                        var tokens = ReadLeftToken(count - 1, ref ptr);
+                        if (tokens < count - 1)
+                            return false;
+
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                             SendAndReset();
                         break;

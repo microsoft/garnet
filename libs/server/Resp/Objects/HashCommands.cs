@@ -78,16 +78,13 @@ namespace Garnet.server
 
                 *inputPtr = save; // reset input buffer
 
-                if (status != GarnetStatus.OK)
-                {
-                    var tokens = ReadLeftToken(count - 1, ref ptr);
-                    if (tokens < count - 1)
-                        return false;
-                }
-
                 switch (status)
                 {
                     case GarnetStatus.WRONGTYPE:
+                        var tokens = ReadLeftToken(count - 1, ref ptr);
+                        if (tokens < count - 1)
+                            return false;
+
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                             SendAndReset();
                         break;
@@ -722,23 +719,20 @@ namespace Garnet.server
                 // Restore input
                 *inputPtr = save;
 
-                if (status != GarnetStatus.OK)
-                {
-                    var tokens = ReadLeftToken(count - 1, ref ptr);
-                    if (tokens < count - 1)
-                        return false;
-                }
-
                 switch (status)
                 {
                     case GarnetStatus.WRONGTYPE:
+                        var tokens = ReadLeftToken(count - 1, ref ptr);
+                        if (tokens < count - 1)
+                            return false;
+
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                             SendAndReset();
                         break;
                     default:
                         // Process output
                         var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        if (objOutputHeader.opsDone == Int32.MinValue)
+                        if (objOutputHeader.opsDone == int.MinValue)
                         {
                             // Command was partially done
                             return false;
