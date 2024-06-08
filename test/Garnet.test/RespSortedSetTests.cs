@@ -1148,7 +1148,7 @@ namespace Garnet.test
 
             //do zincrby
             var response = lightClientRequest.SendCommandChunks("ZINCRBY myboard 1 field1", bytesSent);
-            var expectedResponse = "-ERR wrong key type used in ZINCRBY command.\r\n";
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -1405,7 +1405,7 @@ namespace Garnet.test
             Assert.AreEqual(expectedResponse, actualValue);
 
             response = lightClientRequest.SendCommandChunks("ZLEXCOUNT board *d 8", bytesSent);
-            expectedResponse = "-ERR max or min value not in a valid range.\r\n";
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING)}\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -1704,7 +1704,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD zset1 1 uno 2 due 3 tre 4 quattro 5 cinque 6 sei");
 
             result = lightClientRequest.SendCommand("ZREMRANGEBYLEX zset1 0 1");
-            expectedResponse = "-ERR max or min value not in a valid range.\r\n";
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING)}\r\n"; ;
             actualValue = Encoding.ASCII.GetString(result).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
