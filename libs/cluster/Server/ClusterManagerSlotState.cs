@@ -48,7 +48,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Try to remove ownernship of slots. Slot state transition to OFFLINE.
+        /// Try to remove ownership of slots. Slot state transition to OFFLINE.
         /// </summary>
         /// <param name="slots">Slot list</param>
         /// <param name="notLocalSlot">The slot number that is not local.</param>

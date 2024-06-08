@@ -1007,7 +1007,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key">Key bytes</param>
         /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation.</param>
-        /// <returns>True when ownernship is verified, false otherwise</returns>
+        /// <returns>True when ownership is verified, false otherwise</returns>
         bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly)
             => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(key, readOnly, SessionAsking, ref dcurr, ref dend);
 
@@ -1017,7 +1017,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keyPtr">Pointer to key bytes</param>
         /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
-        /// <returns>True when ownernship is verified, false otherwise</returns>
+        /// <returns>True when ownership is verified, false otherwise</returns>
         bool NetworkSingleKeySlotVerify(byte* keyPtr, int ksize, bool readOnly)
             => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(new ArgSlice(keyPtr, ksize), readOnly, SessionAsking, ref dcurr, ref dend);
 
@@ -1026,11 +1026,11 @@ namespace Garnet.server
         /// On error this method writes to response buffer and drains recv buffer.
         /// </summary>
         /// <param name="keyCount">Number of keys</param>
-        /// <param name="ptr">Starting poistion of RESP formatted key sequence</param>
+        /// <param name="ptr">Starting position of RESP formatted key sequence</param>
         /// <param name="interleavedKeys">Whether the sequence of keys are interleaved (e.g. MSET [key1] [value1] [key2] [value2]...) or non-interleaved (e.g. MGET [key1] [key2] [key3])</param>
         /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
         /// <param name="retVal">Used to indicate if parsing succeeded or failed due to lack of expected data</param>
-        /// <returns>True when ownernship is verified, false otherwise</returns>
+        /// <returns>True when ownership is verified, false otherwise</returns>
         bool NetworkArraySlotVerify(int keyCount, byte* ptr, bool interleavedKeys, bool readOnly, out bool retVal)
         {
             retVal = false;
@@ -1048,7 +1048,7 @@ namespace Garnet.server
         /// <param name="keys">Array of key ArgSlice</param>
         /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
         /// <param name="count">Key count if different than keys array length</param>
-        /// <returns>True when ownernship is verified, false otherwise</returns>
+        /// <returns>True when ownership is verified, false otherwise</returns>
         bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, int count = -1)
             => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(ref keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
     }
