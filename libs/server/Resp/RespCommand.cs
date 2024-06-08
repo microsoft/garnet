@@ -74,10 +74,10 @@ namespace Garnet.server
         ZREVRANGE,
         ZREVRANK,
         ZSCAN,
-        ZSCORE,
+        ZSCORE, // Note: Update OneIfRead if adding new read commands after this
 
         // Write commands
-        APPEND,
+        APPEND, // Note: Update OneIfWrite if adding new write commands before this
         BITFIELD,
         DECR,
         DECRBY,
@@ -145,7 +145,7 @@ namespace Garnet.server
         BITOP_AND,
         BITOP_OR,
         BITOP_XOR,
-        BITOP_NOT,
+        BITOP_NOT, // Note: Update OneIfWrite if adding new write commands after this
 
         // Neither read nor write commands
         ASYNC,
@@ -224,7 +224,7 @@ namespace Garnet.server
         LATENCY_RESET,
 
         CLUSTER,
-        CLUSTER_ADDSLOTS,
+        CLUSTER_ADDSLOTS, // Note: Update IsClusterSubCommand if adding new cluster subcommands before this
         CLUSTER_ADDSLOTSRANGE,
         CLUSTER_AOFSYNC,
         CLUSTER_APPENDLOG,
@@ -263,12 +263,12 @@ namespace Garnet.server
         CLUSTER_SETSLOTSRANGE,
         CLUSTER_SHARDS,
         CLUSTER_SLOTS,
-        CLUSTER_SLOTSTATE,
+        CLUSTER_SLOTSTATE, // Note: Update IsClusterSubCommand if adding new cluster subcommands after this
 
         // Don't require AUTH (if auth is enabled)
-        AUTH,
+        AUTH, // Note: Update IsNoAuth if adding new no-auth commands before this
         HELLO,
-        QUIT,
+        QUIT, // Note: Update IsNoAuth if adding new no-auth commands after this
 
         INVALID = 0xFF,
     }
