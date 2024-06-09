@@ -190,8 +190,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                var newConfig = currentConfig.MakeReplicaOf(nodeid);
-                newConfig = newConfig.BumpLocalNodeConfigEpoch();
+                var newConfig = currentConfig.MakeReplicaOf(nodeid).BumpLocalNodeConfigEpoch();
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }

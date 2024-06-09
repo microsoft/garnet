@@ -246,7 +246,7 @@ namespace Garnet.cluster
                     if (clusterProvider.replicationManager.TryAddReplicationTask(replicaId, 0, out var aofSyncTaskInfo))
                     {
                         if (!TryConnectToReplica(replicaId, 0, aofSyncTaskInfo, out var errorMessage))
-                            logger?.LogError(Encoding.ASCII.GetString(errorMessage));
+                            logger?.LogError($"{{errorMessage}}", Encoding.ASCII.GetString(errorMessage));
                     }
                 }
             }
