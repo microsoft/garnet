@@ -41,11 +41,15 @@ namespace Garnet.test
             new object[] { "list2", new[] { "foo", "bar", "baz" }, new[] { "foo", "baz", "foo", "bar", "baz" } }
         ];
 
-        private static string GetTestKey(string key)
-        {
-            var testName = TestContext.CurrentContext.Test.MethodName;
-            return $"{testName}_{key}";
-        }
+        private static object[] ListRangeTestCases =
+        [
+            new object[] { 0, -1, new string[] { "foo", "bar", "baz" } },
+            new object[] { 0, 0, new string[] { "foo" } },
+            new object[] { 1, 2, new string[] { "bar", "baz" } },
+            new object[] { -3, 1, new string[] { "foo", "bar" } },
+            new object[] { -3, 2, new string[] { "foo", "bar", "baz" } },
+            new object[] { -100, 100, new string[] { "foo", "bar", "baz" } }
+        ];
 
         [Test]
         [TestCaseSource(nameof(LeftPushTestCases))]
@@ -209,6 +213,33 @@ namespace Garnet.test
             Assert.AreEqual(expectedList.Length, actualListLength);
 
             ValidateListContent(testKey, expectedList);
+        }
+
+        [Test]
+        [TestCaseSource(nameof(ListRangeTestCases))]
+        public async Task GetListElements(int start, int stop, string[] expectedValues)
+        {
+            // Arrange
+            var testKey = GetTestKey("list1");
+            using var db = new GarnetClient(TestUtils.Address, 3278);
+            await db.ConnectAsync();
+
+            await db.KeyDeleteAsync([testKey]);
+            //await db.ListRightPushAsync(testKey, "foo", "bar", "baz");
+            await db.ExecuteForStringResultAsync("RPUSH", [testKey, "foo", "bar", "baz"]);
+
+            // Act
+            var values = await db.ListRangeAsync(testKey, start, stop);
+
+            // Assert
+            Assert.False(expectedValues.Length == 0);
+            Assert.AreEqual(expectedValues, values);
+        }
+
+        private static string GetTestKey(string key)
+        {
+            var testName = TestContext.CurrentContext.Test.MethodName;
+            return $"{testName}_{key}";
         }
 
         private void ValidateListContent(string key, string[] expectedList)
