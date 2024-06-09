@@ -13,6 +13,7 @@ namespace Garnet.client
         private static readonly Memory<byte> LPUSH = "$5\r\nLPUSH\r\n"u8.ToArray();
         private static readonly Memory<byte> RPUSH = "$5\r\nRPUSH\r\n"u8.ToArray();
         private static readonly Memory<byte> LRANGE = "$6\r\nLRANGE\r\n"u8.ToArray();
+        private static readonly Memory<byte> LLEN = "$4\r\nLLEN\r\n"u8.ToArray();
 
         /// <summary>
         /// Add the specified element to the head of the list stored at key.
@@ -133,6 +134,17 @@ namespace Garnet.client
             ArgumentNullException.ThrowIfNull(key);
 
             return await ExecuteForStringArrayResultAsync(nameof(LRANGE), [key, start.ToString(), stop.ToString()]);
+        }
+
+        /// <summary>
+        /// Gets the length of the list.
+        /// </summary>
+        /// <param name="key">The key of the list.</param>
+        public async Task<long> ListLengthAsync(string key)
+        {
+            ArgumentNullException.ThrowIfNull(key);
+
+            return await ExecuteForLongResultAsync(nameof(LLEN), [key]);
         }
     }
 }

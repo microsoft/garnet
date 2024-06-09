@@ -234,6 +234,24 @@ namespace Garnet.test
             Assert.AreEqual(expectedValues, values);
         }
 
+        [Test]
+        public async Task GetListLength()
+        {
+            // Arrange
+            var testKey = GetTestKey("list1");
+            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
+            await db.ConnectAsync();
+
+            await db.KeyDeleteAsync([testKey]);
+            await db.ExecuteForStringResultAsync("RPUSH", [testKey, "foo", "bar", "baz"]);
+
+            // Act
+            var length = await db.ListLengthAsync(testKey);
+
+            // Assert
+            Assert.AreEqual(3, length);
+        }
+
         private static string GetTestKey(string key)
         {
             var testName = TestContext.CurrentContext.Test.MethodName;
