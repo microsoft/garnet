@@ -355,7 +355,7 @@ namespace Garnet.client
                         break;
 
                     case (byte)'$':
-                        if (!RespReadUtils.ReadStringWithLengthHeader(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadUtils.ReadStringWithLengthHeader(out result, ref ptr, end, allowNull: true))
                             success = false;
                         break;
 
