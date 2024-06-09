@@ -263,7 +263,7 @@ namespace Garnet.test
             var actualElements = await db.ListRangeAsync(key, 0, -1);
 
             Assert.AreEqual(expectedList.Length, actualElements.Length);
-            
+
             for (var i = 0; i < actualElements.Length; i++)
             {
                 Assert.AreEqual(expectedList[i], actualElements[i].ToString());
