@@ -624,14 +624,14 @@ namespace Garnet.common
         /// <summary>
         /// Read string with length header
         /// </summary>
-        public static bool ReadStringWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
+        public static bool ReadStringWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end, bool allowNull = false, bool isArray = false)
         {
             result = default;
             if (ptr + 3 > end)
                 return false;
 
             // Parse RESP string header
-            if (!ReadLengthHeader(out var length, ref ptr, end))
+            if (!ReadLengthHeader(out var length, ref ptr, end, allowNull: allowNull, isArray: isArray))
                 return false;
 
             if (length < 0)

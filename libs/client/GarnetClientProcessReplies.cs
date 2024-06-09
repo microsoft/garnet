@@ -127,7 +127,7 @@ namespace Garnet.client
                     break;
 
                 case (byte)'$':
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out _result, ref ptr, end))
+                    if (!RespReadUtils.ReadStringWithLengthHeader(out _result, ref ptr, end, allowNull: true))
                         return false;
                     result = new[] { _result };
                     break;
@@ -174,7 +174,7 @@ namespace Garnet.client
                     break;
 
                 case (byte)'$':
-                    if (!RespReadUtils.ReadStringWithLengthHeader(memoryPool, out result, ref ptr, end))
+                    if (!RespReadUtils.ReadStringWithLengthHeader(memoryPool, out result, ref ptr, end, allowNull: true))
                         return false;
                     break;
 
