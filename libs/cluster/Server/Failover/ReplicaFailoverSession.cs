@@ -335,7 +335,7 @@ namespace Garnet.cluster
                 if (!TakeOverAsPrimary())
                 {
                     // Request primary to be reset to original state only if DEFAULT option was used
-                    if(primaryClient != null)
+                    if (primaryClient != null)
                         _ = await primaryClient?.failstopwrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
                     return false;
                 }
