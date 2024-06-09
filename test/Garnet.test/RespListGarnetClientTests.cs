@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using NUnit.Framework;
-using StackExchange.Redis;
 
 namespace Garnet.test
 {
@@ -53,11 +52,11 @@ namespace Garnet.test
 
         [Test]
         [TestCaseSource(nameof(LeftPushTestCases))]
-        public void AddElementsToTheListHeadInBulk_WithCallback(string key, string[] elements, string[] expectedList)
+        public async Task AddElementsToTheListHeadInBulk_WithCallback(string key, string[] elements, string[] expectedList)
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
-            db.Connect();
+            await db.ConnectAsync();
 
             using ManualResetEventSlim e = new();
 
@@ -78,16 +77,16 @@ namespace Garnet.test
             Assert.IsTrue(isResultSet);
             Assert.AreEqual(expectedList.Length, actualListLength);
 
-            ValidateListContent(testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList);
         }
 
         [Test]
         [TestCaseSource(nameof(LeftPushTestCases))]
-        public void AddElementsToTheListHead_WithCallback(string key, string[] elements, string[] expectedList)
+        public async Task AddElementsToTheListHead_WithCallback(string key, string[] elements, string[] expectedList)
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
-            db.Connect();
+            await db.ConnectAsync();
 
             using ManualResetEventSlim e = new();
 
@@ -113,7 +112,7 @@ namespace Garnet.test
             Assert.IsTrue(isResultSet);
             Assert.AreEqual(expectedList.Length, actualListLength);
 
-            ValidateListContent(testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList);
         }
 
         [Test]
@@ -130,16 +129,16 @@ namespace Garnet.test
             var actualListLength = await db.ListLeftPushAsync(testKey, elements);
             Assert.AreEqual(expectedList.Length, actualListLength);
 
-            ValidateListContent(testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList);
         }
 
         [Test]
         [TestCaseSource(nameof(RightPushTestCases))]
-        public void AddElementsToListTailInBulk_WithCallback(string key, string[] elements, string[] expectedList)
+        public async Task AddElementsToListTailInBulk_WithCallback(string key, string[] elements, string[] expectedList)
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
-            db.Connect();
+            await db.ConnectAsync();
 
             using ManualResetEventSlim e = new();
 
@@ -160,16 +159,16 @@ namespace Garnet.test
             Assert.IsTrue(isResultSet);
             Assert.AreEqual(expectedList.Length, actualListLength);
 
-            ValidateListContent(testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList);
         }
 
         [Test]
         [TestCaseSource(nameof(RightPushTestCases))]
-        public void AddElementsToListTail_WithCallback(string key, string[] elements, string[] expectedList)
+        public async Task AddElementsToListTail_WithCallback(string key, string[] elements, string[] expectedList)
         {
             // Arrange
             using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
-            db.Connect();
+            await db.ConnectAsync();
 
             using ManualResetEventSlim e = new();
 
@@ -195,7 +194,7 @@ namespace Garnet.test
             Assert.IsTrue(isResultSet);
             Assert.AreEqual(expectedList.Length, actualListLength);
 
-            ValidateListContent(testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList);
         }
 
         [Test]
@@ -212,7 +211,7 @@ namespace Garnet.test
             var actualListLength = await db.ListRightPushAsync(testKey, elements.ToArray());
             Assert.AreEqual(expectedList.Length, actualListLength);
 
-            ValidateListContent(testKey, expectedList);
+            await ValidateListContentAsync(db, testKey, expectedList);
         }
 
         [Test]
@@ -221,11 +220,10 @@ namespace Garnet.test
         {
             // Arrange
             var testKey = GetTestKey("list1");
-            using var db = new GarnetClient(TestUtils.Address, 3278);
+            using var db = new GarnetClient(TestUtils.Address, TestUtils.Port);
             await db.ConnectAsync();
 
             await db.KeyDeleteAsync([testKey]);
-            //await db.ListRightPushAsync(testKey, "foo", "bar", "baz");
             await db.ExecuteForStringResultAsync("RPUSH", [testKey, "foo", "bar", "baz"]);
 
             // Act
@@ -242,14 +240,12 @@ namespace Garnet.test
             return $"{testName}_{key}";
         }
 
-        private void ValidateListContent(string key, string[] expectedList)
+        private static async Task ValidateListContentAsync(GarnetClient db, string key, string[] expectedList)
         {
-            // Using SE.Redis client to validate list content since Garnet client doesn't yet support LRANGE
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
+            var actualElements = await db.ListRangeAsync(key, 0, -1);
 
-            var actualElements = db.ListRange(key);
             Assert.AreEqual(expectedList.Length, actualElements.Length);
+            
             for (var i = 0; i < actualElements.Length; i++)
             {
                 Assert.AreEqual(expectedList[i], actualElements[i].ToString());
