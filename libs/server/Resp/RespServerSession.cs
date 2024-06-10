@@ -54,6 +54,7 @@ namespace Garnet.server
         internal readonly TransactionManager txnManager;
         readonly ScratchBufferManager scratchBufferManager;
 
+        SessionParseState parseState;
         GCHandle recvHandle;
         byte* recvBufferPtr;
         int readHead;
@@ -149,6 +150,7 @@ namespace Garnet.server
             clusterSession = storeWrapper.clusterProvider?.CreateClusterSession(txnManager, this._authenticator, this._user, sessionMetrics, basicGarnetApi, networkSender, logger);
             clusterSession?.SetUser(this._user);
 
+            parseState.Initialize();
             readHead = 0;
             toDispose = false;
             SessionAsking = 0;
@@ -453,21 +455,6 @@ namespace Garnet.server
         {
             // Continue reading from the current read head.
             byte* ptr = recvBufferPtr + readHead;
-
-            // If async mode, we want to make sure all arguments are received up front
-            // Otherwise, there might be interleaving of network output between sync
-            // ProcessMessages and AsyncProcessor. We protect this with useAsync for now, but
-            // this should be the standard approach in future after changing the subsequent
-            // logic to avoid re-parsing overheads, and verifying perf impact
-            if (useAsync)
-            {
-                byte* endPtr = ptr;
-                for (int i = 0; i < count; i++)
-                {
-                    if (!RespReadUtils.SkipByteArrayWithLengthHeader(ref endPtr, recvBufferPtr + bytesRead))
-                        return false;
-                }
-            }
 
             var success = cmd switch
             {
