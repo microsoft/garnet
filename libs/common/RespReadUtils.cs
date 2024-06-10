@@ -100,7 +100,6 @@ namespace Garnet.common
             return true;
         }
 
-
         /// <summary>
         /// Tries to read a signed 64-bit integer from a given ASCII-encoded input stream.
         /// </summary>
@@ -337,7 +336,6 @@ namespace Garnet.common
 
         public static bool ReadArrayLength(out int length, ref byte* ptr, byte* end)
             => ReadLengthHeader(out length, ref ptr, end, isArray: true);
-
 
         /// <summary>
         /// Read int with length header
@@ -624,14 +622,20 @@ namespace Garnet.common
         /// <summary>
         /// Read string with length header
         /// </summary>
-        public static bool ReadStringWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end, bool allowNull = false, bool isArray = false)
+        /// <param name="pool">Memory pool to rent space for storing the result.</param>
+        /// <param name="result">If parsing was successful, contains the extracted byte sequence.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <param name="allowNull">Whether to allow the RESP null value ($-1\r\n)</param>
+        /// <returns>True if a RESP string was successfully read.</returns>
+        public static bool ReadStringWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end, bool allowNull = false)
         {
             result = default;
             if (ptr + 3 > end)
                 return false;
 
             // Parse RESP string header
-            if (!ReadLengthHeader(out var length, ref ptr, end, allowNull: allowNull, isArray: isArray))
+            if (!ReadLengthHeader(out var length, ref ptr, end, allowNull: allowNull))
                 return false;
 
             if (length < 0)
