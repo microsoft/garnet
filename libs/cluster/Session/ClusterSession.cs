@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -64,7 +63,7 @@ namespace Garnet.cluster
         public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
         public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
 
-        public bool ProcessClusterCommands(RespCommand command, ReadOnlySpan<byte> bufSpan, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result)
+        public bool ProcessClusterCommands(RespCommand command, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result)
         {
             this.recvBufferPtr = recvBufferPtr;
             this.bytesRead = bytesRead;
@@ -76,7 +75,7 @@ namespace Garnet.cluster
             {
                 if (command.IsClusterSubCommand())
                 {
-                    result = ProcessClusterCommands(command, bufSpan, count);
+                    result = ProcessClusterCommands(command, count);
                     ret = true;
                 }
                 else
@@ -154,27 +153,24 @@ namespace Garnet.cluster
             this.user = user;
         }
 
-        bool DrainCommands(ReadOnlySpan<byte> bufSpan, int count)
+        bool DrainCommands(int count)
         {
-            for (int i = 0; i < count; i++)
+            for (var i = 0; i < count; i++)
             {
-                _ = GetNextToken(bufSpan, out bool success1);
-                if (!success1) return false;
+                if (!SkipCommand()) return false;
             }
             return true;
         }
 
-        Span<byte> GetNextToken(ReadOnlySpan<byte> bufSpan, out bool success)
+        bool SkipCommand()
         {
-            success = false;
-
             var ptr = recvBufferPtr + readHead;
             var end = recvBufferPtr + bytesRead;
 
-            // Try to read the command length
+            // Try the command length
             if (!RespReadUtils.ReadLengthHeader(out int length, ref ptr, end))
             {
-                return default;
+                return false;
             }
 
             readHead = (int)(ptr - recvBufferPtr);
@@ -183,7 +179,7 @@ namespace Garnet.cluster
             ptr += length;
             if (ptr + 2 > end)
             {
-                return default;
+                return false;
             }
 
             if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
@@ -191,11 +187,9 @@ namespace Garnet.cluster
                 RespParsingException.ThrowUnexpectedToken(*ptr);
             }
 
-            success = true;
-            var result = new Span<byte>(recvBufferPtr + readHead, length);
             readHead += length + 2;
 
-            return result;
+            return true;
         }
     }
 }

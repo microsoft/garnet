@@ -74,10 +74,10 @@ namespace Garnet.server
         ZREVRANGE,
         ZREVRANK,
         ZSCAN,
-        ZSCORE,
+        ZSCORE, // Note: Update OneIfRead if adding new read commands after this
 
         // Write commands
-        APPEND,
+        APPEND, // Note: Update OneIfWrite if adding new write commands before this
         BITFIELD,
         DECR,
         DECRBY,
@@ -145,7 +145,7 @@ namespace Garnet.server
         BITOP_AND,
         BITOP_OR,
         BITOP_XOR,
-        BITOP_NOT,
+        BITOP_NOT, // Note: Update OneIfWrite if adding new write commands after this
 
         // Neither read nor write commands
         ASYNC,
@@ -224,7 +224,7 @@ namespace Garnet.server
         LATENCY_RESET,
 
         CLUSTER,
-        CLUSTER_ADDSLOTS,
+        CLUSTER_ADDSLOTS, // Note: Update IsClusterSubCommand if adding new cluster subcommands before this
         CLUSTER_ADDSLOTSRANGE,
         CLUSTER_AOFSYNC,
         CLUSTER_APPENDLOG,
@@ -263,12 +263,12 @@ namespace Garnet.server
         CLUSTER_SETSLOTSRANGE,
         CLUSTER_SHARDS,
         CLUSTER_SLOTS,
-        CLUSTER_SLOTSTATE,
+        CLUSTER_SLOTSTATE, // Note: Update IsClusterSubCommand if adding new cluster subcommands after this
 
         // Don't require AUTH (if auth is enabled)
-        AUTH,
+        AUTH, // Note: Update IsNoAuth if adding new no-auth commands before this
         HELLO,
-        QUIT,
+        QUIT, // Note: Update IsNoAuth if adding new no-auth commands after this
 
         INVALID = 0xFF,
     }
@@ -1243,8 +1243,7 @@ namespace Garnet.server
         private RespCommand SlowParseCommand(ref int count, ref ReadOnlySpan<byte> specificErrorMsg, out bool success)
         {
             // Try to extract the current string from the front of the read head
-            ReadOnlySpan<byte> bufSpan = new(recvBufferPtr + readHead, bytesRead);
-            var command = GetCommand(bufSpan, out success);
+            var command = GetCommand(out success);
 
             if (!success)
             {
@@ -1282,8 +1281,7 @@ namespace Garnet.server
                 }
                 else if (count >= 1)
                 {
-                    bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                    Span<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
+                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
                     if (!gotSubCommand)
                     {
                         success = false;
@@ -1327,8 +1325,7 @@ namespace Garnet.server
                     return RespCommand.COMMAND;
                 }
 
-                bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                Span<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
+                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
@@ -1362,8 +1359,7 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.CLUSTER))
             {
-                bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                Span<byte> subCommand = GetCommand(bufSpan, out var gotSubCommand);
+                Span<byte> subCommand = GetCommand(out var gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
@@ -1542,8 +1538,7 @@ namespace Garnet.server
             {
                 if (count >= 1)
                 {
-                    bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                    Span<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
+                    Span<byte> subCommand = GetCommand(out bool gotSubCommand);
                     if (!gotSubCommand)
                     {
                         success = false;
@@ -1612,8 +1607,7 @@ namespace Garnet.server
             {
                 if (count > 0)
                 {
-                    bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                    ReadOnlySpan<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
+                    ReadOnlySpan<byte> subCommand = GetCommand(out bool gotSubCommand);
                     if (!gotSubCommand)
                     {
                         success = false;
@@ -1634,8 +1628,7 @@ namespace Garnet.server
             }
             else if (command.SequenceEqual(CmdStrings.ACL))
             {
-                bufSpan = new(recvBufferPtr + readHead, bytesRead);
-                Span<byte> subCommand = GetCommand(bufSpan, out bool gotSubCommand);
+                Span<byte> subCommand = GetCommand(out bool gotSubCommand);
                 if (!gotSubCommand)
                 {
                     success = false;
@@ -1711,7 +1704,7 @@ namespace Garnet.server
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
             // Drain the commands to advance the read head to the end of the command.
-            if (!DrainCommands(bufSpan, count))
+            if (!DrainCommands(count))
             {
                 success = false;
             }

@@ -97,15 +97,13 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkSKIP(RespCommand cmd, int count)
         {
-            ReadOnlySpan<byte> bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
             if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, txnOnly: true, logger))
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
                 txnManager.Abort();
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
                 return true;
             }
@@ -133,7 +131,7 @@ namespace Garnet.server
                     txnManager.Abort();
                 }
 
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
 
                 return true;
@@ -153,20 +151,15 @@ namespace Garnet.server
 
                 txnManager.Abort();
 
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
 
                 return true;
             }
 
             // Consume the remaining arguments in the input
-            for (int i = skipped; i < count; i++)
-            {
-                GetCommand(bufSpan, out bool success);
-
-                if (!success)
-                    return false;
-            }
+            if (!DrainCommands(count - skipped))
+                return false;
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
                 SendAndReset();
