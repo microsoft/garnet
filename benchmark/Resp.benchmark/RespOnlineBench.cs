@@ -562,7 +562,7 @@ namespace Resp.benchmark
 
         public async void OpRunnerGarnetClientSession(int thread_id)
         {
-            Interlocked.Increment(ref workerCount);
+            _ = Interlocked.Increment(ref workerCount);
             if (opts.BatchSize.First() != 1)
                 throw new Exception("Only batch size 1 supported for online bench");
             var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength, opts.ObjectDbSize);
@@ -587,96 +587,74 @@ namespace Resp.benchmark
             waiter.Wait();
             while (true)
             {
-                if (cts.IsCancellationRequested) break;
-                var rand = r.Next(100);
-                OpType op = SelectOpType(rand);
-                long startTimestamp = Stopwatch.GetTimestamp();
-
-                var c = opts.Pool ? await gcsPool.GetAsync() : client;
-                switch (op)
+                try
                 {
-                    case OpType.PING:
-                        await c.ExecuteAsync(new string[] { "PING" });
-                        break;
-                    case OpType.GET:
-                        await c.ExecuteAsync(new string[] { "GET", req.GenerateKey() });
-                        break;
-                    case OpType.SET:
-                        await c.ExecuteAsync(new string[] { "SET", req.GenerateKey(), req.GenerateValue() });
-                        break;
-                    case OpType.SETEX:
-                        await c.ExecuteAsync(new string[] { "SETEX", req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue() });
-                        break;
-                    case OpType.DEL:
-                        await c.ExecuteAsync(new string[] { "DEL", req.GenerateKey() });
-                        break;
-                    case OpType.SETBIT:
-                        await c.ExecuteAsync(new string[] { "SETBIT", req.GenerateKey(), req.GenerateBitOffset() });
-                        break;
-                    case OpType.GETBIT:
-                        await c.ExecuteAsync(new string[] { "GETBIT", req.GenerateKey(), req.GenerateBitOffset() });
-                        break;
-                    case OpType.ZADD:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            await c.ExecuteAsync(new string[] { "ZADD", sskey, "1.0", key });
-                            if (opts.Ttl > 0)
-                            {
-                                await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
-                            }
-                        }
-                        break;
-                    case OpType.ZREM:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            await c.ExecuteAsync(new string[] { "ZREM", sskey, key });
-                            if (opts.Ttl > 0)
-                            {
-                                await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
-                            }
-                        }
-                        break;
-                    case OpType.ZCARD:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            await c.ExecuteAsync(new string[] { "ZCARD", sskey });
-                            if (opts.Ttl > 0)
-                            {
-                                await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
-                            }
-                        }
-                        break;
-                    case OpType.READWRITETX:
-                        {
-                            await c.ExecuteAsync("READWRITETX", req.GenerateKey(), req.GenerateKey(), req.GenerateKey(), "1000");
-                        }
-                        break;
-                    case OpType.SAMPLEUPDATETX:
-                        {
-                            await c.ExecuteAsync("SAMPLEUPDATETX", req.GenerateKeyRandom(), req.GenerateValue(),
-                                 req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore());
-                        }
-                        break;
-                    case OpType.SAMPLEDELETETX:
-                        {
-                            await c.ExecuteAsync("SAMPLEDELETETX", req.GenerateKeyRandom(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry());
-                        }
-                        break;
-                    default:
-                        throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
-                }
-                if (opts.Pool)
-                {
-                    gcsPool.Return(c);
-                }
+                    if (cts.IsCancellationRequested) break;
+                    var rand = r.Next(100);
+                    var op = SelectOpType(rand);
+                    var startTimestamp = Stopwatch.GetTimestamp();
+                    var c = opts.Pool ? await gcsPool.GetAsync() : client;
 
-                long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                RecordValue(thread_id, elapsed);
+                    _ = op switch
+                    {
+                        OpType.PING => await c.ExecuteAsync(["PING"]),
+                        OpType.GET => await c.ExecuteAsync(["GET", req.GenerateKey()]),
+                        OpType.SET => await c.ExecuteAsync(["SET", req.GenerateKey(), req.GenerateValue()]),
+                        OpType.SETEX => await c.ExecuteAsync(["SETEX", req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue()]),
+                        OpType.DEL => await c.ExecuteAsync(["DEL", req.GenerateKey()]),
+                        OpType.SETBIT => await c.ExecuteAsync(["SETBIT", req.GenerateKey(), req.GenerateBitOffset()]),
+                        OpType.GETBIT => await c.ExecuteAsync(["GETBIT", req.GenerateKey(), req.GenerateBitOffset()]),
+                        OpType.ZADD => await ZADD(),
+                        OpType.ZREM => await ZREM(),
+                        OpType.ZCARD => await ZCARD(),
+                        OpType.READWRITETX => await c.ExecuteAsync("READWRITETX", req.GenerateKey(), req.GenerateKey(), req.GenerateKey(), "1000"),
+                        OpType.SAMPLEUPDATETX => await c.ExecuteAsync("SAMPLEUPDATETX", req.GenerateKeyRandom(), req.GenerateValue(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore()),
+                        OpType.SAMPLEDELETETX => await c.ExecuteAsync("SAMPLEDELETETX", req.GenerateKeyRandom(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry()),
+                        _ => throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!")
+                    };
+
+                    if (opts.Pool)
+                        gcsPool.Return(c);
+
+                    var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                    RecordValue(thread_id, elapsed);
+
+                    async Task<string> ZADD()
+                    {
+                        var key = req.GenerateKey();
+                        var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                        var res = await c.ExecuteAsync(new string[] { "ZADD", sskey, "1.0", key });
+                        if (opts.Ttl > 0)
+                            return await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
+                        return res;
+                    }
+
+                    async Task<string> ZREM()
+                    {
+                        var key = req.GenerateKey();
+                        var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                        var resp = await c.ExecuteAsync(new string[] { "ZREM", sskey, key });
+                        if (opts.Ttl > 0)
+                            return await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
+                        return resp;
+                    }
+
+                    async Task<string> ZCARD()
+                    {
+                        var key = req.GenerateKey();
+                        var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                        var resp = await c.ExecuteAsync(new string[] { "ZCARD", sskey });
+                        if (opts.Ttl > 0)
+                            return await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
+                        return resp;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientSession)}");
+                }
             }
-            Interlocked.Decrement(ref workerCount);
+            _ = Interlocked.Decrement(ref workerCount);
         }
 
         public async void OpRunnerGarnetClientSessionParallel(int thread_id, int parallel)
