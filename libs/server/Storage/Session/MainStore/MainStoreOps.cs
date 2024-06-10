@@ -544,7 +544,7 @@ namespace Garnet.server
                         var memoryHandle = o.Memory.Memory.Pin();
                         var ptrVal = (byte*)memoryHandle.Pointer;
 
-                        RespReadUtils.ReadLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
+                        RespReadUtils.ReadUnsignedLengthHeader(out var headerLength, ref ptrVal, ptrVal + o.Length);
                         var value = SpanByte.FromPinnedPointer(ptrVal, headerLength);
                         SET(ref newKey, ref value, ref context);
 
