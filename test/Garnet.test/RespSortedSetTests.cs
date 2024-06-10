@@ -10,6 +10,7 @@ using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
+using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
@@ -707,6 +708,68 @@ namespace Garnet.test
 
             var keyExists = db.KeyExists(key);
             Assert.IsFalse(keyExists);
+        }
+
+        [Test]
+        public void CheckSortedSetOperationsOnWrongTypeObjectSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
+            var key1Values = new[] { new RedisValue("Hello"), new RedisValue("World") };
+            var key2Values = new[] { new RedisValue("Hola"), new RedisValue("Mundo") };
+            var values = new[] { key1Values, key2Values };
+            var scores = new[] { new[] { 1.1, 1.2 }, new[] { 2.1, 2.2 } };
+            var sortedSetEntries = values.Select((h, idx) => h
+                .Zip(scores[idx], (n, v) => new SortedSetEntry(n, v)).ToArray()).ToArray();
+
+
+            // Set up different type objects
+            RespTests.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
+
+            // ZADD
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetAdd(keys[0], sortedSetEntries[0]));
+            // ZCARD
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetLength(keys[0]));
+            // ZPOPMAX
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetPop(keys[0]));
+            // ZSCORE
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScore(keys[0], values[0][0]));
+            // ZREM
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemove(keys[0], values[0]));
+            // ZCOUNT
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetLength(keys[1], 1, 2));
+            // ZINCRBY
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetIncrement(keys[1], values[1][0], 2.2));
+            // ZRANK
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRank(keys[1], values[1][0]));
+            // ZRANGE
+            //RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRangeByValueAsync(keys[1]).Wait());
+            // ZRANGEBYSCORE
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRangeByScore(keys[1]));
+            // ZREVRANGE
+            //RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRangeByScore(keys[1], 1, 2, Exclude.None, Order.Descending));
+            // ZREVRANK
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRangeByRank(keys[1], 1, 2, Order.Descending));
+            // ZREMRANGEBYLEX
+            //RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemoveRangeByValue(keys[1], values[1][0], values[1][1]));
+            // ZREMRANGEBYRANK
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemoveRangeByRank(keys[1], 0, 1));
+            // ZREMRANGEBYSCORE
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemoveRangeByScore(keys[1], 1, 2));
+            // ZLEXCOUNT
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetLengthByValue(keys[1], values[1][0], values[1][1]));
+            // ZPOPMIN
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetPop(keys[1], Order.Descending));
+            // ZRANDMEMBER
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRandomMember(keys[1]));
+            // ZDIFF
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetCombine(SetOperation.Difference, keys));
+            // ZSCAN
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScan(keys[1], new RedisValue("*")).FirstOrDefault());
+            //ZMSCORE
+            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScores(keys[1], values[1]));
         }
 
         #endregion
@@ -1911,6 +1974,46 @@ namespace Garnet.test
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
+        }
+
+        [Test]
+        public void CheckSortedSetOperationsOnWrongTypeObjectLC()
+        {
+            // This is to test remaining commands not supported in SE.Redis
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
+            var key1Values = new[] { new RedisValue("Hello"), new RedisValue("World") };
+            var key2Values = new[] { new RedisValue("Hola"), new RedisValue("Mundo") };
+            var values = new[] { key1Values, key2Values };
+            var scores = new[] { new[] { 1.1, 1.2 }, new[] { 2.1, 2.2 } };
+            var sortedSetEntries = values.Select((h, idx) => h
+                .Zip(scores[idx], (n, v) => new SortedSetEntry(n, v)).ToArray()).ToArray();
+
+
+            // Set up different type objects
+            RespTests.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
+
+            // ZRANGE
+            var response = lightClientRequest.SendCommand($"ZRANGE {keys[0]} 0 -1");
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+
+            // ZREVRANGE
+            response = lightClientRequest.SendCommand($"ZREVRANGE {keys[0]} 0 -1");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            // ZREMRANGEBYLEX
+            response = lightClientRequest.SendCommand($"ZREMRANGEBYLEX {keys[0]} {values[1][0]} {values[1][1]}");
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
         }
 
         #endregion
