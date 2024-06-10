@@ -933,7 +933,7 @@ namespace Garnet.common
         /// <param name="ptr"></param>
         /// <param name="end"></param>
         /// <returns></returns>
-        public static bool ReadStringOrNullWithLengthHeader(out string result, ref byte* ptr, byte* end)
+        public static bool ReadStringResponseWithLengthHeader(out string result, ref byte* ptr, byte* end)
         {
             result = null;
 
@@ -977,7 +977,7 @@ namespace Garnet.common
         /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
         /// <param name="end">The current end of the RESP message.</param>
         /// <returns>True if a RESP string was successfully read.</returns>
-        public static bool ReadStringWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
+        public static bool ReadStringResponseWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
         {
             result = default;
             if (ptr + 3 > end)
@@ -1015,7 +1015,7 @@ namespace Garnet.common
         /// <summary>
         /// Read string array with length header
         /// </summary>
-        public static bool ReadStringArrayWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte>[] result, ref byte* ptr, byte* end)
+        public static bool ReadStringResponseArrayWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte>[] result, ref byte* ptr, byte* end)
         {
             result = null;
             // Parse RESP array header
@@ -1036,7 +1036,7 @@ namespace Garnet.common
             {
                 if (*ptr == '$')
                 {
-                    if (!ReadStringWithLengthHeader(pool, out result[i], ref ptr, end))
+                    if (!ReadStringResponseWithLengthHeader(pool, out result[i], ref ptr, end))
                         return false;
                 }
                 else

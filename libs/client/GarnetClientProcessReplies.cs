@@ -46,7 +46,7 @@ namespace Garnet.client
                     break;
 
                 case (byte)'$':
-                    if (!RespReadUtils.ReadStringOrNullWithLengthHeader(out result, ref ptr, end))
+                    if (!RespReadUtils.ReadStringResponseWithLengthHeader(out result, ref ptr, end))
                         return false;
                     break;
 
@@ -127,7 +127,7 @@ namespace Garnet.client
                     break;
 
                 case (byte)'$':
-                    if (!RespReadUtils.ReadStringOrNullWithLengthHeader(out _result, ref ptr, end))
+                    if (!RespReadUtils.ReadStringResponseWithLengthHeader(out _result, ref ptr, end))
                         return false;
                     result = [_result];
                     break;
@@ -174,12 +174,12 @@ namespace Garnet.client
                     break;
 
                 case (byte)'$':
-                    if (!RespReadUtils.ReadStringWithLengthHeader(memoryPool, out result, ref ptr, end))
+                    if (!RespReadUtils.ReadStringResponseWithLengthHeader(memoryPool, out result, ref ptr, end))
                         return false;
                     break;
 
                 case (byte)'*':
-                    if (!RespReadUtils.ReadStringArrayWithLengthHeader(memoryPool, out var resultArray, ref ptr, end))
+                    if (!RespReadUtils.ReadStringResponseArrayWithLengthHeader(memoryPool, out var resultArray, ref ptr, end))
                         return false;
                     // Return first element of array
                     for (var i = 1; i < resultArray.Length; i++)
@@ -202,7 +202,7 @@ namespace Garnet.client
             switch (*ptr)
             {
                 case (byte)'*':
-                    if (!RespReadUtils.ReadStringArrayWithLengthHeader(memoryPool, out var resultArray, ref ptr, end))
+                    if (!RespReadUtils.ReadStringResponseArrayWithLengthHeader(memoryPool, out var resultArray, ref ptr, end))
                         return false;
                     result = resultArray;
                     break;
