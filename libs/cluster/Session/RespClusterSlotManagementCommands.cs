@@ -15,18 +15,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER ADDSLOTS command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterAddSlots(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterAddSlots(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting at least 1 slot or at most maximum number of slots
             if (count < 1 || count >= ClusterConfig.MAX_HASH_SLOT_VALUE)
@@ -67,18 +61,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER ADDSLOTSRANGE command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterAddSlotsRange(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterAddSlotsRange(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting even number of arguments
             if (count == 0 || (count & 0x1) != 0)
@@ -151,18 +139,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER COUNTKEYSINSLOT command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterCountKeysInSlot(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterCountKeysInSlot(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 1 argument
             if (count != 1)
@@ -208,18 +190,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER DELSLOTS command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterDelSlots(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterDelSlots(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting at least 1 slot or at most maximum number of slots
             if (count < 1 || count >= ClusterConfig.MAX_HASH_SLOT_VALUE)
@@ -260,18 +236,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER DELSLOTSRANGE command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterDelSlotsRange(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterDelSlotsRange(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting even number of arguments
             if (count == 0 || (count & 0x1) != 0)
@@ -312,18 +282,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER DELKEYSINSLOT command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterDelKeysInSlot(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterDelKeysInSlot(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 1 argument
             if (count != 1)
@@ -351,18 +315,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER DELKEYSINSLOTRANGE command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterDelKeysInSlotRange(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterDelKeysInSlotRange(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting even number of arguments
             if (count == 0 || (count & 0x1) != 0)
@@ -399,14 +357,9 @@ namespace Garnet.cluster
         /// Implements CLUSTER GETKEYSINSLOT command
         /// </summary>
         /// <returns></returns>
-        private bool NetworkClusterGetKeysInSlot(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterGetKeysInSlot(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 1 argument
             if (count != 2)
@@ -481,17 +434,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER SETSLOT command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterSetSlot(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterSetSlot(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting 2 or 3 arguments
             if (count is < 2 or > 3)
@@ -569,18 +517,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER SETSLOTSRANGE command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterSetSlotsRange(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterSetSlotsRange(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting at least 3 (STABLE + range) arguments.
             if (count < 3)
@@ -669,18 +611,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER SLOTS command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterSlots(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterSlots(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 0 argument
             if (count != 0)
@@ -701,18 +637,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER SLOTSTATE
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterSlotState(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterSlotState(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 0 arguments
             if (count != 0)

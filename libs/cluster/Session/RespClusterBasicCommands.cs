@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -16,17 +15,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER BUMPEPOCH command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        private bool NetworkClusterBumpEpoch(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterBumpEpoch(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            // Check admin permissions for command
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 0 arguments
             if (count != 0)
@@ -54,17 +47,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER FORGET command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterForget(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterForget(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting 1 or 2 arguments
             if (count is < 1 or > 2)
@@ -163,17 +151,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER MEET command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterMeet(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterMeet(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 2 arguments
             if (count != 2)
@@ -204,7 +187,7 @@ namespace Garnet.cluster
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterMyid(int count, out bool invalidParameters)
+        private bool NetworkClusterMyId(int count, out bool invalidParameters)
         {
             invalidParameters = false;
 
@@ -308,18 +291,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER SET-CONFIG-EPOCH command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterSetConfigEpoch(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterSetConfigEpoch(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting exactly 1 arguments
             if (count != 1)
@@ -451,18 +428,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER RESET command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterReset(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterReset(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting 0, 1 or 2 arguments
             if (count > 2)

@@ -55,8 +55,7 @@ namespace Garnet.server
 
             if (NetworkSingleKeySlotVerify(key, false))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
                 return true;
             }

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Text;
 using Garnet.common;
 using Garnet.server;
 
@@ -13,17 +12,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER FAILOVER command
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        private bool NetworkClusterFailover(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterFailover(int count, out bool invalidParameters)
         {
             invalidParameters = false;
-            if (!CheckACLAdminPermissions(bufSpan, count, out var success))
-            {
-                return success;
-            }
 
             // Expecting 1 or 2 arguments
             if (count is < 0 or > 2)

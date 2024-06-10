@@ -22,7 +22,7 @@ namespace Garnet.server
         /// <param name="commandInfo">Parsed RespCommandsInfo object</param>
         /// <param name="parentCommand">Name of parent command, null if none</param>
         /// <returns>True if parsing successful</returns>
-        public static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, IReadOnlyDictionary<string, (RespCommand, byte?)> supportedCommands, out RespCommandsInfo commandInfo, string parentCommand = null)
+        public static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, IReadOnlyDictionary<string, RespCommand> supportedCommands, out RespCommandsInfo commandInfo, string parentCommand = null)
         {
             commandInfo = default;
 
@@ -99,8 +99,7 @@ namespace Garnet.server
 
             commandInfo = new RespCommandsInfo()
             {
-                Command = supportedCommands[parentCommand ?? name].Item1,
-                ArrayCommand = supportedCommands[parentCommand ?? name].Item2,
+                Command = supportedCommands[parentCommand ?? name],
                 Name = name.ToUpper(),
                 Arity = arity,
                 Flags = flags,

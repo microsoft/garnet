@@ -48,8 +48,7 @@ namespace Garnet.server
 
                 if (NetworkSingleKeySlotVerify(key, false))
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count)) return false;
+                    if (!DrainCommands(count)) return false;
                     return true;
                 }
 
@@ -136,8 +135,7 @@ namespace Garnet.server
 
             if (NetworkKeyArraySlotVerify(ref keys, true))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count)) return false;
+                if (!DrainCommands(count)) return false;
                 return true;
             }
 
@@ -201,8 +199,7 @@ namespace Garnet.server
 
             if (NetworkSingleKeySlotVerify(key, false))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
                 return true;
             }
@@ -217,8 +214,7 @@ namespace Garnet.server
 
             if (NetworkKeyArraySlotVerify(ref keys, true))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count)) return false;
+                if (!DrainCommands(count)) return false;
                 return true;
             }
 
@@ -272,8 +268,7 @@ namespace Garnet.server
 
             if (NetworkKeyArraySlotVerify(ref keys, true))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count)) return false;
+                if (!DrainCommands(count)) return false;
                 return true;
             }
 
@@ -327,8 +322,7 @@ namespace Garnet.server
 
             if (NetworkSingleKeySlotVerify(key, false))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
                 return true;
             }
@@ -343,8 +337,7 @@ namespace Garnet.server
 
             if (NetworkKeyArraySlotVerify(ref keys, true))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count)) return false;
+                if (!DrainCommands(count)) return false;
                 return true;
             }
 
@@ -394,8 +387,7 @@ namespace Garnet.server
 
                 if (NetworkSingleKeySlotVerify(key, false))
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
+                    if (!DrainCommands(count))
                         return false;
                     return true;
                 }
@@ -487,8 +479,7 @@ namespace Garnet.server
 
                 if (NetworkSingleKeySlotVerify(key, true))
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
+                    if (!DrainCommands(count))
                         return false;
                     return true;
                 }
@@ -560,8 +551,7 @@ namespace Garnet.server
 
                 if (NetworkSingleKeySlotVerify(key, true))
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
+                    if (!DrainCommands(count))
                         return false;
                     return true;
                 }
@@ -641,8 +631,7 @@ namespace Garnet.server
 
             if (NetworkSingleKeySlotVerify(key, true))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
                 return true;
             }
@@ -729,8 +718,7 @@ namespace Garnet.server
 
             if (NetworkSingleKeySlotVerify(key, false))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
                 return true;
             }
@@ -862,8 +850,7 @@ namespace Garnet.server
 
             if (NetworkKeyArraySlotVerify(ref keys, false))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count)) return false;
+                if (!DrainCommands(count)) return false;
                 return true;
             }
 
@@ -920,8 +907,7 @@ namespace Garnet.server
 
             if (NetworkSingleKeySlotVerify(key, true))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
                 return true;
             }
@@ -1048,8 +1034,7 @@ namespace Garnet.server
 
             if (NetworkKeyArraySlotVerify(ref keys, true))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count)) return false;
+                if (!DrainCommands(count)) return false;
                 return true;
             }
 
@@ -1100,8 +1085,7 @@ namespace Garnet.server
 
             if (NetworkSingleKeySlotVerify(key, false))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
                 return true;
             }
@@ -1116,8 +1100,7 @@ namespace Garnet.server
 
             if (NetworkKeyArraySlotVerify(ref keys, true))
             {
-                var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                if (!DrainCommands(bufSpan, count)) return false;
+                if (!DrainCommands(count)) return false;
                 return true;
             }
 

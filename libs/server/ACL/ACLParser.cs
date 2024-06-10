@@ -3,12 +3,43 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Garnet.server.ACL
 {
     class ACLParser
     {
         private static readonly char[] WhitespaceChars = [' ', '\t', '\r', '\n'];
+
+        private static readonly Dictionary<string, RespAclCategories> categoryNames = new Dictionary<string, RespAclCategories>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["admin"] = RespAclCategories.Admin,
+            ["bitmap"] = RespAclCategories.Bitmap,
+            ["blocking"] = RespAclCategories.Blocking,
+            ["connection"] = RespAclCategories.Connection,
+            ["dangerous"] = RespAclCategories.Dangerous,
+            ["geo"] = RespAclCategories.Geo,
+            ["hash"] = RespAclCategories.Hash,
+            ["hyperloglog"] = RespAclCategories.HyperLogLog,
+            ["fast"] = RespAclCategories.Fast,
+            ["keyspace"] = RespAclCategories.KeySpace,
+            ["list"] = RespAclCategories.List,
+            ["pubsub"] = RespAclCategories.PubSub,
+            ["read"] = RespAclCategories.Read,
+            ["scripting"] = RespAclCategories.Scripting,
+            ["set"] = RespAclCategories.Set,
+            ["sortedset"] = RespAclCategories.SortedSet,
+            ["slow"] = RespAclCategories.Slow,
+            ["stream"] = RespAclCategories.Stream,
+            ["string"] = RespAclCategories.String,
+            ["transaction"] = RespAclCategories.Transaction,
+            ["write"] = RespAclCategories.Write,
+            ["garnet"] = RespAclCategories.Garnet,
+            ["custom"] = RespAclCategories.Custom,
+            ["all"] = RespAclCategories.All,
+        };
+
+        private static readonly Dictionary<RespAclCategories, string> categoryNamesReversed = categoryNames.ToDictionary(static kv => kv.Value, static kv => kv.Key);
 
         /// <summary>
         /// Parses a single-line ACL rule and returns a new user according to that rule.
@@ -159,10 +190,10 @@ namespace Garnet.server.ACL
                 // Parse category name
                 string categoryName = op.Substring(2);
 
-                CommandCategory.Flag category;
+                RespAclCategories category;
                 try
                 {
-                    category = CommandCategory.GetFlagByName(categoryName);
+                    category = ACLParser.GetACLCategoryByName(categoryName);
                 }
                 catch (KeyNotFoundException)
                 {
@@ -179,6 +210,25 @@ namespace Garnet.server.ACL
                     user.AddCategory(category);
                 }
             }
+            else if (op.StartsWith("-", StringComparison.Ordinal) || op.StartsWith("+", StringComparison.Ordinal))
+            {
+                // Individual commands or command|subcommand pairs
+                string commandName = op.Substring(1);
+
+                if (!TryParseCommandForAcl(commandName, out RespCommand command))
+                {
+                    throw new AclCommandDoesNotExistException(commandName);
+                }
+
+                if (op[0] == '-')
+                {
+                    user.RemoveCommand(command);
+                }
+                else
+                {
+                    user.AddCommand(command);
+                }
+            }
             else if (op.Equals("~*", StringComparison.Ordinal) || op.Equals("ALLKEYS", StringComparison.OrdinalIgnoreCase))
             {
                 // NOTE: No-op, because only wildcard key patterns are currently supported
@@ -191,6 +241,72 @@ namespace Garnet.server.ACL
             {
                 throw new ACLUnknownOperationException(op);
             }
+
+            // There's some fixup that has to be done when parsing a command
+            static bool TryParseCommandForAcl(string commandName, out RespCommand command)
+            {
+                int subCommandSepIx = commandName.IndexOf('|');
+                bool isSubCommand = subCommandSepIx != -1;
+
+                string effectiveName = isSubCommand ? commandName[..subCommandSepIx] + "_" + commandName[(subCommandSepIx + 1)..] : commandName;
+
+                if (!Enum.TryParse(effectiveName, ignoreCase: true, out command))
+                {
+                    // We handle these commands specially because blind replacements would cause
+                    // us to be too accepting of different values
+                    if (commandName.Equals("SLAVEOF", StringComparison.OrdinalIgnoreCase))
+                    {
+                        command = RespCommand.SECONDARYOF;
+                    }
+                    else if (commandName.Equals("CLUSTER|SET-CONFIG-EPOCH", StringComparison.OrdinalIgnoreCase))
+                    {
+                        command = RespCommand.CLUSTER_SETCONFIGEPOCH;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+
+                // Validate parse results matches the original input expectations
+                if (isSubCommand)
+                {
+                    if (!RespCommandsInfo.TryGetRespCommandInfo(command, out RespCommandsInfo info))
+                    {
+                        throw new ACLException($"Couldn't load information for {command}, shouldn't be possible");
+                    }
+
+                    if (info.SubCommand != command)
+                    {
+                        return false;
+                    }
+                }
+
+                return !IsInvalidCommandToAcl(command);
+            }
+
+            // Some commands aren't really commands, so ACLs shouldn't accept their names
+            static bool IsInvalidCommandToAcl(RespCommand command)
+            => command == RespCommand.INVALID || command == RespCommand.NONE || command.NormalizeForACLs() != command;
         }
+
+        /// <summary>
+        /// Lookup the <see cref="RespAclCategories"/> by equivalent string.
+        /// </summary>
+        public static RespAclCategories GetACLCategoryByName(string categoryName)
+        => ACLParser.categoryNames[categoryName];
+
+        /// <summary>
+        /// Lookup the string equivalent to <paramref name="category"/>.
+        /// </summary>
+        public static string GetNameByACLCategory(RespAclCategories category)
+        => ACLParser.categoryNamesReversed[category];
+
+        /// <summary>
+        /// Returns a collection of all valid category names.
+        /// </summary>
+        /// <returns>Collection of valid category names.</returns>
+        public static IReadOnlyCollection<string> ListCategories()
+        => ACLParser.categoryNames.Keys;
     }
 }

@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using BenchmarkDotNet.Attributes;
 using Embedded.perftest;
 using Garnet.server;
+using Garnet.server.Auth.Settings;
 
 namespace BDN.benchmark.Resp
 {
@@ -13,6 +14,7 @@ namespace BDN.benchmark.Resp
     {
         EmbeddedRespServer server;
         RespServerSession session;
+        protected IAuthenticationSettings authSettings = null;
 
         const int batchSize = 128;
 
@@ -28,12 +30,17 @@ namespace BDN.benchmark.Resp
         byte[] getRequestBuffer;
         byte* getRequestBufferPointer;
 
+        static ReadOnlySpan<byte> ZADDREM => "*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nc\r\n*3\r\n$4\r\nZREM\r\n$1\r\nc\r\n$1\r\nc\r\n"u8;
+        byte[] zAddRemRequestBuffer;
+        byte* zAddRemRequestBufferPointer;
+
         [GlobalSetup]
         public void GlobalSetup()
         {
             var opt = new GarnetServerOptions
             {
-                QuietMode = true
+                QuietMode = true,
+                AuthSettings = authSettings,
             };
             server = new EmbeddedRespServer(opt);
             session = server.GetRespSession();
@@ -52,6 +59,14 @@ namespace BDN.benchmark.Resp
             getRequestBufferPointer = (byte*)Unsafe.AsPointer(ref getRequestBuffer[0]);
             for (int i = 0; i < batchSize; i++)
                 GET.CopyTo(new Span<byte>(getRequestBuffer).Slice(i * GET.Length));
+
+            zAddRemRequestBuffer = GC.AllocateArray<byte>(ZADDREM.Length * batchSize, pinned: true);
+            zAddRemRequestBufferPointer = (byte*)Unsafe.AsPointer(ref zAddRemRequestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                ZADDREM.CopyTo(new Span<byte>(zAddRemRequestBuffer).Slice(i * ZADDREM.Length));
+
+            // Pre-populate sorted set with a single element to avoid repeatedly emptying it during the benchmark
+            SlowConsumeMessage("*4\r\n$4\r\nZADD\r\n$1\r\nc\r\n$1\r\n1\r\n$1\r\nd\r\n"u8);
         }
 
         [GlobalCleanup]
@@ -77,6 +92,20 @@ namespace BDN.benchmark.Resp
         public void Get()
         {
             _ = session.TryConsumeMessages(getRequestBufferPointer, getRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void ZAddRem()
+        {
+            _ = session.TryConsumeMessages(zAddRemRequestBufferPointer, zAddRemRequestBuffer.Length);
+        }
+
+        private void SlowConsumeMessage(ReadOnlySpan<byte> message)
+        {
+            var buffer = GC.AllocateArray<byte>(message.Length, pinned: true);
+            var bufferPointer = (byte*)Unsafe.AsPointer(ref buffer[0]);
+            message.CopyTo(new Span<byte>(buffer));
+            _ = session.TryConsumeMessages(bufferPointer, buffer.Length);
         }
     }
 }
