@@ -1083,9 +1083,7 @@ namespace Garnet.server
             // No additonal args allowed
             if (count != 0)
             {
-                ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
-
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
 
                 string errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, "COMMAND");
@@ -1111,9 +1109,7 @@ namespace Garnet.server
             // No additonal args allowed
             if (count != 0)
             {
-                ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
-
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
 
                 string errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "COMMAND COUNT");
@@ -1144,10 +1140,8 @@ namespace Garnet.server
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND_DOCS(byte* ptr, int count)
         {
-            ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
-
             // Placeholder for handling DOCS sub-command - returning Nil in the meantime.
-            if (!DrainCommands(bufSpan, count))
+            if (!DrainCommands(count))
                 return false;
 
             while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
@@ -1174,11 +1168,9 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
                     SendAndReset();
 
-                ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
-
                 for (var i = 0; i < count; i++)
                 {
-                    var cmdNameSpan = GetCommand(bufSpan, out var success);
+                    var cmdNameSpan = GetCommand(out var success);
                     if (!success)
                         return false;
 

@@ -15,12 +15,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Implements CLUSTER MIGRATE command (only for internode use)
         /// </summary>
-        /// <param name="bufSpan"></param>
         /// <param name="count"></param>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        private bool NetworkClusterMigrate(ReadOnlySpan<byte> bufSpan, int count, out bool invalidParameters)
+        private bool NetworkClusterMigrate(int count, out bool invalidParameters)
         {
             invalidParameters = false;
 
