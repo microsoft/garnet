@@ -13,15 +13,14 @@ namespace Garnet.server
         /// <summary>
         /// Processes LATENCY HELP subcommand.
         /// </summary>
-        /// <param name="bufSpan">The remaining command bytes</param>
-        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkLatencyHelp(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkLatencyHelp(int count)
         {
             // No additional arguments
             if (count != 0)
             {
-                if (!DrainCommands(bufSpan, count))
+                if (!DrainCommands(count))
                     return false;
 
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for LATENCY HELP.", ref dcurr, dend))
@@ -46,10 +45,9 @@ namespace Garnet.server
         /// <summary>
         /// Processes LATENCY HISTOGRAM subcommand.
         /// </summary>
-        /// <param name="bufSpan">The remaining command bytes</param>
-        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkLatencyHistogram(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkLatencyHistogram(int count)
         {
             var ptr = recvBufferPtr + readHead;
             HashSet<LatencyMetricsType> events = null;
@@ -100,10 +98,9 @@ namespace Garnet.server
         /// <summary>
         /// Processes LATENCY RESET subcommand.
         /// </summary>
-        /// <param name="bufSpan">The remaining command bytes</param>
-        /// <param name="count">The number of arguments remaining in bufSpan</param>
+        /// <param name="count">The number of arguments remaining in buffer</param>
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkLatencyReset(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkLatencyReset(int count)
         {
             HashSet<LatencyMetricsType> events = null;
             var ptr = recvBufferPtr + readHead;
