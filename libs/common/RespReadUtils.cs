@@ -359,8 +359,20 @@ namespace Garnet.common
         /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
         /// <param name="end">The current end of the RESP string.</param>
         /// <returns>True if a length header was successfully read.</returns>
-        public static bool ReadArrayLength(out int length, ref byte* ptr, byte* end)
+        public static bool ReadUnsignedArrayLength(out int length, ref byte* ptr, byte* end)
             => ReadUnsignedLengthHeader(out length, ref ptr, end, isArray: true);
+
+        /// <summary>
+        /// Tries to read a RESP array length header from the given ASCII-encoded RESP string
+        /// and, if successful, moves the given ptr to the end of the length header.
+        /// NOTE: It will not throw an exception if length header is negative.
+        /// </summary>
+        /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
+        /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP string.</param>
+        /// <returns>True if a length header was successfully read.</returns>
+        public static bool ReadSignedArrayLength(out int length, ref byte* ptr, byte* end)
+            => ReadSignedLengthHeader(out length, ref ptr, end, isArray: true);
 
         /// <summary>
         /// Read int with length header
@@ -706,15 +718,9 @@ namespace Garnet.common
             result = null;
 
             // Parse RESP array header
-            if (!ReadArrayLength(out var length, ref ptr, end))
+            if (!ReadUnsignedArrayLength(out var length, ref ptr, end))
             {
                 return false;
-            }
-
-            if (length < 0)
-            {
-                // NULL value ('*-1\r\n')
-                return true;
             }
 
             // Parse individual strings in the array

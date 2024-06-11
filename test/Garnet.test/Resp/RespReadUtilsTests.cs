@@ -75,7 +75,7 @@ namespace Garnet.test.Resp
             {
                 var start = ptr;
                 var end = ptr + bytes.Length;
-                var success = RespReadUtils.ReadArrayLength(out var length, ref start, end);
+                var success = RespReadUtils.ReadUnsignedArrayLength(out var length, ref start, end);
 
                 Assert.IsTrue(success);
                 Assert.AreEqual(expected, length);
@@ -102,7 +102,7 @@ namespace Garnet.test.Resp
                 fixed (byte* ptr = bytes)
                 {
                     var start = ptr;
-                    _ = RespReadUtils.ReadArrayLength(out var length, ref start, ptr + bytes.Length);
+                    _ = RespReadUtils.ReadUnsignedArrayLength(out var length, ref start, ptr + bytes.Length);
                 }
             });
         }

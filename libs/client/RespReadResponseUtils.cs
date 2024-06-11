@@ -165,8 +165,40 @@ namespace Garnet.client
         /// Read string array with length header
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadStringArrayWithLengthHeader(out string[] resultArray, ref byte* ptr, byte* end)
-            => RespReadUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, end);
+        public static bool ReadStringArrayWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
+        {
+            result = null;
+
+            // Parse RESP array header
+            if (!RespReadUtils.ReadSignedArrayLength(out var length, ref ptr, end))
+            {
+                return false;
+            }
+
+            if (length < 0)
+            {
+                // NULL value ('*-1\r\n')
+                return true;
+            }
+
+            // Parse individual strings in the array
+            result = new string[length];
+            for (var i = 0; i < length; i++)
+            {
+                if (*ptr == '$')
+                {
+                    if (!ReadStringWithLengthHeader(out result[i], ref ptr, end))
+                        return false;
+                }
+                else
+                {
+                    if (!ReadIntegerAsString(out result[i], ref ptr, end))
+                        return false;
+                }
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// Read string array with length header
@@ -176,7 +208,7 @@ namespace Garnet.client
         {
             result = null;
             // Parse RESP array header
-            if (!RespReadUtils.ReadArrayLength(out var length, ref ptr, end))
+            if (!RespReadUtils.ReadSignedArrayLength(out var length, ref ptr, end))
             {
                 return false;
             }
