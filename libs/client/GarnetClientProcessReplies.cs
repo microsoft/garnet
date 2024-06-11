@@ -31,27 +31,27 @@ namespace Garnet.client
                         result = "OK";
                         break;
                     }
-                    if (!RespReadUtils.ReadSimpleString(out result, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadSimpleString(out result, ref ptr, end))
                         return false;
                     break;
 
                 case (byte)':':
-                    if (!RespReadUtils.ReadIntegerAsString(out result, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadIntegerAsString(out result, ref ptr, end))
                         return false;
                     break;
 
                 case (byte)'-':
-                    if (!RespReadUtils.ReadErrorAsString(out error, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadErrorAsString(out error, ref ptr, end))
                         return false;
                     break;
 
                 case (byte)'$':
-                    if (!RespReadUtils.ReadStringResponseWithLengthHeader(out result, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadStringWithLengthHeader(out result, ref ptr, end))
                         return false;
                     break;
 
                 case (byte)'*':
-                    if (!RespReadUtils.ReadStringArrayWithLengthHeader(out var resultArray, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadStringArrayWithLengthHeader(out var resultArray, ref ptr, end))
                         return false;
                     // Return first element of array
                     result = resultArray[0];
@@ -78,12 +78,12 @@ namespace Garnet.client
                     break;
 
                 case (byte)'-':
-                    if (!RespReadUtils.ReadErrorAsString(out error, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadErrorAsString(out error, ref ptr, end))
                         return false;
                     break;
 
                 case (byte)'$':
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out var intWithLength, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadIntWithLengthHeader(out var intWithLength, ref ptr, end))
                         return false;
                     number = intWithLength;
                     break;
@@ -94,7 +94,6 @@ namespace Garnet.client
             }
             return true;
         }
-
 
         unsafe bool ProcessReplyAsStringArray(ref byte* ptr, byte* end, out string[] result, out string error)
         {
@@ -111,29 +110,29 @@ namespace Garnet.client
                         result = ["OK"];
                         break;
                     }
-                    if (!RespReadUtils.ReadSimpleString(out var _result, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadSimpleString(out var _result, ref ptr, end))
                         return false;
                     result = [_result];
                     break;
                 case (byte)':':
-                    if (!RespReadUtils.ReadIntegerAsString(out _result, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadIntegerAsString(out _result, ref ptr, end))
                         return false;
                     result = [_result];
                     break;
 
                 case (byte)'-':
-                    if (!RespReadUtils.ReadErrorAsString(out error, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadErrorAsString(out error, ref ptr, end))
                         return false;
                     break;
 
                 case (byte)'$':
-                    if (!RespReadUtils.ReadStringResponseWithLengthHeader(out _result, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadStringWithLengthHeader(out _result, ref ptr, end))
                         return false;
                     result = [_result];
                     break;
 
                 case (byte)'*':
-                    if (!RespReadUtils.ReadStringArrayWithLengthHeader(out result, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadStringArrayWithLengthHeader(out result, ref ptr, end))
                         return false;
                     break;
 
@@ -160,26 +159,26 @@ namespace Garnet.client
                         result = RESP_OK;
                         break;
                     }
-                    if (!RespReadUtils.ReadSimpleString(memoryPool, out result, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadSimpleString(memoryPool, out result, ref ptr, end))
                         return false;
                     break;
                 case (byte)':':
-                    if (!RespReadUtils.ReadIntegerAsString(memoryPool, out result, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadIntegerAsString(memoryPool, out result, ref ptr, end))
                         return false;
                     break;
 
                 case (byte)'-':
-                    if (!RespReadUtils.ReadErrorAsString(out error, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadErrorAsString(out error, ref ptr, end))
                         return false;
                     break;
 
                 case (byte)'$':
-                    if (!RespReadUtils.ReadStringResponseWithLengthHeader(memoryPool, out result, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadStringWithLengthHeader(memoryPool, out result, ref ptr, end))
                         return false;
                     break;
 
                 case (byte)'*':
-                    if (!RespReadUtils.ReadStringResponseArrayWithLengthHeader(memoryPool, out var resultArray, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadStringArrayWithLengthHeader(memoryPool, out var resultArray, ref ptr, end))
                         return false;
                     // Return first element of array
                     for (var i = 1; i < resultArray.Length; i++)
@@ -202,7 +201,7 @@ namespace Garnet.client
             switch (*ptr)
             {
                 case (byte)'*':
-                    if (!RespReadUtils.ReadStringResponseArrayWithLengthHeader(memoryPool, out var resultArray, ref ptr, end))
+                    if (!RespReadResponseUtils.ReadStringArrayWithLengthHeader(memoryPool, out var resultArray, ref ptr, end))
                         return false;
                     result = resultArray;
                     break;

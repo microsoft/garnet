@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Buffers;
 using System.Buffers.Text;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -360,7 +359,6 @@ namespace Garnet.common
         /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
         /// <param name="end">The current end of the RESP string.</param>
         /// <returns>True if a length header was successfully read.</returns>
-
         public static bool ReadArrayLength(out int length, ref byte* ptr, byte* end)
             => ReadUnsignedLengthHeader(out length, ref ptr, end, isArray: true);
 
@@ -793,7 +791,7 @@ namespace Garnet.common
         /// <summary>
         /// Read ASCII string without header until string terminator ('\r\n').
         /// </summary>
-        static bool ReadString(out string result, ref byte* ptr, byte* end)
+        public static bool ReadString(out string result, ref byte* ptr, byte* end)
         {
             result = null;
 
@@ -807,31 +805,6 @@ namespace Garnet.common
                 if (*(ushort*)ptr == MemoryMarshal.Read<ushort>("\r\n"u8))
                 {
                     result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(start, (int)(ptr - start)));
-                    ptr += 2;
-                    return true;
-                }
-                ptr++;
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Read ASCII string without header until string terminator ('\r\n').
-        /// </summary>
-        private static bool ReadString(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
-        {
-            result = default;
-            if (ptr + 1 >= end)
-                return false;
-
-            var start = ptr;
-            while (ptr < end - 1)
-            {
-                if (*(ushort*)ptr == MemoryMarshal.Read<ushort>("\r\n"u8))
-                {
-                    result = MemoryResult<byte>.Create(pool, (int)(ptr - start));
-                    new ReadOnlySpan<byte>(start, result.Length).CopyTo(result.Span);
                     ptr += 2;
                     return true;
                 }
@@ -923,171 +896,5 @@ namespace Garnet.common
 
             return true;
         }
-
-        #region ClientSpecific
-        /// <summary>
-        /// Try to read a RESP formatted bulk string
-        /// NOTE: This is used with client implementation to parse responses that may include a null value (i.e. $-1\r\n)
-        /// </summary>
-        /// <param name="result"></param>
-        /// <param name="ptr"></param>
-        /// <param name="end"></param>
-        /// <returns></returns>
-        public static bool ReadStringResponseWithLengthHeader(out string result, ref byte* ptr, byte* end)
-        {
-            result = null;
-
-            if (ptr + 3 > end)
-                return false;
-
-            // Parse RESP string header
-            if (!ReadSignedLengthHeader(out var length, ref ptr, end))
-                return false;
-
-            if (length < 0)
-            {
-                // NULL value ('$-1\r\n')
-                return true;
-            }
-
-            // Extract string content + '\r\n' terminator
-            var keyPtr = ptr;
-
-            ptr += length + 2;
-
-            if (ptr > end)
-                return false;
-
-            // Ensure terminator has been received
-            if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
-            }
-
-            result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(keyPtr, length));
-
-            return true;
-        }
-
-        /// <summary>
-        /// Read string with length header
-        /// </summary>
-        /// <param name="pool">Memory pool to rent space for storing the result.</param>
-        /// <param name="result">If parsing was successful, contains the extracted byte sequence.</param>
-        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
-        /// <param name="end">The current end of the RESP message.</param>
-        /// <returns>True if a RESP string was successfully read.</returns>
-        public static bool ReadStringResponseWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
-        {
-            result = default;
-            if (ptr + 3 > end)
-                return false;
-
-            // Parse RESP string header
-            if (!ReadSignedLengthHeader(out var length, ref ptr, end))
-                return false;
-
-            if (length < 0)
-            {
-                // NULL value ('$-1\r\n')
-                return true;
-            }
-
-            // Extract string content + '\r\n' terminator
-            var keyPtr = ptr;
-
-            ptr += length + 2;
-
-            if (ptr > end)
-                return false;
-
-            // Ensure terminator has been received
-            if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
-            }
-
-            result = MemoryResult<byte>.Create(pool, length);
-            new ReadOnlySpan<byte>(keyPtr, length).CopyTo(result.Span);
-            return true;
-        }
-
-        /// <summary>
-        /// Read string array with length header
-        /// </summary>
-        public static bool ReadStringResponseArrayWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte>[] result, ref byte* ptr, byte* end)
-        {
-            result = null;
-            // Parse RESP array header
-            if (!ReadArrayLength(out var length, ref ptr, end))
-            {
-                return false;
-            }
-
-            if (length < 0)
-            {
-                // NULL value ('*-1\r\n')
-                return true;
-            }
-
-            // Parse individual strings in the array
-            result = new MemoryResult<byte>[length];
-            for (var i = 0; i < length; i++)
-            {
-                if (*ptr == '$')
-                {
-                    if (!ReadStringResponseWithLengthHeader(pool, out result[i], ref ptr, end))
-                        return false;
-                }
-                else
-                {
-                    if (!ReadIntegerAsString(pool, out result[i], ref ptr, end))
-                        return false;
-                }
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Read integer as string
-        /// </summary>
-        public static bool ReadIntegerAsString(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
-        {
-            result = default;
-            if (ptr + 2 >= end)
-                return false;
-
-            // Integer strings need to start with a ':'
-            if (*ptr != ':')
-            {
-                RespParsingException.ThrowUnexpectedToken(*ptr);
-            }
-
-            ptr++;
-
-            return ReadString(pool, out result, ref ptr, end);
-        }
-
-        /// <summary>
-        /// Read simple string
-        /// </summary>
-        public static bool ReadSimpleString(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
-        {
-            result = default;
-            if (ptr + 2 >= end)
-                return false;
-
-            // Simple strings need to start with a '+'
-            if (*ptr != '+')
-            {
-                RespParsingException.ThrowUnexpectedToken(*ptr);
-            }
-
-            ptr++;
-
-            return ReadString(pool, out result, ref ptr, end);
-        }
-        #endregion
     }
 }
