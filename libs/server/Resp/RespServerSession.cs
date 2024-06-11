@@ -312,13 +312,19 @@ namespace Garnet.server
                         {
                             success = ProcessBasicCommands(cmd, count, ptr, ref lockableGarnetApi);
                         }
-                        else success = cmd switch
+                        else
                         {
-                            RespCommand.EXEC => NetworkEXEC(ptr),
-                            RespCommand.MULTI => NetworkMULTI(ptr),
-                            RespCommand.DISCARD => NetworkDISCARD(),
-                            _ => NetworkSKIP(cmd, count),
-                        };
+                            if (CheckACLPermissions(cmd, ptr, count, out success))
+                            {
+                                success = cmd switch
+                                {
+                                    RespCommand.EXEC => NetworkEXEC(ptr),
+                                    RespCommand.MULTI => NetworkMULTI(ptr),
+                                    RespCommand.DISCARD => NetworkDISCARD(),
+                                    _ => NetworkSKIP(cmd, count),
+                                };
+                            }
+                        }
                     }
                     else
                     {
