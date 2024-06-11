@@ -300,52 +300,32 @@ namespace Garnet.server
 
             while (bytesRead - readHead >= 4)
             {
-                // NOTE: Possible optimization: Don't parse if only parsing AUTH and not authenticated.
-                ReadOnlySpan<byte> specificErrorMessage = default;
-                RespCommand cmd = ParseCommand(out int count, recvBufferPtr + readHead, out bool success, ref specificErrorMessage);
+                var cmd = ParseCommand(out int count, out bool commandReceived, out int endReadHead);
+                if (!commandReceived) break;
 
-                var ptr = recvBufferPtr + readHead;
-
-                if (cmd != RespCommand.INVALID)
+                if (CheckACLPermissions(cmd))
                 {
                     if (txnManager.state != TxnState.None)
                     {
                         if (txnManager.state == TxnState.Running)
                         {
-                            success = ProcessBasicCommands(cmd, count, ptr, ref lockableGarnetApi);
+                            _ = ProcessBasicCommands(cmd, count, ref lockableGarnetApi);
                         }
-                        else success = cmd switch
+                        else _ = cmd switch
                         {
-                            RespCommand.EXEC => NetworkEXEC(ptr),
-                            RespCommand.MULTI => NetworkMULTI(ptr),
+                            RespCommand.EXEC => NetworkEXEC(ref endReadHead),
+                            RespCommand.MULTI => NetworkMULTI(),
                             RespCommand.DISCARD => NetworkDISCARD(),
                             _ => NetworkSKIP(cmd, count),
                         };
                     }
                     else
                     {
-                        success = ProcessBasicCommands(cmd, count, ptr, ref basicGarnetApi);
+                        _ = ProcessBasicCommands(cmd, count, ref basicGarnetApi);
                     }
                 }
-                else
-                {
-                    // Parsing for command name was successful, but the command is unknown
-                    if (success)
-                    {
-                        if (!specificErrorMessage.IsEmpty)
-                        {
-                            while (!RespWriteUtils.WriteError(specificErrorMessage, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            // Return "Unknown RESP Command" message
-                            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                    }
-                }
-                if (!success) break;
+                _origReadHead = readHead = endReadHead;
+
                 if (latencyMetrics != null) opCount++;
                 if (sessionMetrics != null)
                 {
@@ -354,8 +334,6 @@ namespace Garnet.server
                     sessionMetrics.total_write_commands_processed += cmd.OneIfWrite();
                     sessionMetrics.total_read_commands_processed += cmd.OneIfRead();
                 }
-
-                _origReadHead = readHead;
                 SessionAsking = (byte)(SessionAsking == 0 ? SessionAsking : SessionAsking - 1);
             }
             readHead = _origReadHead;
@@ -392,16 +370,11 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // Do ACL validation up front
-            if (!CheckACLPermissions(cmd, ptr, count, out bool success))
-            {
-                return success;
-            }
-
-            success = cmd switch
+            var ptr = recvBufferPtr + readHead;
+            _ = cmd switch
             {
                 RespCommand.GET => NetworkGET(ptr, ref storageApi),
                 RespCommand.SET => NetworkSET(ptr, ref storageApi),
@@ -431,8 +404,8 @@ namespace Garnet.server
                 RespCommand.PUBLISH => NetworkPUBLISH(ptr),
                 RespCommand.PING => count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, count, ref storageApi),
                 RespCommand.ASKING => NetworkASKING(),
-                RespCommand.MULTI => NetworkMULTI(ptr),
-                RespCommand.EXEC => NetworkEXEC(ptr),
+                RespCommand.MULTI => NetworkMULTI(),
+                RespCommand.EXEC => NetworkEXEC(ref readHead),
                 RespCommand.UNWATCH => NetworkUNWATCH(),
                 RespCommand.DISCARD => NetworkDISCARD(),
                 RespCommand.QUIT => NetworkQUIT(),
@@ -447,7 +420,7 @@ namespace Garnet.server
                 _ => ProcessArrayCommands(cmd, count, ref storageApi)
             };
 
-            return success;
+            return true;
         }
 
         private bool ProcessArrayCommands<TGarnetApi>(RespCommand cmd, int count, ref TGarnetApi storageApi)

@@ -712,29 +712,24 @@ namespace Garnet.server
         /// (NOTE: This function does not check keyspaces)
         /// </summary>
         /// <param name="cmd">Command be processed</param>
-        /// <param name="ptr">Pointer to start of arguments in command buffer</param>
-        /// <param name="count">Number of parameters left in the command specification.</param>
-        /// <param name="processingCompleted">Indicates whether the command was completely processed, regardless of whether execution was successful or not.</param>
         /// <returns>True if the command execution is allowed to continue, otherwise false.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool CheckACLPermissions(RespCommand cmd, byte* ptr, int count, out bool processingCompleted)
+        bool CheckACLPermissions(RespCommand cmd)
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
 
+            if (cmd == RespCommand.INVALID) return false;
             if ((!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd)) && !cmd.IsNoAuth())
             {
-                processingCompleted = OnACLFailure(this, cmd, count);
+                OnACLFailure(this, cmd);
                 return false;
             }
-
-            processingCompleted = true;
-
             return true;
 
             // Failing should be rare, and is not important for performance so hide this behind
             // a method call to keep icache pressure down
             [MethodImpl(MethodImplOptions.NoInlining)]
-            static bool OnACLFailure(RespServerSession self, RespCommand cmd, int count)
+            static void OnACLFailure(RespServerSession self, RespCommand cmd)
             {
                 // If we're rejecting a command, we may need to cleanup some ambient state too
                 if (cmd == RespCommand.CustomCmd)
@@ -749,18 +744,8 @@ namespace Garnet.server
                 {
                     self.currentCustomTransaction = null;
                 }
-
-                if (!self.DrainCommands(count))
-                {
-                    return false;
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref self.dcurr, self.dend))
-                        self.SendAndReset();
-
-                    return true;
-                }
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref self.dcurr, self.dend))
+                    self.SendAndReset();
             }
         }
 

@@ -16,7 +16,7 @@ namespace Garnet.server
         /// <summary>
         /// MULTI
         /// </summary>
-        private bool NetworkMULTI(byte* ptr)
+        private bool NetworkMULTI()
         {
             if (txnManager.state != TxnState.None)
             {
@@ -36,7 +36,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkEXEC(byte* ptr)
+        private bool NetworkEXEC(ref int endReadHead)
         {
             // pass over the EXEC in buffer during execution
             if (txnManager.state == TxnState.Running)
@@ -56,8 +56,8 @@ namespace Garnet.server
             // start running transaction and setting readHead to first operation
             else if (txnManager.state == TxnState.Started)
             {
-                var _origReadHead = readHead;
-                readHead = txnManager.txnStartHead;
+                var _origReadHead = endReadHead;
+                endReadHead = txnManager.txnStartHead;
 
                 txnManager.GetKeysForValidation(recvBufferPtr, out var keys, out int keyCount, out bool readOnly);
                 if (NetworkKeyArraySlotVerify(ref keys, readOnly, keyCount))
@@ -78,7 +78,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    readHead = _origReadHead;
+                    endReadHead = _origReadHead;
                     while (!RespWriteUtils.WriteNull(ref dcurr, dend))
                         SendAndReset();
                 }

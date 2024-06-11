@@ -27,6 +27,7 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ptr, ref storageApi);
 
+            /*
             byte* keyPtr = null;
             int ksize = 0;
 
@@ -34,15 +35,17 @@ namespace Garnet.server
                 return false;
 
             readHead = (int)(ptr - recvBufferPtr);
+            
 
             if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
                 return true;
+            */
 
-            var key = new SpanByte(ksize, (nint)keyPtr);
+            //var key = new SpanByte(ksize, (nint)keyPtr);
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             SpanByte input = default;
-            var status = storageApi.GET(ref key, ref input, ref o);
+            var status = storageApi.GET(ref parseState.Get(0), ref input, ref o);
 
             switch (status)
             {

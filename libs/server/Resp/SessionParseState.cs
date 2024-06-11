@@ -10,9 +10,7 @@ namespace Garnet.server
 {
     unsafe struct SessionParseState
     {
-        const int SpanByteLength = 12;
         const int MinParams = 5;
-        const int MaxParams = 1 << 13;
         int count;
         SpanByte[] buffer;
         SpanByte* bufferPtr;
@@ -38,7 +36,7 @@ namespace Garnet.server
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref SpanByte Get(int i)
-            => ref buffer[i];
+            => ref Unsafe.AsRef<SpanByte>(bufferPtr + i);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Set(int offset, int length, byte* data)

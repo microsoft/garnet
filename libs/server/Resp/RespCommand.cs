@@ -1738,74 +1738,116 @@ namespace Garnet.server
         /// <summary>
         /// Parses the command from the given input buffer.
         /// </summary>
-        /// <param name="ptr">Pointer to the beginning of the input buffer.</param>
         /// <param name="count">Returns the number of unparsed arguments of the command (including any unparsed subcommands).</param>
         /// <param name="success">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
-        /// <param name="specificErrorMsg">If the command could not be parsed, will be non-empty if a specific error message should be returned.</param>
         /// <returns>Command parsed from the input buffer.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand ParseCommand(out int count, byte* ptr, out bool success, ref ReadOnlySpan<byte> specificErrorMsg)
+        private RespCommand ParseCommand(out int count, out bool success, out int endReadHead)
         {
             RespCommand cmd = RespCommand.INVALID;
 
             // Initialize count as -1 (i.e., read head has not been advanced)
             count = -1;
             success = true;
+            endReadHead = readHead;
 
             // Attempt parsing using fast parse pass for most common operations
             cmd = FastParseCommand(out count);
 
+            // If we have not found a command, continue parsing on slow path
             if (cmd == RespCommand.NONE)
             {
-                // See if input command is all upper-case. If not, convert and try fast parse pass again.
-                if (MakeUpperCase(ptr))
-                {
-                    cmd = FastParseCommand(out count);
-                }
-
-                // If we have not found a command, continue parsing for array commands
-                if (cmd == RespCommand.NONE)
-                {
-                    // Ensure we are attempting to read a RESP array header
-                    if (recvBufferPtr[readHead] != '*')
-                    {
-                        // We might have received an inline command package. Skip until the end of the line in the input package.
-                        success = AttemptSkipLine();
-
-                        return RespCommand.INVALID;
-                    }
-
-                    // ... and read the array length; Move the read head
-                    var tmp = recvBufferPtr + readHead;
-                    if (!RespReadUtils.ReadArrayLength(out count, ref tmp, recvBufferPtr + bytesRead))
-                    {
-                        success = false;
-                        return RespCommand.INVALID;
-                    }
-
-                    readHead += (int)(tmp - (recvBufferPtr + readHead));
-
-                    // Try parsing the most important variable-length commands
-                    cmd = FastParseArrayCommand(ref count, ref specificErrorMsg);
-
-                    if (cmd == RespCommand.NONE)
-                    {
-                        cmd = SlowParseCommand(ref count, ref specificErrorMsg, out success);
-                    }
-                }
+                return ArrayParseCommand(ref count, ref success, out endReadHead);
             }
 
+            // Set up parse state
             parseState.Initialize(count);
-            ptr = recvBufferPtr + readHead;
+            var ptr = recvBufferPtr + readHead;
             for (int i = 0; i < count; i++)
             {
                 if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref parseState.Get(i), ref ptr, recvBufferPtr + bytesRead))
                 {
                     success = false;
-                    break;
+                    return RespCommand.INVALID;
+                }
+            }
+            endReadHead = (int)(ptr - recvBufferPtr);
+
+            return cmd;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private RespCommand ArrayParseCommand(ref int count, ref bool success, out int endReadHead)
+        {
+            RespCommand cmd = RespCommand.INVALID;
+            ReadOnlySpan<byte> specificErrorMessage = default;
+            endReadHead = readHead;
+            var ptr = recvBufferPtr + readHead;
+
+            // See if input command is all upper-case. If not, convert and try fast parse pass again.
+            if (MakeUpperCase(ptr))
+            {
+                cmd = FastParseCommand(out count);
+                if (cmd != RespCommand.NONE)
+                {
+                    return cmd;
                 }
             }
 
+            // Ensure we are attempting to read a RESP array header
+            if (recvBufferPtr[readHead] != '*')
+            {
+                // We might have received an inline command package. Skip until the end of the line in the input package.
+                success = AttemptSkipLine();
+
+                return RespCommand.INVALID;
+            }
+
+            // ... and read the array length
+            if (!RespReadUtils.ReadArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+            {
+                success = false;
+                return RespCommand.INVALID;
+            }
+
+            // Move the read head
+            readHead = (int)(ptr - recvBufferPtr);
+
+            // Update parse state
+            parseState.Initialize(count);
+            for (int i = 0; i < count; i++)
+            {
+                if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref parseState.Get(i), ref ptr, recvBufferPtr + bytesRead))
+                {
+                    success = false;
+                    return RespCommand.INVALID;
+                }
+            }
+            endReadHead = (int)(ptr - recvBufferPtr);
+
+            // Try parsing the most important variable-length commands
+            cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);
+
+            if (cmd == RespCommand.NONE)
+            {
+                cmd = SlowParseCommand(ref count, ref specificErrorMessage, out success);
+            }
+
+            // Parsing for command name was successful, but the command is unknown
+            if (cmd == RespCommand.INVALID)
+            {
+                if (!specificErrorMessage.IsEmpty)
+                {
+                    while (!RespWriteUtils.WriteError(specificErrorMessage, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    // Return "Unknown RESP Command" message
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
             return cmd;
         }
     }
