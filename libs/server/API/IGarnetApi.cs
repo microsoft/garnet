@@ -187,14 +187,22 @@ namespace Garnet.server
         GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output);
 
         /// <summary>
-        /// Increment (INCR, INCRBY, DECR, DECRBY)
+        /// Increment (INCR, INCRBY)
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="incrementCount"></param>
-        /// <param name="operationError"></param>
         /// <param name="output"></param>
+        /// <param name="incrementCount"></param>
         /// <returns></returns>
-        GarnetStatus Increment(ArgSlice key, long incrementCount, out OperationError operationError, out long output);
+        GarnetStatus Increment(ArgSlice key, out long output, long incrementCount = 1);
+
+        /// <summary>
+        /// Decrement (DECR, DECRBY)
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="output"></param>
+        /// <param name="decrementCount"></param>
+        /// <returns></returns>
+        GarnetStatus Decrement(ArgSlice key, out long output, long decrementCount = 1);
         #endregion
 
         #region DELETE

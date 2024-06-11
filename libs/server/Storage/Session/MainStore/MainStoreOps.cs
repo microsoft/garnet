@@ -834,7 +834,7 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public unsafe GarnetStatus Increment<TContext>(ArgSlice key, long increment, out OperationError operationError, out long output, ref TContext context)
+        public unsafe GarnetStatus Increment<TContext>(ArgSlice key, out long output, long increment, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
         {
             var cmd = RespCommand.INCRBY;
@@ -863,19 +863,9 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref _output, ref context);
             Debug.Assert(_output.IsSpanByte);
-
-            var errorFlag = _output.Length == outputBufferLength
-                ? (OperationError)(*outputBuffer)
-                : OperationError.SUCCESS;
-            if (errorFlag != OperationError.SUCCESS)
-            {
-                output = 0;
-                operationError = errorFlag;
-                return GarnetStatus.OK;
-            }
+            Debug.Assert(_output.Length == outputBufferLength);
 
             output = NumUtils.BytesToLong(_output.Length, outputBuffer);
-            operationError = OperationError.SUCCESS;
             return GarnetStatus.OK;
         }
 

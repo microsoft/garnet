@@ -677,6 +677,11 @@ namespace Garnet.server
 
         /// <summary>
         /// Returns the rank of member in the sorted set, the scores in the sorted set are ordered from high to low
+        /// <param name="key">The key of the sorted set</param>
+        /// <param name="member">The member to get the rank</param>
+        /// <param name="reverse">If true, the rank is calculated from low to high</param>
+        /// <param name="rank">The rank of the member (null if the member does not exist)</param>
+        /// <param name="objectStoreContext"></param>
         /// </summary>
         public unsafe GarnetStatus SortedSetRank<TObjectContext>(ArgSlice key, ArgSlice member, bool reverse, out long? rank, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
