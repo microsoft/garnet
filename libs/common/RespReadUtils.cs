@@ -210,7 +210,9 @@ namespace Garnet.common
         /// <summary>
         /// Tries to read a RESP length header from the given ASCII-encoded RESP string
         /// and, if successful, moves the given ptr to the end of the length header.
-        /// NOTE: It will throws an exception if length header is negative.
+        /// NOTE:
+        ///     It will throw an exception if length header is negative. 
+        ///     It is primarily used for parsing header length from packets received from server side.
         /// </summary>
         /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
         /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
@@ -241,7 +243,10 @@ namespace Garnet.common
         /// <summary>
         /// Tries to read a RESP a signed length header from the given ASCII-encoded RESP string
         /// and, if successful, moves the given ptr to the end of the length header.
-        /// NOTE: It will not throw an exception if length header is negative.
+        /// NOTE:
+        ///     It will not throw an exception if length header is negative.
+        ///     It is primarily used by client side code.
+        ///     Should not be called by any server code since server side does not accept null values
         /// </summary>
         /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
         /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
@@ -354,6 +359,7 @@ namespace Garnet.common
         /// <summary>
         /// Tries to read a RESP array length header from the given ASCII-encoded RESP string
         /// and, if successful, moves the given ptr to the end of the length header.
+        /// NOTE: We use ReadUnsignedLengthHeader because server does not accept $-1\r\n headers
         /// </summary>
         /// <param name="length">If parsing was successful, contains the extracted length from the header.</param>
         /// <param name="ptr">The starting position in the RESP string. Will be advanced if parsing is successful.</param>
@@ -614,6 +620,7 @@ namespace Garnet.common
         /// <summary>
         /// Tries to read a RESP-formatted string including its length header from the given ASCII-encoded
         /// RESP message and, if successful, moves the given ptr to the end of the string value.
+        /// NOTE: We use ReadUnsignedLengthHeader because server does not accept $-1\r\n headers
         /// </summary>
         /// <param name="result">If parsing was successful, contains the extracted string value.</param>
         /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
@@ -712,6 +719,7 @@ namespace Garnet.common
 
         /// <summary>
         /// Read string array with length header
+        /// NOTE: We use ReadUnsignedLengthHeader because server does not accept *-1\r\n headers.
         /// </summary>
         public static bool ReadStringArrayWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
         {
