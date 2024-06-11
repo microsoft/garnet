@@ -917,8 +917,7 @@ namespace Garnet.server
             if (count != 1)
                 return AbortWithWrongNumberOfArguments("MODULE", count);
 
-            ReadOnlySpan<byte> bufSpan = new(ptr, (int)((recvBufferPtr + bytesRead) - ptr));
-            if (!DrainCommands(bufSpan, 1))
+            if (!DrainCommands(1))
             {
                 return false;
             }

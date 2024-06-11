@@ -38,7 +38,7 @@ namespace Garnet.server
 
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool NetworkConfigGet(ReadOnlySpan<byte> bufSpan, int count)
+        private bool NetworkConfigGet(int count)
         {
             if (count == 0)
             {
@@ -53,7 +53,7 @@ namespace Garnet.server
             var returnAll = false;
             for (var i = 0; i < count; i++)
             {
-                var parameter = GetCommand(bufSpan, out bool success2);
+                var parameter = GetCommand(out bool success2);
                 if (!success2) return false;
                 var serverConfigType = ServerConfig.GetConfig(parameter);
 

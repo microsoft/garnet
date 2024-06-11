@@ -9,7 +9,12 @@ using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Loggers;
 using BenchmarkDotNet.Running;
 
-BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, new BaseConfig());
+BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
+#if DEBUG
+    .Run(args, new DebugInProcessConfig());
+#else
+    .Run(args, new BaseConfig());
+#endif
 
 public class BaseConfig : ManualConfig
 {
