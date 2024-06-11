@@ -105,7 +105,7 @@ namespace Garnet.server
                     ptr += output.bytesDone;
                     break;
             }
-            
+
             readHead = (int)(ptr - recvBufferPtr);
             zaddDoneCount = zaddAddCount = 0;
 
@@ -812,7 +812,7 @@ namespace Garnet.server
                 //restore input buffer
                 *inputPtr = save;
 
-                if(status != GarnetStatus.OK)
+                if (status != GarnetStatus.OK)
                 {
                     var tokens = ReadLeftToken(count - 1, ref ptr);
                     if (tokens < count - 1)

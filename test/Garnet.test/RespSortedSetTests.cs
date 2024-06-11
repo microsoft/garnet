@@ -1979,7 +1979,8 @@ namespace Garnet.test
         [Test]
         public void CheckSortedSetOperationsOnWrongTypeObjectLC()
         {
-            // This is to test remaining commands not supported in SE.Redis
+            // This is to test remaining commands that were not covered in CheckSortedSetOperationsOnWrongTypeObjectLC
+            // since they are not supported in SE.Redis
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             using var lightClientRequest = TestUtils.CreateRequest();
@@ -1988,10 +1989,6 @@ namespace Garnet.test
             var key1Values = new[] { new RedisValue("Hello"), new RedisValue("World") };
             var key2Values = new[] { new RedisValue("Hola"), new RedisValue("Mundo") };
             var values = new[] { key1Values, key2Values };
-            var scores = new[] { new[] { 1.1, 1.2 }, new[] { 2.1, 2.2 } };
-            var sortedSetEntries = values.Select((h, idx) => h
-                .Zip(scores[idx], (n, v) => new SortedSetEntry(n, v)).ToArray()).ToArray();
-
 
             // Set up different type objects
             RespTests.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);

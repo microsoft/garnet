@@ -17,9 +17,14 @@ namespace Garnet.server
                 CompletePendingForObjectStoreSession(ref status, ref output, ref objectStoreContext);
 
             if (status.Found)
+            {
+                if (output.spanByteAndMemory.Length == 0)
+                    return GarnetStatus.WRONGTYPE;
+
                 return GarnetStatus.OK;
-            else
-                return GarnetStatus.NOTFOUND;
+            }
+
+            return GarnetStatus.NOTFOUND;
         }
 
         public GarnetStatus Read_ObjectStore<TObjectContext>(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
@@ -31,9 +36,14 @@ namespace Garnet.server
                 CompletePendingForObjectStoreSession(ref status, ref output, ref objectStoreContext);
 
             if (status.Found)
+            {
+                if (output.spanByteAndMemory.Length == 0)
+                    return GarnetStatus.WRONGTYPE;
+
                 return GarnetStatus.OK;
-            else
-                return GarnetStatus.NOTFOUND;
+            }
+
+            return GarnetStatus.NOTFOUND;
         }
     }
 }
