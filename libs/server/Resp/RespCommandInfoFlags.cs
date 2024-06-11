@@ -3,6 +3,7 @@
 
 using System;
 using System.ComponentModel;
+using System.Net.NetworkInformation;
 
 namespace Garnet.server
 {
@@ -106,5 +107,11 @@ namespace Garnet.server
         Transaction = 1 << 19,
         [Description("write")]
         Write = 1 << 20,
+        [Description("garnet")]
+        Garnet = 1 << 21,
+        [Description("custom")]
+        Custom = 1 << 22,
+        [Description("all")]
+        All = (Custom << 1) - 1,
     }
 }

@@ -73,7 +73,7 @@ namespace Garnet.test.Resp.ACL
         {
             // Create an input with 3 user definitions (including default)
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
-            File.WriteAllText(configurationFile, "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin\r\nuser default on nopass +@admin");
+            File.WriteAllText(configurationFile, "user testA on >password123 +@admin +@slow\r\nuser testB on >passw0rd >password +@admin\r\nuser default on nopass +@admin +@slow");
 
             // Start up Garnet with a defined default user password
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAcl: true, aclFile: configurationFile, defaultPassword: DummyPassword);
@@ -108,8 +108,8 @@ namespace Garnet.test.Resp.ACL
         public async Task AclLoad()
         {
             // Create a modified ACL that (1) removes two users, (2) adds one user, (3) removes one password and (4) removes the default user
-            string originalConfigurationFile = "user testA on >password123 +@admin\r\nuser testB on >passw0rd >password +@admin\r\nuser testC on >passw0rd\r\nuser default on nopass +@admin";
-            string modifiedConfigurationFile = "user testD on >password123\r\nuser testB on >passw0rd +@admin";
+            string originalConfigurationFile = "user testA on >password123 +@admin +@slow\r\nuser testB on >passw0rd >password +@admin +@slow\r\nuser testC on >passw0rd\r\nuser default on nopass +@admin +@slow";
+            string modifiedConfigurationFile = "user testD on >password123\r\nuser testB on >passw0rd +@admin +@slow";
 
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
 
@@ -303,7 +303,7 @@ namespace Garnet.test.Resp.ACL
             var originalConfigurationFile =
                 "user testA on >password123 +@admin\r\n" +
                 "user testB on >passw0rd >password +@admin\r\n" +
-                "user testC on >passw0rd\r\nuser default on nopass +@admin";
+                "user testC on >passw0rd\r\nuser default on nopass +@all";
             var configurationFile = Path.Join(TestUtils.MethodTestDir, "users.acl");
             var updateUser = "testD";
             var updatePass = "placeholder";

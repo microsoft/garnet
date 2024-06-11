@@ -229,7 +229,7 @@ namespace Garnet.server
         /// <summary>
         /// Enable FastCommit mode for TsavoriteLog
         /// </summary>
-        public bool EnableFastCommit = false;
+        public bool EnableFastCommit = true;
 
         /// <summary>
         /// Throttle FastCommit to write metadata once every K commits

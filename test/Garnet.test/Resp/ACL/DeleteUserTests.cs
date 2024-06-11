@@ -167,8 +167,15 @@ namespace Garnet.test.Resp.ACL
             Assert.That(usernames, Does.Contain(TestUserB));
 
             // Try to delete both users in a single command
-            response = await c.ExecuteAsync("ACL", "deluser");
-            Assert.AreEqual("0", response);
+            try
+            {
+                response = await c.ExecuteAsync("ACL", "deluser");
+                Assert.Fail("Shouldn't succeed, DELUSER requires arguments");
+            }
+            catch (Exception e)
+            {
+                Assert.AreEqual("ERR Unknown subcommand or wrong number of arguments for ACL DELUSER.", e.Message);
+            }
 
             // Ensure both users still exist
             usernames = await c.ExecuteForArrayAsync("ACL", "users");

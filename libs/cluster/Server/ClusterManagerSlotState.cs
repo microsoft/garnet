@@ -48,7 +48,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Try to remove ownernship of slots. Slot state transition to OFFLINE.
+        /// Try to remove ownership of slots. Slot state transition to OFFLINE.
         /// </summary>
         /// <param name="slots">Slot list</param>
         /// <param name="notLocalSlot">The slot number that is not local.</param>
@@ -462,8 +462,8 @@ namespace Garnet.cluster
             using var iter = BasicGarnetApi.IterateMainStore();
             while (iter.GetNext(out _))
             {
-                ref SpanByte key = ref iter.GetKey();
-                var s = HashSlotUtils.HashSlot(key.ToPointer(), key.Length);
+                ref var key = ref iter.GetKey();
+                var s = HashSlotUtils.HashSlot(ref key);
                 if (slots.Contains(s))
                     _ = BasicGarnetApi.DELETE(ref key, StoreType.Main);
             }

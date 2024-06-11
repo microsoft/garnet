@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
+using System.Data;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -212,7 +214,7 @@ namespace Garnet.common
         /// <summary>
         /// Encodes the <paramref name="span"/> as ASCII to <paramref name="curr"/>
         /// </summary>
-        /// <returns><see langword="true"/> if the the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
+        /// <returns><see langword="true"/> if the <paramref name="span"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
         public static bool WriteAsciiDirect(ReadOnlySpan<char> span, ref byte* curr, byte* end)
         {
             if (span.Length > (int)(end - curr))
@@ -433,6 +435,70 @@ namespace Garnet.common
 
             //$size\r\ninteger\r\n
             return 1 + integerLenSize + 2 + sign + integerLen + 2;
+        }
+
+        /// <summary>
+        /// Try to write a double-precision floating-point <paramref name="value"/> as bulk string.
+        /// </summary>
+        /// <returns><see langword="true"/> if the <paramref name="value"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
+        [SkipLocalsInit]
+        public static bool TryWriteDoubleBulkString(double value, ref byte* curr, byte* end)
+        {
+            if (double.IsNaN(value))
+            {
+                return TryWriteNaN(value, ref curr, end);
+            }
+            else if (double.IsInfinity(value))
+            {
+                return TryWriteInfinity(value, ref curr, end);
+            }
+
+            Span<byte> buffer = stackalloc byte[32];
+            if (!Utf8Formatter.TryFormat(value, buffer, out var bytesWritten, format: default))
+                return false;
+
+            var itemDigits = NumUtils.NumDigits(bytesWritten);
+            int totalLen = 1 + itemDigits + 2 + bytesWritten + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)'$';
+            NumUtils.IntToBytes(bytesWritten, itemDigits, ref curr);
+            WriteNewline(ref curr);
+            buffer.Slice(0, bytesWritten).CopyTo(new Span<byte>(curr, bytesWritten));
+            curr += bytesWritten;
+            WriteNewline(ref curr);
+            return true;
+        }
+
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TryWriteInfinity(double value, ref byte* curr, byte* end)
+        {
+            var buffer = new Span<byte>(curr, (int)(end - curr));
+            if (double.IsPositiveInfinity(value))
+            {
+                if (!"$4\r\n+inf\r\n"u8.TryCopyTo(buffer))
+                    return false;
+            }
+            else
+            {
+                if (!"$4\r\n-inf\r\n"u8.TryCopyTo(buffer))
+                    return false;
+            }
+
+            curr += 10;
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TryWriteNaN(double value, ref byte* curr, byte* end)
+        {
+            var buffer = new Span<byte>(curr, (int)(end - curr));
+            if (!"$3\r\nnan\r\n"u8.TryCopyTo(buffer))
+                return false;
+            curr += 9;
+            return true;
         }
 
         /// <summary>

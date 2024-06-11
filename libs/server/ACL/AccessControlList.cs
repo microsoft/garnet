@@ -129,9 +129,9 @@ namespace Garnet.server.ACL
 
             while (!_users.TryGetValue(DefaultUserName, out defaultUser))
             {
-                // Default user is always admin
+                // Default user always has full access
                 defaultUser = new User(DefaultUserName);
-                defaultUser.AddCategory(CommandCategory.Flag.Admin);
+                defaultUser.AddCategory(RespAclCategories.All);
 
                 // Automatically created default users are always enabled
                 defaultUser.IsEnabled = true;
@@ -217,6 +217,11 @@ namespace Garnet.server.ACL
         /// <param name="aclConfigurationFile"></param>
         public void Save(string aclConfigurationFile)
         {
+            if (string.IsNullOrEmpty(aclConfigurationFile))
+            {
+                throw new ACLException($"ACL configuration file not set.");
+            }
+
             // Lock to ensure one flush at a time
             lock (this)
             {

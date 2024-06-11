@@ -16,14 +16,9 @@ namespace Garnet.server
         internal RespServerSession Session { get; }
 
         /// <summary>
-        /// The object type of the blocking command
+        /// The command type for the blocking command
         /// </summary>
-        internal GarnetObjectType ObjectType { get; }
-
-        /// <summary>
-        /// The operation type for the blocking command
-        /// </summary>
-        internal byte Operation { get; }
+        internal RespCommand Command { get; }
 
         /// <summary>
         /// Status of the observer
@@ -50,11 +45,10 @@ namespace Garnet.server
         /// </summary>
         internal CancellationTokenSource CancellationTokenSource { get; } = new CancellationTokenSource();
 
-        internal CollectionItemObserver(RespServerSession session, GarnetObjectType objectType, byte operation)
+        internal CollectionItemObserver(RespServerSession session, RespCommand command)
         {
             Session = session;
-            ObjectType = objectType;
-            Operation = operation;
+            Command = command;
         }
 
         /// <summary>

@@ -34,8 +34,7 @@ namespace Garnet.server
 
                 if (NetworkSingleKeySlotVerify(key, false))
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
+                    if (!DrainCommands(count))
                         return false;
                     return true;
                 }
@@ -94,28 +93,28 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
-        /// <param name="op"></param>
         /// <returns></returns>
-        private unsafe bool GeoCommands<TGarnetApi>(int count, byte* ptr, SortedSetOperation op, ref TGarnetApi storageApi)
+        private unsafe bool GeoCommands<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             int paramsRequiredInCommand = 0;
             string cmd = string.Empty;
-            switch (op)
+
+            switch (command)
             {
-                case SortedSetOperation.GEODIST:
+                case RespCommand.GEODIST:
                     paramsRequiredInCommand = 3;
                     cmd = "GEODIST";
                     break;
-                case SortedSetOperation.GEOHASH:
+                case RespCommand.GEOHASH:
                     paramsRequiredInCommand = 1;
                     cmd = "GEOHASH";
                     break;
-                case SortedSetOperation.GEOPOS:
+                case RespCommand.GEOPOS:
                     paramsRequiredInCommand = 1;
                     cmd = "GEOPOS";
                     break;
-                case SortedSetOperation.GEOSEARCH:
+                case RespCommand.GEOSEARCH:
                     paramsRequiredInCommand = 3;
                     cmd = "GEOSEARCH";
                     break;
@@ -134,8 +133,7 @@ namespace Garnet.server
 
                 if (NetworkSingleKeySlotVerify(key, true))
                 {
-                    var bufSpan = new ReadOnlySpan<byte>(recvBufferPtr, bytesRead);
-                    if (!DrainCommands(bufSpan, count))
+                    if (!DrainCommands(count))
                         return false;
                     return true;
                 }
@@ -150,6 +148,16 @@ namespace Garnet.server
 
                 // Prepare length of header in input buffer
                 var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+                SortedSetOperation op =
+                    command switch
+                    {
+                        RespCommand.GEOHASH => SortedSetOperation.GEOHASH,
+                        RespCommand.GEODIST => SortedSetOperation.GEODIST,
+                        RespCommand.GEOPOS => SortedSetOperation.GEOPOS,
+                        RespCommand.GEOSEARCH => SortedSetOperation.GEOSEARCH,
+                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                    };
 
                 // Prepare header in input buffer
                 inputPtr->header.type = GarnetObjectType.SortedSet;

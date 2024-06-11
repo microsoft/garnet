@@ -633,11 +633,6 @@ namespace Tsavorite.test
             // ReadCache is used when the record is read from disk.
             store.Log.FlushAndEvict(wait: true);
 
-            // DisableReadCacheUpdates is primarily for indexing, so a read during index scan does not result in a readcache update.
-            // Reading at a normal logical address will not use the readcache, because the "readcache" bit is not set in that logical address.
-            // And we cannot get a readcache address, since reads satisfied from the readcache pass kInvalidAddress to functions.
-            // Therefore, we test here simply that we do not put it in the readcache when we tell it not to.
-
             // Do not put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
             ReadOptions readOptions = new() { CopyOptions = ReadCopyOptions.None };
