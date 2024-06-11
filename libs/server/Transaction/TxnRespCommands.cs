@@ -36,7 +36,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkEXEC(ref int endReadHead)
+        private bool NetworkEXEC()
         {
             // pass over the EXEC in buffer during execution
             if (txnManager.state == TxnState.Running)

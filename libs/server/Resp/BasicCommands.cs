@@ -141,7 +141,7 @@ namespace Garnet.server
             {
                 if (c > 0 && !ParseGETAndKey(ref keyPtr, ref ksize, ref ptr))
                     break;
-                readHead = (int)(ptr - recvBufferPtr);
+                endReadHead = (int)(ptr - recvBufferPtr);
 
                 // Cluster verification
                 if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))

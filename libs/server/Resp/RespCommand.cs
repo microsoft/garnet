@@ -1742,7 +1742,7 @@ namespace Garnet.server
         /// <param name="success">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
         /// <returns>Command parsed from the input buffer.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand ParseCommand(out int count, out bool success, out int endReadHead)
+        private RespCommand ParseCommand(out int count, out bool success)
         {
             RespCommand cmd = RespCommand.INVALID;
 
@@ -1757,7 +1757,7 @@ namespace Garnet.server
             // If we have not found a command, continue parsing on slow path
             if (cmd == RespCommand.NONE)
             {
-                return ArrayParseCommand(ref count, ref success, out endReadHead);
+                return ArrayParseCommand(ref count, ref success);
             }
 
             // Set up parse state
@@ -1777,7 +1777,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private RespCommand ArrayParseCommand(ref int count, ref bool success, out int endReadHead)
+        private RespCommand ArrayParseCommand(ref int count, ref bool success)
         {
             RespCommand cmd = RespCommand.INVALID;
             ReadOnlySpan<byte> specificErrorMessage = default;

@@ -57,7 +57,7 @@ namespace Garnet.server
         SessionParseState parseState;
         GCHandle recvHandle;
         byte* recvBufferPtr;
-        int readHead;
+        int readHead, endReadHead;
         byte* dcurr, dend;
         bool toDispose;
 
@@ -300,7 +300,7 @@ namespace Garnet.server
 
             while (bytesRead - readHead >= 4)
             {
-                var cmd = ParseCommand(out int count, out bool commandReceived, out int endReadHead);
+                var cmd = ParseCommand(out int count, out bool commandReceived);
                 if (!commandReceived) break;
 
                 if (CheckACLPermissions(cmd))
@@ -313,7 +313,7 @@ namespace Garnet.server
                         }
                         else _ = cmd switch
                         {
-                            RespCommand.EXEC => NetworkEXEC(ref endReadHead),
+                            RespCommand.EXEC => NetworkEXEC(),
                             RespCommand.MULTI => NetworkMULTI(),
                             RespCommand.DISCARD => NetworkDISCARD(),
                             _ => NetworkSKIP(cmd, count),
@@ -405,7 +405,7 @@ namespace Garnet.server
                 RespCommand.PING => count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, count, ref storageApi),
                 RespCommand.ASKING => NetworkASKING(),
                 RespCommand.MULTI => NetworkMULTI(),
-                RespCommand.EXEC => NetworkEXEC(ref readHead),
+                RespCommand.EXEC => NetworkEXEC(),
                 RespCommand.UNWATCH => NetworkUNWATCH(),
                 RespCommand.DISCARD => NetworkDISCARD(),
                 RespCommand.QUIT => NetworkQUIT(),
