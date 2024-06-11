@@ -227,13 +227,13 @@ namespace Garnet.common
             var readHead = ptr + 1;
             var negative = *readHead == '-';
 
-            if (!ReadSignedLengthHeader(out length, ref ptr, end, isArray))
-                return false;
-
             if (negative)
             {
                 RespParsingException.ThrowInvalidStringLength(length);
             }
+
+            if (!ReadSignedLengthHeader(out length, ref ptr, end, isArray))
+                return false;
 
             return true;
         }

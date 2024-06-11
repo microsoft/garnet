@@ -82,35 +82,74 @@ namespace Garnet.client
         {
             result = null;
 
-            if (ptr + 3 > end)
-                return false;
-
-            // Parse RESP string header
-            // NOTE: could be negative due to allowing for null responses
-            if (!RespReadUtils.ReadSignedLengthHeader(out var length, ref ptr, end))
+            byte* keyPtr = null;
+            var length = 0;
+            if (!ReadPtrWithSignedLengthHeader(ref keyPtr, ref length, ref ptr, end))
                 return false;
 
             if (length < 0)
+                return true;
+
+            result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(keyPtr, length));
+            return true;
+        }
+
+        /// <summary>
+        /// Read string with length header
+        /// </summary>
+        /// <param name="pool">Memory pool to rent space for storing the result.</param>
+        /// <param name="result">If parsing was successful, contains the extracted byte sequence.</param>
+        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
+        /// <param name="end">The current end of the RESP message.</param>
+        /// <returns>True if a RESP string was successfully read.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool ReadStringWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
+        {
+            result = default;
+
+            byte* keyPtr = null;
+            var length = 0;
+            if (!ReadPtrWithSignedLengthHeader(ref keyPtr, ref length, ref ptr, end))
+                return false;
+
+            if (length < 0)
+                return true;
+
+            result = MemoryResult<byte>.Create(pool, length);
+            new ReadOnlySpan<byte>(keyPtr, length).CopyTo(result.Span);
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool ReadPtrWithSignedLengthHeader(ref byte* keyPtr, ref int length, ref byte* ptr, byte* end)
+        {
+            // Parse RESP string header
+            if (!RespReadUtils.ReadSignedLengthHeader(out length, ref ptr, end))
+            {
+                return false;
+            }
+
+            // Allow for null
+            if (length < 0)
             {
                 // NULL value ('$-1\r\n')
+                keyPtr = null;
                 return true;
             }
 
-            // Extract string content + '\r\n' terminator
-            var keyPtr = ptr;
+            keyPtr = ptr;
 
+            // Parse content: ensure that input contains key + '\r\n'
             ptr += length + 2;
-
             if (ptr > end)
+            {
                 return false;
+            }
 
-            // Ensure terminator has been received
             if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
             {
                 RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
             }
-
-            result = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(keyPtr, length));
 
             return true;
         }
@@ -164,50 +203,6 @@ namespace Garnet.client
                 }
             }
 
-            return true;
-        }
-
-        /// <summary>
-        /// Read string with length header
-        /// </summary>
-        /// <param name="pool">Memory pool to rent space for storing the result.</param>
-        /// <param name="result">If parsing was successful, contains the extracted byte sequence.</param>
-        /// <param name="ptr">The starting position in the RESP message. Will be advanced if parsing is successful.</param>
-        /// <param name="end">The current end of the RESP message.</param>
-        /// <returns>True if a RESP string was successfully read.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadStringWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte> result, ref byte* ptr, byte* end)
-        {
-            result = default;
-            if (ptr + 3 > end)
-                return false;
-
-            // Parse RESP string header
-            if (!RespReadUtils.ReadSignedLengthHeader(out var length, ref ptr, end))
-                return false;
-
-            if (length < 0)
-            {
-                // NULL value ('$-1\r\n')
-                return true;
-            }
-
-            // Extract string content + '\r\n' terminator
-            var keyPtr = ptr;
-
-            ptr += length + 2;
-
-            if (ptr > end)
-                return false;
-
-            // Ensure terminator has been received
-            if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
-            }
-
-            result = MemoryResult<byte>.Create(pool, length);
-            new ReadOnlySpan<byte>(keyPtr, length).CopyTo(result.Span);
             return true;
         }
 
