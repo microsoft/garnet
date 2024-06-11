@@ -1,4 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
+// // Copyright (c) Microsoft Corporation.
+// // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -552,40 +554,40 @@ namespace Garnet.test
                     .Zip(values[idx], (n, v) => new HashEntry(n, v)).ToArray()).ToArray();
 
             // Set up different type objects
-            RespTests.SetUpTestObjects(db, GarnetObjectType.List, keys, values);
+            RespTestsUtils.SetUpTestObjects(db, GarnetObjectType.List, keys, values);
 
             // HGET
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashGet(keys[0], hashFields[0][0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashGet(keys[0], hashFields[0][0]));
             // HMGET
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashGet(keys[0], hashFields[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashGet(keys[0], hashFields[0]));
             // HSET
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashSet(keys[0], hashFields[0][0], values[0][0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashSet(keys[0], hashFields[0][0], values[0][0]));
             // HMSET
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashSet(keys[0], hashEntries[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashSet(keys[0], hashEntries[0]));
             // HSETNX
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashSet(keys[0], hashFields[0][0], values[0][0], When.NotExists));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashSet(keys[0], hashFields[0][0], values[0][0], When.NotExists));
             // HLEN
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashLength(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashLength(keys[0]));
             // HDEL
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashDelete(keys[0], hashFields[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashDelete(keys[0], hashFields[0]));
             // HEXISTS
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashExists(keys[0], hashFields[0][0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashExists(keys[0], hashFields[0][0]));
             // HGETALL
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashGetAll(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashGetAll(keys[0]));
             // HKEYS
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashKeys(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashKeys(keys[0]));
             // HVALS
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashValues(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashValues(keys[0]));
             // HINCRBY
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashIncrement(keys[0], hashFields[0][0], 2L));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashIncrement(keys[0], hashFields[0][0], 2L));
             // HINCRBYFLOAT
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashIncrement(keys[0], hashFields[0][0], 2.2));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashIncrement(keys[0], hashFields[0][0], 2.2));
             // HRANDFIELD
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashRandomField(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashRandomField(keys[0]));
             // HSCAN
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashScan(keys[0], new RedisValue("*")).FirstOrDefault());
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashScan(keys[0], new RedisValue("*")).FirstOrDefault());
             //HSTRLEN
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.HashStringLength(keys[0], hashFields[0][0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.HashStringLength(keys[0], hashFields[0][0]));
         }
 
         #endregion

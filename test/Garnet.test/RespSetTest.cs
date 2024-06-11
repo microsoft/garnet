@@ -1289,38 +1289,38 @@ namespace Garnet.test
             var values = new[] { key1Values, key2Values };
 
             // Set up different type objects
-            RespTests.SetUpTestObjects(db, GarnetObjectType.List, keys, values);
+            RespTestsUtils.SetUpTestObjects(db, GarnetObjectType.List, keys, values);
 
             // SADD
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetAdd(keys[0], values[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetAdd(keys[0], values[0]));
             // SREM
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetRemove(keys[0], values[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetRemove(keys[0], values[0]));
             // SPOP
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetPop(keys[0], 2));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetPop(keys[0], 2));
             // SMEMBERS
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetMembers(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetMembers(keys[0]));
             // SCARD
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetLength(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetLength(keys[0]));
             // SSCAN
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetScan(keys[0], new RedisValue("*")).FirstOrDefault());
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetScan(keys[0], new RedisValue("*")).FirstOrDefault());
             // SMOVE
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetMove(keys[0], keys[1], values[0][0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetMove(keys[0], keys[1], values[0][0]));
             // SRANDMEMBER
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetRandomMember(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetRandomMember(keys[0]));
             // SISMEMBER
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetContains(keys[0], values[0][0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetContains(keys[0], values[0][0]));
             // SUNION
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Union, keys[0], keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Union, keys[0], keys[1]));
             // SUNIONSTORE
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.Execute("SUNIONSTORE", keys[0], keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.Execute("SUNIONSTORE", keys[0], keys[1]));
             // SDIFF
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Difference, keys[0], keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Difference, keys[0], keys[1]));
             // SDIFFSTORE
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.Execute("SDIFFSTORE", keys[0], keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.Execute("SDIFFSTORE", keys[0], keys[1]));
             // SINTER
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Intersect, keys[0], keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Intersect, keys[0], keys[1]));
             // SINTERSTORE
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.Execute("SINTERSTORE", keys[0], keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.Execute("SINTERSTORE", keys[0], keys[1]));
         }
 
         #endregion

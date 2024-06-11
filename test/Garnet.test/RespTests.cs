@@ -2125,49 +2125,5 @@ namespace Garnet.test
             response = lightClientRequest.Execute($"GET {firstKey}", expectedResponse.Length);
             Assert.AreEqual(expectedResponse, response);
         }
-
-        public static void CheckCommandOnWrongTypeObjectSE(Action testAction)
-        {
-            var expectedError = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
-            try
-            {
-                testAction();
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                Assert.AreEqual(expectedError, e.Message);
-            }
-            catch (AggregateException ae)
-            {
-                var rse = ae.InnerExceptions.FirstOrDefault(e => e is RedisServerException);
-                Assert.IsNotNull(rse);
-                Assert.AreEqual(expectedError, rse.Message);
-            }
-        }
-
-        public static void SetUpTestObjects(IDatabase db, GarnetObjectType objectType, RedisKey[] keys,
-            RedisValue[][] values)
-        {
-            switch (objectType)
-            {
-                case GarnetObjectType.Set:
-                    for (var i = 0; i < keys.Length; i++)
-                    {
-                        var added = db.SetAdd(keys[i], values[i]);
-                        Assert.AreEqual(values[i].Select(v => v.ToString()).Distinct().Count(), added);
-                    }
-                    break;
-                case GarnetObjectType.List:
-                    for (var i = 0; i < keys.Length; i++)
-                    {
-                        var added = db.ListRightPush(keys[i], values[i]);
-                        Assert.AreEqual(values[i].Length, added);
-                    }
-                    break;
-                default:
-                    throw new NotSupportedException();
-            }
-        }
     }
 }

@@ -1258,38 +1258,38 @@ namespace Garnet.test
             var values = new[] { key1Values, key2Values };
 
             // Set up different type objects
-            RespTests.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
+            RespTestsUtils.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
 
             // LPOP
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPop(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPop(keys[0]));
             // LPUSH
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPush(keys[0], values[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPush(keys[0], values[0]));
             // LPUSHX
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPush(keys[0], values[0], When.Exists));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPush(keys[0], values[0], When.Exists));
             // RPOP
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPop(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPop(keys[0]));
             // RPUSH
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPush(keys[0], values[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPush(keys[0], values[0]));
             // RPUSHX
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPush(keys[0], values[0], When.Exists));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPush(keys[0], values[0], When.Exists));
             // LLEN
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListLength(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListLength(keys[0]));
             // LTRIM
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListTrim(keys[0], 2, 5));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListTrim(keys[0], 2, 5));
             // LRANGE
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRange(keys[0], 2, 5));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRange(keys[0], 2, 5));
             // LINDEX
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListGetByIndex(keys[0], 2));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListGetByIndex(keys[0], 2));
             // LINSERT
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListInsertAfter(keys[0], values[0][0], values[0][1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListInsertAfter(keys[0], values[0][0], values[0][1]));
             // LREM
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRemove(keys[0], values[0][0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRemove(keys[0], values[0][0]));
             // RPOPLPUSH
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPopLeftPush(keys[0], keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPopLeftPush(keys[0], keys[1]));
             // LMOVE
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListMove(keys[0], keys[1], ListSide.Left, ListSide.Right));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListMove(keys[0], keys[1], ListSide.Left, ListSide.Right));
             // LSET
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.ListSetByIndex(keys[0], 2, values[0][1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListSetByIndex(keys[0], 2, values[0][1]));
         }
     }
 }

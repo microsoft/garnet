@@ -259,18 +259,18 @@ namespace Garnet.test
                 .Zip(coords[idx], (v, c) => new GeoEntry(c[0], c[1], v)).ToArray()).ToArray();
 
             // Set up different type objects
-            RespTests.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
+            RespTestsUtils.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
 
             // GEOADD
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.GeoAdd(keys[0], geoEntries[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoAdd(keys[0], geoEntries[0]));
             // GEOHASH
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.GeoHash(keys[0], values[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoHash(keys[0], values[0]));
             // GEODIST
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.GeoDistance(keys[0], values[0][1], values[0][1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoDistance(keys[0], values[0][1], values[0][1]));
             // GEOPOS
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.GeoPosition(keys[0], values[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoPosition(keys[0], values[0]));
             // GEOSEARCH
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.GeoSearch(keys[0], values[0][1], new GeoSearchBox(800, 800, GeoUnit.Kilometers)));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoSearch(keys[0], values[0][1], new GeoSearchBox(800, 800, GeoUnit.Kilometers)));
         }
 
         //end region of SE tests

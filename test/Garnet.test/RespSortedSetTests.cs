@@ -726,50 +726,50 @@ namespace Garnet.test
 
 
             // Set up different type objects
-            RespTests.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
+            RespTestsUtils.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
 
             // ZADD
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetAdd(keys[0], sortedSetEntries[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetAdd(keys[0], sortedSetEntries[0]));
             // ZCARD
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetLength(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetLength(keys[0]));
             // ZPOPMAX
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetPop(keys[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetPop(keys[0]));
             // ZSCORE
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScore(keys[0], values[0][0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScore(keys[0], values[0][0]));
             // ZREM
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemove(keys[0], values[0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemove(keys[0], values[0]));
             // ZCOUNT
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetLength(keys[1], 1, 2));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetLength(keys[1], 1, 2));
             // ZINCRBY
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetIncrement(keys[1], values[1][0], 2.2));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetIncrement(keys[1], values[1][0], 2.2));
             // ZRANK
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRank(keys[1], values[1][0]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRank(keys[1], values[1][0]));
             // ZRANGE
             //RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRangeByValueAsync(keys[1]).Wait());
             // ZRANGEBYSCORE
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRangeByScore(keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRangeByScore(keys[1]));
             // ZREVRANGE
             //RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRangeByScore(keys[1], 1, 2, Exclude.None, Order.Descending));
             // ZREVRANK
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRangeByRank(keys[1], 1, 2, Order.Descending));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRangeByRank(keys[1], 1, 2, Order.Descending));
             // ZREMRANGEBYLEX
             //RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemoveRangeByValue(keys[1], values[1][0], values[1][1]));
             // ZREMRANGEBYRANK
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemoveRangeByRank(keys[1], 0, 1));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemoveRangeByRank(keys[1], 0, 1));
             // ZREMRANGEBYSCORE
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemoveRangeByScore(keys[1], 1, 2));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRemoveRangeByScore(keys[1], 1, 2));
             // ZLEXCOUNT
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetLengthByValue(keys[1], values[1][0], values[1][1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetLengthByValue(keys[1], values[1][0], values[1][1]));
             // ZPOPMIN
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetPop(keys[1], Order.Descending));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetPop(keys[1], Order.Descending));
             // ZRANDMEMBER
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRandomMember(keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetRandomMember(keys[1]));
             // ZDIFF
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetCombine(SetOperation.Difference, keys));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetCombine(SetOperation.Difference, keys));
             // ZSCAN
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScan(keys[1], new RedisValue("*")).FirstOrDefault());
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScan(keys[1], new RedisValue("*")).FirstOrDefault());
             //ZMSCORE
-            RespTests.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScores(keys[1], values[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SortedSetScores(keys[1], values[1]));
         }
 
         #endregion
@@ -1991,7 +1991,7 @@ namespace Garnet.test
             var values = new[] { key1Values, key2Values };
 
             // Set up different type objects
-            RespTests.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
+            RespTestsUtils.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
 
             // ZRANGE
             var response = lightClientRequest.SendCommand($"ZRANGE {keys[0]} 0 -1");
