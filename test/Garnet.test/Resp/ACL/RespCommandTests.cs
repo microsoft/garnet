@@ -3833,16 +3833,27 @@ namespace Garnet.test.Resp.ACL
         {
             CheckCommands(
                 "MULTI",
-                [DoMulti]
+                [DoMulti],
+                skipPing: true
             );
 
             static void DoMulti(IServer server)
             {
-                RedisResult val = server.Execute("MULTI");
-                Assert.AreEqual("OK", (string)val);
+                try
+                {
+                    RedisResult val = server.Execute("MULTI");
+                    Assert.AreEqual("OK", (string)val);
+                }
+                catch (RedisException e)
+                {
+                    // The "nested MULTI" error response is also legal, if we're ACL'd for MULTI
+                    if (e.Message == "ERR MULTI calls can not be nested")
+                    {
+                        return;
+                    }
 
-                // if we got here, abort the transaction
-                server.Execute("DISCARD");
+                    throw;
+                }
             }
         }
 
@@ -5775,7 +5786,8 @@ namespace Garnet.test.Resp.ACL
         private static void CheckCommands(
             string command,
             Action<IServer>[] commands,
-            List<string> knownCategories = null
+            List<string> knownCategories = null,
+            bool skipPing = false
         )
         {
             const string UserWithAll = "temp-all";
@@ -5841,22 +5853,22 @@ namespace Garnet.test.Resp.ACL
                         {
                             ResetUserWithAll(defaultUserServer);
 
-                            AssertAllPermitted(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +@all)");
+                            AssertAllPermitted(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +@all)", skipPing);
 
                             SetUser(defaultUserServer, UserWithAll, [$"-@{category}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -@{category})");
+                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -@{category})", skipPing);
                         }
 
                         // Check adding category works
                         {
                             ResetUserWithNone(defaultUserServer);
 
-                            AssertAllDenied(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -@all)");
+                            AssertAllDenied(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -@all)", skipPing);
 
                             SetACLOnUser(defaultUserServer, UserWithNone, [$"+@{category}"]);
 
-                            AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +@{category})");
+                            AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +@{category})", skipPing);
                         }
                     }
 
@@ -5874,7 +5886,7 @@ namespace Garnet.test.Resp.ACL
 
                             SetACLOnUser(defaultUserServer, UserWithAll, [$"-{commandAcl}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -{commandAcl})");
+                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -{commandAcl})", skipPing);
                         }
 
                         // Check adding command works
@@ -5883,7 +5895,7 @@ namespace Garnet.test.Resp.ACL
 
                             SetACLOnUser(defaultUserServer, UserWithNone, [$"+{commandAcl}"]);
 
-                            AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +{commandAcl})");
+                            AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +{commandAcl})", skipPing);
                         }
                     }
 
@@ -5899,7 +5911,7 @@ namespace Garnet.test.Resp.ACL
 
                             SetACLOnUser(defaultUserServer, UserWithAll, [$"-{subCommandAcl}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -{subCommandAcl})");
+                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -{subCommandAcl})", skipPing);
                         }
 
                         // Check adding subcommand works
@@ -5908,7 +5920,7 @@ namespace Garnet.test.Resp.ACL
 
                             SetACLOnUser(defaultUserServer, UserWithNone, [$"+{subCommandAcl}"]);
 
-                            AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +{subCommandAcl})");
+                            AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +{subCommandAcl})", skipPing);
                         }
 
                         // Checking adding command but removing subcommand works
@@ -5917,7 +5929,7 @@ namespace Garnet.test.Resp.ACL
 
                             SetACLOnUser(defaultUserServer, UserWithNone, [$"+{commandAcl}", $"-{subCommandAcl}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Permitted when should have been denied (user had +{commandAcl} -{subCommandAcl})");
+                            AssertAllDenied(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Permitted when should have been denied (user had +{commandAcl} -{subCommandAcl})", skipPing);
                         }
 
                         // Checking removing command but adding subcommand works
@@ -5926,7 +5938,7 @@ namespace Garnet.test.Resp.ACL
 
                             SetACLOnUser(defaultUserServer, UserWithAll, [$"-{commandAcl}", $"+{subCommandAcl}"]);
 
-                            AssertAllPermitted(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Denied when should have been permitted (user had -{commandAcl} +{subCommandAcl})");
+                            AssertAllPermitted(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Denied when should have been permitted (user had -{commandAcl} +{subCommandAcl})", skipPing);
                         }
                     }
                 }
@@ -5956,27 +5968,33 @@ namespace Garnet.test.Resp.ACL
             }
 
             // Check that all commands succeed
-            static void AssertAllPermitted(IServer defaultUserServer, string currentUserName, IServer currentUserServer, Action<IServer>[] commands, string message)
+            static void AssertAllPermitted(IServer defaultUserServer, string currentUserName, IServer currentUserServer, Action<IServer>[] commands, string message, bool skipPing)
             {
                 foreach (Action<IServer> cmd in commands)
                 {
                     Assert.True(CheckAuthFailure(() => cmd(currentUserServer)), message);
                 }
 
-                // Check we haven't desynced
-                Ping(defaultUserServer, currentUserName, currentUserServer);
+                if (!skipPing)
+                {
+                    // Check we haven't desynced
+                    Ping(defaultUserServer, currentUserName, currentUserServer);
+                }
             }
 
             // Check that all commands fail with NOAUTH
-            static void AssertAllDenied(IServer defaultUserServer, string currentUserName, IServer currentUserServer, Action<IServer>[] commands, string message)
+            static void AssertAllDenied(IServer defaultUserServer, string currentUserName, IServer currentUserServer, Action<IServer>[] commands, string message, bool skipPing)
             {
                 foreach (Action<IServer> cmd in commands)
                 {
                     Assert.False(CheckAuthFailure(() => cmd(currentUserServer)), message);
                 }
 
-                // Check we haven't desynced
-                Ping(defaultUserServer, currentUserName, currentUserServer);
+                if (!skipPing)
+                {
+                    // Check we haven't desynced
+                    Ping(defaultUserServer, currentUserName, currentUserServer);
+                }
             }
 
             // Enable PING on user and issue PING on connection
