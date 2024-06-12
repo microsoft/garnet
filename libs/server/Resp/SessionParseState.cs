@@ -22,7 +22,7 @@ namespace Garnet.server
         /// <summary>
         /// Count of arguments for the command
         /// </summary>
-        int count;
+        public int count;
 
         /// <summary>
         /// Pinned buffer of arguments
