@@ -56,8 +56,23 @@ namespace Garnet.server
 
         SessionParseState parseState;
         GCHandle recvHandle;
+
+        /// <summary>
+        /// Pointer to the (fixed) receive buffer
+        /// </summary>
         byte* recvBufferPtr;
-        int readHead, endReadHead;
+
+        /// <summary>
+        /// Current readHead. On successful parsing, this is left at the start of 
+        /// the command payload for use by legacy operators.
+        /// </summary>
+        int readHead;
+
+        /// <summary>
+        /// End of the current command, after successful parsing.
+        /// </summary>
+        int endReadHead;
+
         byte* dcurr, dend;
         bool toDispose;
 
@@ -348,7 +363,8 @@ namespace Garnet.server
                     sessionMetrics.total_write_commands_processed += cmd.OneIfWrite();
                     sessionMetrics.total_read_commands_processed += cmd.OneIfRead();
                 }
-                if (SessionAsking != 0) SessionAsking = (byte)(SessionAsking - 1);
+                if (SessionAsking != 0)
+                    SessionAsking = (byte)(SessionAsking - 1);
             }
 
             if (dcurr > networkSender.GetResponseObjectHead())

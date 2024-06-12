@@ -240,9 +240,15 @@ namespace Garnet.client
         /// </summary>
         public bool InitMigrateCommand => curr == null;
 
+        /// <summary>
+        /// Getter to compute how much space to leave at the front of the buffer
+        /// in order to write the maximum possible RESP length header (of length bufferSize)
+        /// </summary>
         int ExtraSpace =>
-                1 + bufferSizeDigits + 2 // RESP length header of max possible size, with zero padding ($....\r\n)
-                + 4; // keyCount
+            1                   // $
+            + bufferSizeDigits  // Number of digits in maximum possible length (will be written with zero padding)
+            + 2                 // \r\n
+            + 4;                // We write a 4-byte int keyCount at the start of the payload
 
         byte* curr, head;
         int keyCount;
