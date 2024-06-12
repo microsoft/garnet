@@ -9,13 +9,34 @@ using Garnet.common.Parsing;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Wrapper to hold parse state for a RESP session.
+    /// </summary>
     unsafe struct SessionParseState
     {
-        const int MinParams = 5;
+        /// <summary>
+        /// Initial number of arguments parsed for a command
+        /// </summary>
+        const int MinParams = 5; // 5 * 20 = 60; around one cache line of 64 bytes
+
+        /// <summary>
+        /// Count of arguments for the command
+        /// </summary>
         int count;
+
+        /// <summary>
+        /// Pinned buffer of arguments
+        /// </summary>
         ArgSlice[] buffer;
+
+        /// <summary>
+        /// Pointer to buffer
+        /// </summary>
         ArgSlice* bufferPtr;
 
+        /// <summary>
+        /// Initialize the parse state at the start of a session
+        /// </summary>
         public void Initialize()
         {
             count = 0;
@@ -23,6 +44,10 @@ namespace Garnet.server
             bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref buffer[0]);
         }
 
+        /// <summary>
+        /// Initialize the parse state with a given count of arguments
+        /// </summary>
+        /// <param name="count"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Initialize(int count)
         {
@@ -35,6 +60,9 @@ namespace Garnet.server
             bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref buffer[0]);
         }
 
+        /// <summary>
+        /// Read the next argument from the input buffer
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Read(int i, ref byte* ptr, byte* end)
         {
@@ -63,6 +91,9 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Get the argument at the given index
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref ArgSlice GetByRef(int i)
             => ref Unsafe.AsRef<ArgSlice>(bufferPtr + i);
