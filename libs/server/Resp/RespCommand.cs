@@ -1715,7 +1715,7 @@ namespace Garnet.server
         /// <summary>
         /// Attempts to skip to the end of the line ("\r\n") under the current read head.
         /// </summary>
-        /// <returns>True if string terminator was found and readHead was changed, otherwise false. </returns>
+        /// <returns>True if string terminator was found and readHead and endReadHead was changed, otherwise false. </returns>
         private bool AttemptSkipLine()
         {
             // We might have received an inline command package.Try to find the end of the line.
@@ -1726,7 +1726,7 @@ namespace Garnet.server
                 if (recvBufferPtr[stringEnd] == '\r' && recvBufferPtr[stringEnd + 1] == '\n')
                 {
                     // Skip to the end of the string
-                    readHead = stringEnd + 2;
+                    readHead = endReadHead = stringEnd + 2;
                     return true;
                 }
             }
@@ -1757,7 +1757,7 @@ namespace Garnet.server
             // If we have not found a command, continue parsing on slow path
             if (cmd == RespCommand.NONE)
             {
-                return ArrayParseCommand(ref count, ref success);
+                cmd = ArrayParseCommand(ref count, ref success);
             }
 
             // Set up parse state
@@ -1799,31 +1799,18 @@ namespace Garnet.server
             {
                 // We might have received an inline command package. Skip until the end of the line in the input package.
                 success = AttemptSkipLine();
-
                 return RespCommand.INVALID;
             }
 
-            // ... and read the array length
+            // Read the array length
             if (!RespReadUtils.ReadArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
             {
                 success = false;
                 return RespCommand.INVALID;
             }
 
-            // Move the read head
+            // Move readHead to start of command payload
             readHead = (int)(ptr - recvBufferPtr);
-
-            // Update parse state
-            parseState.Initialize(count);
-            for (int i = 0; i < count; i++)
-            {
-                if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref parseState.Get(i), ref ptr, recvBufferPtr + bytesRead))
-                {
-                    success = false;
-                    return RespCommand.INVALID;
-                }
-            }
-            endReadHead = (int)(ptr - recvBufferPtr);
 
             // Try parsing the most important variable-length commands
             cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);

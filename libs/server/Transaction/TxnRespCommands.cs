@@ -65,7 +65,7 @@ namespace Garnet.server
                     logger?.LogWarning("Failed CheckClusterTxnKeys");
                     txnManager.Reset(false);
                     txnManager.watchContainer.Reset();
-                    readHead = _origReadHead;
+                    endReadHead = _origReadHead;
                     return true;
                 }
 

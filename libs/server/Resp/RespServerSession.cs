@@ -294,15 +294,26 @@ namespace Garnet.server
         {
             // #if DEBUG
             // logger?.LogTrace("RECV: [{recv}]", Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", ""));
+            // Debug.WriteLine($"RECV: [{Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", "")}]");
             // #endif
 
             var _origReadHead = readHead;
 
             while (bytesRead - readHead >= 4)
             {
+                // First, parse the command, making sure we have the entire command available
+                // We use endReadHead to track the end of the current command
+                // On success, readHead is left at the start of the command payload for legacy operators
                 var cmd = ParseCommand(out int count, out bool commandReceived);
-                if (!commandReceived) break;
 
+                // If the command was not fully received, reset addresses and break out
+                if (!commandReceived)
+                {
+                    endReadHead = readHead = _origReadHead;
+                    break;
+                }
+
+                // Check ACL permissions for the command
                 if (CheckACLPermissions(cmd))
                 {
                     if (txnManager.state != TxnState.None)
@@ -324,8 +335,11 @@ namespace Garnet.server
                         _ = ProcessBasicCommands(cmd, count, ref basicGarnetApi);
                     }
                 }
+
+                // Advance read head variables to process the next command
                 _origReadHead = readHead = endReadHead;
 
+                // Handle metrics and special cases
                 if (latencyMetrics != null) opCount++;
                 if (sessionMetrics != null)
                 {
@@ -336,7 +350,7 @@ namespace Garnet.server
                 }
                 SessionAsking = (byte)(SessionAsking == 0 ? SessionAsking : SessionAsking - 1);
             }
-            readHead = _origReadHead;
+
             if (dcurr > networkSender.GetResponseObjectHead())
             {
                 Send(networkSender.GetResponseObjectHead());
@@ -882,6 +896,7 @@ namespace Garnet.server
         {
             // #if DEBUG
             // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
+            // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
             // #endif
 
             if ((int)(dcurr - d) > 0)
@@ -970,6 +985,16 @@ namespace Garnet.server
         /// <returns>True when ownership is verified, false otherwise</returns>
         bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly)
             => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(key, readOnly, SessionAsking, ref dcurr, ref dend);
+
+        /// <summary>
+        /// This method is used to verify slot ownership for provided key.
+        /// On error this method writes to response buffer but does not drain recv buffer (caller is responsible for draining).
+        /// </summary>
+        /// <param name="key">Key bytes</param>
+        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation.</param>
+        /// <returns>True when ownership is verified, false otherwise</returns>
+        bool NetworkSingleKeySlotVerify(ref SpanByte key, bool readOnly)
+            => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(new ArgSlice(ref key), readOnly, SessionAsking, ref dcurr, ref dend);
 
         /// <summary>
         /// This method is used to verify slot ownership for provided key sequence.

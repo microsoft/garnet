@@ -270,6 +270,8 @@ namespace Garnet.common
             if (cnt > ThrottleMax)
                 throttle.Wait();
 
+            // Debug.WriteLine($"SEND: [{size}][{System.Text.Encoding.UTF8.GetString(new Span<byte>(sendObject.socketEventAsyncArgs.Buffer, offset, size)).Replace("\n", "|").Replace("\r", "")}]");
+
             // Reset send buffer
             sendObject.socketEventAsyncArgs.SetBuffer(offset, size);
             // Set user context to reusable object handle for disposal when send is done
