@@ -53,10 +53,6 @@ namespace Garnet.server
         /// <returns>true if the command was completely consumed, false if the input on the receive buffer was incomplete.</returns>
         private bool AbortWithErrorMessage(int count, ReadOnlySpan<byte> errorMessage)
         {
-            // Abort command and discard any remaining tokens on the input buffer
-            if (!DrainCommands(count))
-                return false;
-
             // Print error message to result stream
             while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                 SendAndReset();

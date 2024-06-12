@@ -103,8 +103,6 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
                 txnManager.Abort();
-                if (!DrainCommands(count))
-                    return false;
                 return true;
             }
 
@@ -131,9 +129,6 @@ namespace Garnet.server
                     txnManager.Abort();
                 }
 
-                if (!DrainCommands(count))
-                    return false;
-
                 return true;
             }
 
@@ -151,15 +146,8 @@ namespace Garnet.server
 
                 txnManager.Abort();
 
-                if (!DrainCommands(count))
-                    return false;
-
                 return true;
             }
-
-            // Consume the remaining arguments in the input
-            if (!DrainCommands(count - skipped))
-                return false;
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
                 SendAndReset();

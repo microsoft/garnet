@@ -1070,12 +1070,9 @@ namespace Garnet.server
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND(byte* ptr, int count)
         {
-            // No additonal args allowed
+            // No additional args allowed
             if (count != 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 string errorMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand, "COMMAND");
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
@@ -1096,12 +1093,9 @@ namespace Garnet.server
         /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
         private bool NetworkCOMMAND_COUNT(byte* ptr, int count)
         {
-            // No additonal args allowed
+            // No additional args allowed
             if (count != 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 string errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, "COMMAND COUNT");
                 while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
                     SendAndReset();
@@ -1131,9 +1125,6 @@ namespace Garnet.server
         private bool NetworkCOMMAND_DOCS(byte* ptr, int count)
         {
             // Placeholder for handling DOCS sub-command - returning Nil in the meantime.
-            if (!DrainCommands(count))
-                return false;
-
             while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                 SendAndReset();
 

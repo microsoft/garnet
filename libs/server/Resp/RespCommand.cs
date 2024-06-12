@@ -1703,12 +1703,6 @@ namespace Garnet.server
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
-            // Drain the commands to advance the read head to the end of the command.
-            if (!DrainCommands(count))
-            {
-                success = false;
-            }
-
             return RespCommand.INVALID;
         }
 

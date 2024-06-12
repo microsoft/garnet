@@ -917,11 +917,6 @@ namespace Garnet.server
             if (count != 1)
                 return AbortWithWrongNumberOfArguments("MODULE", count);
 
-            if (!DrainCommands(1))
-            {
-                return false;
-            }
-
             // TODO: pending implementation for module support.
             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();

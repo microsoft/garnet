@@ -31,8 +31,6 @@ namespace Garnet.server
                 // AUTH [<username>] <password>
                 if (count < 1 || count > 2)
                 {
-                    if (!DrainCommands(count))
-                        return false;
                     errorCmd = "auth";
                     var errorMsg = string.Format(CmdStrings.GenericErrWrongNumArgs, errorCmd);
                     while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
@@ -90,9 +88,6 @@ namespace Garnet.server
             if (_authenticator.CanAuthenticate && !_authenticator.IsAuthenticated)
             {
                 // If the current session is unauthenticated, we stop parsing, because no other commands are allowed
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
                     SendAndReset();
             }
@@ -104,9 +99,6 @@ namespace Garnet.server
             {
                 if (count != 0)
                 {
-                    if (!DrainCommands(count))
-                        return false;
-
                     while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for CONFIG REWRITE.", ref dcurr, dend))
                         SendAndReset();
 
@@ -129,8 +121,6 @@ namespace Garnet.server
                 string unknownKey = "";
                 if (count == 0 || count % 2 != 0)
                 {
-                    if (!DrainCommands(count))
-                        return false;
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_WRONG_ARGUMENTS, ref dcurr, dend))
                         SendAndReset();
 
@@ -214,17 +204,12 @@ namespace Garnet.server
             {
                 if (count != 1)
                 {
-                    if (!DrainCommands(count))
-                        return false;
                     errorFlag = true;
                     errorCmd = "echo";
                 }
                 else
                 {
-                    var oldReadHead = readHead;
-                    if (!SkipCommand()) return false;
-                    var length = readHead - oldReadHead;
-                    WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + oldReadHead, length));
+                    WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
                 }
             }
             else if (command == RespCommand.INFO)
@@ -248,15 +233,10 @@ namespace Garnet.server
                 }
                 else if (count == 1)
                 {
-                    var oldReadHead = readHead;
-                    if (!SkipCommand()) return false;
-                    var length = readHead - oldReadHead;
-                    WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + oldReadHead, length));
+                    WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
                 }
                 else
                 {
-                    if (!DrainCommands(count))
-                        return false;
                     errorFlag = true;
                     errorCmd = "ping";
                 }
@@ -286,8 +266,6 @@ namespace Garnet.server
                         {
                             if (count < 2)
                             {
-                                if (!DrainCommands(count))
-                                    return false;
                                 count = 0;
                                 errorFlag = true;
                                 errorCmd = nameof(RespCommand.HELLO);
@@ -304,8 +282,6 @@ namespace Garnet.server
                         {
                             if (count < 1)
                             {
-                                if (!DrainCommands(count))
-                                    return false;
                                 count = 0;
                                 errorFlag = true;
                                 errorCmd = nameof(RespCommand.HELLO);
@@ -319,8 +295,6 @@ namespace Garnet.server
                         }
                         else
                         {
-                            if (!DrainCommands(count))
-                                return false;
                             count = 0;
                             errorFlag = true;
                             errorCmd = nameof(RespCommand.HELLO);
@@ -333,8 +307,6 @@ namespace Garnet.server
             {
                 if (clusterSession == null)
                 {
-                    if (!DrainCommands(count))
-                        return false;
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED, ref dcurr, dend))
                         SendAndReset();
                     return true;
@@ -359,8 +331,6 @@ namespace Garnet.server
             {
                 if (count != 0)
                 {
-                    if (!DrainCommands(count))
-                        return false;
                     errorFlag = true;
                     errorCmd = "time";
                 }
@@ -376,8 +346,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.QUIT)
             {
-                if (!DrainCommands(count))
-                    return false;
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
 
@@ -385,9 +353,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.SAVE)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 if (!storeWrapper.TakeCheckpoint(false, StoreType.All, logger))
                 {
                     while (!RespWriteUtils.WriteError("ERR checkpoint already in progress"u8, ref dcurr, dend))
@@ -401,17 +366,12 @@ namespace Garnet.server
             }
             else if (command == RespCommand.LASTSAVE)
             {
-                if (!DrainCommands(count))
-                    return false;
                 var seconds = storeWrapper.lastSaveTime.ToUnixTimeSeconds();
                 while (!RespWriteUtils.WriteInteger(seconds, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command == RespCommand.BGSAVE)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 success = storeWrapper.TakeCheckpoint(true, StoreType.All, logger);
                 if (success)
                 {
@@ -426,9 +386,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.COMMITAOF)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 CommitAof();
                 while (!RespWriteUtils.WriteSimpleString("AOF file committed"u8, ref dcurr, dend))
                     SendAndReset();
@@ -453,8 +410,6 @@ namespace Garnet.server
                         count--;
                     }
                 }
-                if (!DrainCommands(count))
-                    return false;
 
                 if (async)
                     Task.Run(() => FlushDB(unsafeTruncateLog)).ConfigureAwait(false);
@@ -482,12 +437,7 @@ namespace Garnet.server
                     }
                     readHead = (int)(ptr - recvBufferPtr);
                 }
-                else if (count == 0)
-                {
-                    if (!DrainCommands(count))
-                        return false;
-                }
-                else
+                else if (count != 0)
                 {
                     errorFlag = true;
                     errorCmd = "forcegc";
@@ -587,16 +537,12 @@ namespace Garnet.server
                     }
                     else
                     {
-                        if (!DrainCommands(count - 1))
-                            return false;
                         errorFlag = true;
                         errorCmd = "ASYNC";
                     }
                 }
                 else
                 {
-                    if (!DrainCommands(count))
-                        return false;
                     if (respProtocolVersion <= 2)
                     {
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_SUPPORTED_RESP2, ref dcurr, dend))
@@ -611,8 +557,6 @@ namespace Garnet.server
             }
             else
             {
-                if (!DrainCommands(count))
-                    return false;
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
             }

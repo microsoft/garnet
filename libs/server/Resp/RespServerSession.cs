@@ -565,17 +565,11 @@ namespace Garnet.server
         {
             if (command == RespCommand.CLIENT)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
             else if (command == RespCommand.SUBSCRIBE)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteInteger(1, ref dcurr, dend))
                     SendAndReset();
             }
@@ -586,10 +580,6 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomTxn)
             {
-                byte* ptr = recvBufferPtr + readHead;
-                if (!DrainCommands(count))
-                    return false;
-
                 if (currentCustomTransaction.NumParams < int.MaxValue && count != currentCustomTransaction.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters to stored proc {currentCustomTransaction.nameStr}, expected {currentCustomTransaction.NumParams}, actual {count}", ref dcurr, dend))
@@ -602,17 +592,13 @@ namespace Garnet.server
                 else
                 {
                     // Perform the operation
-                    TryTransactionProc(currentCustomTransaction.id, ptr, recvBufferPtr + readHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
+                    TryTransactionProc(currentCustomTransaction.id, recvBufferPtr + readHead, recvBufferPtr + endReadHead, customCommandManagerSession.GetCustomTransactionProcedure(currentCustomTransaction.id, txnManager, scratchBufferManager).Item1);
                 }
 
                 currentCustomTransaction = null;
             }
             else if (command == RespCommand.CustomCmd)
             {
-                byte* ptr = recvBufferPtr + readHead;
-                if (!DrainCommands(count))
-                    return false;
-
                 if (count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}", ref dcurr, dend))
@@ -625,17 +611,13 @@ namespace Garnet.server
                 else
                 {
                     // Perform the operation
-                    TryCustomCommand(ptr, recvBufferPtr + readHead, currentCustomCommand.GetRespCommand(), currentCustomCommand.expirationTicks, currentCustomCommand.type, ref storageApi);
+                    TryCustomCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomCommand.GetRespCommand(), currentCustomCommand.expirationTicks, currentCustomCommand.type, ref storageApi);
                 }
 
                 currentCustomCommand = null;
             }
             else if (command == RespCommand.CustomObjCmd)
             {
-                byte* ptr = recvBufferPtr + readHead;
-                if (!DrainCommands(count))
-                    return false;
-
                 if (count != currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomObjectCommand.NumKeys + currentCustomObjectCommand.NumParams}, actual {count}", ref dcurr, dend))
@@ -648,7 +630,7 @@ namespace Garnet.server
                 else
                 {
                     // Perform the operation
-                    TryCustomObjectCommand(ptr, recvBufferPtr + readHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
+                    TryCustomObjectCommand(recvBufferPtr + readHead, recvBufferPtr + endReadHead, currentCustomObjectCommand.GetRespCommand(), currentCustomObjectCommand.subid, currentCustomObjectCommand.type, ref storageApi);
                 }
 
                 currentCustomObjectCommand = null;
@@ -657,15 +639,6 @@ namespace Garnet.server
             else
             {
                 return ProcessAdminCommands(command, count, ref storageApi);
-            }
-            return true;
-        }
-
-        bool DrainCommands(int count)
-        {
-            for (var i = 0; i < count; i++)
-            {
-                if (!SkipCommand()) return false;
             }
             return true;
         }
@@ -702,36 +675,6 @@ namespace Garnet.server
             success = true;
 
             return result;
-        }
-
-        bool SkipCommand()
-        {
-            var ptr = recvBufferPtr + readHead;
-            var end = recvBufferPtr + bytesRead;
-
-            // Try the command length
-            if (!RespReadUtils.ReadLengthHeader(out int length, ref ptr, end))
-            {
-                return false;
-            }
-
-            readHead = (int)(ptr - recvBufferPtr);
-
-            // Try to read the command value
-            ptr += length;
-            if (ptr + 2 > end)
-            {
-                return false;
-            }
-
-            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*ptr);
-            }
-
-            readHead += length + 2;
-
-            return true;
         }
 
         public ArgSlice GetCommandAsArgSlice(out bool success)
