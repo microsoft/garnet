@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -23,17 +25,21 @@ namespace Tsavorite.core
                              "runtimes/linux-x64/native/libspdk_device.so";
         public delegate void AsyncIOCallback(IntPtr context, int result,
                                              ulong bytesTransferred);
-        private IntPtr spdk_device;
+        private ConcurrentQueue<IntPtr> spdk_device_queue =
+                                          new ConcurrentQueue<IntPtr>();
         private AsyncIOCallback _callback_delegate;
 
         class ManagedCallback
         {
+            public readonly IntPtr spdk_device;
             private DeviceIOCompletionCallback callback;
             private object context;
 
-            public ManagedCallback(DeviceIOCompletionCallback callback,
+            public ManagedCallback(IntPtr spdk_device,
+                                   DeviceIOCompletionCallback callback,
                                    object context)
             {
+                this.spdk_device = spdk_device;
                 this.callback = callback;
                 this.context = context;
             }
@@ -54,6 +60,7 @@ namespace Tsavorite.core
             GCHandle handle = GCHandle.FromIntPtr(context);
             ManagedCallback managed_callback =
                                 (handle.Target as ManagedCallback);
+            this.spdk_device_queue.Enqueue(managed_callback.spdk_device);
             managed_callback.call((uint)error_code, (uint)num_bytes);
             handle.Free();
         }
@@ -116,7 +123,12 @@ namespace Tsavorite.core
 
             spdk_device_init();
 
-            this.spdk_device = spdk_device_create(SPDKDevice.nsid);
+            for (int i = 0; i < 5; i++)
+            {
+                this.spdk_device_queue.Enqueue(
+                    spdk_device_create(SPDKDevice.nsid)
+                );
+            }
 
             this.completion_cancellation_token = new CancellationTokenSource();
             this.completion_thread = new Thread(this.completion_worker);
@@ -142,11 +154,17 @@ namespace Tsavorite.core
 
             try
             {
-                GCHandle handle = GCHandle.Alloc(new ManagedCallback(callback,
+                IntPtr spdk_device;
+                while (!this.spdk_device_queue.TryDequeue(out spdk_device))
+                {
+                    Debug.WriteLine("Can't get spdk_device when reading");
+                }
+                GCHandle handle = GCHandle.Alloc(new ManagedCallback(spdk_device,
+                                                                     callback,
                                                                      context),
                                                 GCHandleType.Normal);
                 int _result = spdk_device_read_async(
-                    this.spdk_device,
+                    spdk_device,
                     this.get_address(segment_id, source_address),
                     destination_address,
                     read_length,
@@ -183,11 +201,17 @@ namespace Tsavorite.core
 
             try
             {
-                GCHandle handle = GCHandle.Alloc(new ManagedCallback(callback,
-                                                                     context),
-                                                GCHandleType.Normal);
+                IntPtr spdk_device;
+                while (!this.spdk_device_queue.TryDequeue(out spdk_device))
+                {
+                    Debug.WriteLine("Can't get spdk_device when writing");
+                }
+                GCHandle handle = GCHandle.Alloc(
+                    new ManagedCallback(spdk_device, callback, context),
+                    GCHandleType.Normal
+                );
                 int _result = spdk_device_write_async(
-                    this.spdk_device,
+                    spdk_device,
                     source_address,
                     this.get_address(segment_id, destination_address),
                     write_length,

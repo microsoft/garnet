@@ -42,6 +42,7 @@ public class FakeNullDevice : StorageDeviceBase
             {
                 io_context.callback(0, io_context.io_length, io_context.context);
             }
+            Thread.Yield();
         }
     }
 
