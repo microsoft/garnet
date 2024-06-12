@@ -1760,7 +1760,7 @@ namespace Garnet.server
             var ptr = recvBufferPtr + readHead;
             for (int i = 0; i < count; i++)
             {
-                if (!RespReadUtils.ReadSpanByteWithLengthHeader(ref parseState.Get(i), ref ptr, recvBufferPtr + bytesRead))
+                if (!parseState.Read(i, ref ptr, recvBufferPtr + bytesRead))
                 {
                     success = false;
                     return RespCommand.INVALID;

@@ -2,9 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Tsavorite.core;
+using System.Runtime.InteropServices;
+using Garnet.common;
+using Garnet.common.Parsing;
 
 namespace Garnet.server
 {
@@ -12,14 +13,14 @@ namespace Garnet.server
     {
         const int MinParams = 5;
         int count;
-        SpanByte[] buffer;
-        SpanByte* bufferPtr;
+        ArgSlice[] buffer;
+        ArgSlice* bufferPtr;
 
         public void Initialize()
         {
             count = 0;
-            buffer = GC.AllocateArray<SpanByte>(MinParams, true);
-            bufferPtr = (SpanByte*)Unsafe.AsPointer(ref buffer[0]);
+            buffer = GC.AllocateArray<ArgSlice>(MinParams, true);
+            bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref buffer[0]);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -30,19 +31,40 @@ namespace Garnet.server
             if (count <= MinParams || count <= buffer.Length)
                 return;
 
-            buffer = GC.AllocateArray<SpanByte>(count, true);
-            bufferPtr = (SpanByte*)Unsafe.AsPointer(ref buffer[0]);
+            buffer = GC.AllocateArray<ArgSlice>(count, true);
+            bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref buffer[0]);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref SpanByte Get(int i)
-            => ref Unsafe.AsRef<SpanByte>(bufferPtr + i);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Set(int offset, int length, byte* data)
+        public bool Read(int i, ref byte* ptr, byte* end)
         {
-            Debug.Assert(offset < count);
-            buffer[offset] = new SpanByte(length, (nint)data);
+            ref var slice = ref Unsafe.AsRef<ArgSlice>(bufferPtr + i);
+
+            // Parse RESP string header
+            if (!RespReadUtils.ReadUnsignedLengthHeader(out slice.length, ref ptr, end))
+            {
+                return false;
+            }
+
+            slice.ptr = ptr;
+
+            // Parse content: ensure that input contains key + '\r\n'
+            ptr += slice.length + 2;
+            if (ptr > end)
+            {
+                return false;
+            }
+
+            if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
+            {
+                RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
+            }
+
+            return true;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ref ArgSlice GetByRef(int i)
+            => ref Unsafe.AsRef<ArgSlice>(bufferPtr + i);
     }
 }

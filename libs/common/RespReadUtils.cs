@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common.Parsing;
-using Tsavorite.core;
 
 namespace Garnet.common
 {
@@ -787,32 +786,6 @@ namespace Garnet.common
             }
 
             result = ptr;
-
-            // Parse content: ensure that input contains key + '\r\n'
-            ptr += len + 2;
-            if (ptr > end)
-            {
-                return false;
-            }
-
-            if (*(ushort*)(ptr - 2) != MemoryMarshal.Read<ushort>("\r\n"u8))
-            {
-                RespParsingException.ThrowUnexpectedToken(*(ptr - 2));
-            }
-
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool ReadSpanByteWithLengthHeader(ref SpanByte result, ref byte* ptr, byte* end)
-        {
-            // Parse RESP string header
-            if (!ReadUnsignedLengthHeader(out int len, ref ptr, end))
-            {
-                return false;
-            }
-
-            result = new SpanByte(len, (nint)ptr);
 
             // Parse content: ensure that input contains key + '\r\n'
             ptr += len + 2;

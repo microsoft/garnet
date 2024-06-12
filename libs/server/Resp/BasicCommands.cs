@@ -27,7 +27,7 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ptr, ref storageApi);
 
-            ref var key = ref parseState.Get(0);
+            var key = parseState.GetByRef(0).SpanByte;
             if (NetworkSingleKeySlotVerify(ref key, true))
                 return true;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
