@@ -723,8 +723,8 @@ namespace Garnet.server
         /// <param name="sourceDirection"></param>
         /// <param name="destinationDirection"></param>
         /// <param name="element">The element being popped and pushed</param>
-        /// <returns>true when success</returns>
-        public bool ListMove(ArgSlice sourceKey, ArgSlice destinationKey, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element);
+        /// <returns>GarnetStatus</returns>
+        public GarnetStatus ListMove(ArgSlice sourceKey, ArgSlice destinationKey, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element);
 
         /// <summary>
         /// Trim an existing list so it only contains the specified range of elements.

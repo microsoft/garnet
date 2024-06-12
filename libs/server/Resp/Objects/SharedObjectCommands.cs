@@ -114,6 +114,13 @@ namespace Garnet.server
             *inputPtr = save;
             *ptrToInt = savePtrToInt;
 
+            if (status != GarnetStatus.OK)
+            {
+                var tokens = ReadLeftToken(count - 2, ref ptr);
+                if (tokens < count - 2)
+                    return false;
+            }
+
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -129,8 +136,10 @@ namespace Garnet.server
                         SendAndReset();
                     while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                         SendAndReset();
-                    // Fast forward left of the input
-                    ReadLeftToken(count - 2, ref ptr);
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
                     break;
             }
 

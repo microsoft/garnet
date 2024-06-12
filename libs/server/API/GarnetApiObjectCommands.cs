@@ -213,7 +213,7 @@ namespace Garnet.server
             => storageSession.ListLength(key, input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public bool ListMove(ArgSlice source, ArgSlice destination, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
+        public GarnetStatus ListMove(ArgSlice source, ArgSlice destination, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
             => storageSession.ListMove(source, destination, sourceDirection, destinationDirection, out element);
 
         /// <inheritdoc />

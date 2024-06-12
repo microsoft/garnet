@@ -3,14 +3,17 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using StackExchange.Redis;
+using AggregateException = System.AggregateException;
 
 namespace Garnet.test
 {
@@ -1600,6 +1603,35 @@ namespace Garnet.test
                 actualScan = db.Execute("SCAN", "0");
                 Assert.AreEqual(1, ((RedisValue[])((RedisResult[])actualScan!)[1]).Length, "SCAN after initial re-HSET");
             }
+        }
+
+        [Test]
+        public void MainObjectKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var server = redis.GetServers()[0];
+            var db = redis.GetDatabase(0);
+
+            const string key = "test:1";
+
+            // Do StringSet
+            Assert.IsTrue(db.StringSet(key, "v1"));
+
+            // Do SetAdd using the same key
+            Assert.IsTrue(db.SetAdd(key, "v2"));
+
+            // Two keys "test:1" - this is expected as of now
+            // because Garnet has a separate main and object store
+            var keys = server.Keys(db.Database, key).ToList();
+            Assert.AreEqual(2, keys.Count);
+            Assert.AreEqual(key, (string)keys[0]);
+            Assert.AreEqual(key, (string)keys[1]);
+
+            // do ListRightPush using the same key, expected error
+            var ex = Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"));
+            var expectedError = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedError, ex.Message);
         }
 
         [Test]
