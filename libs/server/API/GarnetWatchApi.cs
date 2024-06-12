@@ -143,6 +143,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetRank(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.SortedSetRank(key, member, reverse, out rank);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetRange(ArgSlice key, ArgSlice min, ArgSlice max, SortedSetOrderOperation sortedSetOrderOperation, out ArgSlice[] elements, out string error, bool withScores = false, bool reverse = false, (string, int) limit = default)
         {
             garnetApi.WATCH(key, StoreType.Object);

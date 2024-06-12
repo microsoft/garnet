@@ -689,6 +689,50 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Returns the rank of member in the sorted set, the scores in the sorted set are ordered from high to low
+        /// <param name="key">The key of the sorted set</param>
+        /// <param name="member">The member to get the rank</param>
+        /// <param name="reverse">If true, the rank is calculated from low to high</param>
+        /// <param name="rank">The rank of the member (null if the member does not exist)</param>
+        /// <param name="objectStoreContext"></param>
+        /// </summary>
+        public unsafe GarnetStatus SortedSetRank<TObjectContext>(ArgSlice key, ArgSlice member, bool reverse, out long? rank, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+        {
+            rank = null;
+            if (key.Length == 0)
+                return GarnetStatus.OK;
+
+            var inputSlice = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, member);
+            var rawInput = (ObjectInputHeader*)inputSlice.ptr;
+            rawInput->header.type = GarnetObjectType.SortedSet;
+            rawInput->header.flags = 0;
+            rawInput->header.SortedSetOp = reverse ? SortedSetOperation.ZREVRANK : SortedSetOperation.ZRANK;
+            rawInput->count = 1;
+            rawInput->done = 0;
+
+            const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(outputContainer, outputContainerSize) };
+
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), inputSlice, ref objectStoreContext, ref outputFooter);
+
+            if (status == GarnetStatus.OK)
+            {
+                Debug.Assert(*outputContainer == (byte)'$' || *outputContainer == (byte)':');
+                if (*outputContainer == (byte)':')
+                {
+                    // member exists -> read the rank
+                    bool read = RespReadUtils.Read64Int(out var rankValue, ref outputContainer, &outputContainer[outputContainerSize]);
+                    Debug.Assert(read);
+                    rank = rankValue;
+                }
+            }
+
+            return status;
+        }
+
+        /// <summary>
         /// Adds all the specified members with the specified scores to the sorted set stored at key.
         /// Current members get the score updated and reordered.
         /// </summary>

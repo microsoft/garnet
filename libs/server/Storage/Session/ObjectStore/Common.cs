@@ -127,7 +127,7 @@ namespace Garnet.server
                         if (isScanOutput)
                         {
                             // Read the first two elements
-                            if (!RespReadUtils.ReadArrayLength(out var outerArraySize, ref refPtr, outputPtr + outputSpan.Length))
+                            if (!RespReadUtils.ReadUnsignedArrayLength(out var outerArraySize, ref refPtr, outputPtr + outputSpan.Length))
                                 return default;
 
                             element = null;
@@ -138,7 +138,7 @@ namespace Garnet.server
                         }
 
                         // Get the number of elements
-                        if (!RespReadUtils.ReadArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
 
                         // Create the argslice[]

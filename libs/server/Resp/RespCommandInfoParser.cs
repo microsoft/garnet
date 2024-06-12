@@ -30,7 +30,7 @@ namespace Garnet.server
             if (new ReadOnlySpan<byte>(ptr, 5).SequenceEqual("$-1\r\n"u8)) return true;
 
             // Verify command info array length
-            if (!RespReadUtils.ReadArrayLength(out var infoElemCount, ref ptr, end)
+            if (!RespReadUtils.ReadUnsignedArrayLength(out var infoElemCount, ref ptr, end)
                 || infoElemCount != 10) return false;
 
             // 1) Name
@@ -42,7 +42,7 @@ namespace Garnet.server
 
             // 3) Flags
             var flags = RespCommandFlags.None;
-            if (!RespReadUtils.ReadArrayLength(out var flagCount, ref ptr, end)) return false;
+            if (!RespReadUtils.ReadUnsignedArrayLength(out var flagCount, ref ptr, end)) return false;
             for (var flagIdx = 0; flagIdx < flagCount; flagIdx++)
             {
                 if (!RespReadUtils.ReadSimpleString(out var strFlag, ref ptr, end)
@@ -65,7 +65,7 @@ namespace Garnet.server
 
             // 7) ACL categories
             var aclCategories = RespAclCategories.None;
-            if (!RespReadUtils.ReadArrayLength(out var aclCatCount, ref ptr, end)) return false;
+            if (!RespReadUtils.ReadUnsignedArrayLength(out var aclCatCount, ref ptr, end)) return false;
             for (var aclCatIdx = 0; aclCatIdx < aclCatCount; aclCatIdx++)
             {
                 if (!RespReadUtils.ReadSimpleString(out var strAclCat, ref ptr, end)
@@ -78,7 +78,7 @@ namespace Garnet.server
             if (!RespReadUtils.ReadStringArrayWithLengthHeader(out var tips, ref ptr, end)) return false;
 
             // 9) Key specifications
-            if (!RespReadUtils.ReadArrayLength(out var ksCount, ref ptr, end)) return false;
+            if (!RespReadUtils.ReadUnsignedArrayLength(out var ksCount, ref ptr, end)) return false;
             var keySpecifications = new RespCommandKeySpecification[ksCount];
             for (var ksIdx = 0; ksIdx < ksCount; ksIdx++)
             {
@@ -87,7 +87,7 @@ namespace Garnet.server
             }
 
             // 10) SubCommands
-            if (!RespReadUtils.ReadArrayLength(out var scCount, ref ptr, end)) return false;
+            if (!RespReadUtils.ReadUnsignedArrayLength(out var scCount, ref ptr, end)) return false;
             var subCommands = new List<RespCommandsInfo>();
             for (var scIdx = 0; scIdx < scCount; scIdx++)
             {
@@ -137,7 +137,7 @@ namespace Garnet.server
             KeySpecMethodBase beginSearch = null;
             KeySpecMethodBase findKeys = null;
 
-            if (!RespReadUtils.ReadArrayLength(out var elemCount, ref ptr, end)) return false;
+            if (!RespReadUtils.ReadUnsignedArrayLength(out var elemCount, ref ptr, end)) return false;
 
             for (var elemIdx = 0; elemIdx < elemCount; elemIdx += 2)
             {
@@ -149,7 +149,7 @@ namespace Garnet.server
                 }
                 else if (string.Equals(ksKey, "flags", StringComparison.Ordinal))
                 {
-                    if (!RespReadUtils.ReadArrayLength(out var flagsCount, ref ptr, end)) return false;
+                    if (!RespReadUtils.ReadUnsignedArrayLength(out var flagsCount, ref ptr, end)) return false;
                     for (var flagIdx = 0; flagIdx < flagsCount; flagIdx++)
                     {
                         if (!RespReadUtils.ReadSimpleString(out var strFlag, ref ptr, end)
@@ -242,7 +242,7 @@ namespace Garnet.server
         {
             keySpecType = default;
 
-            if (!RespReadUtils.ReadArrayLength(out var ksTypeElemCount, ref ptr, end)
+            if (!RespReadUtils.ReadUnsignedArrayLength(out var ksTypeElemCount, ref ptr, end)
                 || ksTypeElemCount != 4
                 || !RespReadUtils.ReadStringWithLengthHeader(out var ksTypeStr, ref ptr, end)
                 || !string.Equals(ksTypeStr, "type", StringComparison.Ordinal)
@@ -294,7 +294,7 @@ namespace Garnet.server
             {
                 keySpecMethod = default;
 
-                if (!RespReadUtils.ReadArrayLength(out var ksSpecElemCount, ref ptr, end)
+                if (!RespReadUtils.ReadUnsignedArrayLength(out var ksSpecElemCount, ref ptr, end)
                     || ksSpecElemCount != 2
                     || !RespReadUtils.ReadStringWithLengthHeader(out var ksArgKey, ref ptr, end)
                     || !string.Equals(ksArgKey, "index", StringComparison.Ordinal)
@@ -333,7 +333,7 @@ namespace Garnet.server
             {
                 keySpecMethod = default;
 
-                if (!RespReadUtils.ReadArrayLength(out var specElemCount, ref ptr, end)
+                if (!RespReadUtils.ReadUnsignedArrayLength(out var specElemCount, ref ptr, end)
                     || specElemCount != 4
                     || !RespReadUtils.ReadStringWithLengthHeader(out var argKey, ref ptr, end)
                     || !string.Equals(argKey, "keyword", StringComparison.Ordinal)
@@ -374,7 +374,7 @@ namespace Garnet.server
             {
                 keySpecMethod = default;
 
-                if (!RespReadUtils.ReadArrayLength(out var ksSpecElemCount, ref ptr, end)
+                if (!RespReadUtils.ReadUnsignedArrayLength(out var ksSpecElemCount, ref ptr, end)
                     || ksSpecElemCount == 0) return false;
 
                 keySpecMethod = new BeginSearchUnknown();
@@ -408,7 +408,7 @@ namespace Garnet.server
             {
                 keySpecMethod = default;
 
-                if (!RespReadUtils.ReadArrayLength(out var specElemCount, ref ptr, end)
+                if (!RespReadUtils.ReadUnsignedArrayLength(out var specElemCount, ref ptr, end)
                     || specElemCount != 6
                     || !RespReadUtils.ReadStringWithLengthHeader(out var argKey, ref ptr, end)
                     || !string.Equals(argKey, "lastkey", StringComparison.Ordinal)
@@ -455,7 +455,7 @@ namespace Garnet.server
             {
                 keySpecMethod = default;
 
-                if (!RespReadUtils.ReadArrayLength(out var specElemCount, ref ptr, end)
+                if (!RespReadUtils.ReadUnsignedArrayLength(out var specElemCount, ref ptr, end)
                     || specElemCount != 6
                     || !RespReadUtils.ReadStringWithLengthHeader(out var argKey, ref ptr, end)
                     || !string.Equals(argKey, "keynumidx", StringComparison.Ordinal)
@@ -501,7 +501,7 @@ namespace Garnet.server
             {
                 keySpecMethod = default;
 
-                if (!RespReadUtils.ReadArrayLength(out var ksSpecElemCount, ref ptr, end)
+                if (!RespReadUtils.ReadUnsignedArrayLength(out var ksSpecElemCount, ref ptr, end)
                     || ksSpecElemCount == 0) return false;
 
                 keySpecMethod = new FindKeysUnknown();
