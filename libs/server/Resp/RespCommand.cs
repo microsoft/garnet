@@ -1821,7 +1821,7 @@ namespace Garnet.server
             }
 
             // Parsing for command name was successful, but the command is unknown
-            if (cmd == RespCommand.INVALID)
+            if (success && cmd == RespCommand.INVALID)
             {
                 if (!specificErrorMessage.IsEmpty)
                 {
