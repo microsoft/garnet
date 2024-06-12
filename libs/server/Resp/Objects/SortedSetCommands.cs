@@ -292,6 +292,11 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
+            if (count < 3)
+            {
+                zaddDoneCount = zaddAddCount = 0;
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZRANGE), count);
+            }
 
             // Get the key for the Sorted Set
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key,
@@ -304,80 +309,62 @@ namespace Garnet.server
                 return true;
             }
 
-            // at least we need 4 args cmd + params
-            if (count < 3)
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save old values
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            SortedSetOperation op =
+                command switch
+                {
+                    RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
+                    RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
+                    RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
+                    _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
+                };
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = op;
+            inputPtr->count = count - 1;
+            inputPtr->done = 0;
+
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.SortedSetRange(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Reset input buffer
+            *inputPtr = save;
+
+            if (status != GarnetStatus.OK)
             {
-                //reset counters and fast forward the rest of the input
-                zaddDoneCount = zaddAddCount = 0;
                 var tokens = ReadLeftToken(count - 1, ref ptr);
                 if (tokens < count - 1)
-                {
-                    //command partially executed
                     return false;
-                }
-
-                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
-                    SendAndReset();
             }
-            else
+
+            switch (status)
             {
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                SortedSetOperation op =
-                    command switch
-                    {
-                        RespCommand.ZRANGE => SortedSetOperation.ZRANGE,
-                        RespCommand.ZREVRANGE => SortedSetOperation.ZREVRANGE,
-                        RespCommand.ZRANGEBYSCORE => SortedSetOperation.ZRANGEBYSCORE,
-                        _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
-                    };
-
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = op;
-                inputPtr->count = count - 1;
-                inputPtr->done = 0;
-
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                var status = storageApi.SortedSetRange(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                // Reset input buffer
-                *inputPtr = save;
-
-                if (status != GarnetStatus.OK)
-                {
-                    var tokens = ReadLeftToken(count - 1, ref ptr);
-                    if (tokens < count - 1)
+                case GarnetStatus.OK:
+                    var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    ptr += objOutputHeader.bytesDone;
+                    // Return if ZRANGE is only partially done
+                    if (objOutputHeader.bytesDone == 0)
                         return false;
-                }
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        ptr += objOutputHeader.bytesDone;
-                        // Return if ZRANGE is only partially done
-                        if (objOutputHeader.bytesDone == 0)
-                            return false;
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
 
             // reset session counters
