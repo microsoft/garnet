@@ -129,7 +129,7 @@ namespace Garnet.server
         internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey, byte[] dstKey
             , RespServerSession session, double timeoutInSeconds, object[] cmdArgs = null)
         {
-            var args = cmdArgs == null ? new [] { dstKey } : new object[] { dstKey }.Union(cmdArgs).ToArray();
+            var args = cmdArgs == null ? new[] { dstKey } : new object[] { dstKey }.Union(cmdArgs).ToArray();
             return await this.GetCollectionItemAsync(command, new[] { srcKey }, session, timeoutInSeconds, args);
         }
 
