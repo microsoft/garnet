@@ -1736,12 +1736,12 @@ namespace Garnet.server
         /// <param name="success">Whether processing should continue or a parsing error occurred (e.g. out of tokens).</param>
         /// <returns>Command parsed from the input buffer.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand ParseCommand(out int count, out bool success)
+        private RespCommand ParseCommand(out bool success)
         {
             RespCommand cmd = RespCommand.INVALID;
 
             // Initialize count as -1 (i.e., read head has not been advanced)
-            count = -1;
+            int count = -1;
             success = true;
             endReadHead = readHead;
 

@@ -95,7 +95,7 @@ namespace Garnet.server
         /// <summary>
         /// Skip the commands, first phase of the transactions processing.
         /// </summary>
-        private bool NetworkSKIP(RespCommand cmd, int count)
+        private bool NetworkSKIP(RespCommand cmd)
         {
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
             if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, txnOnly: true, logger))
@@ -108,6 +108,7 @@ namespace Garnet.server
 
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
+            int count = parseState.count;
             var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 

@@ -304,7 +304,7 @@ namespace Garnet.server
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
-                var cmd = ParseCommand(out int count, out bool commandReceived);
+                var cmd = ParseCommand(out bool commandReceived);
 
                 // If the command was not fully received, reset addresses and break out
                 if (!commandReceived)
@@ -320,19 +320,19 @@ namespace Garnet.server
                     {
                         if (txnManager.state == TxnState.Running)
                         {
-                            _ = ProcessBasicCommands(cmd, count, ref lockableGarnetApi);
+                            _ = ProcessBasicCommands(cmd, ref lockableGarnetApi);
                         }
                         else _ = cmd switch
                         {
                             RespCommand.EXEC => NetworkEXEC(),
                             RespCommand.MULTI => NetworkMULTI(),
                             RespCommand.DISCARD => NetworkDISCARD(),
-                            _ => NetworkSKIP(cmd, count),
+                            _ => NetworkSKIP(cmd),
                         };
                     }
                     else
                     {
-                        _ = ProcessBasicCommands(cmd, count, ref basicGarnetApi);
+                        _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
                     }
                 }
 
@@ -384,7 +384,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, int count, ref TGarnetApi storageApi)
+        private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var ptr = recvBufferPtr + readHead;
@@ -394,12 +394,12 @@ namespace Garnet.server
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(ptr, false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(ptr, true, ref storageApi),
-                RespCommand.SETEXNX => NetworkSETEXNX(count, ptr, ref storageApi),
-                RespCommand.DEL => NetworkDEL(count, ptr, ref storageApi),
+                RespCommand.SETEXNX => NetworkSETEXNX(parseState.count, ptr, ref storageApi),
+                RespCommand.DEL => NetworkDEL(parseState.count, ptr, ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ptr, ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS(count, ptr, ref storageApi),
-                RespCommand.EXPIRE => NetworkEXPIRE(count, ptr, RespCommand.EXPIRE, ref storageApi),
-                RespCommand.PEXPIRE => NetworkEXPIRE(count, ptr, RespCommand.PEXPIRE, ref storageApi),
+                RespCommand.EXISTS => NetworkEXISTS(parseState.count, ptr, ref storageApi),
+                RespCommand.EXPIRE => NetworkEXPIRE(parseState.count, ptr, RespCommand.EXPIRE, ref storageApi),
+                RespCommand.PEXPIRE => NetworkEXPIRE(parseState.count, ptr, RespCommand.PEXPIRE, ref storageApi),
                 RespCommand.PERSIST => NetworkPERSIST(ptr, ref storageApi),
                 RespCommand.GETRANGE => NetworkGetRange(ptr, ref storageApi),
                 RespCommand.TTL => NetworkTTL(ptr, RespCommand.TTL, ref storageApi),
@@ -413,33 +413,35 @@ namespace Garnet.server
                 RespCommand.DECRBY => NetworkIncrement(ptr, RespCommand.DECRBY, ref storageApi),
                 RespCommand.SETBIT => NetworkStringSetBit(ptr, ref storageApi),
                 RespCommand.GETBIT => NetworkStringGetBit(ptr, ref storageApi),
-                RespCommand.BITCOUNT => NetworkStringBitCount(ptr, count, ref storageApi),
-                RespCommand.BITPOS => NetworkStringBitPosition(ptr, count, ref storageApi),
+                RespCommand.BITCOUNT => NetworkStringBitCount(ptr, parseState.count, ref storageApi),
+                RespCommand.BITPOS => NetworkStringBitPosition(ptr, parseState.count, ref storageApi),
                 RespCommand.PUBLISH => NetworkPUBLISH(ptr),
-                RespCommand.PING => count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, count, ref storageApi),
+                RespCommand.PING => parseState.count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, ref storageApi),
                 RespCommand.ASKING => NetworkASKING(),
                 RespCommand.MULTI => NetworkMULTI(),
                 RespCommand.EXEC => NetworkEXEC(),
                 RespCommand.UNWATCH => NetworkUNWATCH(),
                 RespCommand.DISCARD => NetworkDISCARD(),
                 RespCommand.QUIT => NetworkQUIT(),
-                RespCommand.RUNTXP => NetworkRUNTXP(count, ptr),
+                RespCommand.RUNTXP => NetworkRUNTXP(parseState.count, ptr),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                RespCommand.COMMAND => NetworkCOMMAND(ptr, count),
-                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(ptr, count),
-                RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(ptr, count),
-                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(ptr, count),
+                RespCommand.COMMAND => NetworkCOMMAND(ptr, parseState.count),
+                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(ptr, parseState.count),
+                RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(ptr, parseState.count),
+                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(ptr, parseState.count),
 
-                _ => ProcessArrayCommands(cmd, count, ref storageApi)
+                _ => ProcessArrayCommands(cmd, ref storageApi)
             };
 
             return true;
         }
 
-        private bool ProcessArrayCommands<TGarnetApi>(RespCommand cmd, int count, ref TGarnetApi storageApi)
+        private bool ProcessArrayCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
            where TGarnetApi : IGarnetApi
         {
+            int count = parseState.count;
+
             // Continue reading from the current read head.
             byte* ptr = recvBufferPtr + readHead;
 
