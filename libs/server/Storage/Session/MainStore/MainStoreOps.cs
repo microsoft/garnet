@@ -834,6 +834,41 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
+        public unsafe GarnetStatus Increment<TContext>(ArgSlice key, out long output, long increment, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
+        {
+            var cmd = RespCommand.INCRBY;
+            if (increment < 0)
+            {
+                cmd = RespCommand.DECRBY;
+                increment = -increment;
+            }
+
+            var incrementNumDigits = NumUtils.NumDigitsInLong(increment);
+            var inputByteSize = RespInputHeader.Size + incrementNumDigits;
+            var input = stackalloc byte[inputByteSize];
+            ((RespInputHeader*)input)->cmd = cmd;
+            ((RespInputHeader*)input)->flags = 0;
+            var longOutput = input + RespInputHeader.Size;
+            NumUtils.LongToBytes(increment, incrementNumDigits, ref longOutput);
+
+            const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
+            byte* outputBuffer = stackalloc byte[outputBufferLength];
+
+            var _key = key.SpanByte;
+            var _input = SpanByte.FromPinnedPointer(input, inputByteSize);
+            var _output = new SpanByteAndMemory(outputBuffer, outputBufferLength);
+
+            var status = context.RMW(ref _key, ref _input, ref _output);
+            if (status.IsPending)
+                CompletePendingForSession(ref status, ref _output, ref context);
+            Debug.Assert(_output.IsSpanByte);
+            Debug.Assert(_output.Length == outputBufferLength);
+
+            output = NumUtils.BytesToLong(_output.Length, outputBuffer);
+            return GarnetStatus.OK;
+        }
+
         public void WATCH(ArgSlice key, StoreType type)
         {
             txnManager.Watch(key, type);

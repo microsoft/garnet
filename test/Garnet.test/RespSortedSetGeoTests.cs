@@ -3,6 +3,7 @@
 
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
@@ -234,6 +235,42 @@ namespace Garnet.test
             db.GeoAdd(key, 13.361389, 38.115556, new RedisValue("Palermo"), CommandFlags.None);
             var box = new GeoSearchBox(500, 500, GeoUnit.Kilometers);
             Assert.Throws<RedisServerException>(() => db.GeoSearch(key, 73.9262, 40.8296, box, count: 2));
+        }
+
+        [Test]
+        public void CheckGeoSortedSetOperationsOnWrongTypeObjectSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
+            var values = new[]
+            {
+                new[] { new RedisValue("Tel Aviv"), new RedisValue("Haifa") },
+                new[] { new RedisValue("Athens"), new RedisValue("Thessaloniki") }
+            };
+            var coords = new[]
+            {
+                new[] { new[] { 2.0853, 34.7818 }, new[] { 32.7940, 34.9896 } },
+                new[] { new[] { 7.9838, 23.7275 }, new[] { 40.6401, 22.9444 } }
+            };
+
+            var geoEntries = values.Select((h, idx) => h
+                .Zip(coords[idx], (v, c) => new GeoEntry(c[0], c[1], v)).ToArray()).ToArray();
+
+            // Set up different type objects
+            RespTestsUtils.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
+
+            // GEOADD
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoAdd(keys[0], geoEntries[0]));
+            // GEOHASH
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoHash(keys[0], values[0]));
+            // GEODIST
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoDistance(keys[0], values[0][1], values[0][1]));
+            // GEOPOS
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoPosition(keys[0], values[0]));
+            // GEOSEARCH
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.GeoSearch(keys[0], values[0][1], new GeoSearchBox(800, 800, GeoUnit.Kilometers)));
         }
 
         //end region of SE tests

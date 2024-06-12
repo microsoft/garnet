@@ -60,17 +60,30 @@ namespace Garnet.server
                 //restore input buffer
                 *inputPtr = save;
 
-                zaddDoneCount += output.countDone;
-                zaddAddCount += output.opsDone;
+                switch (status)
+                {
+                    case GarnetStatus.WRONGTYPE:
+                        var tokens = ReadLeftToken(count - 1, ref ptr);
+                        if (tokens < count - 1)
+                            return false;
 
-                // return if command is only partially done
-                if (zaddDoneCount < (inputCount / 3))
-                    return false;
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    default:
+                        zaddDoneCount += output.countDone;
+                        zaddAddCount += output.opsDone;
 
-                //update pointers
-                ptr += output.bytesDone;
-                while (!RespWriteUtils.WriteInteger(zaddAddCount, ref dcurr, dend))
-                    SendAndReset();
+                        // return if command is only partially done
+                        if (zaddDoneCount < (inputCount / 3))
+                            return false;
+
+                        //update pointers
+                        ptr += output.bytesDone;
+                        while (!RespWriteUtils.WriteInteger(zaddAddCount, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                }
             }
 
             //reset sesion counters
@@ -171,6 +184,13 @@ namespace Garnet.server
                 //restore input buffer
                 *inputPtr = save;
 
+                if (status != GarnetStatus.OK)
+                {
+                    var tokens = ReadLeftToken(inputCount, ref ptr);
+                    if (tokens < inputCount)
+                        return false;
+                }
+
                 switch (status)
                 {
                     case GarnetStatus.OK:
@@ -183,10 +203,6 @@ namespace Garnet.server
                         ptr += objOutputHeader.bytesDone;
                         break;
                     case GarnetStatus.NOTFOUND:
-                        var tokens = ReadLeftToken(inputCount, ref ptr);
-                        if (tokens < inputCount)
-                            return false;
-
                         switch (op)
                         {
                             case SortedSetOperation.GEODIST:
@@ -204,6 +220,10 @@ namespace Garnet.server
                                 break;
                         }
 
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
                         break;
                 }
             }

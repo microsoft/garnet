@@ -117,6 +117,10 @@ namespace Garnet.server
             => storageSession.SortedSetRank(key, input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus SortedSetRank(ArgSlice key, ArgSlice member, bool reverse, out long? rank)
+            => storageSession.SortedSetRank(key, member, reverse, out rank, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus SortedSetRandomMember(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.SortedSetRandomMember(key, input, ref outputFooter, ref objectContext);
 
@@ -209,7 +213,7 @@ namespace Garnet.server
             => storageSession.ListLength(key, input, out output, ref objectContext);
 
         /// <inheritdoc />
-        public bool ListMove(ArgSlice source, ArgSlice destination, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
+        public GarnetStatus ListMove(ArgSlice source, ArgSlice destination, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
             => storageSession.ListMove(source, destination, sourceDirection, destinationDirection, out element);
 
         /// <inheritdoc />

@@ -70,8 +70,8 @@ namespace Garnet
                         api.ListLength(lstKeyB, out count);
                         if (elementPopped.Length == 0 || count != 7)
                             result = false;
-                        result = api.ListMove(lstKey, lstKeyB, OperationDirection.Left, OperationDirection.Right, out _);
-                        if (result)
+                        var status = api.ListMove(lstKey, lstKeyB, OperationDirection.Left, OperationDirection.Right, out _);
+                        if (status == GarnetStatus.OK)
                         {
                             result = api.ListTrim(lstKeyB, 1, 3);
                         }
