@@ -183,6 +183,7 @@ namespace Garnet.cluster
                 }
 
                 // Transition to recovering state
+                // Only one caller will succeed in becoming a replica for the provided node-id
                 if (!clusterProvider.replicationManager.StartRecovery())
                 {
                     logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));

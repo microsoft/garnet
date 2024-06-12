@@ -21,7 +21,11 @@ namespace Garnet.cluster
         CheckpointEntry cEntry;
 
         /// <summary>
-        /// Try to initiate replication through RESP command
+        /// Try to initiate replication while instance is up and running.
+        /// NOTE: Caller should be aware of the following
+        ///     It is assumed that when this method is called we are under epoch protection
+        ///     This method will try to acquire the replicate and recovery locks first.
+        ///     This method will try to make this instance a replica of the provided node-id by updating the local config after acquiring all the locks.
         /// </summary>
         /// <param name="session">ClusterSession for this connection.</param>
         /// <param name="nodeid">Node-id to replicate.</param>
@@ -65,9 +69,15 @@ namespace Garnet.cluster
             }
         }
 
+
         /// <summary>
         /// Try to initiate the attach to primary sequence to recover checkpoint, replay AOF and start AOF stream.
+        /// NOTE:
+        ///     This method may be called at runtime or at startup so it does not assume that we are running under epoch protection.
+        ///     WARNING: Caller is responsible for acquiring the recoveryLock
         /// </summary>
+        /// <param name="errorMessage"></param>
+        /// <param name="background"></param>
         /// <returns></returns>
         public bool TryReplicateFromPrimary(out ReadOnlySpan<byte> errorMessage, bool background = false)
         {
@@ -281,7 +291,7 @@ namespace Garnet.cluster
         /// <param name="recoverMainStoreFromToken"></param>
         /// <param name="recoverObjectStoreFromToken"></param>
         /// <param name="replayAOF"></param>
-        /// <param name="primary_replid"></param>
+        /// <param name="primaryReplicationId"></param>
         /// <param name="remoteCheckpoint"></param>
         /// <param name="beginAddress"></param>
         /// <param name="recoveredReplicationOffset"></param>
@@ -290,7 +300,7 @@ namespace Garnet.cluster
             bool recoverMainStoreFromToken,
             bool recoverObjectStoreFromToken,
             bool replayAOF,
-            string primary_replid,
+            string primaryReplicationId,
             CheckpointEntry remoteCheckpoint,
             long beginAddress,
             long recoveredReplicationOffset)
@@ -331,7 +341,8 @@ namespace Garnet.cluster
                 // Initialize in-memory checkpoint store and delete outdated checkpoint entries
                 InitializeCheckpointStore();
 
-                TryUpdateMyPrimaryReplId(primary_replid);
+                // Update replicationId to mark any subsequent checkpoints as part of this history
+                TryUpdateMyPrimaryReplId(primaryReplicationId);
 
                 return ReplicationOffset;
             }
