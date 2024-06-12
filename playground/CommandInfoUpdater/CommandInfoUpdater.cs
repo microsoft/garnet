@@ -302,7 +302,7 @@ namespace CommandInfoUpdater
                 var end = ptr + response.Length;
 
                 // Read the array length (# of commands info returned)
-                if (!RespReadUtils.ReadArrayLength(out var cmdCount, ref ptr, end))
+                if (!RespReadUtils.ReadUnsignedArrayLength(out var cmdCount, ref ptr, end))
                 {
                     logger.LogError($"Unable to read RESP command info count from server");
                     return false;
