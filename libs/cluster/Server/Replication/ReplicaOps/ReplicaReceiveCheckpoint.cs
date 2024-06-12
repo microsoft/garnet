@@ -308,6 +308,8 @@ namespace Garnet.cluster
             try
             {
                 UpdateLastPrimarySyncTime();
+
+                logger?.LogInformation("Initiating Checkpoint Recovery at replica {sIndexToken} {sHlogToken} {oIndexToken} {oHlogToken}", remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
                 storeWrapper.RecoverCheckpoint(recoverMainStoreFromToken, recoverObjectStoreFromToken,
                     remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
 
@@ -317,6 +319,7 @@ namespace Garnet.cluster
                     recoveredReplicationOffset = storeWrapper.ReplayAOF(recoveredReplicationOffset);
                 }
 
+                logger?.LogInformation("Initializing AOF");
                 storeWrapper.appendOnlyFile.Initialize(beginAddress, recoveredReplicationOffset);
 
                 // Finally, advertise that we are caught up to the replication offset
@@ -339,9 +342,11 @@ namespace Garnet.cluster
                 checkpointStore.PurgeAllCheckpointsExceptEntry(cEntry);
 
                 // Initialize in-memory checkpoint store and delete outdated checkpoint entries
+                logger?.LogInformation("Initializing CheckpointStore");
                 InitializeCheckpointStore();
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
+                logger?.LogInformation("Updating ReplicationId");
                 TryUpdateMyPrimaryReplId(primaryReplicationId);
 
                 return ReplicationOffset;
