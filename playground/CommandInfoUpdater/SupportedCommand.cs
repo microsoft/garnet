@@ -34,6 +34,7 @@ namespace CommandInfoUpdater
             new("BITPOS", RespCommand.BITPOS),
             new("BLPOP", RespCommand.BLPOP),
             new("BRPOP", RespCommand.BRPOP),
+            new("BLMOVE", RespCommand.BLMOVE),
             new("CLIENT", RespCommand.CLIENT),
             new("CLUSTER", RespCommand.CLUSTER, new []
             {

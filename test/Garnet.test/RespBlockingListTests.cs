@@ -6,8 +6,8 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 
 namespace Garnet.test
@@ -130,6 +130,78 @@ namespace Garnet.test
 
             Assert.IsTrue(tasks.All(t => t.IsCompletedSuccessfully));
             Assert.IsTrue(retrieved.All(r => r));
+        }
+
+        [Test]
+        public void BasicBlockingListMoveTest()
+        {
+            var srcKey1 = "mykey_src";
+            var dstKey1 = "mykey_dst";
+            var value1 = "myval";
+            var srcKey2 = "mykey2_src";
+            var dstKey2 = "mykey2_dst";
+            var value2 = "myval2";
+
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var response = lightClientRequest.SendCommand($"LPUSH {srcKey1} {value1}");
+            var expectedResponse = ":1\r\n";
+            var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand($"BLMOVE {srcKey1} {dstKey1} {OperationDirection.Right} {OperationDirection.Left} 10");
+            expectedResponse = $"${value1.Length}\r\n{value1}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand($"LRANGE {srcKey1} 0 -1");
+            expectedResponse = $"*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand($"LRANGE {dstKey1} 0 -1", 2);
+            expectedResponse = $"*1\r\n${value1.Length}\r\n{value1}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            var blockingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                var btResponse = lcr.SendCommand($"BLMOVE {srcKey2} {dstKey2} {OperationDirection.Left} {OperationDirection.Right} 0");
+                var btExpectedResponse = $"${value2.Length}\r\n{value2}\r\n";
+                var btActualValue = Encoding.ASCII.GetString(btResponse).Substring(0, btExpectedResponse.Length);
+                Assert.AreEqual(btExpectedResponse, btActualValue);
+            });
+
+            var releasingTask = taskFactory.StartNew(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                Task.Delay(TimeSpan.FromSeconds(2)).Wait();
+                return lcr.SendCommand($"LPUSH {srcKey2} {value2}");
+            });
+
+            var timeout = TimeSpan.FromSeconds(5);
+            try
+            {
+                Task.WaitAll(new[] { blockingTask, releasingTask }, timeout);
+            }
+            catch (AggregateException)
+            {
+                Assert.Fail();
+            }
+
+            Assert.IsTrue(blockingTask.IsCompletedSuccessfully);
+            Assert.IsTrue(releasingTask.IsCompletedSuccessfully);
+
+            response = lightClientRequest.SendCommand($"LRANGE {srcKey2} 0 -1");
+            expectedResponse = $"*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand($"LRANGE {dstKey2} 0 -1", 2);
+            expectedResponse = $"*1\r\n${value2.Length}\r\n{value2}\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
         }
 
         [Test]

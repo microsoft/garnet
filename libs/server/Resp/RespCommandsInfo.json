@@ -371,6 +371,49 @@
     "SubCommands": null
   },
   {
+    "Command": "BLMOVE",
+    "Name": "BLMOVE",
+    "IsInternal": false,
+    "Arity": 6,
+    "Flags": "Blocking, DenyOom, NoScript, Write",
+    "FirstKey": 1,
+    "LastKey": 2,
+    "Step": 1,
+    "AclCategories": "Blocking, List, Slow, Write",
+    "Tips": null,
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Access, Delete"
+      },
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 2
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": null,
+        "Flags": "RW, Insert"
+      }
+    ],
+    "SubCommands": null
+  },
+  {
     "Command": "BLPOP",
     "Name": "BLPOP",
     "IsInternal": false,

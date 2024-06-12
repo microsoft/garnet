@@ -21,6 +21,11 @@ namespace Garnet.server
         internal RespCommand Command { get; }
 
         /// <summary>
+        /// Additional arguments required by the command
+        /// </summary>
+        internal object[] CommandArgs { get; }
+
+        /// <summary>
         /// Status of the observer
         /// </summary>
         internal ObserverStatus Status { get; set; } = ObserverStatus.WaitingForResult;
@@ -43,12 +48,13 @@ namespace Garnet.server
         /// <summary>
         /// Cancellation token to signal the semaphore awaiter to stop
         /// </summary>
-        internal CancellationTokenSource CancellationTokenSource { get; } = new CancellationTokenSource();
+        internal CancellationTokenSource CancellationTokenSource { get; } = new();
 
-        internal CollectionItemObserver(RespServerSession session, RespCommand command)
+        internal CollectionItemObserver(RespServerSession session, RespCommand command, object[] commandArgs = null)
         {
             Session = session;
             Command = command;
+            CommandArgs = commandArgs;
         }
 
         /// <summary>

@@ -259,6 +259,72 @@ namespace Garnet.server
             return true;
         }
 
+        private bool ListBlockingMove<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count != 5)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+            }
+
+            var keys = new ArgSlice[2];
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                keys[i] = default;
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+
+            if (NetworkKeyArraySlotVerify(ref keys, false))
+            {
+                if (!DrainCommands(count))
+                    return false;
+                return true;
+            }
+
+            var srcKey = keys[0].ToArray();
+            var dstKey = keys[1].ToArray();
+
+            ArgSlice srcDir = default, dstDir = default;
+
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref srcDir.ptr, ref srcDir.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref dstDir.ptr, ref dstDir.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            var sourceDirection = GetOperationDirection(srcDir);
+            var destinationDirection = GetOperationDirection(dstDir);
+
+            if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
+            {
+                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            if (!RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
+                    recvBufferPtr + bytesRead) || !parsed)
+                return false;
+
+            var result = itemBroker.MoveCollectionItemAsync(command, srcKey, dstKey, this, timeout,
+                new object[] { sourceDirection, destinationDirection }).Result;
+
+            if (!result.Found)
+            {
+                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
         /// <summary>
         /// LLEN key
         /// Gets the length of the list stored at key.

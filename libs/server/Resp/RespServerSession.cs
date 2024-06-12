@@ -560,6 +560,7 @@ namespace Garnet.server
                 RespCommand.LSET => ListSet(count, ptr, ref storageApi),
                 RespCommand.BLPOP => ListBlockingPop(cmd, count, ptr, ref storageApi),
                 RespCommand.BRPOP => ListBlockingPop(cmd, count, ptr, ref storageApi),
+                RespCommand.BLMOVE => ListBlockingMove(cmd, count, ptr, ref storageApi),
                 // Hash Commands
                 RespCommand.HSET => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, count, ptr, ref storageApi),

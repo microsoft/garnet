@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Tsavorite.core;
@@ -49,19 +50,13 @@ namespace Garnet.server
         /// <param name="keys">Keys of objects to observe</param>
         /// <param name="session">Calling session instance</param>
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
-        /// <returns></returns>
+        /// <param name="cmdArgs">Additional command arguments</param>
+        /// <returns>Result of operation</returns>
         internal async Task<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
-            RespServerSession session, double timeoutInSeconds)
+            RespServerSession session, double timeoutInSeconds, object[] cmdArgs = null)
         {
-            var objectType = command switch
-            {
-                RespCommand.BLPOP or
-                    RespCommand.BRPOP => GarnetObjectType.List,
-                _ => throw new NotSupportedException()
-            };
-
             // Create the new observer object
-            var observer = new CollectionItemObserver(session, command);
+            var observer = new CollectionItemObserver(session, command, cmdArgs);
 
             // Add the session ID to observer mapping
             sessionIdToObserver.TryAdd(session.ObjectStoreSessionID, observer);
@@ -118,6 +113,24 @@ namespace Garnet.server
             }
 
             return observer.Result;
+        }
+
+        /// <summary>
+        /// Asynchronously wait for item from collection object at srcKey and
+        /// atomically add it to collection at dstKey
+        /// </summary>
+        /// <param name="command">RESP command</param>
+        /// <param name="srcKey">Key of object to observe</param>
+        /// <param name="dstKey">Key of object to add item into</param>
+        /// <param name="session">Calling session instance</param>
+        /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
+        /// <param name="cmdArgs">Additional command arguments</param>
+        /// <returns>Result of operation</returns>
+        internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey, byte[] dstKey
+            , RespServerSession session, double timeoutInSeconds, object[] cmdArgs = null)
+        {
+            var args = cmdArgs == null ? new [] { dstKey } : new object[] { dstKey }.Union(cmdArgs).ToArray();
+            return await this.GetCollectionItemAsync(command, new[] { srcKey }, session, timeoutInSeconds, args);
         }
 
         /// <summary>
@@ -203,7 +216,7 @@ namespace Garnet.server
                     // If the key already has a non-empty observer queue, it does not have an item to retrieve
                     // Otherwise, try to retrieve next available item
                     if ((keysToObservers.ContainsKey(key) && keysToObservers[key].Count > 0) ||
-                        !TryGetNextItem(key, observer.Session.storageSession, observer.Command,
+                        !TryGetNextItem(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
                             out _, out var nextItem)) continue;
 
                     // An item was found - set the observer result and return
@@ -259,7 +272,7 @@ namespace Garnet.server
                     }
 
                     // Try to get next available item from object stored in key
-                    if (!TryGetNextItem(key, observer.Session.storageSession, observer.Command,
+                    if (!TryGetNextItem(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
                             out var currCount, out var nextItem))
                     {
                         // If unsuccessful getting next item but there is at least one item in the collection,
@@ -319,6 +332,49 @@ namespace Garnet.server
             return true;
         }
 
+        private static bool TryMoveNextListItem(ListObject srcListObj, ListObject dstListObj,
+            OperationDirection srcDirection, OperationDirection dstDirection, out byte[] nextItem)
+        {
+            nextItem = default;
+
+            // If object has no items, return
+            if (srcListObj.LnkList.Count == 0) return false;
+
+            // Get the next object according to source direction
+            switch (srcDirection)
+            {
+                case OperationDirection.Right:
+                    nextItem = srcListObj.LnkList.Last!.Value;
+                    srcListObj.LnkList.RemoveLast();
+                    break;
+                case OperationDirection.Left:
+                    nextItem = srcListObj.LnkList.First!.Value;
+                    srcListObj.LnkList.RemoveFirst();
+                    break;
+                default:
+                    return false;
+            }
+
+            srcListObj.UpdateSize(nextItem, false);
+
+            // Add the object to the destination according to the destination direction
+            switch (dstDirection)
+            {
+                case OperationDirection.Right:
+                    dstListObj.LnkList.AddLast(nextItem);
+                    break;
+                case OperationDirection.Left:
+                    dstListObj.LnkList.AddFirst(nextItem);
+                    break;
+                default:
+                    return false;
+            }
+
+            dstListObj.UpdateSize(nextItem);
+
+            return true;
+        }
+
         /// <summary>
         /// Try to get next available item from sorted set object
         /// </summary>
@@ -347,10 +403,11 @@ namespace Garnet.server
         /// <param name="key">Key of object</param>
         /// <param name="storageSession">Current storage session</param>
         /// <param name="command">RESP command</param>
+        /// <param name="cmdArgs">Additional command arguments</param>
         /// <param name="currCount">Collection size</param>
         /// <param name="nextItem">Retrieved item</param>
         /// <returns>True if found available item</returns>
-        private bool TryGetNextItem(byte[] key, StorageSession storageSession, RespCommand command, out int currCount, out byte[] nextItem)
+        private bool TryGetNextItem(byte[] key, StorageSession storageSession, RespCommand command, object[] cmdArgs, out int currCount, out byte[] nextItem)
         {
             currCount = default;
             nextItem = default;
@@ -358,9 +415,15 @@ namespace Garnet.server
 
             var objectType = command switch
             {
-                RespCommand.BLPOP or RespCommand.BRPOP => GarnetObjectType.List,
+                RespCommand.BLPOP or RespCommand.BRPOP or RespCommand.BLMOVE => GarnetObjectType.List,
                 _ => throw new NotSupportedException()
             };
+
+            byte[] dstKey = default;
+            if (command == RespCommand.BLMOVE)
+            {
+                dstKey = (byte[])cmdArgs[0];
+            }
 
             // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)
@@ -369,6 +432,13 @@ namespace Garnet.server
                 createTransaction = true;
                 var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
                 storageSession.txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
+
+                if (dstKey != null)
+                {
+                    var asDestKey = storageSession.scratchBufferManager.CreateArgSlice(dstKey);
+                    storageSession.txnManager.SaveKeyEntryToLock(asDestKey, true, LockType.Exclusive);
+                }
+
                 _ = storageSession.txnManager.Run(true);
             }
 
@@ -377,17 +447,56 @@ namespace Garnet.server
             try
             {
                 // Get the object stored at key
-                var statusOp = storageSession.GET(key, out var osList, ref objectLockableContext);
+                var statusOp = storageSession.GET(key, out var osObject, ref objectLockableContext);
                 if (statusOp == GarnetStatus.NOTFOUND) return false;
+
+                var dstStatusOp = GarnetStatus.OK;
+                IGarnetObject dstObj = null;
+                if (dstKey != null)
+                {
+                    dstStatusOp = storageSession.GET(dstKey, out var osDstObject, ref objectLockableContext);
+                    if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.garnetObject;
+                }
 
                 // Check for type match between the observer and the actual object type
                 // If types match, get next item based on item type
-                switch (osList.garnetObject)
+                switch (osObject.garnetObject)
                 {
                     case ListObject listObj:
                         currCount = listObj.LnkList.Count;
                         if (objectType != GarnetObjectType.List) return false;
-                        return TryGetNextListItem(listObj, command, out nextItem);
+                        switch (command)
+                        {
+                            case RespCommand.BLPOP:
+                            case RespCommand.BRPOP:
+                                return TryGetNextListItem(listObj, command, out nextItem);
+                            case RespCommand.BLMOVE:
+                                ListObject dstList;
+                                var newObj = false;
+                                if (dstObj == null)
+                                {
+                                    dstList = new ListObject();
+                                    newObj = true;
+                                }
+                                else if (dstObj is ListObject tmpDstList)
+                                {
+                                    dstList = tmpDstList;
+                                }
+                                else return false;
+
+                                var isSuccessful = TryMoveNextListItem(listObj, dstList, (OperationDirection)cmdArgs[1],
+                                    (OperationDirection)cmdArgs[2], out nextItem);
+
+                                if (isSuccessful && newObj)
+                                {
+                                    isSuccessful = storageSession.SET(dstKey, dstList, ref objectLockableContext) ==
+                                                   GarnetStatus.OK;
+                                }
+
+                                return isSuccessful;
+                            default:
+                                return false;
+                        }
                     case SortedSetObject setObj:
                         currCount = setObj.Dictionary.Count;
                         if (objectType != GarnetObjectType.SortedSet) return false;
