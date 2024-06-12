@@ -585,6 +585,7 @@ namespace Resp.benchmark
 
             var r = new Random(thread_id + 100);
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
                 try
@@ -651,7 +652,8 @@ namespace Resp.benchmark
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientSession)}");
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientSession)}");
                 }
             }
             _ = Interlocked.Decrement(ref workerCount);
@@ -679,6 +681,7 @@ namespace Resp.benchmark
             var offset = 0;
 
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
                 if (cts.IsCancellationRequested) break;
@@ -716,13 +719,21 @@ namespace Resp.benchmark
                 }
                 offset++;
 
-                if (offset == parallel)
+                try
                 {
-                    c.CompletePending(!opts.Burst);
-                    if (opts.Pool) gcsPool.Return(c);
-                    offset = 0;
-                    var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                    RecordValue(thread_id, elapsed);
+                    if (offset == parallel)
+                    {
+                        c.CompletePending(!opts.Burst);
+                        if (opts.Pool) gcsPool.Return(c);
+                        offset = 0;
+                        var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                        RecordValue(thread_id, elapsed);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientSessionParallel)}");
                 }
             }
             _ = Interlocked.Decrement(ref workerCount);
@@ -846,6 +857,7 @@ namespace Resp.benchmark
             var r = new Random(thread_id + 100);
 
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
                 try
@@ -908,7 +920,8 @@ namespace Resp.benchmark
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientSession)}");
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerGarnetClient)}");
                 }
             }
             _ = Interlocked.Decrement(ref workerCount);
@@ -925,6 +938,7 @@ namespace Resp.benchmark
             var offset = 0;
 
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
                 try
@@ -981,7 +995,8 @@ namespace Resp.benchmark
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientSession)}");
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientParallel)}");
                 }
 
             }
@@ -997,6 +1012,7 @@ namespace Resp.benchmark
             var r = new Random(thread_id + 100);
 
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
                 try
@@ -1060,7 +1076,8 @@ namespace Resp.benchmark
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientSession)}");
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerSERedis)}");
                 }
             }
             _ = Interlocked.Decrement(ref workerCount);
@@ -1077,6 +1094,7 @@ namespace Resp.benchmark
             var offset = 0;
 
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
                 try
@@ -1150,7 +1168,8 @@ namespace Resp.benchmark
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientSession)}");
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerSERedisParallel)}");
                 }
 
             }
