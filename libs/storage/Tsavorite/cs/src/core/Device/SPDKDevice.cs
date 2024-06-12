@@ -22,6 +22,7 @@ namespace Tsavorite.core
 
         private long elapsed_ticks = 0;
         private uint io_num = 0;
+        private ulong io_size = 0;
         private long nanosec_per_tick =
                        (1000L * 1000L * 1000L) / Stopwatch.Frequency;
 
@@ -74,6 +75,7 @@ namespace Tsavorite.core
                 ref this.elapsed_ticks,
                 managed_callback.stop_watch.ElapsedTicks
             );
+            Interlocked.Add(ref this.io_size, num_bytes);
 
             this.spdk_device_queue.Enqueue(managed_callback.spdk_device);
             managed_callback.call((uint)error_code, (uint)num_bytes);
@@ -297,12 +299,14 @@ namespace Tsavorite.core
                 }
                 spdk_device_poll(5000);
                 Console.WriteLine(
-                    "avg time in last 5s: {0}",
+                    "avg time in last 5s: {0}\n avg io size is {1} bytes",
                     this.elapsed_ticks * this.nanosec_per_tick
-                      / (float)this.io_num
+                      / (float)this.io_num,
+                    this.io_size / (float)this.io_num
                 );
                 this.io_num = 0;
                 this.elapsed_ticks = 0;
+                this.io_size = 0;
                 Thread.Yield();
             }
         }
