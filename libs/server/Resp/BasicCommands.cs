@@ -283,25 +283,16 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        private bool NetworkSET<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            byte* keyPtr = null, valPtr = null;
-            int ksize = 0, vsize = 0;
+            Debug.Assert(parseState.count == 2);
+            var key = parseState.GetByRef(0).SpanByte;
+            var value = parseState.GetByRef(1).SpanByte;
 
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            readHead = (int)(ptr - recvBufferPtr);
-
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
+            if (NetworkSingleKeySlotVerify(ref key, false))
                 return true;
 
-            var key = new SpanByte(ksize, (nint)keyPtr);
-            var value = new SpanByte(vsize, (nint)valPtr);
             var status = storageApi.SET(ref key, ref value);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

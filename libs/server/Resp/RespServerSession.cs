@@ -391,7 +391,7 @@ namespace Garnet.server
             _ = cmd switch
             {
                 RespCommand.GET => NetworkGET(ptr, ref storageApi),
-                RespCommand.SET => NetworkSET(ptr, ref storageApi),
+                RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(ptr, false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(ptr, true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(count, ptr, ref storageApi),
