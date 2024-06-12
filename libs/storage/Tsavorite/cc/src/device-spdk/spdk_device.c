@@ -327,24 +327,26 @@ int32_t spdk_device_poll(uint32_t timeout)
     int t = 0;
     struct spdk_device *device = NULL;
 
-    clock_t start, diff;
+    clock_t start = 0, diff = 0;
     start = clock();
 
-    for (int i = 0; i < device_num; i++) {
-        device = &g_spdk_device_list[i];
-        int complete_io_num =
-            spdk_nvme_qpair_process_completions(device->qpair, IO_BATCH_NUM);
-        if (n > 0) {
-            start = clock();
-            n += complete_io_num;
-            if (n >= IO_BATCH_NUM) {
-                break;
+    while (true) {
+        for (int i = 0; i < device_num; i++) {
+            device = &g_spdk_device_list[i];
+            int complete_io_num = spdk_nvme_qpair_process_completions(
+                device->qpair, IO_BATCH_NUM);
+            if (n > 0) {
+                start = clock();
+                n += complete_io_num;
+                if (n >= IO_BATCH_NUM) {
+                    return n;
+                }
             }
-        } else {
-            diff = clock() - start;
-            if (diff * 1000 / CLOCKS_PER_SEC) {
-                break;
-            }
+        }
+        diff = clock() - start;
+        if (diff * 1000 / CLOCKS_PER_SEC >= timeout) {
+            printf("timeout diff:%lu\n", diff);
+            return n;
         }
     }
     return n;

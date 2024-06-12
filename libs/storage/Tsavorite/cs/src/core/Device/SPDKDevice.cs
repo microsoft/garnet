@@ -20,9 +20,14 @@ namespace Tsavorite.core
         private readonly CancellationTokenSource completion_cancellation_token;
         private readonly Thread completion_thread;
 
+        private long elapsed_ticks = 0;
+        private uint io_num = 0;
+        private long nanosec_per_tick =
+                       (1000L * 1000L * 1000L) / Stopwatch.Frequency;
+
         private const string spdk_library_name = "spdk_device";
         private const string spdk_library_path =
-                             "runtimes/linux-x64/native/libspdk_device.so";
+                               "runtimes/linux-x64/native/libspdk_device.so";
         public delegate void AsyncIOCallback(IntPtr context, int result,
                                              ulong bytesTransferred);
         private ConcurrentQueue<IntPtr> spdk_device_queue =
@@ -34,6 +39,7 @@ namespace Tsavorite.core
             public readonly IntPtr spdk_device;
             private DeviceIOCompletionCallback callback;
             private object context;
+            public readonly Stopwatch stop_watch;
 
             public ManagedCallback(IntPtr spdk_device,
                                    DeviceIOCompletionCallback callback,
@@ -42,6 +48,8 @@ namespace Tsavorite.core
                 this.spdk_device = spdk_device;
                 this.callback = callback;
                 this.context = context;
+                this.stop_watch = new Stopwatch();
+                this.stop_watch.Start();
             }
 
             public void call(uint error_code, uint num_bytes)
@@ -60,6 +68,13 @@ namespace Tsavorite.core
             GCHandle handle = GCHandle.FromIntPtr(context);
             ManagedCallback managed_callback =
                                 (handle.Target as ManagedCallback);
+            managed_callback.stop_watch.Stop();
+            Interlocked.Add(ref this.io_num, 1);
+            Interlocked.Add(
+                ref this.elapsed_ticks,
+                managed_callback.stop_watch.ElapsedTicks
+            );
+
             this.spdk_device_queue.Enqueue(managed_callback.spdk_device);
             managed_callback.call((uint)error_code, (uint)num_bytes);
             handle.Free();
@@ -188,6 +203,7 @@ namespace Tsavorite.core
                 callback((uint)e.HResult, 0, context);
             }
         }
+
         public override void WriteAsync(IntPtr source_address, int segment_id,
                                         ulong destination_address,
                                         uint write_length,
@@ -280,6 +296,13 @@ namespace Tsavorite.core
                     break;
                 }
                 spdk_device_poll(5000);
+                Console.WriteLine(
+                    "avg time in last 5s: {0}",
+                    this.elapsed_ticks * this.nanosec_per_tick
+                      / (float)this.io_num
+                );
+                this.io_num = 0;
+                this.elapsed_ticks = 0;
                 Thread.Yield();
             }
         }
