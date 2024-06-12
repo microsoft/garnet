@@ -37,7 +37,8 @@ namespace Tsavorite.core
                 {
                     if (logPath.ToLower().Contains("aof.log"))
                     {
-                        return new SPDKDevice(logPath, deleteOnClose, disableFileBuffering, capacity, logger: logger);
+                        return new FakeNullDevice();
+                        // return new SPDKDevice(logPath, deleteOnClose, disableFileBuffering, capacity, logger: logger);
                     }
                     else
                     {

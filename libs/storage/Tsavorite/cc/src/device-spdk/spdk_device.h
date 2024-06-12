@@ -46,7 +46,7 @@ EXPORTED_SYMBOL bool spdk_device_try_complete();
 EXPORTED_SYMBOL uint64_t
 spdk_device_get_segment_size(struct spdk_device *device, uint64_t segment);
 
-EXPORTED_SYMBOL int32_t spdk_device_poll();
+EXPORTED_SYMBOL int32_t spdk_device_poll(uint32_t timeout);
 
 EXPORTED_SYMBOL void
 spdk_device_remove_segment_before(struct spdk_device *device,

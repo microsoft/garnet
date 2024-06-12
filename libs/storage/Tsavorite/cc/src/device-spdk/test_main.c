@@ -46,7 +46,7 @@ int main()
         goto exit;
     }
     while (true) {
-        int io_complete_num = spdk_device_poll();
+        int io_complete_num = spdk_device_poll(5000);
         if (io_complete_num >= 1) {
             break;
         }
@@ -64,7 +64,7 @@ int main()
         goto exit;
     }
     while (true) {
-        int io_complete_num = spdk_device_poll();
+        int io_complete_num = spdk_device_poll(5000);
         if (io_complete_num >= 1) {
             break;
         }

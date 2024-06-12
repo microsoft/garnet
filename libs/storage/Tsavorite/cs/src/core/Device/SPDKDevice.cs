@@ -102,7 +102,7 @@ namespace Tsavorite.core
 
         [DllImport(spdk_library_name, EntryPoint = "spdk_device_poll",
                    CallingConvention = CallingConvention.Cdecl)]
-        static extern int spdk_device_poll();
+        static extern int spdk_device_poll(uint timeout);
 
         public SPDKDevice(string filename,
                           bool delete_on_close = true,
@@ -118,7 +118,7 @@ namespace Tsavorite.core
 
             this.spdk_device = spdk_device_create(SPDKDevice.nsid);
 
-            this.completion_cancellation_token = new();
+            this.completion_cancellation_token = new CancellationTokenSource();
             this.completion_thread = new Thread(this.completion_worker);
             this.completion_thread.Start();
         }
@@ -255,7 +255,7 @@ namespace Tsavorite.core
                 {
                     break;
                 }
-                spdk_device_poll();
+                spdk_device_poll(5000);
                 Thread.Yield();
             }
         }

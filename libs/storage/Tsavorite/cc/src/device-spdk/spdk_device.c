@@ -2,6 +2,7 @@
 
 #include <error.h>
 #include <threads.h>
+#include <time.h>
 
 #define DEVICE_MAX_NUM 16
 #define NS_MAX_NUM 8
@@ -320,19 +321,28 @@ uint64_t spdk_device_get_segment_size(struct spdk_device *device,
     return (uint32_t)100 * SIZE_1G;
 }
 
-int32_t spdk_device_poll()
+int32_t spdk_device_poll(uint32_t timeout)
 {
     int n = 0;
     int t = 0;
     struct spdk_device *device = NULL;
 
+    clock_t start, diff;
+    start = clock();
+
     for (int i = 0; i < device_num; i++) {
         device = &g_spdk_device_list[i];
-        for (int j = 0; j < POLL_TIME; j++) {
-            int complete_io_num = spdk_nvme_qpair_process_completions(
-                device->qpair, IO_BATCH_NUM);
+        int complete_io_num =
+            spdk_nvme_qpair_process_completions(device->qpair, IO_BATCH_NUM);
+        if (n > 0) {
+            start = clock();
             n += complete_io_num;
-            if (complete_io_num > 0) {
+            if (n >= IO_BATCH_NUM) {
+                break;
+            }
+        } else {
+            diff = clock() - start;
+            if (diff * 1000 / CLOCKS_PER_SEC) {
                 break;
             }
         }
