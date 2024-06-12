@@ -415,14 +415,14 @@ namespace Resp.benchmark
                 throw new Exception("Only batch size 1 supported for online bench");
             var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
 
-            int keyLen = req.keyLen;
-            int valueLen = req.valueLen;
+            var keyLen = req.keyLen;
+            var valueLen = req.valueLen;
 
-            string sskey = "sskey";
-            int sskeyLen = sskey.Length;
+            var sskey = "sskey";
+            var sskeyLen = sskey.Length;
 
-            int exactSize = 13 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetBulkStringLength(valueLen);
-            int size = (int)Utility.PreviousPowerOf2(exactSize);
+            var exactSize = 13 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetBulkStringLength(valueLen);
+            var size = (int)Utility.PreviousPowerOf2(exactSize);
             if (exactSize > size) size *= 2;
 
             var onResponseDelegate = new LightClient.OnResponseDelegateUnsafe(ReqGen.OnResponse);
@@ -431,59 +431,59 @@ namespace Resp.benchmark
             client.Connect();
             client.Authenticate(auth);
 
-            byte[] pingBufferAllocation = GC.AllocateArray<byte>(14, true);
-            byte* pingBuffer = (byte*)Unsafe.AsPointer(ref pingBufferAllocation[0]);
+            var pingBufferAllocation = GC.AllocateArray<byte>(14, true);
+            var pingBuffer = (byte*)Unsafe.AsPointer(ref pingBufferAllocation[0]);
             "*1\r\n$4\r\nPING\r\n"u8.CopyTo(new Span<byte>(pingBuffer, 14));
 
-            byte[] getBufferA = GC.AllocateArray<byte>(13 + RespWriteUtils.GetBulkStringLength(keyLen), true);
-            byte* getBuffer = (byte*)Unsafe.AsPointer(ref getBufferA[0]);
+            var getBufferA = GC.AllocateArray<byte>(13 + RespWriteUtils.GetBulkStringLength(keyLen), true);
+            var getBuffer = (byte*)Unsafe.AsPointer(ref getBufferA[0]);
             "*2\r\n$3\r\nGET\r\n"u8.CopyTo(new Span<byte>(getBuffer, 13));
 
-            byte[] setBufferA = GC.AllocateArray<byte>(130 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetBulkStringLength(valueLen), true);
-            byte* setBuffer = (byte*)Unsafe.AsPointer(ref setBufferA[0]);
+            var setBufferA = GC.AllocateArray<byte>(130 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetBulkStringLength(valueLen), true);
+            var setBuffer = (byte*)Unsafe.AsPointer(ref setBufferA[0]);
             "*3\r\n$3\r\nSET\r\n"u8.CopyTo(new Span<byte>(setBuffer, 13));
 
-            byte[] setexBufferA = GC.AllocateArray<byte>(15 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl) + RespWriteUtils.GetBulkStringLength(valueLen), true);
-            byte* setexBuffer = (byte*)Unsafe.AsPointer(ref setexBufferA[0]);
+            var setexBufferA = GC.AllocateArray<byte>(15 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl) + RespWriteUtils.GetBulkStringLength(valueLen), true);
+            var setexBuffer = (byte*)Unsafe.AsPointer(ref setexBufferA[0]);
             "*4\r\n$5\r\nSETEX\r\n"u8.CopyTo(new Span<byte>(setexBuffer, 15));
 
-            byte[] delBufferA = GC.AllocateArray<byte>(13 + RespWriteUtils.GetBulkStringLength(keyLen), true);
-            byte* delBuffer = (byte*)Unsafe.AsPointer(ref delBufferA[0]);
+            var delBufferA = GC.AllocateArray<byte>(13 + RespWriteUtils.GetBulkStringLength(keyLen), true);
+            var delBuffer = (byte*)Unsafe.AsPointer(ref delBufferA[0]);
             "*2\r\n$3\r\nDEL\r\n"u8.CopyTo(new Span<byte>(delBuffer, 13));
 
-            byte[] zaddBufferA = GC.AllocateArray<byte>(14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(1) + RespWriteUtils.GetBulkStringLength(keyLen), true);
-            byte* zaddBuffer = (byte*)Unsafe.AsPointer(ref zaddBufferA[0]);
+            var zaddBufferA = GC.AllocateArray<byte>(14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(1) + RespWriteUtils.GetBulkStringLength(keyLen), true);
+            var zaddBuffer = (byte*)Unsafe.AsPointer(ref zaddBufferA[0]);
             "*4\r\n$4\r\nZADD\r\n"u8.CopyTo(new Span<byte>(zaddBuffer, 14));
 
-            byte[] zremBufferA = GC.AllocateArray<byte>(14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetBulkStringLength(keyLen), true);
-            byte* zremBuffer = (byte*)Unsafe.AsPointer(ref zremBufferA[0]);
+            var zremBufferA = GC.AllocateArray<byte>(14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetBulkStringLength(keyLen), true);
+            var zremBuffer = (byte*)Unsafe.AsPointer(ref zremBufferA[0]);
             "*3\r\n$4\r\nZREM\r\n"u8.CopyTo(new Span<byte>(zremBuffer, 14));
 
-            byte[] zcardBufferAllocation = GC.AllocateArray<byte>(15 + RespWriteUtils.GetBulkStringLength(sskeyLen), true);
-            byte* zcardBuffer = (byte*)Unsafe.AsPointer(ref zcardBufferAllocation[0]);
+            var zcardBufferAllocation = GC.AllocateArray<byte>(15 + RespWriteUtils.GetBulkStringLength(sskeyLen), true);
+            var zcardBuffer = (byte*)Unsafe.AsPointer(ref zcardBufferAllocation[0]);
             "*2\r\n$4\r\nZCARD\r\n"u8.CopyTo(new Span<byte>(zcardBuffer, 15));
 
-            byte[] expireBufferA = GC.AllocateArray<byte>(16 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl), true);
-            byte* expireBuffer = (byte*)Unsafe.AsPointer(ref expireBufferA[0]);
+            var expireBufferA = GC.AllocateArray<byte>(16 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl), true);
+            var expireBuffer = (byte*)Unsafe.AsPointer(ref expireBufferA[0]);
             "*3\r\n$6\r\nEXPIRE\r\n"u8.CopyTo(new Span<byte>(expireBuffer, 16));
 
-            byte* getEnd = getBuffer + 13 + RespWriteUtils.GetBulkStringLength(keyLen);
-            byte* setEnd = setBuffer + 130 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetBulkStringLength(valueLen);
-            byte* setexEnd = setexBuffer + 130 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl) + RespWriteUtils.GetBulkStringLength(valueLen);
-            byte* delEnd = delBuffer + 13 + RespWriteUtils.GetBulkStringLength(keyLen);
-            byte* zaddEnd = zaddBuffer + 14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetBulkStringLength(keyLen);
-            byte* zremEnd = zremBuffer + 14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetBulkStringLength(keyLen);
-            byte* expireEnd = expireBuffer + 16 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl);
-            byte* zcardEnd = zcardBuffer + 15 + RespWriteUtils.GetBulkStringLength(keyLen);
+            var getEnd = getBuffer + 13 + RespWriteUtils.GetBulkStringLength(keyLen);
+            var setEnd = setBuffer + 130 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetBulkStringLength(valueLen);
+            var setexEnd = setexBuffer + 130 + RespWriteUtils.GetBulkStringLength(keyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl) + RespWriteUtils.GetBulkStringLength(valueLen);
+            var delEnd = delBuffer + 13 + RespWriteUtils.GetBulkStringLength(keyLen);
+            var zaddEnd = zaddBuffer + 14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetBulkStringLength(keyLen);
+            var zremEnd = zremBuffer + 14 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetBulkStringLength(keyLen);
+            var expireEnd = expireBuffer + 16 + RespWriteUtils.GetBulkStringLength(sskeyLen) + RespWriteUtils.GetIntegerAsBulkStringLength(opts.Ttl);
+            var zcardEnd = zcardBuffer + 15 + RespWriteUtils.GetBulkStringLength(keyLen);
 
             Random r = new(thread_id + 100);
             waiter.Wait();
             while (true)
             {
                 var rand = r.Next(100);
-                OpType op = SelectOpType(rand);
+                var op = SelectOpType(rand);
                 client.opType = (int)op;
-                long startTimestamp = Stopwatch.GetTimestamp();
+                var startTimestamp = Stopwatch.GetTimestamp();
 
                 if (cts.IsCancellationRequested) break;
 
@@ -494,20 +494,20 @@ namespace Resp.benchmark
                         client.CompletePendingRequests();
                         break;
                     case OpType.GET:
-                        byte* getCurr = getBuffer + 13;
+                        var getCurr = getBuffer + 13;
                         RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref getCurr, getEnd);
                         client.Send(getBuffer, (int)(getCurr - getBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.SET:
-                        byte* setCurr = setBuffer + 13;
+                        var setCurr = setBuffer + 13;
                         RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref setCurr, setEnd);
                         RespWriteUtils.WriteBulkString(req.GenerateValueBytes().Span, ref setCurr, setEnd);
                         client.Send(setBuffer, (int)(setCurr - setBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.SETEX:
-                        byte* setexCurr = setexBuffer + 15;
+                        var setexCurr = setexBuffer + 15;
                         RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref setexCurr, setexEnd);
                         RespWriteUtils.WriteIntegerAsBulkString(opts.Ttl, ref setexCurr, setexEnd);
                         RespWriteUtils.WriteBulkString(req.GenerateValueBytes().Span, ref setexCurr, setexEnd);
@@ -515,13 +515,13 @@ namespace Resp.benchmark
                         client.CompletePendingRequests();
                         break;
                     case OpType.DEL:
-                        byte* delCurr = delBuffer + 13;
+                        var delCurr = delBuffer + 13;
                         RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref delCurr, delEnd);
                         client.Send(delBuffer, (int)(delCurr - delBuffer), 1);
                         client.CompletePendingRequests();
                         break;
                     case OpType.ZADD:
-                        byte* zaddCurr = zaddBuffer + 14;
+                        var zaddCurr = zaddBuffer + 14;
                         RespWriteUtils.WriteAsciiBulkString(sskey, ref zaddCurr, zaddEnd);
                         RespWriteUtils.WriteIntegerAsBulkString(1, ref zaddCurr, zaddEnd);
                         RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref zaddCurr, zaddEnd);
@@ -529,7 +529,7 @@ namespace Resp.benchmark
                         if (opts.Ttl > 0)
                         {
                             // NOTE: Here we are not resetting opType. This only works for online bench
-                            byte* expireCurr = expireBuffer + 16;
+                            var expireCurr = expireBuffer + 16;
                             RespWriteUtils.WriteAsciiBulkString(sskey, ref expireCurr, expireEnd);
                             RespWriteUtils.WriteIntegerAsBulkString(opts.Ttl, ref expireCurr, expireEnd);
                             client.Send(expireBuffer, (int)(expireCurr - expireBuffer), 1);
@@ -537,7 +537,7 @@ namespace Resp.benchmark
                         client.CompletePendingRequests();
                         break;
                     case OpType.ZREM:
-                        byte* zremCurr = zremBuffer + 14;
+                        var zremCurr = zremBuffer + 14;
                         RespWriteUtils.WriteAsciiBulkString(sskey, ref zremCurr, zremEnd);
                         RespWriteUtils.WriteIntegerAsBulkString(1, ref zremCurr, zremEnd);
                         RespWriteUtils.WriteAsciiBulkString(req.GenerateKey(), ref zremCurr, zremEnd);
@@ -545,7 +545,7 @@ namespace Resp.benchmark
                         client.CompletePendingRequests();
                         break;
                     case OpType.ZCARD:
-                        byte* zcardCurr = zcardBuffer + 15;
+                        var zcardCurr = zcardBuffer + 15;
                         RespWriteUtils.WriteAsciiBulkString(sskey, ref zcardCurr, zcardEnd);
                         client.Send(zcardBuffer, (int)(zcardCurr - zcardEnd), 1);
                         client.CompletePendingRequests();
@@ -554,15 +554,15 @@ namespace Resp.benchmark
                         throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
                 }
 
-                long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
                 RecordValue(thread_id, elapsed);
             }
-            Interlocked.Decrement(ref workerCount);
+            _ = Interlocked.Decrement(ref workerCount);
         }
 
         public async void OpRunnerGarnetClientSession(int thread_id)
         {
-            Interlocked.Increment(ref workerCount);
+            _ = Interlocked.Increment(ref workerCount);
             if (opts.BatchSize.First() != 1)
                 throw new Exception("Only batch size 1 supported for online bench");
             var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength, opts.ObjectDbSize);
@@ -583,105 +583,85 @@ namespace Resp.benchmark
                 }
             }
 
-            Random r = new(thread_id + 100);
+            var r = new Random(thread_id + 100);
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
-                if (cts.IsCancellationRequested) break;
-                var rand = r.Next(100);
-                OpType op = SelectOpType(rand);
-                long startTimestamp = Stopwatch.GetTimestamp();
-
-                var c = opts.Pool ? await gcsPool.GetAsync() : client;
-                switch (op)
+                try
                 {
-                    case OpType.PING:
-                        await c.ExecuteAsync(new string[] { "PING" });
-                        break;
-                    case OpType.GET:
-                        await c.ExecuteAsync(new string[] { "GET", req.GenerateKey() });
-                        break;
-                    case OpType.SET:
-                        await c.ExecuteAsync(new string[] { "SET", req.GenerateKey(), req.GenerateValue() });
-                        break;
-                    case OpType.SETEX:
-                        await c.ExecuteAsync(new string[] { "SETEX", req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue() });
-                        break;
-                    case OpType.DEL:
-                        await c.ExecuteAsync(new string[] { "DEL", req.GenerateKey() });
-                        break;
-                    case OpType.SETBIT:
-                        await c.ExecuteAsync(new string[] { "SETBIT", req.GenerateKey(), req.GenerateBitOffset() });
-                        break;
-                    case OpType.GETBIT:
-                        await c.ExecuteAsync(new string[] { "GETBIT", req.GenerateKey(), req.GenerateBitOffset() });
-                        break;
-                    case OpType.ZADD:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            await c.ExecuteAsync(new string[] { "ZADD", sskey, "1.0", key });
-                            if (opts.Ttl > 0)
-                            {
-                                await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
-                            }
-                        }
-                        break;
-                    case OpType.ZREM:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            await c.ExecuteAsync(new string[] { "ZREM", sskey, key });
-                            if (opts.Ttl > 0)
-                            {
-                                await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
-                            }
-                        }
-                        break;
-                    case OpType.ZCARD:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            await c.ExecuteAsync(new string[] { "ZCARD", sskey });
-                            if (opts.Ttl > 0)
-                            {
-                                await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
-                            }
-                        }
-                        break;
-                    case OpType.READWRITETX:
-                        {
-                            await c.ExecuteAsync("READWRITETX", req.GenerateKey(), req.GenerateKey(), req.GenerateKey(), "1000");
-                        }
-                        break;
-                    case OpType.SAMPLEUPDATETX:
-                        {
-                            await c.ExecuteAsync("SAMPLEUPDATETX", req.GenerateKeyRandom(), req.GenerateValue(),
-                                 req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore());
-                        }
-                        break;
-                    case OpType.SAMPLEDELETETX:
-                        {
-                            await c.ExecuteAsync("SAMPLEDELETETX", req.GenerateKeyRandom(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry());
-                        }
-                        break;
-                    default:
-                        throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
-                }
-                if (opts.Pool)
-                {
-                    gcsPool.Return(c);
-                }
+                    if (cts.IsCancellationRequested) break;
+                    var rand = r.Next(100);
+                    var op = SelectOpType(rand);
+                    var startTimestamp = Stopwatch.GetTimestamp();
+                    var c = opts.Pool ? await gcsPool.GetAsync() : client;
 
-                long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                RecordValue(thread_id, elapsed);
+                    _ = op switch
+                    {
+                        OpType.PING => await c.ExecuteAsync(["PING"]),
+                        OpType.GET => await c.ExecuteAsync(["GET", req.GenerateKey()]),
+                        OpType.SET => await c.ExecuteAsync(["SET", req.GenerateKey(), req.GenerateValue()]),
+                        OpType.SETEX => await c.ExecuteAsync(["SETEX", req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue()]),
+                        OpType.DEL => await c.ExecuteAsync(["DEL", req.GenerateKey()]),
+                        OpType.SETBIT => await c.ExecuteAsync(["SETBIT", req.GenerateKey(), req.GenerateBitOffset()]),
+                        OpType.GETBIT => await c.ExecuteAsync(["GETBIT", req.GenerateKey(), req.GenerateBitOffset()]),
+                        OpType.ZADD => await ZADD(),
+                        OpType.ZREM => await ZREM(),
+                        OpType.ZCARD => await ZCARD(),
+                        OpType.READWRITETX => await c.ExecuteAsync("READWRITETX", req.GenerateKey(), req.GenerateKey(), req.GenerateKey(), "1000"),
+                        OpType.SAMPLEUPDATETX => await c.ExecuteAsync("SAMPLEUPDATETX", req.GenerateKeyRandom(), req.GenerateValue(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore()),
+                        OpType.SAMPLEDELETETX => await c.ExecuteAsync("SAMPLEDELETETX", req.GenerateKeyRandom(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry()),
+                        _ => throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!")
+                    };
+
+                    if (opts.Pool)
+                        gcsPool.Return(c);
+
+                    var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                    RecordValue(thread_id, elapsed);
+
+                    async Task<string> ZADD()
+                    {
+                        var key = req.GenerateKey();
+                        var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                        var res = await c.ExecuteAsync(new string[] { "ZADD", sskey, "1.0", key });
+                        if (opts.Ttl > 0)
+                            return await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
+                        return res;
+                    }
+
+                    async Task<string> ZREM()
+                    {
+                        var key = req.GenerateKey();
+                        var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                        var resp = await c.ExecuteAsync(new string[] { "ZREM", sskey, key });
+                        if (opts.Ttl > 0)
+                            return await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
+                        return resp;
+                    }
+
+                    async Task<string> ZCARD()
+                    {
+                        var key = req.GenerateKey();
+                        var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                        var resp = await c.ExecuteAsync(new string[] { "ZCARD", sskey });
+                        if (opts.Ttl > 0)
+                            return await c.ExecuteAsync(new string[] { "EXPIRE", sskey, opts.Ttl.ToString() });
+                        return resp;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientSession)}");
+                }
             }
-            Interlocked.Decrement(ref workerCount);
+            _ = Interlocked.Decrement(ref workerCount);
         }
 
         public async void OpRunnerGarnetClientSessionParallel(int thread_id, int parallel)
         {
-            Interlocked.Increment(ref workerCount);
+            _ = Interlocked.Increment(ref workerCount);
             if (opts.BatchSize.First() != 1)
                 throw new Exception("Only batch size 1 supported for online bench");
             var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
@@ -697,39 +677,41 @@ namespace Resp.benchmark
                     client.CompletePending();
                 }
             }
-            Random r = new(thread_id + 100);
-            int offset = 0;
+            var r = new Random(thread_id + 100);
+            var offset = 0;
 
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
                 if (cts.IsCancellationRequested) break;
                 var rand = r.Next(100);
-                OpType op = SelectOpType(rand);
+                var op = SelectOpType(rand);
                 var c = opts.Pool ? await gcsPool.GetAsync() : client;
-                long startTimestamp = Stopwatch.GetTimestamp();
+                var startTimestamp = Stopwatch.GetTimestamp();
+
                 switch (op)
                 {
                     case OpType.PING:
-                        c.ExecuteBatch(new string[] { "PING" });
+                        c.ExecuteBatch(["PING"]);
                         break;
                     case OpType.GET:
-                        c.ExecuteBatch(new string[] { "GET", req.GenerateKey() });
+                        c.ExecuteBatch(["GET", req.GenerateKey()]);
                         break;
                     case OpType.SET:
-                        c.ExecuteBatch(new string[] { "SET", req.GenerateKey(), req.GenerateValue() });
+                        c.ExecuteBatch(["SET", req.GenerateKey(), req.GenerateValue()]);
                         break;
                     case OpType.SETEX:
-                        c.ExecuteBatch(new string[] { "SETEX", req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue() });
+                        c.ExecuteBatch(["SETEX", req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue()]);
                         break;
                     case OpType.DEL:
-                        c.ExecuteBatch(new string[] { "DEL", req.GenerateKey() });
+                        c.ExecuteBatch(["DEL", req.GenerateKey()]);
                         break;
                     case OpType.SETBIT:
-                        await c.ExecuteAsync(new string[] { "SETBIT", req.GenerateKey(), req.GenerateBitOffset() });
+                        c.ExecuteBatch(["SETBIT", req.GenerateKey(), req.GenerateBitOffset()]);
                         break;
                     case OpType.GETBIT:
-                        await c.ExecuteAsync(new string[] { "GETBIT", req.GenerateKey(), req.GenerateBitOffset() });
+                        c.ExecuteBatch(["GETBIT", req.GenerateKey(), req.GenerateBitOffset()]);
                         break;
 
                     default:
@@ -737,54 +719,55 @@ namespace Resp.benchmark
                 }
                 offset++;
 
-                if (offset == parallel)
+                try
                 {
-                    c.CompletePending(!opts.Burst);
-                    if (opts.Pool) gcsPool.Return(c);
-                    offset = 0;
-                    long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                    RecordValue(thread_id, elapsed);
+                    if (offset == parallel)
+                    {
+                        c.CompletePending(!opts.Burst);
+                        if (opts.Pool) gcsPool.Return(c);
+                        offset = 0;
+                        var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                        RecordValue(thread_id, elapsed);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientSessionParallel)}");
                 }
             }
-            Interlocked.Decrement(ref workerCount);
+            _ = Interlocked.Decrement(ref workerCount);
         }
 
         public void OpRunnerGarnetClientSync(int thread_id)
         {
-            Interlocked.Increment(ref workerCount);
+            _ = Interlocked.Increment(ref workerCount);
             if (opts.BatchSize.First() != 1)
                 throw new Exception("Only batch size 1 supported for online bench");
             var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
-            int local_ops_started = 0;
-            int local_ops_completed = 0;
-            ManualResetEventSlim waitCallback = new();
-            Random r = new(thread_id + 100);
+            var local_ops_started = 0;
+            var local_ops_completed = 0;
+            var waitCallback = new ManualResetEventSlim();
+            var r = new Random(thread_id + 100);
+
             void callbackMem(long start, MemoryResult<byte> mem)
             {
-                long elapsed = Stopwatch.GetTimestamp() - start;
+                var elapsed = Stopwatch.GetTimestamp() - start;
                 RecordValue(thread_id, elapsed);
                 if (opts.IntraThreadParallelism > 1)
-                {
-                    Interlocked.Increment(ref local_ops_completed);
-                }
+                    _ = Interlocked.Increment(ref local_ops_completed);
                 else
-                {
                     waitCallback.Set();
-                }
             }
 
             void callbackStr(long start, string str)
             {
-                long elapsed = Stopwatch.GetTimestamp() - start;
+                var elapsed = Stopwatch.GetTimestamp() - start;
                 RecordValue(thread_id, elapsed);
                 if (opts.IntraThreadParallelism > 1)
-                {
-                    Interlocked.Increment(ref local_ops_completed);
-                }
+                    _ = Interlocked.Increment(ref local_ops_completed);
                 else
-                {
                     waitCallback.Set();
-                }
             }
 
             waiter.Wait();
@@ -792,8 +775,8 @@ namespace Resp.benchmark
             {
                 if (cts.IsCancellationRequested) break;
                 var rand = r.Next(100);
-                OpType op = SelectOpType(rand);
-                long startTimestamp = Stopwatch.GetTimestamp();
+                var op = SelectOpType(rand);
+                var startTimestamp = Stopwatch.GetTimestamp();
 
                 var gdb = opts.Pool ? gdbPool.Get() : garnetClient;
                 switch (op)
@@ -808,7 +791,7 @@ namespace Resp.benchmark
                         gdb.StringSet(req.GenerateKeyBytes(), req.GenerateValueBytes(), callbackStr, startTimestamp);
                         break;
                     case OpType.SETEX:
-                        gdb.ExecuteForStringResult(callbackStr, startTimestamp, "SETEX", new string[] { req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue() });
+                        gdb.ExecuteForStringResult(callbackStr, startTimestamp, "SETEX", [req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue()]);
                         break;
                     case OpType.DEL:
                         gdb.KeyDelete(req.GenerateKeyBytes(), callbackStr, startTimestamp);
@@ -817,33 +800,27 @@ namespace Resp.benchmark
                         {
                             var key = req.GenerateKey();
                             var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            gdb.ExecuteForStringResult(callbackStr, startTimestamp, "ZADD", new string[] { sskey, "1.0", key });
+                            gdb.ExecuteForStringResult(callbackStr, startTimestamp, "ZADD", [sskey, "1.0", key]);
                             if (opts.Ttl > 0)
-                            {
-                                gdb.ExecuteForStringResult(callbackStr, startTimestamp, "EXPIRE", new string[] { sskey, opts.Ttl.ToString() });
-                            }
+                                gdb.ExecuteForStringResult(callbackStr, startTimestamp, "EXPIRE", [sskey, opts.Ttl.ToString()]);
                         }
                         break;
                     case OpType.ZREM:
                         {
                             var key = req.GenerateKey();
                             var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            gdb.ExecuteForStringResult(callbackStr, startTimestamp, "ZREM", new string[] { sskey, key });
+                            gdb.ExecuteForStringResult(callbackStr, startTimestamp, "ZREM", [sskey, key]);
                             if (opts.Ttl > 0)
-                            {
-                                gdb.ExecuteForStringResult(callbackStr, startTimestamp, "EXPIRE", new string[] { sskey, opts.Ttl.ToString() });
-                            }
+                                gdb.ExecuteForStringResult(callbackStr, startTimestamp, "EXPIRE", [sskey, opts.Ttl.ToString()]);
                         }
                         break;
                     case OpType.ZCARD:
                         {
                             var key = req.GenerateKey();
                             var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            gdb.ExecuteForStringResult(callbackStr, startTimestamp, "ZCARD", new string[] { sskey });
+                            gdb.ExecuteForStringResult(callbackStr, startTimestamp, "ZCARD", [sskey]);
                             if (opts.Ttl > 0)
-                            {
-                                gdb.ExecuteForStringResult(callbackStr, startTimestamp, "EXPIRE", new string[] { sskey, opts.Ttl.ToString() });
-                            }
+                                gdb.ExecuteForStringResult(callbackStr, startTimestamp, "EXPIRE", [sskey, opts.Ttl.ToString()]);
                         }
                         break;
                     default:
@@ -866,11 +843,9 @@ namespace Resp.benchmark
                 }
 
                 if (opts.Pool)
-                {
                     gdbPool.Return(gdb);
-                }
             }
-            Interlocked.Decrement(ref workerCount);
+            _ = Interlocked.Decrement(ref workerCount);
         }
 
         public async void OpRunnerGarnetClient(int thread_id)
@@ -879,222 +854,233 @@ namespace Resp.benchmark
             if (opts.BatchSize.First() != 1)
                 throw new Exception("Only batch size 1 supported for online bench");
             var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
-            Random r = new(thread_id + 100);
+            var r = new Random(thread_id + 100);
 
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
-                if (cts.IsCancellationRequested) break;
-                var rand = r.Next(100);
-                OpType op = SelectOpType(rand);
-                long startTimestamp = Stopwatch.GetTimestamp();
-
-                var gdb = opts.Pool ? await gdbPool.GetAsync() : garnetClient;
-                switch (op)
+                try
                 {
-                    case OpType.PING:
-                        await gdb.PingAsync();
-                        break;
-                    case OpType.GET:
-                        await gdb.StringGetAsMemoryAsync(req.GenerateKeyBytes());
-                        break;
-                    case OpType.SET:
-                        await gdb.StringSetAsync(req.GenerateKeyBytes(), req.GenerateValueBytes());
-                        break;
-                    case OpType.SETEX:
-                        await gdb.ExecuteForStringResultAsync("SETEX", new string[] { req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue() });
-                        break;
-                    case OpType.DEL:
-                        await gdb.KeyDeleteAsync(req.GenerateKeyBytes());
-                        break;
-                    case OpType.ZADD:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            await gdb.ExecuteForStringResultAsync("ZADD", new string[] { sskey, "1.0", key });
-                            if (opts.Ttl > 0)
+                    if (cts.IsCancellationRequested) break;
+                    var rand = r.Next(100);
+                    var op = SelectOpType(rand);
+                    var startTimestamp = Stopwatch.GetTimestamp();
+
+                    var gdb = opts.Pool ? await gdbPool.GetAsync() : garnetClient;
+                    switch (op)
+                    {
+                        case OpType.PING:
+                            await gdb.PingAsync();
+                            break;
+                        case OpType.GET:
+                            await gdb.StringGetAsMemoryAsync(req.GenerateKeyBytes());
+                            break;
+                        case OpType.SET:
+                            await gdb.StringSetAsync(req.GenerateKeyBytes(), req.GenerateValueBytes());
+                            break;
+                        case OpType.SETEX:
+                            await gdb.ExecuteForStringResultAsync("SETEX", new string[] { req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue() });
+                            break;
+                        case OpType.DEL:
+                            await gdb.KeyDeleteAsync(req.GenerateKeyBytes());
+                            break;
+                        case OpType.ZADD:
                             {
-                                await gdb.ExecuteForStringResultAsync("EXPIRE", new string[] { sskey, opts.Ttl.ToString() });
-                            }
-                        }
-                        break;
-                    case OpType.ZREM:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            await gdb.ExecuteForStringResultAsync("ZREM", new string[] { sskey, key });
-                            if (opts.Ttl > 0)
-                            {
-                                await gdb.ExecuteForStringResultAsync("EXPIRE", new string[] { sskey, opts.Ttl.ToString() });
-                            }
-                        }
-                        break;
-                    default:
-                        throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
-                }
-                if (opts.Pool)
-                {
-                    gdbPool.Return(gdb);
-                }
-
-                long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                RecordValue(thread_id, elapsed);
-            }
-            Interlocked.Decrement(ref workerCount);
-        }
-
-        public async void OpRunnerGarnetClientParallel(int thread_id, int parallel)
-        {
-            Interlocked.Increment(ref workerCount);
-            if (opts.BatchSize.First() != 1)
-                throw new Exception("Only batch size 1 supported for online bench");
-            var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
-            Random r = new(thread_id + 100);
-            Task[] tasks = new Task[parallel];
-            int offset = 0;
-
-            waiter.Wait();
-            while (true)
-            {
-                if (cts.IsCancellationRequested) break;
-                var rand = r.Next(100);
-                OpType op = SelectOpType(rand);
-                long startTimestamp = Stopwatch.GetTimestamp();
-
-                var gdb = opts.Pool ? await gdbPool.GetAsync() : garnetClient;
-                switch (op)
-                {
-                    case OpType.PING:
-                        tasks[offset++] = gdb.PingAsync();
-                        break;
-                    case OpType.GET:
-                        tasks[offset++] = gdb.StringGetAsync(req.GenerateKey());
-                        break;
-                    case OpType.SET:
-                        tasks[offset++] = gdb.StringSetAsync(req.GenerateKey(), req.GenerateValue());
-                        break;
-                    case OpType.SETEX:
-                        tasks[offset++] = gdb.ExecuteForStringResultAsync("SETEX", new string[] { req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue() });
-                        break;
-                    case OpType.DEL:
-                        tasks[offset++] = gdb.KeyDeleteAsync(req.GenerateKey());
-                        break;
-                    case OpType.ZADD:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            tasks[offset++] = Task.Run(async () =>
-                            {
+                                var key = req.GenerateKey();
+                                var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
                                 await gdb.ExecuteForStringResultAsync("ZADD", new string[] { sskey, "1.0", key });
                                 if (opts.Ttl > 0)
                                 {
                                     await gdb.ExecuteForStringResultAsync("EXPIRE", new string[] { sskey, opts.Ttl.ToString() });
                                 }
-                            });
-                        }
-                        break;
-                    case OpType.ZREM:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            tasks[offset++] = Task.Run(async () =>
+                            }
+                            break;
+                        case OpType.ZREM:
                             {
+                                var key = req.GenerateKey();
+                                var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
                                 await gdb.ExecuteForStringResultAsync("ZREM", new string[] { sskey, key });
                                 if (opts.Ttl > 0)
                                 {
                                     await gdb.ExecuteForStringResultAsync("EXPIRE", new string[] { sskey, opts.Ttl.ToString() });
                                 }
-                            });
-                        }
-                        break;
-                    default:
-                        throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
-                }
-                if (opts.Pool)
-                {
-                    gdbPool.Return(gdb);
-                }
+                            }
+                            break;
+                        default:
+                            throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
+                    }
+                    if (opts.Pool)
+                    {
+                        gdbPool.Return(gdb);
+                    }
 
-                if (offset == parallel)
-                {
-                    await Task.WhenAll(tasks);
-                    offset = 0;
-                    long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                    var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
                     RecordValue(thread_id, elapsed);
                 }
+                catch (Exception ex)
+                {
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerGarnetClient)}");
+                }
             }
-            Interlocked.Decrement(ref workerCount);
+            _ = Interlocked.Decrement(ref workerCount);
+        }
+
+        public async void OpRunnerGarnetClientParallel(int thread_id, int parallel)
+        {
+            _ = Interlocked.Increment(ref workerCount);
+            if (opts.BatchSize.First() != 1)
+                throw new Exception("Only batch size 1 supported for online bench");
+            var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
+            var r = new Random(thread_id + 100);
+            var tasks = new Task[parallel];
+            var offset = 0;
+
+            waiter.Wait();
+            ulong countErrors = 0;
+            while (true)
+            {
+                try
+                {
+                    if (cts.IsCancellationRequested) break;
+                    var rand = r.Next(100);
+                    var op = SelectOpType(rand);
+                    var startTimestamp = Stopwatch.GetTimestamp();
+
+                    var gdb = opts.Pool ? await gdbPool.GetAsync() : garnetClient;
+
+                    async Task<string> ZADD()
+                    {
+                        var key = req.GenerateKey();
+                        var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                        var resp = await gdb.ExecuteForStringResultAsync("ZADD", new string[] { sskey, "1.0", key });
+                        if (opts.Ttl > 0)
+                            return await gdb.ExecuteForStringResultAsync("EXPIRE", new string[] { sskey, opts.Ttl.ToString() });
+                        return resp;
+                    }
+
+                    async Task<string> ZREM()
+                    {
+                        var key = req.GenerateKey();
+                        var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                        var resp = await gdb.ExecuteForStringResultAsync("ZREM", new string[] { sskey, key });
+                        if (opts.Ttl > 0)
+                            return await gdb.ExecuteForStringResultAsync("EXPIRE", new string[] { sskey, opts.Ttl.ToString() });
+                        return resp;
+                    }
+
+                    tasks[offset++] = op switch
+                    {
+                        OpType.PING => gdb.PingAsync(),
+                        OpType.GET => gdb.StringGetAsync(req.GenerateKey()),
+                        OpType.SET => gdb.StringSetAsync(req.GenerateKey(), req.GenerateValue()),
+                        OpType.SETEX => gdb.ExecuteForStringResultAsync("SETEX", [req.GenerateKey(), opts.Ttl.ToString(), req.GenerateValue()]),
+                        OpType.DEL => gdb.KeyDeleteAsync(req.GenerateKey()),
+                        OpType.ZADD => ZADD(),
+                        OpType.ZREM => ZREM(),
+                        _ => throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!")
+                    };
+
+                    if (opts.Pool)
+                        gdbPool.Return(gdb);
+
+                    if (offset == parallel)
+                    {
+                        await Task.WhenAll(tasks);
+                        offset = 0;
+                        var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                        RecordValue(thread_id, elapsed);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerGarnetClientParallel)}");
+                }
+
+            }
+            _ = Interlocked.Decrement(ref workerCount);
         }
 
         public async void OpRunnerSERedis(int thread_id)
         {
-            Interlocked.Increment(ref workerCount);
+            _ = Interlocked.Increment(ref workerCount);
             if (opts.BatchSize.First() != 1)
                 throw new Exception("Only batch size 1 supported for online bench");
             var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
-            Random r = new(thread_id + 100);
+            var r = new Random(thread_id + 100);
 
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
-                if (cts.IsCancellationRequested) break;
-                var rand = r.Next(100);
-                OpType op = SelectOpType(rand);
-                long startTimestamp = Stopwatch.GetTimestamp();
-
-                var rd = opts.Pool ? redisPool.Get() : redis;
-                var db = rd.GetDatabase(0);
-                switch (op)
+                try
                 {
-                    case OpType.PING:
-                        await db.PingAsync();
-                        break;
-                    case OpType.GET:
-                        await db.StringGetAsync(req.GenerateKey());
-                        break;
-                    case OpType.SET:
-                        await db.StringSetAsync(req.GenerateKey(), req.GenerateValue());
-                        break;
-                    case OpType.SETEX:
-                        await db.StringSetAsync(req.GenerateKey(), req.GenerateValue(), TimeSpan.FromSeconds(opts.Ttl));
-                        break;
-                    case OpType.DEL:
-                        await db.KeyDeleteAsync(req.GenerateKey());
-                        break;
-                    case OpType.ZADD:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            await db.SortedSetAddAsync(sskey, key, 1.0);
-                            if (opts.Ttl > 0)
-                            {
-                                await db.KeyExpireAsync(sskey, TimeSpan.FromSeconds(opts.Ttl));
-                            }
-                        }
-                        break;
-                    case OpType.ZREM:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            await db.SortedSetRemoveAsync(sskey, key);
-                            if (opts.Ttl > 0)
-                            {
-                                await db.KeyExpireAsync(sskey, TimeSpan.FromSeconds(opts.Ttl));
-                            }
-                        }
-                        break;
-                    default:
-                        throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
-                }
-                if (opts.Pool)
-                {
-                    redisPool.Return(rd);
-                }
+                    if (cts.IsCancellationRequested) break;
+                    var rand = r.Next(100);
+                    var op = SelectOpType(rand);
+                    var startTimestamp = Stopwatch.GetTimestamp();
 
-                long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                RecordValue(thread_id, elapsed);
+                    var rd = opts.Pool ? redisPool.Get() : redis;
+                    var db = rd.GetDatabase(0);
+
+                    switch (op)
+                    {
+                        case OpType.PING:
+                            await db.PingAsync();
+                            break;
+                        case OpType.GET:
+                            await db.StringGetAsync(req.GenerateKey());
+                            break;
+                        case OpType.SET:
+                            await db.StringSetAsync(req.GenerateKey(), req.GenerateValue());
+                            break;
+                        case OpType.SETEX:
+                            await db.StringSetAsync(req.GenerateKey(), req.GenerateValue(), TimeSpan.FromSeconds(opts.Ttl));
+                            break;
+                        case OpType.DEL:
+                            await db.KeyDeleteAsync(req.GenerateKey());
+                            break;
+                        case OpType.ZADD:
+                            {
+                                var key = req.GenerateKey();
+                                var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                                await db.SortedSetAddAsync(sskey, key, 1.0);
+                                if (opts.Ttl > 0)
+                                {
+                                    await db.KeyExpireAsync(sskey, TimeSpan.FromSeconds(opts.Ttl));
+                                }
+                            }
+                            break;
+                        case OpType.ZREM:
+                            {
+                                var key = req.GenerateKey();
+                                var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                                await db.SortedSetRemoveAsync(sskey, key);
+                                if (opts.Ttl > 0)
+                                {
+                                    await db.KeyExpireAsync(sskey, TimeSpan.FromSeconds(opts.Ttl));
+                                }
+                            }
+                            break;
+                        default:
+                            throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
+                    }
+
+                    if (opts.Pool)
+                        redisPool.Return(rd);
+
+                    var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                    RecordValue(thread_id, elapsed);
+                }
+                catch (Exception ex)
+                {
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerSERedis)}");
+                }
             }
-            Interlocked.Decrement(ref workerCount);
+            _ = Interlocked.Decrement(ref workerCount);
         }
 
         public async void OpRunnerSERedisParallel(int thread_id, int parallel)
@@ -1103,82 +1089,91 @@ namespace Resp.benchmark
             if (opts.BatchSize.First() != 1)
                 throw new Exception("Only batch size 1 supported for online bench");
             var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
-            Random r = new(thread_id + 100);
-            Task[] tasks = new Task[parallel];
-            int offset = 0;
+            var r = new Random(thread_id + 100);
+            var tasks = new Task[parallel];
+            var offset = 0;
 
             waiter.Wait();
+            ulong countErrors = 0;
             while (true)
             {
-                if (cts.IsCancellationRequested) break;
-                var rand = r.Next(100);
-                OpType op = SelectOpType(rand);
-                long startTimestamp = Stopwatch.GetTimestamp();
+                try
+                {
+                    if (cts.IsCancellationRequested) break;
+                    var rand = r.Next(100);
+                    var op = SelectOpType(rand);
+                    var startTimestamp = Stopwatch.GetTimestamp();
 
-                var rd = opts.Pool ? await redisPool.GetAsync() : redis;
-                var db = rd.GetDatabase(0);
-                switch (op)
-                {
-                    case OpType.PING:
-                        tasks[offset++] = db.PingAsync();
-                        break;
-                    case OpType.GET:
-                        tasks[offset++] = db.StringGetAsync(req.GenerateKey());
-                        break;
-                    case OpType.SET:
-                        tasks[offset++] = db.StringSetAsync(req.GenerateKey(), req.GenerateValue());
-                        break;
-                    case OpType.SETEX:
-                        tasks[offset++] = db.StringSetAsync(req.GenerateKey(), req.GenerateValue(), TimeSpan.FromSeconds(opts.Ttl));
-                        break;
-                    case OpType.DEL:
-                        tasks[offset++] = db.KeyDeleteAsync(req.GenerateKey());
-                        break;
-                    case OpType.ZADD:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            tasks[offset++] = Task.Run(async () =>
+                    var rd = opts.Pool ? await redisPool.GetAsync() : redis;
+                    var db = rd.GetDatabase(0);
+                    switch (op)
+                    {
+                        case OpType.PING:
+                            tasks[offset++] = db.PingAsync();
+                            break;
+                        case OpType.GET:
+                            tasks[offset++] = db.StringGetAsync(req.GenerateKey());
+                            break;
+                        case OpType.SET:
+                            tasks[offset++] = db.StringSetAsync(req.GenerateKey(), req.GenerateValue());
+                            break;
+                        case OpType.SETEX:
+                            tasks[offset++] = db.StringSetAsync(req.GenerateKey(), req.GenerateValue(), TimeSpan.FromSeconds(opts.Ttl));
+                            break;
+                        case OpType.DEL:
+                            tasks[offset++] = db.KeyDeleteAsync(req.GenerateKey());
+                            break;
+                        case OpType.ZADD:
                             {
-                                await db.SortedSetAddAsync(sskey, key, 1.0);
-                                if (opts.Ttl > 0)
+                                var key = req.GenerateKey();
+                                var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                                tasks[offset++] = Task.Run(async () =>
                                 {
-                                    await db.KeyExpireAsync(sskey, TimeSpan.FromSeconds(opts.Ttl));
-                                }
-                            });
-                        }
-                        break;
-                    case OpType.ZREM:
-                        {
-                            var key = req.GenerateKey();
-                            var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
-                            tasks[offset++] = Task.Run(async () =>
+                                    await db.SortedSetAddAsync(sskey, key, 1.0);
+                                    if (opts.Ttl > 0)
+                                    {
+                                        await db.KeyExpireAsync(sskey, TimeSpan.FromSeconds(opts.Ttl));
+                                    }
+                                });
+                            }
+                            break;
+                        case OpType.ZREM:
                             {
-                                await db.SortedSetRemoveAsync(sskey, key);
-                                if (opts.Ttl > 0)
+                                var key = req.GenerateKey();
+                                var sskey = opts.SortedSetCardinality > 0 ? $"sskey{Math.Abs(HashUtils.StableHash(key)) % opts.SortedSetCardinality}" : "sskey";
+                                tasks[offset++] = Task.Run(async () =>
                                 {
-                                    await db.KeyExpireAsync(sskey, TimeSpan.FromSeconds(opts.Ttl));
-                                }
-                            });
-                        }
-                        break;
-                    default:
-                        throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
+                                    await db.SortedSetRemoveAsync(sskey, key);
+                                    if (opts.Ttl > 0)
+                                    {
+                                        await db.KeyExpireAsync(sskey, TimeSpan.FromSeconds(opts.Ttl));
+                                    }
+                                });
+                            }
+                            break;
+                        default:
+                            throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!");
+                    }
+
+                    if (opts.Pool)
+                        redisPool.Return(rd);
+
+                    if (offset == parallel)
+                    {
+                        await Task.WhenAll(tasks);
+                        offset = 0;
+                        var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
+                        RecordValue(thread_id, elapsed);
+                    }
                 }
-                if (opts.Pool)
+                catch (Exception ex)
                 {
-                    redisPool.Return(rd);
+                    if (countErrors++ % (1 << 15) == 0)
+                        logger?.LogError(ex, $"{nameof(OpRunnerSERedisParallel)}");
                 }
 
-                if (offset == parallel)
-                {
-                    await Task.WhenAll(tasks);
-                    offset = 0;
-                    long elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                    RecordValue(thread_id, elapsed);
-                }
             }
-            Interlocked.Decrement(ref workerCount);
+            _ = Interlocked.Decrement(ref workerCount);
         }
     }
 #pragma warning restore IDE0300

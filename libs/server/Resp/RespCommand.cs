@@ -1798,7 +1798,7 @@ namespace Garnet.server
             }
 
             // Read the array length
-            if (!RespReadUtils.ReadArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+            if (!RespReadUtils.ReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
             {
                 success = false;
                 return RespCommand.INVALID;
