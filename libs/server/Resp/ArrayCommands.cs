@@ -756,7 +756,6 @@ namespace Garnet.server
         private bool NetworkDBSIZE<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            readHead = (int)(ptr - recvBufferPtr);
             while (!RespWriteUtils.WriteInteger(storageApi.GetDbSize(), ref dcurr, dend))
                 SendAndReset();
             return true;
