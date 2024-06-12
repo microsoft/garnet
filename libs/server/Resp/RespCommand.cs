@@ -1758,6 +1758,7 @@ namespace Garnet.server
             if (cmd == RespCommand.NONE)
             {
                 cmd = ArrayParseCommand(ref count, ref success);
+                if (!success) return cmd;
             }
 
             // Set up parse state
