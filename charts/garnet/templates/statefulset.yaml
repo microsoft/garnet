@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "garnet.fullname" . }}
+  labels:
+    {{- include "garnet.labels" . | nindent 4 }}
+  {{- with .Values.statefulSet.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  serviceName: {{ include "garnet.fullname" . }}-headless
+  replicas: {{ .Values.statefulSet.replicas }}
+  revisionHistoryLimit: {{ .Values.statefulSet.revisionHistoryLimit }}
+  updateStrategy:
+    {{- with .Values.statefulSet.updateStrategy }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "garnet.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "garnet.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "garnet.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["./GarnetServer"]
+          {{- if .Values.containers.args }}
+          args:
+          {{- range .Values.containers.args }}
+          - {{ . | quote }}
+          {{- end }}
+          {{- end }}
+          ports:
+          - name: garnet
+            containerPort: {{ .Values.containers.port }}
+            protocol: TCP
+          {{- with .Values.containers.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.containers.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+          - name: data
+            mountPath: /data
+          {{- with .Values.extraVolumeMounts }}
+          {{- toYaml . | nindent 10}}
+          {{- end }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      dnsPolicy: {{ .Values.dnsPolicy }}
+      {{- with .Values.initContainers }}
+      initContainers:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or (eq .Values.persistence.enabled false) .Values.extraVolumes }}
+      volumes:
+      {{- if (eq .Values.persistence.enabled false) }}
+        - emptyDir: {}
+          name: data
+      {{- end }}
+      {{- with .Values.extraVolumes }}
+      {{- toYaml . | nindent 6}}
+      {{- end }}
+      {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      {{- if .Values.volumeClaimTemplates.storageClassName }}
+      {{- if (eq "-" .Values.volumeClaimTemplates.storageClassName) }}
+      storageClassName: ""
+      {{- else }}
+      storageClassName: {{ .Values.volumeClaimTemplates.storageClassName }}
+      {{- end }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.volumeClaimTemplates.requestsStorage }}
+  {{- end }}
