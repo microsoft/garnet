@@ -390,7 +390,7 @@ namespace Garnet.server
             var ptr = recvBufferPtr + readHead;
             _ = cmd switch
             {
-                RespCommand.GET => NetworkGET(ptr, ref storageApi),
+                RespCommand.GET => NetworkGET(ref storageApi),
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(ptr, false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(ptr, true, ref storageApi),

@@ -18,14 +18,14 @@ namespace Garnet.server
         /// <summary>
         /// GET
         /// </summary>
-        bool NetworkGET<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        bool NetworkGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
-                return NetworkGET_SG(ptr, ref storageApi);
+                return NetworkGET_SG(ref storageApi);
 
             if (useAsync)
-                return NetworkGETAsync(ptr, ref storageApi);
+                return NetworkGETAsync(ref storageApi);
 
             var key = parseState.GetByRef(0).SpanByte;
             if (NetworkSingleKeySlotVerify(ref key, true))
@@ -55,22 +55,12 @@ namespace Garnet.server
         /// <summary>
         /// GET - async version
         /// </summary>
-        bool NetworkGETAsync<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        bool NetworkGETAsync<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            byte* keyPtr = null;
-            int ksize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            readHead = (int)(ptr - recvBufferPtr);
-
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
+            var key = parseState.GetByRef(0).SpanByte;
+            if (NetworkSingleKeySlotVerify(ref key, true))
                 return true;
-
-            keyPtr -= sizeof(int); // length header
-            *(int*)keyPtr = ksize;
 
             // Optimistically ask storage to write output to network buffer
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
@@ -79,7 +69,7 @@ namespace Garnet.server
             // network buffer, if the operation goes pending.
             var h = new RespInputHeader { cmd = RespCommand.ASYNC };
             var input = SpanByte.FromPinnedStruct(&h);
-            var status = storageApi.GET_WithPending(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref o, asyncStarted, out bool pending);
+            var status = storageApi.GET_WithPending(ref key, ref input, ref o, asyncStarted, out bool pending);
 
             if (pending)
             {
@@ -108,15 +98,10 @@ namespace Garnet.server
         /// <summary>
         /// GET - scatter gather version
         /// </summary>
-        bool NetworkGET_SG<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        bool NetworkGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            byte* keyPtr = null;
-            int ksize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
+            var key = parseState.GetByRef(0).SpanByte;
             SpanByte input = default;
             long ctx = default;
             int firstPending = -1;
@@ -126,22 +111,17 @@ namespace Garnet.server
 
             for (; ; c++)
             {
-                if (c > 0 && !ParseGETAndKey(ref keyPtr, ref ksize, ref ptr))
+                if (c > 0 && !ParseGETAndKey(ref key))
                     break;
-                endReadHead = (int)(ptr - recvBufferPtr);
 
                 // Cluster verification
-                if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
+                if (NetworkSingleKeySlotVerify(ref key, true))
                     continue;
-
-                // Store length header for the key
-                keyPtr -= sizeof(int);
-                *(int*)keyPtr = ksize;
 
                 // Store index in context, since completions are not in order
                 ctx = firstPending == -1 ? 0 : c - firstPending;
 
-                var status = storageApi.GET_WithPending(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref o, ctx,
+                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx,
                     out bool isPending);
 
                 if (isPending)
@@ -225,20 +205,17 @@ namespace Garnet.server
             return true;
         }
 
-        bool ParseGETAndKey(ref byte* keyPtr, ref int ksize, ref byte* ptr)
+        bool ParseGETAndKey(ref SpanByte key)
         {
-            if (bytesRead - readHead >= 19)
+            var oldEndReadHead = readHead = endReadHead;
+            var cmd = ParseCommand(out var _, out bool success);
+            if (!success || cmd != RespCommand.GET)
             {
-                // GET key1 value1 => [*2\r\n$3\r\nGET\r\n$]3\r\nkey\r\n
-                if (*(long*)ptr == 724291344956994090L && *(2 + (int*)ptr) == 223626567 && *(ushort*)(12 + ptr) == 9226)
-                    ptr += 13;
-                else return false;
+                // If we either find no command or a different command, we back off
+                endReadHead = readHead = oldEndReadHead;
+                return false;
             }
-            else
-                return false;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            key = parseState.GetByRef(0).SpanByte;
             return true;
         }
 
