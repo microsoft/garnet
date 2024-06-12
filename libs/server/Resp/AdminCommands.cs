@@ -662,7 +662,6 @@ namespace Garnet.server
         {
             Debug.Assert(!_authenticator.IsAuthenticated || (_user != null));
 
-            if (cmd == RespCommand.INVALID) return false;
             if ((!_authenticator.IsAuthenticated || !_user.CanAccessCommand(cmd)) && !cmd.IsNoAuth())
             {
                 OnACLFailure(this, cmd);

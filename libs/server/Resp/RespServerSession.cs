@@ -314,7 +314,7 @@ namespace Garnet.server
                 }
 
                 // Check ACL permissions for the command
-                if (CheckACLPermissions(cmd))
+                if (cmd != RespCommand.INVALID && CheckACLPermissions(cmd))
                 {
                     if (txnManager.state != TxnState.None)
                     {
@@ -348,7 +348,7 @@ namespace Garnet.server
                     sessionMetrics.total_write_commands_processed += cmd.OneIfWrite();
                     sessionMetrics.total_read_commands_processed += cmd.OneIfRead();
                 }
-                SessionAsking = (byte)(SessionAsking == 0 ? SessionAsking : SessionAsking - 1);
+                if (SessionAsking != 0) SessionAsking = (byte)(SessionAsking - 1);
             }
 
             if (dcurr > networkSender.GetResponseObjectHead())
