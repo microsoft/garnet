@@ -11,6 +11,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.cluster;
 using Garnet.common;
 using GarnetClusterManagement;
@@ -762,27 +763,27 @@ namespace Garnet.test.cluster
             switch (*buf)
             {
                 case (byte)'+':
-                    if (!RespReadUtils.ReadSimpleString(out result, ref ptr, buf + bytesRead))
+                    if (!RespReadResponseUtils.ReadSimpleString(out result, ref ptr, buf + bytesRead))
                         return (0, 0);
                     count++;
                     break;
                 case (byte)':':
-                    if (!RespReadUtils.ReadIntegerAsString(out result, ref ptr, buf + bytesRead))
+                    if (!RespReadResponseUtils.ReadIntegerAsString(out result, ref ptr, buf + bytesRead))
                         return (0, 0);
                     count++;
                     break;
                 case (byte)'-':
-                    if (!RespReadUtils.ReadErrorAsString(out result, ref ptr, buf + bytesRead))
+                    if (!RespReadResponseUtils.ReadErrorAsString(out result, ref ptr, buf + bytesRead))
                         return (0, 0);
                     count++;
                     break;
                 case (byte)'$':
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out result, ref ptr, buf + bytesRead))
+                    if (!RespReadResponseUtils.ReadStringWithLengthHeader(out result, ref ptr, buf + bytesRead))
                         return (0, 0);
                     count++;
                     break;
                 case (byte)'*':
-                    if (!RespReadUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, buf + bytesRead))
+                    if (!RespReadResponseUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, buf + bytesRead))
                         return (0, 0);
                     count++;
                     break;
@@ -805,19 +806,19 @@ namespace Garnet.test.cluster
                 switch (*buf)
                 {
                     case (byte)'+':
-                        RespReadUtils.ReadSimpleString(out result, ref ptr, buf + data.Length);
+                        RespReadResponseUtils.ReadSimpleString(out result, ref ptr, buf + data.Length);
                         break;
                     case (byte)':':
-                        RespReadUtils.ReadIntegerAsString(out result, ref ptr, buf + data.Length);
+                        RespReadResponseUtils.ReadIntegerAsString(out result, ref ptr, buf + data.Length);
                         break;
                     case (byte)'-':
-                        RespReadUtils.ReadErrorAsString(out result, ref ptr, buf + data.Length);
+                        RespReadResponseUtils.ReadErrorAsString(out result, ref ptr, buf + data.Length);
                         break;
                     case (byte)'$':
-                        RespReadUtils.ReadStringWithLengthHeader(out result, ref ptr, buf + data.Length);
+                        RespReadResponseUtils.ReadStringWithLengthHeader(out result, ref ptr, buf + data.Length);
                         break;
                     case (byte)'*':
-                        RespReadUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, buf + data.Length);
+                        RespReadResponseUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, buf + data.Length);
                         break;
                     default:
                         throw new Exception("Unexpected response: " + Encoding.ASCII.GetString(new Span<byte>(buf, data.Length)).Replace("\n", "|").Replace("\r", "") + "]");
