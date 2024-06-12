@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "garnet.fullname" . }}
+  labels:
+    {{- include "garnet.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.containers.port }}
+      protocol: TCP
+      name: garnet
+  selector:
+    {{- include "garnet.selectorLabels" . | nindent 4 }}
