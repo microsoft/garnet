@@ -264,6 +264,7 @@ int32_t spdk_device_read_async(struct spdk_device *device, uint64_t source,
 exit:
     if (rc != 0) {
         if (io_context != NULL) {
+            spdk_free(io_context->buffer);
             free(io_context);
         }
     }
@@ -306,6 +307,7 @@ int32_t spdk_device_write_async(struct spdk_device *device, const void *source,
 exit:
     if (rc != 0) {
         if (io_context != NULL) {
+            spdk_free(io_context->buffer);
             free(io_context);
         }
     }

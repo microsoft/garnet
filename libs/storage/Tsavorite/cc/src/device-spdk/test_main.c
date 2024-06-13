@@ -32,11 +32,6 @@ int main()
         goto exit;
     }
 
-    if (rc != 0) {
-        fprintf(stderr, "failed to init semaphore errno: %d.\n", errno);
-        rc = errno;
-        goto exit;
-    }
     const char *data = "hello world";
     strcpy(g_data_buff, data);
     rc = spdk_device_write_async(device, g_data_buff, 0, SIZE_4K, io_callback,
