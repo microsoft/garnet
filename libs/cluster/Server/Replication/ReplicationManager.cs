@@ -75,14 +75,14 @@ namespace Garnet.cluster
         public long GetRecoveredSafeAofAddress()
         {
             var storeAofAddress = clusterProvider.replicationManager.GetCkptManager(StoreType.Main).RecoveredSafeAofAddress;
-            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? clusterProvider.replicationManager.GetCkptManager(StoreType.Main).RecoveredSafeAofAddress : long.MaxValue;
+            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : clusterProvider.replicationManager.GetCkptManager(StoreType.Object).RecoveredSafeAofAddress;
             return Math.Min(storeAofAddress, objectStoreAofAddress);
         }
 
         public long GetCurrentSafeAofAddress()
         {
             var storeAofAddress = clusterProvider.replicationManager.GetCkptManager(StoreType.Main).CurrentSafeAofAddress;
-            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? clusterProvider.replicationManager.GetCkptManager(StoreType.Main).CurrentSafeAofAddress : long.MaxValue;
+            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : clusterProvider.replicationManager.GetCkptManager(StoreType.Object).CurrentSafeAofAddress;
             return Math.Min(storeAofAddress, objectStoreAofAddress);
         }
 
