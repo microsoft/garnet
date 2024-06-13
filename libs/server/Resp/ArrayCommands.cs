@@ -11,6 +11,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Garnet.common;
 using Garnet.server.Custom;
+using Garnet.server.Module;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -810,7 +811,7 @@ namespace Garnet.server
         private bool NetworkMODULE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (count < 2)
+            if (count < 1) // At least one subcommand is required
                 return AbortWithWrongNumberOfArguments("MODULE", count);
 
             // Read sub-command
@@ -819,7 +820,7 @@ namespace Garnet.server
 
             if (subCommand.SequenceEqual(CmdStrings.LOAD) || subCommand.SequenceEqual(CmdStrings.load))
             {
-                if (count < 3)
+                if (count < 2) // At least module path is required
                     return AbortWithWrongNumberOfArguments("MODULE LOAD", count);
 
                 // Read path to module file
@@ -840,38 +841,27 @@ namespace Garnet.server
                     moduleArgs.Add(arg);
                 }
 
-                if (TryLoadModule(modulePathStr, moduleArgs, out var errorMsg))
+                if (LoadAssemblies([modulePathStr], out var loadedAssemblies, out var errorMsg))
                 {
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.WriteDirect(errorMsg, ref dcurr, dend))
-                        SendAndReset();
+                    Debug.Assert(loadedAssemblies != null && loadedAssemblies.Length == 1, "Only one assembly per module load");
+                    var loadedAssembly = loadedAssemblies[0];
+                    if (ModuleRegistrar.Instance.LoadModule(loadedAssembly, moduleArgs, out errorMsg))
+                    {
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
                 }
 
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                    SendAndReset();
+                return false;
             }
-
-            // TODO: check
-            //if (!DrainCommands(1))
-            //{
-            //    return false;
-            //}
 
             // TODO: pending implementation for other module commands support.
             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();
 
-            return true;
-        }
-
-        private bool TryLoadModule(string modulePathStr, List<string> moduleArgs, out ReadOnlySpan<byte> errorMessage)
-        {
-            if (!LoadAssemblies([modulePathStr], out var loadedAssemblies, out errorMessage))
-                return false;
-
-            // Get types from loaded assemblies
             return true;
         }
 
