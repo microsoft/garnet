@@ -130,7 +130,6 @@ namespace Garnet.cluster
             return false;
         }
 
-
         /// <summary>
         /// Check if the provided  slot is local from the perspective of the local config.
         /// 1. Local slots are assigned to workerId = 1
