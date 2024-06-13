@@ -154,7 +154,7 @@ namespace Garnet.server
         /// <summary>
         /// Expected size of this object
         /// </summary>
-        public const int Size = 12;
+        public const int Size = 4;
 
         /// <summary>
         /// Some result of operation (e.g., number of items added successfully)
