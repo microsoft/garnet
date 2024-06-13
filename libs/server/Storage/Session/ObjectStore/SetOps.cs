@@ -38,7 +38,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SADD;
-            rmwInput->count = 1;
+            rmwInput->arg1 = 1;
             rmwInput->done = 0;
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
@@ -71,7 +71,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SADD;
-            rmwInput->count = members.Length;
+            rmwInput->arg1 = members.Length;
             rmwInput->done = 0;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
@@ -112,7 +112,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SREM;
-            rmwInput->count = 1;
+            rmwInput->arg1 = 1;
             rmwInput->done = 0;
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
@@ -146,7 +146,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SREM;
-            rmwInput->count = members.Length;
+            rmwInput->arg1 = members.Length;
             rmwInput->done = 0;
 
             var inputLength = sizeof(ObjectInputHeader);
@@ -160,7 +160,7 @@ namespace Garnet.server
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            sremCount = output.countDone;
+            sremCount = output.result;
             return status;
         }
 
@@ -186,12 +186,12 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SCARD;
-            rmwInput->count = 1;
+            rmwInput->arg1 = 1;
             rmwInput->done = 0;
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            count = output.countDone;
+            count = output.result;
             return status;
         }
 
@@ -217,7 +217,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SMEMBERS;
-            rmwInput->count = 1;
+            rmwInput->arg1 = 1;
             rmwInput->done = 0;
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -274,7 +274,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Set;
             rmwInput->header.flags = 0;
             rmwInput->header.SetOp = SetOperation.SPOP;
-            rmwInput->count = count;
+            rmwInput->arg1 = count;
             rmwInput->done = 0;
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -319,7 +319,7 @@ namespace Garnet.server
             ((ObjectInputHeader*)rmwInput)->header.SetOp = SetOperation.SSCAN;
 
             // Number of tokens in the input after the header (match, value, count, value)
-            ((ObjectInputHeader*)rmwInput)->count = 4;
+            ((ObjectInputHeader*)rmwInput)->arg1 = 4;
             ((ObjectInputHeader*)rmwInput)->done = (int)cursor;
             rmwInput += ObjectInputHeader.Size;
 

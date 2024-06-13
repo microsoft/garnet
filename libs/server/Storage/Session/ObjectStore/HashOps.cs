@@ -43,7 +43,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = nx ? HashOperation.HSETNX : HashOperation.HSET;
-            rmwInput->count = 1;
+            rmwInput->arg1 = 1;
             rmwInput->done = 0;
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
@@ -77,7 +77,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HSET;
-            rmwInput->count = elements.Length;
+            rmwInput->arg1 = elements.Length;
             rmwInput->done = 0;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
@@ -132,7 +132,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HDEL;
-            rmwInput->count = fields.Length;
+            rmwInput->arg1 = fields.Length;
             rmwInput->done = 0;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
@@ -203,7 +203,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = fields == default ? HashOperation.HGETALL : HashOperation.HGET;
-            rmwInput->count = fields == default ? 0 : fields.Length;
+            rmwInput->arg1 = fields == default ? 0 : fields.Length;
             rmwInput->done = 0;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
@@ -254,12 +254,12 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HLEN;
-            rmwInput->count = 1;
+            rmwInput->arg1 = 1;
             rmwInput->done = 0;
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            items = output.countDone;
+            items = output.result;
 
             return status;
         }
@@ -287,12 +287,12 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HEXISTS;
-            rmwInput->count = 1;
+            rmwInput->arg1 = 1;
             rmwInput->done = 0;
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            exists = output.countDone == 1;
+            exists = output.result == 1;
 
             return status;
         }
@@ -318,7 +318,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HRANDFIELD;
-            rmwInput->count = 2;
+            rmwInput->arg1 = 2;
             rmwInput->done = 0;
 
             int inputLength = sizeof(ObjectInputHeader);
@@ -361,7 +361,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HRANDFIELD;
-            rmwInput->count = 4;
+            rmwInput->arg1 = 4;
             rmwInput->done = 0;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
@@ -431,7 +431,7 @@ namespace Garnet.server
             ((ObjectInputHeader*)rmwInput)->header.HashOp = HashOperation.HSCAN;
 
             // Number of tokens in the input after the header (match, value, count, value)
-            ((ObjectInputHeader*)rmwInput)->count = 4;
+            ((ObjectInputHeader*)rmwInput)->arg1 = 4;
             ((ObjectInputHeader*)rmwInput)->done = (int)cursor;
             rmwInput += ObjectInputHeader.Size;
 

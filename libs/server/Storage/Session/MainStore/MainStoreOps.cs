@@ -721,7 +721,7 @@ namespace Garnet.server
             }
 
             Debug.Assert(output.IsSpanByte);
-            if (found) timeoutSet = ((ObjectOutputHeader*)output.SpanByte.ToPointer())->countDone == 1;
+            if (found) timeoutSet = ((ObjectOutputHeader*)output.SpanByte.ToPointer())->result == 1;
 
             return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }

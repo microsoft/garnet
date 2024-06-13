@@ -52,12 +52,12 @@ namespace Garnet.server
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.GEOADD;
-                inputPtr->count = inputCount;
+                inputPtr->arg1 = inputCount;
                 inputPtr->done = zaddDoneCount;
 
                 var status = storageApi.GeoAdd(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
 
-                //restore input buffer
+                // Restore input buffer
                 *inputPtr = save;
 
                 switch (status)
@@ -71,7 +71,7 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     default:
-                        zaddDoneCount += output.countDone;
+                        zaddDoneCount += output.result;
                         zaddAddCount += output.opsDone;
 
                         // return if command is only partially done
@@ -150,7 +150,7 @@ namespace Garnet.server
                 // Prepare input
                 var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
 
-                // Save old values for possible revert
+                // Save input buffer
                 var save = *inputPtr;
 
                 var inputCount = count - 1;
@@ -172,7 +172,7 @@ namespace Garnet.server
                 inputPtr->header.type = GarnetObjectType.SortedSet;
                 inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = op;
-                inputPtr->count = inputCount;
+                inputPtr->arg1 = inputCount;
 
                 //take into account the ones already processed
                 inputPtr->done = zaddDoneCount;
@@ -181,7 +181,7 @@ namespace Garnet.server
 
                 var status = storageApi.GeoCommands(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
 
-                //restore input buffer
+                // Restore input buffer
                 *inputPtr = save;
 
                 if (status != GarnetStatus.OK)
@@ -195,7 +195,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        zaddDoneCount += objOutputHeader.countDone;
+                        zaddDoneCount += objOutputHeader.result;
                         zaddAddCount += objOutputHeader.opsDone;
                         //command partially done
                         if (zaddDoneCount < inputCount)

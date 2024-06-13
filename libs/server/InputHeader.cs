@@ -137,10 +137,12 @@ namespace Garnet.server
 
         [FieldOffset(0)]
         public RespInputHeader header;
+
         [FieldOffset(RespInputHeader.Size)]
-        public int count;
+        public int arg1;
+
         [FieldOffset(RespInputHeader.Size + sizeof(int))]
-        public int done;
+        public int arg2;
     }
 
     /// <summary>
@@ -155,21 +157,9 @@ namespace Garnet.server
         public const int Size = 12;
 
         /// <summary>
-        /// Amount of items processed
+        /// Some result of operation (e.g., number of items added successfully)
         /// </summary>
         [FieldOffset(0)]
-        public int countDone;
-
-        /// <summary>
-        /// Bytes that were read
-        /// </summary>
-        [FieldOffset(4)]
-        public int bytesDone;
-
-        /// <summary>
-        /// Amount of ops completed
-        /// </summary>
-        [FieldOffset(8)]
-        public int opsDone;
+        public int result;
     }
 }

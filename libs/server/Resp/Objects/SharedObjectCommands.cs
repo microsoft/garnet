@@ -91,7 +91,7 @@ namespace Garnet.server
             }
 
             // Tokens already processed: 3, command, key and cursor
-            (*(ObjectInputHeader*)(pcurr)).count = count - 2;
+            (*(ObjectInputHeader*)(pcurr)).arg1 = count - 2;
 
             // Cursor value
             (*(ObjectInputHeader*)(pcurr)).done = cursorValue;
@@ -125,7 +125,7 @@ namespace Garnet.server
                     // Process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     // Validation for partial input reading or error
-                    if (objOutputHeader.countDone == Int32.MinValue)
+                    if (objOutputHeader.result == Int32.MinValue)
                         return false;
                     ptr += objOutputHeader.bytesDone;
                     break;

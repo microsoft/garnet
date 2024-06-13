@@ -5,8 +5,6 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
-using System.Text;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -52,7 +50,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
             *_output = default;
 
-            int count = _input->count;
+            int count = _input->arg1;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
@@ -91,11 +89,6 @@ namespace Garnet.server
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref input_currptr, input + length))
                     return;
 
-                if (c < _input->done)
-                    continue;
-
-                _output->countDone++;
-
                 if (parsed)
                 {
                     var score = server.GeoHash.GeoToLongValue(latitude, longitude);
@@ -108,7 +101,7 @@ namespace Garnet.server
                             {
                                 sortedSetDict.Add(memberByteArray, score);
                                 sortedSet.Add((score, memberByteArray));
-                                _output->opsDone++;
+                                _output->result++;
 
                                 this.UpdateSize(member);
                                 elementsChanged++;
@@ -125,18 +118,14 @@ namespace Garnet.server
                         }
                     }
                 }
-                _output->opsDone = ch ? elementsChanged : _output->opsDone;
+                _output->result = ch ? elementsChanged : _output->result;
             }
-
-            // Write output
-            _output->bytesDone = (int)(input_currptr - input_startptr);
         }
 
         private void GeoHash(byte* input, int length, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
-            int prevDone = _input->done; // how many were previously done
-            int count = _input->count;
+            int count = _input->arg1;
             int countDone = 0;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
@@ -164,10 +153,7 @@ namespace Garnet.server
                         break;
 
                     countDone++;
-                    if (countDone <= prevDone) // skip processing previously done entries
-                        continue;
-
-                    _output.countDone++;
+                    _output.result++;
 
                     // Write output length when we have at least one item to report
                     if (countDone == 1)
@@ -188,9 +174,6 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
-
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
             }
             finally
             {
@@ -205,8 +188,7 @@ namespace Garnet.server
         private void GeoDistance(byte* input, int length, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
-            int prevDone = _input->done; // how many were previously done
-            int count = _input->count;
+            int count = _input->arg1;
             int countDone = 0;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
@@ -262,10 +244,7 @@ namespace Garnet.server
                     // There was no operation done but tokens were processed
                     countDone = count;
                 }
-
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = countDone;
+                _output.result = countDone;
             }
             finally
             {
@@ -280,8 +259,7 @@ namespace Garnet.server
         private void GeoPosition(byte* input, int length, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
-            int prevDone = _input->done;
-            int count = _input->count;
+            int count = _input->arg1;
             int countDone = 0;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
@@ -310,10 +288,7 @@ namespace Garnet.server
                         break;
 
                     countDone++;
-                    if (countDone <= prevDone)  // skip previously processed entries
-                        continue;
-
-                    _output.countDone++;
+                    _output.result++;
 
                     // Write output length when we have at least one item to report
                     if (countDone == 1)
@@ -342,9 +317,6 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
-
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
             }
             finally
             {
@@ -359,8 +331,7 @@ namespace Garnet.server
         private void GeoSearch(byte* input, int length, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
-            int prevDone = _input->done;
-            int count = _input->count;
+            int count = _input->arg1;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
@@ -452,7 +423,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteError("ERR required parameters are missing."u8, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    _input->count = 0;
+                    _input->arg1 = 0;
                     count = 0;
                 }
 
@@ -529,9 +500,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = _input->count - count;
+                _output.result = _input->arg1 - count;
             }
             finally
             {

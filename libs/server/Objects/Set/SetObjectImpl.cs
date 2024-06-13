@@ -21,7 +21,7 @@ namespace Garnet.server
             var _output = (ObjectOutputHeader*)output;
 
             *_output = default;
-            int count = _input->count;
+            int count = _input->arg1;
 
             byte* startptr = input + sizeof(ObjectInputHeader);
             byte* ptr = startptr;
@@ -35,23 +35,18 @@ namespace Garnet.server
 
                 if (set.Add(member))
                 {
-                    _output->countDone++;
+                    _output->result++;
                     this.UpdateSize(member);
                 }
-                _output->opsDone++;
             }
-            _output->bytesDone = (int)(ptr - startptr);
         }
 
         private void SetMembers(byte* input, int length, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
-            int prevDone = _input->done; // how many were previously done
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
-
-            int countDone = 0;
 
             bool isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -68,21 +63,10 @@ namespace Garnet.server
 
                 foreach (var item in set)
                 {
-                    if (countDone < prevDone) // skip processing previously done entries
-                    {
-                        countDone++;
-                        continue;
-                    }
-
                     while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    countDone++;
+                    _output.result++;
                 }
-
-                // Write bytes parsed from input and count done, into output footer                
-                _output.opsDone = countDone;
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = countDone;
             }
             finally
             {
@@ -116,10 +100,7 @@ namespace Garnet.server
 
                 while (!RespWriteUtils.WriteInteger(isMember ? 1 : 0, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                _output.opsDone = 1;
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = 1;
+                _output.result = 1;
             }
             finally
             {
@@ -136,56 +117,38 @@ namespace Garnet.server
             var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            int count = _input->count;
+            int count = _input->arg1;
             *_output = default;
             byte* startptr = input + sizeof(ObjectInputHeader);
             byte* ptr = startptr;
             byte* end = input + length;
 
-            int prevDone = _input->done;
-            int countDone = 0;
             while (count > 0)
             {
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var field, ref ptr, end))
                     break;
 
-                if (countDone < prevDone) // skip processing previously done entries
-                {
-                    countDone++;
-                    count--;
-                    continue;
-                }
-
                 if (set.Remove(field.ToArray()))
                 {
-                    countDone++;
+                    _output->result++;
                     this.UpdateSize(field, false);
                 }
-
                 count--;
             }
-
-            // Write bytes parsed from input and count done, into output footer
-            _output->bytesDone = (int)(ptr - startptr);
-            _output->countDone = countDone;
-            _output->opsDone = _input->count;
         }
 
         private void SetLength(byte* input, int length, byte* output)
         {
             // SCARD key
             var _output = (ObjectOutputHeader*)output;
-            _output->countDone = set.Count;
-            _output->opsDone = 1;
-            _output->bytesDone = 0;
+            _output->result = set.Count;
         }
 
         private void SetPop(byte* input, int length, ref SpanByteAndMemory output)
         {
             // SPOP key[count]
             var _input = (ObjectInputHeader*)input;
-            int count = _input->count;
-            int prevDone = _input->done;
+            int count = _input->arg1;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
@@ -245,10 +208,7 @@ namespace Garnet.server
                     }
                     countDone++;
                 }
-
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = countDone;
+                _output.result = countDone;
             }
             finally
             {
@@ -263,7 +223,7 @@ namespace Garnet.server
         private void SetRandomMember(byte* input, int length, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
-            int count = _input->count;
+            int count = _input->arg1;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
@@ -353,9 +313,7 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = countDone;
+                _output.result = countDone;
             }
             finally
             {

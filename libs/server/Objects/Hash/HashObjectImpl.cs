@@ -34,13 +34,10 @@ namespace Garnet.server
         private void HashGet(byte* input, int length, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
-            int count = _input->count; // for multiples fields
-            int prevDone = _input->done; // how many were previously done
+            int count = _input->arg1; // for multiples fields
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
-
-            int countDone = 0;
 
             bool isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -77,13 +74,6 @@ namespace Garnet.server
                     if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input + length))
                         break;
 
-                    if (countDone < prevDone) // Skip processing previously done entries
-                    {
-                        countDone++;
-                        count--;
-                        continue;
-                    }
-
                     if (hash.TryGetValue(key.ToArray(), out var _value))
                     {
                         while (!RespWriteUtils.WriteBulkString(_value, ref curr, end))
@@ -95,14 +85,9 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
 
-                    countDone++;
+                    _output.result++;
                     count--;
                 }
-
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = countDone;
-                _output.opsDone = countDone;
             }
             finally
             {
@@ -118,7 +103,7 @@ namespace Garnet.server
         {
             var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
-            int count = _input->count; // count of fields to delete
+            int count = _input->arg1; // count of fields to delete
             *_output = default;
 
             byte* startptr = input + sizeof(ObjectInputHeader);
@@ -130,24 +115,17 @@ namespace Garnet.server
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref ptr, end))
                     return;
 
-                if (c < _input->done)
-                    continue;
-
-                _output->countDone++;
-
                 if (hash.Remove(key.ToArray(), out var _value))
                 {
-                    _output->opsDone++;
+                    _output->result++;
                     this.UpdateSize(key, _value, false);
                 }
-
-                _output->bytesDone = (int)(ptr - startptr);
             }
         }
 
         private void HashLength(byte* output)
         {
-            ((ObjectOutputHeader*)output)->countDone = hash.Count;
+            ((ObjectOutputHeader*)output)->result = hash.Count;
         }
 
         private void HashStrLength(byte* input, int length, byte* output)
@@ -160,10 +138,7 @@ namespace Garnet.server
             *_output = default;
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, input + length))
                 return;
-
-            _output->opsDone = 1;
-            _output->countDone = hash.TryGetValue(key, out var _value) ? _value.Length : 0;
-            _output->bytesDone = (int)(ptr - startptr);
+            _output->result = hash.TryGetValue(key, out var _value) ? _value.Length : 0;
         }
 
         private void HashExists(byte* input, int length, byte* output)
@@ -171,7 +146,7 @@ namespace Garnet.server
             var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            int count = _input->count;
+            int count = _input->arg1;
             *_output = default;
 
             byte* startptr = input + sizeof(ObjectInputHeader);
@@ -181,9 +156,7 @@ namespace Garnet.server
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var field, ref ptr, end))
                 return;
 
-            _output->countDone = 1;
-            _output->opsDone = hash.ContainsKey(field) ? 1 : 0;
-            _output->bytesDone = (int)(ptr - startptr);
+            _output->result = hash.ContainsKey(field) ? 1 : 0;
         }
 
         private void HashKeys(byte* input, int length, ref SpanByteAndMemory output)
@@ -218,7 +191,7 @@ namespace Garnet.server
         {
             // HRANDFIELD key [count [WITHVALUES]]
             var _input = (ObjectInputHeader*)input;
-            int count = _input->count;
+            int count = _input->arg1;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
@@ -320,10 +293,7 @@ namespace Garnet.server
                     countDone = count;
                 }
 
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = countDone;
-                _output.opsDone = countDone;
+                _output.result = countDone;
             }
             finally
             {
@@ -342,7 +312,7 @@ namespace Garnet.server
             var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            int count = _input->count;
+            int count = _input->arg1;
             *_output = default;
 
             byte* startptr = input + sizeof(ObjectInputHeader);
@@ -357,36 +327,28 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var value, ref ptr, end))
                     return;
 
-                if (c < _input->done)
-                    continue;
-
                 byte[] _value = default;
                 if (!hash.TryGetValue(key, out _value))
                 {
                     hash.Add(key, value);
                     this.UpdateSize(key, value);
-                    _output->opsDone++;
+                    _output->result++;
                 }
                 else if ((_input->header.HashOp == HashOperation.HSET || _input->header.HashOp == HashOperation.HMSET) && _value != default && !_value.AsSpan().SequenceEqual(value))
                 {
                     hash[key] = value;
                     this.Size += Utility.RoundUp(value.Length, IntPtr.Size) - Utility.RoundUp(_value.Length, IntPtr.Size); // Skip overhead as existing item is getting replaced.
                 }
-                _output->countDone++;
-                _output->bytesDone = (int)(ptr - startptr);
             }
         }
 
         private void IncrementIntegerOrFloat(HashOperation op, byte* input, int length, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
-            int count = _input->count;
-            int prevDone = _input->done; // how many were previously done
+            int count = _input->arg1;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
-
-            int countDone = 0;
 
             bool isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -398,7 +360,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
 
             // This value is used to indicate partial command execution
-            _output.opsDone = int.MinValue;
+            _output.result = int.MinValue;
 
             try
             {
@@ -466,13 +428,7 @@ namespace Garnet.server
                         }
                     }
                 }
-
-                countDone++;
-
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = countDone;
-                _output.opsDone = countDone;
+                _output.result = 1;
             }
             finally
             {
@@ -497,7 +453,6 @@ namespace Garnet.server
 
             var curr = ptr;
             var end = curr + output.Length;
-            var countDone = 0;
 
             ObjectOutputHeader _output = default;
             try
@@ -517,13 +472,8 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
-                    countDone++;
+                    _output.result++;
                 }
-
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = hash.Count;
-                _output.opsDone = countDone;
             }
             finally
             {

@@ -35,7 +35,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.List;
             rmwInput->header.flags = 0;
             rmwInput->header.ListOp = lop;
-            rmwInput->count = elements.Length;
+            rmwInput->arg1 = elements.Length;
             rmwInput->done = 0;
 
             //Iterate through all inputs and add them to the scratch buffer in RESP format
@@ -49,7 +49,7 @@ namespace Garnet.server
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            itemsDoneCount = output.countDone;
+            itemsDoneCount = output.result;
             return status;
         }
 
@@ -78,11 +78,11 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.List;
             rmwInput->header.flags = 0;
             rmwInput->header.ListOp = lop;
-            rmwInput->count = 1;
+            rmwInput->arg1 = 1;
             rmwInput->done = 0;
 
             var status = RMWObjectStoreOperation(key.ToArray(), element, out var output, ref objectStoreContext);
-            itemsDoneCount = output.countDone;
+            itemsDoneCount = output.result;
 
             return status;
         }
@@ -130,7 +130,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.List;
             rmwInput->header.flags = 0;
             rmwInput->header.ListOp = lop;
-            rmwInput->count = count;
+            rmwInput->arg1 = count;
             rmwInput->done = 0;
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -168,12 +168,12 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.List;
             rmwInput->header.flags = 0;
             rmwInput->header.ListOp = ListOperation.LLEN;
-            rmwInput->count = count;
+            rmwInput->arg1 = count;
             rmwInput->done = 0;
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            count = output.countDone;
+            count = output.result;
             return status;
         }
 
@@ -314,7 +314,7 @@ namespace Garnet.server
             rmwInput->header.type = GarnetObjectType.List;
             rmwInput->header.flags = 0;
             rmwInput->header.ListOp = ListOperation.LTRIM;
-            rmwInput->count = start;
+            rmwInput->arg1 = start;
             rmwInput->done = stop;
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);

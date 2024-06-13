@@ -13,16 +13,6 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// Session counter of number of Set entries partially done
-        /// </summary>
-        int setItemsDoneCount;
-
-        /// <summary>
-        /// Session counter of number of Set operations partially done
-        /// </summary>
-        int setOpsCount;
-
-        /// <summary>
         ///  Add the specified members to the set at key.
         ///  Specified members that are already a member of this set are ignored. 
         ///  If key does not exist, a new set is created.
@@ -65,7 +55,7 @@ namespace Garnet.server
                 inputPtr->header.type = GarnetObjectType.Set;
                 inputPtr->header.flags = 0;
                 inputPtr->header.SetOp = SetOperation.SADD;
-                inputPtr->count = inputCount;
+                inputPtr->arg1 = inputCount;
                 inputPtr->done = setOpsCount;
 
                 var status = storageApi.SetAdd(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
@@ -84,7 +74,7 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     default:
-                        setItemsDoneCount += output.countDone;
+                        setItemsDoneCount += output.result;
                         setOpsCount += output.opsDone;
 
                         // Reset buffer and return if SADD is only partially done
@@ -395,7 +385,7 @@ namespace Garnet.server
                 inputPtr->header.type = GarnetObjectType.Set;
                 inputPtr->header.flags = 0;
                 inputPtr->header.SetOp = SetOperation.SREM;
-                inputPtr->count = inputCount;
+                inputPtr->arg1 = inputCount;
                 inputPtr->done = setItemsDoneCount;
 
                 var status = storageApi.SetRemove(key, new ArgSlice((byte*)inputPtr, inputLength), out var output);
@@ -413,7 +403,7 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        setItemsDoneCount += output.countDone;
+                        setItemsDoneCount += output.result;
                         setOpsCount += output.opsDone;
 
                         // Reset buffer and return if command is only partially done
@@ -484,7 +474,7 @@ namespace Garnet.server
                 inputPtr->header.type = GarnetObjectType.Set;
                 inputPtr->header.flags = 0;
                 inputPtr->header.SetOp = SetOperation.SCARD;
-                inputPtr->count = 1;
+                inputPtr->arg1 = 1;
                 inputPtr->done = 0;
 
                 var status = storageApi.SetLength(key, new ArgSlice((byte*)inputPtr, inputLength), out var output);
@@ -496,7 +486,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         // Process output
-                        while (!RespWriteUtils.WriteInteger(output.countDone, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -554,7 +544,7 @@ namespace Garnet.server
                 inputPtr->header.type = GarnetObjectType.Set;
                 inputPtr->header.flags = 0;
                 inputPtr->header.SetOp = SetOperation.SMEMBERS;
-                inputPtr->count = count;
+                inputPtr->arg1 = count;
                 inputPtr->done = setItemsDoneCount;
 
                 // Prepare GarnetObjectStore output
@@ -578,7 +568,7 @@ namespace Garnet.server
                         // Process output
                         var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                         ptr += objOutputHeader.bytesDone;
-                        setItemsDoneCount += objOutputHeader.countDone;
+                        setItemsDoneCount += objOutputHeader.result;
                         if (setItemsDoneCount > objOutputHeader.opsDone)
                             return false;
                         break;
@@ -632,7 +622,7 @@ namespace Garnet.server
             inputPtr->header.type = GarnetObjectType.Set;
             inputPtr->header.flags = 0;
             inputPtr->header.SetOp = SetOperation.SISMEMBER;
-            inputPtr->count = count - 2;
+            inputPtr->arg1 = count - 2;
             inputPtr->done = 0;
 
             // Prepare GarnetObjectStore output
@@ -656,7 +646,7 @@ namespace Garnet.server
                     // Process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     ptr += objOutputHeader.bytesDone;
-                    setItemsDoneCount += objOutputHeader.countDone;
+                    setItemsDoneCount += objOutputHeader.result;
                     if (setItemsDoneCount > objOutputHeader.opsDone)
                         return false;
                     break;
@@ -717,7 +707,7 @@ namespace Garnet.server
             inputPtr->header.type = GarnetObjectType.Set;
             inputPtr->header.flags = 0;
             inputPtr->header.SetOp = SetOperation.SPOP;
-            inputPtr->count = int.MinValue;
+            inputPtr->arg1 = int.MinValue;
 
             int countParameter = 0;
             if (count == 2)
@@ -751,7 +741,7 @@ namespace Garnet.server
                     readHead = (int)(ptr - recvBufferPtr);
                     return true;
                 }
-                inputPtr->count = countParameter;
+                inputPtr->arg1 = countParameter;
             }
 
             inputPtr->done = 0;
@@ -770,7 +760,7 @@ namespace Garnet.server
                     // Process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     ptr += objOutputHeader.bytesDone;
-                    setItemsDoneCount += objOutputHeader.countDone;
+                    setItemsDoneCount += objOutputHeader.result;
                     if (count == 2 && setItemsDoneCount < countParameter)
                         return false;
                     break;
@@ -903,7 +893,7 @@ namespace Garnet.server
             inputPtr->header.type = GarnetObjectType.Set;
             inputPtr->header.flags = 0;
             inputPtr->header.SetOp = SetOperation.SRANDMEMBER;
-            inputPtr->count = Int32.MinValue;
+            inputPtr->arg1 = Int32.MinValue;
 
             int countParameter = 0;
             if (count == 2)
@@ -937,7 +927,7 @@ namespace Garnet.server
                     readHead = (int)(ptr - recvBufferPtr);
                     return true;
                 }
-                inputPtr->count = countParameter;
+                inputPtr->arg1 = countParameter;
             }
 
             inputPtr->done = 0;
@@ -956,7 +946,7 @@ namespace Garnet.server
                     // Process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     ptr += objOutputHeader.bytesDone;
-                    setItemsDoneCount += objOutputHeader.countDone;
+                    setItemsDoneCount += objOutputHeader.result;
                     if (count == 2 && setItemsDoneCount < countParameter)
                         return false;
                     break;
