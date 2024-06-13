@@ -259,7 +259,7 @@ namespace Garnet.server
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            items = output.result;
+            items = output.result1;
 
             return status;
         }
@@ -292,7 +292,7 @@ namespace Garnet.server
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            exists = output.result == 1;
+            exists = output.result1 == 1;
 
             return status;
         }

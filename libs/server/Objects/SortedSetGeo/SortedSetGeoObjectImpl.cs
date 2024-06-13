@@ -101,7 +101,7 @@ namespace Garnet.server
                             {
                                 sortedSetDict.Add(memberByteArray, score);
                                 sortedSet.Add((score, memberByteArray));
-                                _output->result++;
+                                _output->result1++;
 
                                 this.UpdateSize(member);
                                 elementsChanged++;
@@ -118,7 +118,7 @@ namespace Garnet.server
                         }
                     }
                 }
-                _output->result = ch ? elementsChanged : _output->result;
+                _output->result1 = ch ? elementsChanged : _output->result1;
             }
         }
 
@@ -153,7 +153,7 @@ namespace Garnet.server
                         break;
 
                     countDone++;
-                    _output.result++;
+                    _output.result1++;
 
                     // Write output length when we have at least one item to report
                     if (countDone == 1)
@@ -244,7 +244,7 @@ namespace Garnet.server
                     // There was no operation done but tokens were processed
                     countDone = count;
                 }
-                _output.result = countDone;
+                _output.result1 = countDone;
             }
             finally
             {
@@ -288,7 +288,7 @@ namespace Garnet.server
                         break;
 
                     countDone++;
-                    _output.result++;
+                    _output.result1++;
 
                     // Write output length when we have at least one item to report
                     if (countDone == 1)
@@ -500,7 +500,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
-                _output.result = _input->arg1 - count;
+                _output.result1 = _input->arg1 - count;
             }
             finally
             {

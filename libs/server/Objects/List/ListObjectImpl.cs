@@ -27,7 +27,7 @@ namespace Garnet.server
             *_output = default;
 
             //indicates partial execution
-            _output->result = Int32.MinValue;
+            _output->result1 = Int32.MinValue;
 
             // get the source string to remove
             if (!RespReadUtils.TrySliceWithLengthHeader(out var itemSpan, ref ptr, end))
@@ -35,7 +35,7 @@ namespace Garnet.server
 
             var count = _input->arg1;
             var removedCount = 0;
-            _output->result = 0;
+            _output->result1 = 0;
 
             //remove all equals to item
             if (count == 0)
@@ -90,7 +90,7 @@ namespace Garnet.server
             *_output = default;
 
             //indicates partial execution
-            _output->result = int.MinValue;
+            _output->result1 = int.MinValue;
 
             if (list.Count > 0)
             {
@@ -128,7 +128,7 @@ namespace Garnet.server
                 }
                 while ((currentNode = currentNode.Next) != null);
 
-                _output->result = _output->opsDone;
+                _output->result1 = _output->opsDone;
             }
 
             // Write bytes parsed from input and count done, into output footer
@@ -162,7 +162,7 @@ namespace Garnet.server
             }
             finally
             {
-                _output.result = _output.opsDone;
+                _output.result1 = _output.opsDone;
                 _output.bytesDone = 0;
 
                 while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
@@ -224,7 +224,7 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteBulkString(bytes, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         }
-                        _output.result = count;
+                        _output.result1 = count;
                     }
                 }
             }
@@ -267,7 +267,7 @@ namespace Garnet.server
                             list.RemoveLast();
                             this.UpdateSize(value, false);
                         }
-                        outputHeader->result = numDeletes;
+                        outputHeader->result1 = numDeletes;
                     }
                     else
                     {
@@ -282,7 +282,7 @@ namespace Garnet.server
                             }
                             i++;
                         }
-                        outputHeader->result = i;
+                        outputHeader->result1 = i;
                     }
                 }
             }
@@ -290,7 +290,7 @@ namespace Garnet.server
 
         private void ListLength(byte* input, byte* output)
         {
-            ((ObjectOutputHeader*)output)->result = list.Count;
+            ((ObjectOutputHeader*)output)->result1 = list.Count;
         }
 
         private void ListPush(byte* input, int length, byte* output, bool fAddAtHead)
@@ -305,7 +305,7 @@ namespace Garnet.server
             byte* ptr = startptr;
             byte* end = input + length;
 
-            _output->result = 0;
+            _output->result1 = 0;
             for (int c = 0; c < count; c++)
             {
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var value, ref ptr, end))
@@ -319,7 +319,7 @@ namespace Garnet.server
 
                 this.UpdateSize(value);
             }
-            _output->result = count;
+            _output->result1 = count;
         }
 
         private void ListPop(byte* input, ref SpanByteAndMemory output, bool fDelAtHead)
@@ -374,7 +374,7 @@ namespace Garnet.server
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                     count--;
-                    _output.result++;
+                    _output.result1++;
                 }
             }
             finally
@@ -445,7 +445,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref output_currptr, output_end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref output_startptr, ref ptrHandle, ref output_currptr, ref output_end);
 
-                _output.result = 1;
+                _output.result1 = 1;
             }
             finally
             {

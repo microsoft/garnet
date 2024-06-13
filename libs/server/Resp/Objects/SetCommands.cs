@@ -74,7 +74,7 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     default:
-                        setItemsDoneCount += output.result;
+                        setItemsDoneCount += output.result1;
                         setOpsCount += output.opsDone;
 
                         // Reset buffer and return if SADD is only partially done
@@ -403,7 +403,7 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        setItemsDoneCount += output.result;
+                        setItemsDoneCount += output.result1;
                         setOpsCount += output.opsDone;
 
                         // Reset buffer and return if command is only partially done
@@ -486,7 +486,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         // Process output
-                        while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -568,7 +568,7 @@ namespace Garnet.server
                         // Process output
                         var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                         ptr += objOutputHeader.bytesDone;
-                        setItemsDoneCount += objOutputHeader.result;
+                        setItemsDoneCount += objOutputHeader.result1;
                         if (setItemsDoneCount > objOutputHeader.opsDone)
                             return false;
                         break;
@@ -646,7 +646,7 @@ namespace Garnet.server
                     // Process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     ptr += objOutputHeader.bytesDone;
-                    setItemsDoneCount += objOutputHeader.result;
+                    setItemsDoneCount += objOutputHeader.result1;
                     if (setItemsDoneCount > objOutputHeader.opsDone)
                         return false;
                     break;
@@ -760,7 +760,7 @@ namespace Garnet.server
                     // Process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     ptr += objOutputHeader.bytesDone;
-                    setItemsDoneCount += objOutputHeader.result;
+                    setItemsDoneCount += objOutputHeader.result1;
                     if (count == 2 && setItemsDoneCount < countParameter)
                         return false;
                     break;
@@ -946,7 +946,7 @@ namespace Garnet.server
                     // Process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     ptr += objOutputHeader.bytesDone;
-                    setItemsDoneCount += objOutputHeader.result;
+                    setItemsDoneCount += objOutputHeader.result1;
                     if (count == 2 && setItemsDoneCount < countParameter)
                         return false;
                     break;

@@ -20,7 +20,7 @@ namespace Garnet.server
         public GarnetStatus SortedSetAdd(byte[] key, ArgSlice input, out int zaddCount)
         {
             var status = storageSession.SortedSetAdd(key, input, out var output, ref objectContext);
-            zaddCount = output.result;
+            zaddCount = output.result1;
             return status;
         }
 

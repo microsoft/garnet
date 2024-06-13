@@ -160,7 +160,7 @@ namespace Garnet.server
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            sremCount = output.result;
+            sremCount = output.result1;
             return status;
         }
 
@@ -191,7 +191,7 @@ namespace Garnet.server
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            count = output.result;
+            count = output.result1;
             return status;
         }
 

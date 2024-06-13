@@ -35,7 +35,7 @@ namespace Garnet.server
 
                 if (set.Add(member))
                 {
-                    _output->result++;
+                    _output->result1++;
                     this.UpdateSize(member);
                 }
             }
@@ -65,7 +65,7 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    _output.result++;
+                    _output.result1++;
                 }
             }
             finally
@@ -100,7 +100,7 @@ namespace Garnet.server
 
                 while (!RespWriteUtils.WriteInteger(isMember ? 1 : 0, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                _output.result = 1;
+                _output.result1 = 1;
             }
             finally
             {
@@ -130,7 +130,7 @@ namespace Garnet.server
 
                 if (set.Remove(field.ToArray()))
                 {
-                    _output->result++;
+                    _output->result1++;
                     this.UpdateSize(field, false);
                 }
                 count--;
@@ -141,7 +141,7 @@ namespace Garnet.server
         {
             // SCARD key
             var _output = (ObjectOutputHeader*)output;
-            _output->result = set.Count;
+            _output->result1 = set.Count;
         }
 
         private void SetPop(byte* input, int length, ref SpanByteAndMemory output)
@@ -208,7 +208,7 @@ namespace Garnet.server
                     }
                     countDone++;
                 }
-                _output.result = countDone;
+                _output.result1 = countDone;
             }
             finally
             {
@@ -313,7 +313,7 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
-                _output.result = countDone;
+                _output.result1 = countDone;
             }
             finally
             {

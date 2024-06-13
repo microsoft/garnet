@@ -125,7 +125,7 @@ namespace Garnet.server
                     // Process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     // Validation for partial input reading or error
-                    if (objOutputHeader.result == Int32.MinValue)
+                    if (objOutputHeader.result1 == Int32.MinValue)
                         return false;
                     ptr += objOutputHeader.bytesDone;
                     break;

@@ -77,11 +77,11 @@ namespace Garnet.server
             // Restore input buffer
             *inputPtr = save;
 
-            listItemsDoneCount += output.result;
+            listItemsDoneCount += output.result1;
             listOpsCount += output.opsDone;
 
             // Return if command is only partially done
-            if (output.result == Int32.MinValue && listOpsCount < inputCount)
+            if (output.result1 == Int32.MinValue && listOpsCount < inputCount)
                 return false;
 
             if (status == GarnetStatus.WRONGTYPE)
@@ -256,7 +256,7 @@ namespace Garnet.server
                         break;
                     default:
                         // Process output
-                        while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                             SendAndReset();
                         break;
                 }
@@ -566,7 +566,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         //check for partial execution
-                        if (output.result == int.MinValue)
+                        if (output.result1 == int.MinValue)
                             return false;
                         //process output
                         ptr += output.bytesDone;
@@ -643,7 +643,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         //check for partial execution
-                        if (output.result == int.MinValue)
+                        if (output.result1 == int.MinValue)
                             return false;
                         //process output
                         ptr += output.bytesDone;

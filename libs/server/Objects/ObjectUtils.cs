@@ -74,7 +74,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
 
             // This value is used to indicate partial command execution
-            _output.result = int.MinValue;
+            _output.result1 = int.MinValue;
             bytesDone = 0;
 
             while (leftTokens > 0)
@@ -157,7 +157,7 @@ namespace Garnet.server
                                 ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
-                _output.result = items.Count;
+                _output.result1 = items.Count;
             }
             finally
             {

@@ -71,7 +71,7 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                     default:
-                        zaddDoneCount += output.result;
+                        zaddDoneCount += output.result1;
                         zaddAddCount += output.opsDone;
 
                         // return if command is only partially done
@@ -195,7 +195,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        zaddDoneCount += objOutputHeader.result;
+                        zaddDoneCount += objOutputHeader.result1;
                         zaddAddCount += objOutputHeader.opsDone;
                         //command partially done
                         if (zaddDoneCount < inputCount)

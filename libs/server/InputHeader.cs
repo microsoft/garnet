@@ -160,6 +160,6 @@ namespace Garnet.server
         /// Some result of operation (e.g., number of items added successfully)
         /// </summary>
         [FieldOffset(0)]
-        public int result;
+        public int result1;
     }
 }

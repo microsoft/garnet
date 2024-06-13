@@ -49,7 +49,7 @@ namespace Garnet.server
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            itemsDoneCount = output.result;
+            itemsDoneCount = output.result1;
             return status;
         }
 
@@ -82,7 +82,7 @@ namespace Garnet.server
             rmwInput->done = 0;
 
             var status = RMWObjectStoreOperation(key.ToArray(), element, out var output, ref objectStoreContext);
-            itemsDoneCount = output.result;
+            itemsDoneCount = output.result1;
 
             return status;
         }
@@ -173,7 +173,7 @@ namespace Garnet.server
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            count = output.result;
+            count = output.result1;
             return status;
         }
 

@@ -74,7 +74,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                    while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
@@ -133,7 +133,7 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        while (!RespWriteUtils.WriteInteger(rmwOutput.result, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(rmwOutput.result1, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -199,7 +199,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         // Process output
-                        while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -572,16 +572,16 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         // Process response
-                        if (output.result == int.MaxValue)
+                        if (output.result1 == int.MaxValue)
                         {
                             // Error in arguments
                             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT, ref dcurr, dend))
                                 SendAndReset();
                         }
-                        else if (output.result == int.MinValue)  // command partially executed
+                        else if (output.result1 == int.MinValue)  // command partially executed
                             return false;
                         else
-                            while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                                 SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -661,16 +661,16 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         // Process response
-                        if (output.result == int.MaxValue)
+                        if (output.result1 == int.MaxValue)
                         {
                             // Error in arguments
                             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING, ref dcurr, dend))
                                 SendAndReset();
                         }
-                        else if (output.result == int.MinValue)  // command partially executed
+                        else if (output.result1 == int.MinValue)  // command partially executed
                             return false;
                         else
-                            while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                                 SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -744,9 +744,9 @@ namespace Garnet.server
                         //process output
                         var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                         //check for partial execution
-                        if (objOutputHeader.result == int.MinValue)
+                        if (objOutputHeader.result1 == int.MinValue)
                             return false;
-                        else if (objOutputHeader.result == int.MaxValue)
+                        else if (objOutputHeader.result1 == int.MaxValue)
                             errorMessage = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
                         break;
                     case GarnetStatus.WRONGTYPE:
@@ -899,7 +899,7 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        if (output.result == int.MaxValue)
+                        if (output.result1 == int.MaxValue)
                         {
                             var errorMessage = command == RespCommand.ZREMRANGEBYRANK ?
                                 CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER :
@@ -909,10 +909,10 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                                 SendAndReset();
                         }
-                        else if (output.result == int.MinValue)  // command partially executed
+                        else if (output.result1 == int.MinValue)  // command partially executed
                             return false;
                         else
-                            while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                                 SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:

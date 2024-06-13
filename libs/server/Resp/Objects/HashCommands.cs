@@ -86,7 +86,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                            while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                                 SendAndReset();
                         }
                         break;
@@ -249,7 +249,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         // Process output
-                        while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -318,7 +318,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         // Process output
-                        while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -385,7 +385,7 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -450,7 +450,7 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        while (!RespWriteUtils.WriteInteger(output.result, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:

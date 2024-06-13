@@ -85,7 +85,7 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
 
-                    _output.result++;
+                    _output.result1++;
                     count--;
                 }
             }
@@ -117,7 +117,7 @@ namespace Garnet.server
 
                 if (hash.Remove(key.ToArray(), out var _value))
                 {
-                    _output->result++;
+                    _output->result1++;
                     this.UpdateSize(key, _value, false);
                 }
             }
@@ -125,7 +125,7 @@ namespace Garnet.server
 
         private void HashLength(byte* output)
         {
-            ((ObjectOutputHeader*)output)->result = hash.Count;
+            ((ObjectOutputHeader*)output)->result1 = hash.Count;
         }
 
         private void HashStrLength(byte* input, int length, byte* output)
@@ -138,7 +138,7 @@ namespace Garnet.server
             *_output = default;
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, input + length))
                 return;
-            _output->result = hash.TryGetValue(key, out var _value) ? _value.Length : 0;
+            _output->result1 = hash.TryGetValue(key, out var _value) ? _value.Length : 0;
         }
 
         private void HashExists(byte* input, int length, byte* output)
@@ -156,7 +156,7 @@ namespace Garnet.server
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var field, ref ptr, end))
                 return;
 
-            _output->result = hash.ContainsKey(field) ? 1 : 0;
+            _output->result1 = hash.ContainsKey(field) ? 1 : 0;
         }
 
         private void HashKeys(byte* input, int length, ref SpanByteAndMemory output)
@@ -293,7 +293,7 @@ namespace Garnet.server
                     countDone = count;
                 }
 
-                _output.result = countDone;
+                _output.result1 = countDone;
             }
             finally
             {
@@ -332,7 +332,7 @@ namespace Garnet.server
                 {
                     hash.Add(key, value);
                     this.UpdateSize(key, value);
-                    _output->result++;
+                    _output->result1++;
                 }
                 else if ((_input->header.HashOp == HashOperation.HSET || _input->header.HashOp == HashOperation.HMSET) && _value != default && !_value.AsSpan().SequenceEqual(value))
                 {
@@ -360,7 +360,7 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
 
             // This value is used to indicate partial command execution
-            _output.result = int.MinValue;
+            _output.result1 = int.MinValue;
 
             try
             {
@@ -428,7 +428,7 @@ namespace Garnet.server
                         }
                     }
                 }
-                _output.result = 1;
+                _output.result1 = 1;
             }
             finally
             {
@@ -472,7 +472,7 @@ namespace Garnet.server
                         while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
-                    _output.result++;
+                    _output.result1++;
                 }
             }
             finally
