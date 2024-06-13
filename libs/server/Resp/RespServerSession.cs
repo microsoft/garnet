@@ -463,8 +463,8 @@ namespace Garnet.server
 
             var success = cmd switch
             {
-                RespCommand.MGET => NetworkMGET(count, ptr, ref storageApi),
-                RespCommand.MSET => NetworkMSET(count, ptr, ref storageApi),
+                RespCommand.MGET => NetworkMGET(ref storageApi),
+                RespCommand.MSET => NetworkMSET(ref storageApi),
                 RespCommand.MSETNX => NetworkMSETNX(count, ptr, ref storageApi),
                 RespCommand.UNLINK => NetworkDEL(count, ptr, ref storageApi),
                 RespCommand.SELECT => NetworkSELECT(ptr),
@@ -857,7 +857,7 @@ namespace Garnet.server
         {
             // #if DEBUG
             // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
-            // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
+            Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
             // #endif
 
             if ((int)(dcurr - d) > 0)
@@ -987,6 +987,21 @@ namespace Garnet.server
             }
             return false;
         }
+
+        /// <summary>
+        /// This method is used to verify slot ownership for provided sequence of keys.
+        /// On error this method writes to response buffer and drains recv buffer.
+        /// </summary>
+        bool NetworkArraySlotVerify(bool interleavedKeys, bool readOnly)
+        {
+            if (clusterSession == null) return false;
+            var ptr = recvBufferPtr + readHead;
+            return clusterSession.NetworkArraySlotVerify(
+                interleavedKeys ? parseState.count / 2 : parseState.count,
+                ref ptr, recvBufferPtr + bytesRead, interleavedKeys,
+                readOnly, SessionAsking, ref dcurr, ref dend, out _);
+        }
+
 
         /// <summary>
         /// This method is used to verify slot ownership for provided array of key argslices.
