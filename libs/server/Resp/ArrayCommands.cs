@@ -571,8 +571,6 @@ namespace Garnet.server
                 Buffer.MemoryCopy(hPtr, valPtr, RespInputHeader.Size, RespInputHeader.Size);
                 valPtr += RespInputHeader.Size;
                 *(int*)valPtr = saveV;
-
-                readHead = (int)(ptr - recvBufferPtr);
             }
 
             while (!RespWriteUtils.WriteInteger(anyValuesSet ? 1 : 0, ref dcurr, dend))
