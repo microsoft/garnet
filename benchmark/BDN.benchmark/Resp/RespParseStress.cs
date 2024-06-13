@@ -26,7 +26,7 @@ namespace BDN.benchmark.Resp
         byte[] setRequestBuffer;
         byte* setRequestBufferPointer;
 
-        static ReadOnlySpan<byte> SETEX => "*4\r\n$5\r\nSETEX\r\n$1\r\nd\r\n$2\r\n1a\r\n$1\r\nd\r\n"u8;
+        static ReadOnlySpan<byte> SETEX => "*4\r\n$5\r\nSETEX\r\n$1\r\nd\r\n$1\r\n9\r\n$1\r\nd\r\n"u8;
         byte[] setexRequestBuffer;
         byte* setexRequestBufferPointer;
 
