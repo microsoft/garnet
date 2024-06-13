@@ -408,8 +408,8 @@ namespace Garnet.server
             {
                 RespCommand.GET => NetworkGET(ref storageApi),
                 RespCommand.SET => NetworkSET(ref storageApi),
-                RespCommand.SETEX => NetworkSETEX(ptr, false, ref storageApi),
-                RespCommand.PSETEX => NetworkSETEX(ptr, true, ref storageApi),
+                RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
+                RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(parseState.count, ptr, ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ptr, ref storageApi),

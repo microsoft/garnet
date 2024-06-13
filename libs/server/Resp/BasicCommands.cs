@@ -383,7 +383,7 @@ namespace Garnet.server
         /// <summary>
         /// SETEX
         /// </summary>
-        private bool NetworkSETEX<TGarnetApi>(byte* ptr, bool highPrecision, ref TGarnetApi storageApi)
+        private bool NetworkSETEX<TGarnetApi>(bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
@@ -396,18 +396,23 @@ namespace Garnet.server
 
             var valPtr = val.ToPointer() - (sizeof(int) + sizeof(long));
             var vsize = val.Length;
+
+            // Save prior state on network buffer
             var save1 = *(int*)valPtr;
-            *(int*)valPtr = vsize + sizeof(long); // expiry info
             var save2 = *(long*)(valPtr + sizeof(int));
+
+            *(int*)valPtr = vsize + sizeof(long); // expiry info
             SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
                                                          (highPrecision
                                                              ? TimeSpan.FromMilliseconds(expiry).Ticks
                                                              : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var status = storageApi.SET(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
+            _ = storageApi.SET(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
 
+            // Restore prior state on network buffer
             *(int*)valPtr = save1;
             *(long*)(valPtr + sizeof(int)) = save2;
+
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
