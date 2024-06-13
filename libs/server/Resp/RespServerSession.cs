@@ -715,7 +715,7 @@ namespace Garnet.server
             var end = recvBufferPtr + bytesRead;
 
             // Try the command length
-            if (!RespReadUtils.ReadLengthHeader(out int length, ref ptr, end))
+            if (!RespReadUtils.ReadUnsignedLengthHeader(out int length, ref ptr, end))
             {
                 success = false;
                 return default;
@@ -749,7 +749,7 @@ namespace Garnet.server
             var end = recvBufferPtr + bytesRead;
 
             // Try the command length
-            if (!RespReadUtils.ReadLengthHeader(out int length, ref ptr, end))
+            if (!RespReadUtils.ReadUnsignedLengthHeader(out int length, ref ptr, end))
             {
                 return false;
             }

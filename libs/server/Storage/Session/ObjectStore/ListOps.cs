@@ -47,11 +47,11 @@ namespace Garnet.server
             }
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
-            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.countDone;
             itemBroker.HandleCollectionUpdate(key.Span.ToArray());
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>
@@ -144,7 +144,7 @@ namespace Garnet.server
             if (status == GarnetStatus.OK)
                 elements = ProcessRespArrayOutput(outputFooter, out var error);
 
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>
@@ -188,8 +188,8 @@ namespace Garnet.server
         /// <param name="sourceDirection"></param>
         /// <param name="destinationDirection"></param>
         /// <param name="element">out parameter, The element being popped and pushed</param>
-        /// <returns>true when success</returns>
-        public bool ListMove(ArgSlice sourceKey, ArgSlice destinationKey, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
+        /// <returns>GarnetStatus</returns>
+        public GarnetStatus ListMove(ArgSlice sourceKey, ArgSlice destinationKey, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
         {
             element = default;
             var objectLockableContext = txnManager.ObjectStoreLockableContext;
@@ -214,13 +214,35 @@ namespace Garnet.server
                 // get the source key
                 var statusOp = GET(sourceKey.ToArray(), out var sourceList, ref objectLockableContext);
 
-                if (statusOp == GarnetStatus.NOTFOUND || ((ListObject)sourceList.garnetObject).LnkList.Count == 0)
+                if (statusOp == GarnetStatus.NOTFOUND)
                 {
-                    return true;
+                    return GarnetStatus.OK;
                 }
                 else if (statusOp == GarnetStatus.OK)
                 {
-                    var srcListObject = (ListObject)sourceList.garnetObject;
+                    if (sourceList.garnetObject is not ListObject srcListObject)
+                        return GarnetStatus.WRONGTYPE;
+
+                    if (srcListObject.LnkList.Count == 0)
+                        return GarnetStatus.OK;
+
+                    ListObject dstListObject = default;
+                    if (!sameKey)
+                    {
+                        // read destination key
+                        var arrDestKey = destinationKey.ToArray();
+                        statusOp = GET(arrDestKey, out var destinationList, ref objectStoreLockableContext);
+
+                        if (statusOp == GarnetStatus.NOTFOUND)
+                        {
+                            destinationList.garnetObject = new ListObject();
+                        }
+
+                        if (destinationList.garnetObject is not ListObject listObject)
+                            return GarnetStatus.WRONGTYPE;
+
+                        dstListObject = listObject;
+                    }
 
                     // right pop (removelast) from source
                     if (sourceDirection == OperationDirection.Right)
@@ -237,22 +259,11 @@ namespace Garnet.server
                     srcListObject.UpdateSize(element, false);
 
                     //update sourcelist
-                    SET(sourceKey.ToArray(), sourceList.garnetObject, ref objectStoreLockableContext);
+                    SET(sourceKey.ToArray(), srcListObject, ref objectStoreLockableContext);
 
                     IGarnetObject newListValue = null;
                     if (!sameKey)
                     {
-                        // read destination key
-                        var _destinationKey = destinationKey.ToArray();
-                        statusOp = GET(_destinationKey, out var destinationList, ref objectStoreLockableContext);
-
-                        if (statusOp == GarnetStatus.NOTFOUND)
-                        {
-                            destinationList.garnetObject = new ListObject();
-                        }
-
-                        var dstListObject = (ListObject)destinationList.garnetObject;
-
                         //left push (addfirst) to destination
                         if (destinationDirection == OperationDirection.Left)
                             dstListObject.LnkList.AddFirst(element);
@@ -269,7 +280,7 @@ namespace Garnet.server
                             srcListObject.LnkList.AddFirst(element);
                         else if (sourceDirection == OperationDirection.Left && destinationDirection == OperationDirection.Right)
                             srcListObject.LnkList.AddLast(element);
-                        newListValue = sourceList.garnetObject;
+                        newListValue = srcListObject;
                         ((ListObject)newListValue).UpdateSize(element);
                     }
 
@@ -284,8 +295,7 @@ namespace Garnet.server
             }
 
             itemBroker.HandleCollectionUpdate(destinationKey.Span.ToArray());
-            return true;
-
+            return GarnetStatus.OK;
         }
 
         /// <summary>

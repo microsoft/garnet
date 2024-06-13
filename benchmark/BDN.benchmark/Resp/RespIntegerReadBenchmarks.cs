@@ -16,7 +16,7 @@ namespace BDN.benchmark.Resp
             fixed (byte* inputPtr = testCase.Bytes)
             {
                 var start = inputPtr;
-                RespReadUtils.ReadLengthHeader(out var value, ref start, start + testCase.Bytes.Length, allowNull: true);
+                RespReadUtils.ReadSignedLengthHeader(out var value, ref start, start + testCase.Bytes.Length);
                 return value;
             }
         }

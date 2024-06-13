@@ -137,7 +137,7 @@ namespace Garnet.server
                 var header = (RespInputHeader*)_input;
                 if (header->type != GarnetObjectType.List)
                 {
-                    //Indicates an incorrect type of key
+                    // Indicates an incorrect type of key
                     output.Length = 0;
                     sizeChange = 0;
                     return true;

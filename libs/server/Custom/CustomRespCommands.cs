@@ -165,31 +165,44 @@ namespace Garnet.server
                 status = storageApi.RMW_ObjectStore(ref key, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
-                if (output.spanByteAndMemory.Memory != null)
-                    SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
-                else
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                switch (status)
+                {
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
+                        break;
+                    default:
+                        if (output.spanByteAndMemory.Memory != null)
+                            SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
+                        else
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        break;
+                }
             }
             else
             {
                 status = storageApi.Read_ObjectStore(ref key, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
-                if (status == GarnetStatus.OK)
+                switch (status)
                 {
-                    if (output.spanByteAndMemory.Memory != null)
-                        SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
-                    else
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    case GarnetStatus.OK:
+                        if (output.spanByteAndMemory.Memory != null)
+                            SendAndReset(output.spanByteAndMemory.Memory, output.spanByteAndMemory.Length);
+                        else
+                            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                                SendAndReset();
+                        break;
+                    case GarnetStatus.NOTFOUND:
+                        Debug.Assert(output.spanByteAndMemory.Memory == null);
+                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
                             SendAndReset();
-
-                }
-                else
-                {
-                    Debug.Assert(output.spanByteAndMemory.Memory == null);
-                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
-                        SendAndReset();
+                        break;
+                    case GarnetStatus.WRONGTYPE:
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                            SendAndReset();
+                        break;
                 }
             }
 

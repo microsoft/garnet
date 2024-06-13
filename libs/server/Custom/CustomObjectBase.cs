@@ -208,6 +208,12 @@ namespace Garnet.server
                         }
                     break;
                 default:
+                    if ((byte)header->type != this.type)
+                    {
+                        // Indicates an incorrect type of key
+                        output.Length = 0;
+                        return true;
+                    }
                     (IMemoryOwner<byte> Memory, int Length) outp = (output.Memory, 0);
                     Operate(header->SubId, input.AsReadOnlySpan().Slice(RespInputHeader.Size), ref outp, out removeKey);
                     output.Memory = outp.Memory;

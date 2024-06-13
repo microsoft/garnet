@@ -436,6 +436,36 @@ namespace Garnet.test
             Assert.AreEqual(value2, (string)retValue);
         }
 
+        [Test]
+        public void CustomObjectCommandTest3()
+        {
+            // Register sample custom command on object
+            var factory = new MyDictFactory();
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var mainkey = "key";
+
+            var key1 = "mykey1";
+            var value1 = "foovalue1";
+            db.ListLeftPush(mainkey, value1);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("MYDICTGET", mainkey, key1));
+            var expectedError = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedError, ex.Message);
+
+            var deleted = db.KeyDelete(mainkey);
+            Assert.IsTrue(deleted);
+            db.Execute("MYDICTSET", mainkey, key1, value1);
+
+            ex = Assert.Throws<RedisServerException>(() => db.ListLeftPush(mainkey, value1));
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedError, ex.Message);
+        }
 
         [Test]
         public async Task CustomCommandSetFollowedByTtlTestAsync()
