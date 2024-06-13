@@ -34,8 +34,6 @@ namespace Garnet.server
 
                 if (NetworkSingleKeySlotVerify(key, false))
                 {
-                    if (!DrainCommands(count))
-                        return false;
                     return true;
                 }
 
@@ -146,8 +144,6 @@ namespace Garnet.server
 
                 if (NetworkSingleKeySlotVerify(key, true))
                 {
-                    if (!DrainCommands(count))
-                        return false;
                     return true;
                 }
 

@@ -165,7 +165,7 @@ namespace Garnet.common
         /// a valid integer or the end of the string was reached before finishing parsing.
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool TryReadInt(ref byte* ptr, byte* end, out int value, out ulong bytesRead)
+        public static bool TryReadInt(ref byte* ptr, byte* end, out int value, out ulong bytesRead)
         {
             bytesRead = 0;
             value = 0;

@@ -24,6 +24,7 @@ namespace Garnet.client
         readonly string address;
         readonly int port;
         readonly int bufferSize;
+        readonly int bufferSizeDigits;
         INetworkSender networkSender;
         readonly ElasticCircularBuffer<TaskType> tasksTypes = new();
         readonly ElasticCircularBuffer<TaskCompletionSource<string>> tcsQueue = new();
@@ -89,6 +90,7 @@ namespace Garnet.client
             this.address = address;
             this.port = port;
             this.bufferSize = bufferSize;
+            this.bufferSizeDigits = NumUtils.NumDigits(bufferSize);
             this.logger = logger;
             this.sslOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;

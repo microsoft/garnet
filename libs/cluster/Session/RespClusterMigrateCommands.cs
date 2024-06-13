@@ -23,8 +23,8 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            // Expecting exactly 3 arguments
-            if (count != 3)
+            // Expecting exactly 4 arguments
+            if (count != 4)
             {
                 invalidParameters = true;
                 return true;
@@ -40,24 +40,19 @@ namespace Garnet.cluster
             if (!RespReadUtils.ReadStringWithLengthHeader(out var storeType, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
+            byte* payload = null;
+            int length = 0;
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref payload, ref length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
             var replaceOption = _replace.Equals("T");
-
-            // Check if payload size has been received
-            if (ptr + 4 > recvBufferPtr + bytesRead)
-                return false;
-
-            var headerLength = *(int*)ptr;
-            ptr += 4;
-            // Check if payload has been received
-            if (ptr + headerLength > recvBufferPtr + bytesRead)
-                return false;
 
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
 
             if (storeType.Equals("SSTORE"))
             {
-                var keyCount = *(int*)ptr;
-                ptr += 4;
+                var keyCount = *(int*)payload;
+                payload += 4;
                 var i = 0;
 
                 while (i < keyCount)
@@ -65,7 +60,7 @@ namespace Garnet.cluster
 
                     byte* keyPtr = null, valPtr = null;
                     byte keyMetaDataSize = 0, valMetaDataSize = 0;
-                    if (!RespReadUtils.ReadSerializedSpanByte(ref keyPtr, ref keyMetaDataSize, ref valPtr, ref valMetaDataSize, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.ReadSerializedSpanByte(ref keyPtr, ref keyMetaDataSize, ref valPtr, ref valMetaDataSize, ref payload, recvBufferPtr + bytesRead))
                         return false;
 
                     ref var key = ref SpanByte.Reinterpret(keyPtr);
@@ -81,7 +76,7 @@ namespace Garnet.cluster
                     }
 
                     var slot = HashSlotUtils.HashSlot(ref key);
-                    if (!currentConfig.IsImportingSlot(slot))//Slot is not in importing state
+                    if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
                     {
                         migrateState = 1;
                         i++;
@@ -101,12 +96,12 @@ namespace Garnet.cluster
             }
             else if (storeType.Equals("OSTORE"))
             {
-                var keyCount = *(int*)ptr;
-                ptr += 4;
+                var keyCount = *(int*)payload;
+                payload += 4;
                 var i = 0;
                 while (i < keyCount)
                 {
-                    if (!RespReadUtils.ReadSerializedData(out var key, out var data, out var expiration, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.ReadSerializedData(out var key, out var data, out var expiration, ref payload, recvBufferPtr + bytesRead))
                         return false;
 
                     // An error has occurred
@@ -114,7 +109,7 @@ namespace Garnet.cluster
                         continue;
 
                     var slot = HashSlotUtils.HashSlot(key);
-                    if (!currentConfig.IsImportingSlot(slot))//Slot is not in importing state
+                    if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
                     {
                         migrateState = 1;
                         continue;

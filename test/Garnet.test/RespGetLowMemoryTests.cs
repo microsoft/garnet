@@ -47,7 +47,7 @@ namespace Garnet.test
             var result = db.StringSet(input);
             Assert.IsTrue(result);
 
-            for (int iter = 0; iter < 5; iter++)
+            for (int iter = 1; iter < 5; iter++)
             {
                 int numGets = 200 * iter;
                 (RedisValue, Task<RedisValue>)[] tasks = new (RedisValue, Task<RedisValue>)[numGets];
@@ -61,6 +61,26 @@ namespace Garnet.test
                 for (int i = 0; i < numGets; i++)
                     Assert.AreEqual(tasks[i].Item1, tasks[i].Item2.Result);
             }
+        }
+
+        [Test]
+        public void ScatterGatherMGet()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int length = 30;
+            KeyValuePair<RedisKey, RedisValue>[] input = new KeyValuePair<RedisKey, RedisValue>[length];
+            for (int i = 0; i < length; i++)
+                input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), i.ToString());
+
+            // MSET
+            var result = db.StringSet(input);
+            Assert.IsTrue(result);
+
+            var results = db.StringGet(input.Select(r => (RedisKey)r.Key).ToArray());
+            for (int i = 0; i < length; i++)
+                Assert.AreEqual(input[i].Value, results[i]);
         }
     }
 }

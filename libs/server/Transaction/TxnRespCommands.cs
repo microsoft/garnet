@@ -16,7 +16,7 @@ namespace Garnet.server
         /// <summary>
         /// MULTI
         /// </summary>
-        private bool NetworkMULTI(byte* ptr)
+        private bool NetworkMULTI()
         {
             if (txnManager.state != TxnState.None)
             {
@@ -36,7 +36,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkEXEC(byte* ptr)
+        private bool NetworkEXEC()
         {
             // pass over the EXEC in buffer during execution
             if (txnManager.state == TxnState.Running)
@@ -56,8 +56,8 @@ namespace Garnet.server
             // start running transaction and setting readHead to first operation
             else if (txnManager.state == TxnState.Started)
             {
-                var _origReadHead = readHead;
-                readHead = txnManager.txnStartHead;
+                var _origReadHead = endReadHead;
+                endReadHead = txnManager.txnStartHead;
 
                 txnManager.GetKeysForValidation(recvBufferPtr, out var keys, out int keyCount, out bool readOnly);
                 if (NetworkKeyArraySlotVerify(ref keys, readOnly, keyCount))
@@ -65,7 +65,7 @@ namespace Garnet.server
                     logger?.LogWarning("Failed CheckClusterTxnKeys");
                     txnManager.Reset(false);
                     txnManager.watchContainer.Reset();
-                    readHead = _origReadHead;
+                    endReadHead = _origReadHead;
                     return true;
                 }
 
@@ -78,7 +78,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    readHead = _origReadHead;
+                    endReadHead = _origReadHead;
                     while (!RespWriteUtils.WriteNull(ref dcurr, dend))
                         SendAndReset();
                 }
@@ -95,7 +95,7 @@ namespace Garnet.server
         /// <summary>
         /// Skip the commands, first phase of the transactions processing.
         /// </summary>
-        private bool NetworkSKIP(RespCommand cmd, int count)
+        private bool NetworkSKIP(RespCommand cmd)
         {
             // Retrieve the meta-data for the command to do basic sanity checking for command arguments
             if (!RespCommandsInfo.TryGetRespCommandInfo(cmd, out var commandInfo, txnOnly: true, logger))
@@ -103,13 +103,12 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
                 txnManager.Abort();
-                if (!DrainCommands(count))
-                    return false;
                 return true;
             }
 
             // Check if input is valid and abort if necessary
             // NOTE: Negative arity means it's an expected minimum of args. Positive means exact.
+            int count = parseState.count;
             var arity = commandInfo.Arity > 0 ? commandInfo.Arity - 1 : commandInfo.Arity + 1;
             bool invalidNumArgs = arity > 0 ? count != (arity) : count < -arity;
 
@@ -131,9 +130,6 @@ namespace Garnet.server
                     txnManager.Abort();
                 }
 
-                if (!DrainCommands(count))
-                    return false;
-
                 return true;
             }
 
@@ -151,15 +147,8 @@ namespace Garnet.server
 
                 txnManager.Abort();
 
-                if (!DrainCommands(count))
-                    return false;
-
                 return true;
             }
-
-            // Consume the remaining arguments in the input
-            if (!DrainCommands(count - skipped))
-                return false;
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
                 SendAndReset();
