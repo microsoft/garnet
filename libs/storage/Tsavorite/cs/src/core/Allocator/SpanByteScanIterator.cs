@@ -12,7 +12,13 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    public sealed class SpanByteScanIterator : ScanIteratorBase, ITsavoriteScanIterator<SpanByte, SpanByte>, IPushScanIterator<SpanByte>
+    public sealed class SpanByteScanIterator<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> : ScanIteratorBase, ITsavoriteScanIterator<SpanByte, SpanByte>, IPushScanIterator<SpanByte>
+        where TKeyComparer : ITsavoriteEqualityComparer<SpanByte>
+        where TKeySerializer : IObjectSerializer<SpanByte>
+        where TValueSerializer : IObjectSerializer<SpanByte>
+        where TRecordDisposer : IRecordDisposer<SpanByte, SpanByte>
+        where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+        where TAllocatorCallbacks : IAllocatorCallbacks<SpanByte, SpanByte, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
     {
         private readonly TsavoriteKV<SpanByte, SpanByte> store;
         private readonly SpanByteAllocator hlog;
@@ -35,7 +41,7 @@ namespace Tsavorite.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="forceInMemory"/> is true.</param>
         /// <param name="forceInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte> store, SpanByteAllocator hlog, long beginAddress, long endAddress,
+        internal SpanByteScanIterator(TsavoriteKV<SpanByte, SpanByte> store, SpanByteAllocator<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> hlog, long beginAddress, long endAddress,
                 ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, bool forceInMemory = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {

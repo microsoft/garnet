@@ -1176,7 +1176,13 @@ namespace Tsavorite.core
         }
     }
 
-    internal abstract partial class AllocatorBase<Key, Value> : IDisposable
+    public abstract partial class AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> : IDisposable
+        where TKeyComparer : ITsavoriteEqualityComparer<Key>
+        where TKeySerializer : IObjectSerializer<Key>
+        where TValueSerializer : IObjectSerializer<Value>
+        where TRecordDisposer : IRecordDisposer<Key, Value>
+        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+        where TAllocatorCallbacks : IAllocatorCallbacks<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
     {
         /// <summary>
         /// Restore log

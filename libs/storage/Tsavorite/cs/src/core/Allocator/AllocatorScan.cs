@@ -24,7 +24,13 @@ namespace Tsavorite.core
         }
     }
 
-    internal abstract partial class AllocatorBase<Key, Value>
+    public abstract partial class AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> : IDisposable
+        where TKeyComparer : ITsavoriteEqualityComparer<Key>
+        where TKeySerializer : IObjectSerializer<Key>
+        where TValueSerializer : IObjectSerializer<Value>
+        where TRecordDisposer : IRecordDisposer<Key, Value>
+        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+        where TAllocatorCallbacks : IAllocatorCallbacks<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
     {
         /// <summary>
         /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
@@ -170,9 +176,9 @@ namespace Tsavorite.core
                 AsyncIOContextCompletionEvent<Key, Value> completionEvent, out bool stop)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>
         {
-            completionEvent.Prepare(GetKeyContainer(ref key), logicalAddress);
+            completionEvent.Prepare(_derived.GetKeyContainer(ref key), logicalAddress);
 
-            AsyncGetFromDisk(logicalAddress, GetAverageRecordSize(), completionEvent.request);
+            AsyncGetFromDisk(logicalAddress, _derived.GetAverageRecordSize(), completionEvent.request);
             completionEvent.Wait();
 
             stop = false;
@@ -184,9 +190,9 @@ namespace Tsavorite.core
             if (completionEvent.request.logicalAddress < BeginAddress)
                 return false;
 
-            RecordInfo recordInfo = GetInfoFromBytePointer(completionEvent.request.record.GetValidPointer());
+            RecordInfo recordInfo = _derived.GetInfoFromBytePointer(completionEvent.request.record.GetValidPointer());
             recordInfo.ClearBitsForDiskImages();
-            stop = !scanFunctions.SingleReader(ref key, ref GetContextRecordValue(ref completionEvent.request), new RecordMetadata(recordInfo, completionEvent.request.logicalAddress), numRecords, out _);
+            stop = !scanFunctions.SingleReader(ref key, ref _derived.GetContextRecordValue(ref completionEvent.request), new RecordMetadata(recordInfo, completionEvent.request.logicalAddress), numRecords, out _);
             logicalAddress = recordInfo.PreviousAddress;
             return !stop;
         }
@@ -203,7 +209,7 @@ namespace Tsavorite.core
         internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<Key, Value> store, ScanCursorState<Key, Value> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>;
 
-        protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<Key, Value> store, ScanCursorState<Key, Value> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor)
+        private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<Key, Value> store, ScanCursorState<Key, Value> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor)
             where TScanFunctions : IScanIteratorFunctions<Key, Value>
             where TScanIterator : ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
         {
@@ -263,7 +269,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
-            TsavoriteKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext = new(comparer.GetHashCode64(ref key));
+            TsavoriteKV<Key, Value>.PendingContext<Input, Output, Context> pendingContext = new(_storeFunctions.KeyComparer.GetHashCode64(ref key));
 
             OperationStatus internalStatus;
             OperationStackContext<Key, Value> stackCtx = new(pendingContext.keyHash);

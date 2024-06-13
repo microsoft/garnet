@@ -53,60 +53,51 @@ namespace Tsavorite.core
     /// <typeparam name="T"></typeparam>
     public abstract class BinaryObjectSerializer<T> : IObjectSerializer<T>
     {
-        /// <summary>
-        /// Binary reader
-        /// </summary>
         protected BinaryReader reader;
-
-        /// <summary>
-        /// Binary writer
-        /// </summary>
         protected BinaryWriter writer;
 
-        /// <summary>
-        /// Begin deserialization
-        /// </summary>
-        /// <param name="stream"></param>
-        public void BeginDeserialize(Stream stream)
-        {
-            reader = new BinaryReader(stream, new UTF8Encoding(), true);
-        }
+        /// <summary>Begin deserialization</summary>
+        public void BeginDeserialize(Stream stream) => reader = new BinaryReader(stream, new UTF8Encoding(), true);
 
-        /// <summary>
-        /// Deserialize
-        /// </summary>
-        /// <param name="obj"></param>
+        /// <summary>Deserialize</summary>
         public abstract void Deserialize(out T obj);
 
-        /// <summary>
-        /// End deserialize
-        /// </summary>
-        public void EndDeserialize()
-        {
-            reader.Dispose();
-        }
+        /// <summary>End deserialize</summary>
+        public void EndDeserialize() => reader.Dispose();
 
-        /// <summary>
-        /// Begin serialize
-        /// </summary>
-        /// <param name="stream"></param>
-        public void BeginSerialize(Stream stream)
-        {
-            writer = new BinaryWriter(stream, new UTF8Encoding(), true);
-        }
+        /// <summary>Begin serialize</summary>
+        public void BeginSerialize(Stream stream) => writer = new BinaryWriter(stream, new UTF8Encoding(), true);
 
-        /// <summary>
-        /// Serialize
-        /// </summary>
-        /// <param name="obj"></param>
+        /// <summary>Serialize</summary>
         public abstract void Serialize(ref T obj);
 
-        /// <summary>
-        /// End serialize
-        /// </summary>
-        public void EndSerialize()
-        {
-            writer.Dispose();
-        }
+        /// <summary>End serialize</summary>
+        public void EndSerialize() => writer.Dispose();
+    }
+
+    /// <summary>
+    /// For use with <see cref="StoreFunctions{TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer}"/> for types
+    /// that do not have serialization, or have a custom implementation (e.g. <see cref="SpanByte"/>) that is handled entirely by the allocator.
+    /// </summary>
+    /// <remarks>Calling methods on this type an error, so it throws rather than no-ops.</remarks>>
+    public sealed class NoSerializer<T> : IObjectSerializer<T>
+    {
+        /// <inheritdoc/>
+        public void BeginDeserialize(Stream stream) => throw new System.NotImplementedException();
+
+        /// <inheritdoc/>
+        public void BeginSerialize(Stream stream) => throw new System.NotImplementedException();
+
+        /// <inheritdoc/>
+        public void Deserialize(out T obj) => throw new System.NotImplementedException();
+
+        /// <inheritdoc/>
+        public void EndDeserialize() => throw new System.NotImplementedException();
+
+        /// <inheritdoc/>
+        public void EndSerialize() => throw new System.NotImplementedException();
+
+        /// <inheritdoc/>
+        public void Serialize(ref T obj) => throw new System.NotImplementedException();
     }
 }
