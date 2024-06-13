@@ -27,7 +27,7 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
-            var key = parseState.GetByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
             if (NetworkSingleKeySlotVerify(ref key, true))
                 return true;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
@@ -58,7 +58,7 @@ namespace Garnet.server
         bool NetworkGETAsync<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            var key = parseState.GetByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
             if (NetworkSingleKeySlotVerify(ref key, true))
                 return true;
 
@@ -101,7 +101,7 @@ namespace Garnet.server
         bool NetworkGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
-            var key = parseState.GetByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
             SpanByte input = default;
             long ctx = default;
             int firstPending = -1;
@@ -215,7 +215,7 @@ namespace Garnet.server
                 endReadHead = readHead = oldEndReadHead;
                 return false;
             }
-            key = parseState.GetByRef(0).SpanByte;
+            key = parseState.GetArgSliceByRef(0).SpanByte;
             return true;
         }
 
@@ -264,8 +264,8 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             Debug.Assert(parseState.count == 2);
-            var key = parseState.GetByRef(0).SpanByte;
-            var value = parseState.GetByRef(1).SpanByte;
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var value = parseState.GetArgSliceByRef(1).SpanByte;
 
             if (NetworkSingleKeySlotVerify(ref key, false))
                 return true;
@@ -386,35 +386,28 @@ namespace Garnet.server
         private bool NetworkSETEX<TGarnetApi>(byte* ptr, bool highPrecision, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            byte* keyPtr = null, valPtr = null;
-            int ksize = 0, vsize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            if (!RespReadUtils.ReadIntWithLengthHeader(out int expiry, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
             // TODO: return error for 0 expiry time
+            var expiry = parseState.GetInt(1);
+            var val = parseState.GetArgSliceByRef(2).SpanByte;
 
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            readHead = (int)(ptr - recvBufferPtr);
-
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
+            if (NetworkSingleKeySlotVerify(ref key, false))
                 return true;
 
-            keyPtr -= sizeof(int);
-            valPtr -= sizeof(int) + sizeof(long);
-            *(int*)keyPtr = ksize;
+            var valPtr = val.ToPointer() - (sizeof(int) + sizeof(long));
+            var vsize = val.Length;
+            var save1 = *(int*)valPtr;
             *(int*)valPtr = vsize + sizeof(long); // expiry info
+            var save2 = *(long*)(valPtr + sizeof(int));
             SpanByte.Reinterpret(valPtr).ExtraMetadata = DateTimeOffset.UtcNow.Ticks +
                                                          (highPrecision
                                                              ? TimeSpan.FromMilliseconds(expiry).Ticks
                                                              : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var status = storageApi.SET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
+            var status = storageApi.SET(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
+
+            *(int*)valPtr = save1;
+            *(long*)(valPtr + sizeof(int)) = save2;
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 

@@ -38,7 +38,7 @@ namespace Garnet.server
 
             for (int c = 0; c < parseState.count; c++)
             {
-                var key = parseState.GetByRef(c).SpanByte;
+                var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
                 var status = storageApi.GET(ref key, ref input, ref o);
 
@@ -84,7 +84,7 @@ namespace Garnet.server
             SpanByteAndMemory o = new(dcurr, (int)(dend - dcurr));
             for (int c = 0; c < parseState.count; c++)
             {
-                var key = parseState.GetByRef(c).SpanByte;
+                var key = parseState.GetArgSliceByRef(c).SpanByte;
 
                 // Store index in context, since completions are not in order
                 ctx = c;
@@ -513,8 +513,8 @@ namespace Garnet.server
 
             for (int c = 0; c < parseState.count; c += 2)
             {
-                var key = parseState.GetByRef(c).SpanByte;
-                var val = parseState.GetByRef(c + 1).SpanByte;
+                var key = parseState.GetArgSliceByRef(c).SpanByte;
+                var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
                 _ = storageApi.SET(ref key, ref val);
             }
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -538,8 +538,8 @@ namespace Garnet.server
             bool anyValuesSet = false;
             for (int c = 0; c < parseState.count; c += 2)
             {
-                var key = parseState.GetByRef(c).SpanByte;
-                var val = parseState.GetByRef(c + 1).SpanByte;
+                var key = parseState.GetArgSliceByRef(c).SpanByte;
+                var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
 
                 // We have to access the raw pointer in order to inject the input header
                 byte* valPtr = val.ToPointer();
@@ -589,7 +589,7 @@ namespace Garnet.server
             int keysDeleted = 0;
             for (int c = 0; c < parseState.count; c++)
             {
-                var key = parseState.GetByRef(c).SpanByte;
+                var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var status = storageApi.DELETE(ref key, StoreType.All);
 
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append

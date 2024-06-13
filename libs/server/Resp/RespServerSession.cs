@@ -250,7 +250,7 @@ namespace Garnet.server
             catch (RespParsingException ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
-                logger.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
+                logger?.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
 
                 // Forward parsing error as RESP error
                 while (!RespWriteUtils.WriteError($"ERR Protocol Error: {ex.Message}", ref dcurr, dend))
@@ -264,7 +264,7 @@ namespace Garnet.server
             catch (GarnetException ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
-                logger.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
+                logger?.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
                 // The session is no longer usable, dispose it
                 networkSender.Dispose();
             }
@@ -857,7 +857,7 @@ namespace Garnet.server
         {
             // #if DEBUG
             // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
-            Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
+            // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
             // #endif
 
             if ((int)(dcurr - d) > 0)
