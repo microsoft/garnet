@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers.Text;
-using System.Data;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -41,6 +40,24 @@ namespace Garnet.common
             if (totalLen > (int)(end - curr))
                 return false;
             *curr++ = (byte)'>';
+            NumUtils.IntToBytes(len, numDigits, ref curr);
+            WriteNewline(ref curr);
+            return true;
+        }
+
+        /// <summary>
+        /// Write bulk string length header, padded to specified total length (including protocol bytes)
+        /// </summary>
+        public static bool WritePaddedBulkStringLength(int len, int paddedLen, ref byte* curr, byte* end)
+        {
+            var numDigits = NumUtils.NumDigits(len);
+            var totalLen = 1 + numDigits + 2;
+            Debug.Assert(totalLen <= paddedLen);
+            if (paddedLen > (int)(end - curr))
+                return false;
+            *curr++ = (byte)'$';
+            for (int i = 0; i < paddedLen - totalLen; i++)
+                *curr++ = (byte)'0';
             NumUtils.IntToBytes(len, numDigits, ref curr);
             WriteNewline(ref curr);
             return true;
