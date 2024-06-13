@@ -299,7 +299,7 @@ namespace Tsavorite.core
                 }
                 spdk_device_poll(5000);
                 Console.WriteLine(
-                    "avg time in last 5s: {0}\n avg io size is {1} bytes",
+                    "avg io: {0}\n avg io size is {1} bytes",
                     this.elapsed_ticks * this.nanosec_per_tick
                       / (float)this.io_num,
                     this.io_size / (float)this.io_num

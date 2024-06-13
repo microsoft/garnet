@@ -323,6 +323,7 @@ uint64_t spdk_device_get_segment_size(struct spdk_device *device,
 
 int32_t spdk_device_poll(uint32_t timeout)
 {
+    static int qp_pointer = 0;
     int n = 0;
     int t = 0;
     struct spdk_device *device = NULL;
@@ -331,22 +332,23 @@ int32_t spdk_device_poll(uint32_t timeout)
     start = clock();
 
     while (true) {
-        for (int i = 0; i < device_num; i++) {
-            device = &g_spdk_device_list[i];
-            int complete_io_num = spdk_nvme_qpair_process_completions(
-                device->qpair, IO_BATCH_NUM);
-            if (n > 0) {
-                start = clock();
-                n += complete_io_num;
-                if (n >= IO_BATCH_NUM) {
-                    return n;
-                }
-            }
+        device = &g_spdk_device_list[qp_pointer];
+        int complete_io_num =
+            spdk_nvme_qpair_process_completions(device->qpair, IO_BATCH_NUM);
+        if (complete_io_num > 0) {
+            start = clock();
+            n += complete_io_num;
+        }
+
+        qp_pointer += 1;
+        qp_pointer %= device_num;
+
+        if (n >= IO_BATCH_NUM) {
+            break;
         }
         diff = clock() - start;
         if (diff * 1000 / CLOCKS_PER_SEC >= timeout) {
-            printf("timeout diff:%lu\n", diff);
-            return n;
+            break;
         }
     }
     return n;
