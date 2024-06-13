@@ -156,6 +156,10 @@ namespace Garnet.cluster
             // Used to delete old checkpoints and cleanup and also cleanup during attachment to new primary
             replicationManager.AddCheckpointEntry(entry, storeType, full);
 
+            // Only truncate AOF if 1) both stores were checkpointed OR 2) only Main was checkpointed but Object was not enabled
+            if (storeType != StoreType.All && !(storeType == StoreType.Main && serverOptions.DisableObjects))
+                return;
+
             if (clusterManager.CurrentConfig.LocalNodeRole == NodeRole.PRIMARY)
                 _ = replicationManager.SafeTruncateAof(CheckpointCoveredAofAddress);
             else

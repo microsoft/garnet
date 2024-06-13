@@ -719,8 +719,6 @@ namespace Garnet.server
                     objectStoreCheckpointResult = await objectStore.TakeHybridLogCheckpointAsync(checkpointType, tryIncremental);
             }
 
-            // Only truncate AOF if both stores are checkpointed
-            if (storeType == StoreType.All)
             {
                 // If cluster is enabled the replication manager is responsible for truncating AOF
                 if (serverOptions.EnableCluster && serverOptions.EnableAOF)
@@ -729,8 +727,11 @@ namespace Garnet.server
                 }
                 else
                 {
-                    appendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);
-                    appendOnlyFile?.Commit();
+                    if (storeType == StoreType.All || (storeType == StoreType.Main && serverOptions.DisableObjects))
+                    {
+                        appendOnlyFile?.TruncateUntil(CheckpointCoveredAofAddress);
+                        appendOnlyFile?.Commit();
+                    }
                 }
             }
 
