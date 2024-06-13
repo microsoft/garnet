@@ -98,16 +98,12 @@ namespace Garnet.server
         public ref ArgSlice GetArgSliceByRef(int i)
             => ref Unsafe.AsRef<ArgSlice>(bufferPtr + i);
 
+        /// <summary>
+        /// Get int argument at the given index
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetInt(int i)
-        {
-            var slice = Unsafe.AsRef<ArgSlice>(bufferPtr + i);
-            var numberStart = slice.ptr;
-            RespReadUtils.TryReadInt(ref slice.ptr, slice.ptr + slice.length, out var number, out var bytesRead);
-            if ((int)bytesRead != slice.length)
-            {
-                RespParsingException.ThrowNotANumber(numberStart, slice.length);
-            }
-            return number;
-        }
+            => ParseUtils.ReadInt(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
     }
 }
