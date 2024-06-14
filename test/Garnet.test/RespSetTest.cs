@@ -553,7 +553,7 @@ namespace Garnet.test
             addResult = db.SetAdd(key3, key3Value);
             Assert.AreEqual(3, addResult);
 
-            result = db.SetCombine(SetOperation.Difference, new [] { new RedisKey(key1), new RedisKey(key2), new RedisKey(key3)});
+            result = db.SetCombine(SetOperation.Difference, new[] { new RedisKey(key1), new RedisKey(key2), new RedisKey(key3) });
             Assert.AreEqual(2, result.Length);
             strResult = result.Select(r => r.ToString()).ToArray();
             expectedResult = ["b", "d"];
@@ -1376,7 +1376,7 @@ namespace Garnet.test
             // SUNION
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Union, keys[0], keys[1]));
             // SUNIONSTORE
-            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombineAndStore(SetOperation.Union, keys[0], new[] {keys[1]}));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombineAndStore(SetOperation.Union, keys[0], new[] { keys[1] }));
             // SDIFF
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Difference, keys[0], keys[1]));
             // SDIFFSTORE

@@ -718,7 +718,7 @@ namespace Garnet.server
                         _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
                             ref lockableContext, ref setObjectStoreLockableContext);
                     }
-                    
+
                     count = members.Count;
                 }
 
@@ -947,7 +947,7 @@ namespace Garnet.server
                         _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
                             ref lockableContext, ref setObjectStoreLockableContext);
                     }
-                    
+
                     count = diffSet.Count;
                 }
 

@@ -307,7 +307,7 @@ namespace Garnet.test
             Assert.AreEqual(2, result);
 
             var members = db.SortedSetRangeByRank(key);
-            Assert.AreEqual(new[] {new RedisValue("c"), new RedisValue("d"), new RedisValue("h")}, members);
+            Assert.AreEqual(new[] { new RedisValue("c"), new RedisValue("d"), new RedisValue("h") }, members);
 
             result = db.SortedSetRemoveRangeByRank(key, 0, 2);
             Assert.AreEqual(3, result);
