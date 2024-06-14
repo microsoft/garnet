@@ -39,6 +39,16 @@ namespace Garnet.test
         #region SEClientTests
 
         [Test]
+        public void CanSetEmpty()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.HashSet("user:user1", []);
+            var exists = db.KeyExists("user:user1");
+            Assert.IsFalse(exists);
+        }
+
+        [Test]
         public void CanSetAndGetOnePair()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -109,7 +119,7 @@ namespace Garnet.test
 
 
         [Test]
-        public void CanDeleleteMultipleFields()
+        public void CanDeleteMultipleFields()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -117,10 +127,15 @@ namespace Garnet.test
             var result = db.HashDelete(new RedisKey("user:user1"), [new RedisValue("Title"), new RedisValue("Year")]);
             string resultGet = db.HashGet("user:user1", "Example");
             Assert.AreEqual("One", resultGet);
+
+            result = db.HashDelete(new RedisKey("user:user1"), [new RedisValue("Example")]);
+            Assert.AreEqual(1, result);
+            var exists = db.KeyExists("user:user1");
+            Assert.IsFalse(exists);
         }
 
         [Test]
-        public void CanDeleleteMultipleFieldsWithNonExistingField()
+        public void CanDeleteMultipleFieldsWithNonExistingField()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

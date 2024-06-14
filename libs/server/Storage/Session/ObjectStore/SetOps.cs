@@ -429,6 +429,12 @@ namespace Garnet.server
 
                 srcSetObject.UpdateSize(arrMember, false);
 
+                if (srcSetObject.Set.Count == 0)
+                {
+                    _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                        ref lockableContext, ref objectLockableContext);
+                }
+
                 dstSetObject.Set.Add(arrMember);
                 dstSetObject.UpdateSize(arrMember);
 
@@ -532,13 +538,23 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.OK)
                 {
-                    var newSetObject = new SetObject();
-                    foreach (var item in members)
+                    if (members.Count > 0)
                     {
-                        _ = newSetObject.Set.Add(item);
-                        newSetObject.UpdateSize(item);
+                        var newSetObject = new SetObject();
+                        foreach (var item in members)
+                        {
+                            _ = newSetObject.Set.Add(item);
+                            newSetObject.UpdateSize(item);
+                        }
+
+                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
                     }
-                    _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                    else
+                    {
+                        _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                            ref lockableContext, ref setObjectStoreLockableContext);
+                    }
+
                     count = members.Count;
                 }
 
@@ -686,13 +702,23 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.OK)
                 {
-                    var newSetObject = new SetObject();
-                    foreach (var item in members)
+                    if (members.Count > 0)
                     {
-                        _ = newSetObject.Set.Add(item);
-                        newSetObject.UpdateSize(item);
+                        var newSetObject = new SetObject();
+                        foreach (var item in members)
+                        {
+                            _ = newSetObject.Set.Add(item);
+                            newSetObject.UpdateSize(item);
+                        }
+
+                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
                     }
-                    _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                    else
+                    {
+                        _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                            ref lockableContext, ref setObjectStoreLockableContext);
+                    }
+                    
                     count = members.Count;
                 }
 
@@ -906,13 +932,22 @@ namespace Garnet.server
 
                 if (status == GarnetStatus.OK)
                 {
-                    var newSetObject = new SetObject();
-                    foreach (var item in diffSet)
+                    if (diffSet.Count > 0)
                     {
-                        _ = newSetObject.Set.Add(item);
-                        newSetObject.UpdateSize(item);
+                        var newSetObject = new SetObject();
+                        foreach (var item in diffSet)
+                        {
+                            _ = newSetObject.Set.Add(item);
+                            newSetObject.UpdateSize(item);
+                        }
+                        _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
                     }
-                    _ = SET(key, newSetObject, ref setObjectStoreLockableContext);
+                    else
+                    {
+                        _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                            ref lockableContext, ref setObjectStoreLockableContext);
+                    }
+                    
                     count = diffSet.Count;
                 }
 
