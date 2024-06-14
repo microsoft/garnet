@@ -108,7 +108,7 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new HashObject(hash, Expiration, Size);
 
         /// <inheritdoc />
-        public override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
             removeKey = false;
 

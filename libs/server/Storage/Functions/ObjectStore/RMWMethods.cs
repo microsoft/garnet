@@ -8,16 +8,16 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectStoreFunctions : ISessionFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
+    public readonly unsafe partial struct ObjectStoreFunctions : ISessionFunctions<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
     {
         /// <inheritdoc />
-        public bool NeedInitialUpdate(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool NeedInitialUpdate(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             return GarnetObject.NeedToCreate(*(RespInputHeader*)input.ToPointer());
         }
 
         /// <inheritdoc />
-        public bool InitialUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool InitialUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             var type = ((RespInputHeader*)input.ToPointer())->type;
             if ((byte)type < CustomCommandManager.StartOffset)
@@ -32,7 +32,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void PostInitialUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public void PostInitialUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
@@ -46,7 +46,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool InPlaceUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool InPlaceUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             if (InPlaceUpdaterWorker(ref key, ref input, ref value, ref output, ref rmwInfo, out long sizeChange))
             {
@@ -59,7 +59,7 @@ namespace Garnet.server
             return false;
         }
 
-        bool InPlaceUpdaterWorker(ref byte[] key, ref SpanByte input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        bool InPlaceUpdaterWorker(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
             var header = (RespInputHeader*)input.ToPointer();
             sizeChange = 0;
@@ -100,11 +100,11 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool NeedCopyUpdate(ref byte[] key, ref SpanByte input, ref IGarnetObject oldValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool NeedCopyUpdate(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
             => true;
 
         /// <inheritdoc />
-        public bool CopyUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public bool CopyUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref IGarnetObject newValue, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             var header = (RespInputHeader*)input.ToPointer();
 
@@ -118,7 +118,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool PostCopyUpdater(ref byte[] key, ref SpanByte input, ref IGarnetObject oldValue, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
+        public bool PostCopyUpdater(ref byte[] key, ref ObjectInput input, ref IGarnetObject oldValue, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that 
             // the record was CASed into the hash chain before it gets modified

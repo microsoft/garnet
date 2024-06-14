@@ -36,7 +36,7 @@ namespace Garnet.server
         /// <param name="sizeChange"></param>
         /// <param name="removeKey"></param>
         /// <returns></returns>
-        bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey);
+        bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey);
 
         /// <summary>
         /// Serializer

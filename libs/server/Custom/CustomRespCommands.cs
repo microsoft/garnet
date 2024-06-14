@@ -162,7 +162,7 @@ namespace Garnet.server
             GarnetStatus status;
             if (type == CommandType.ReadModifyWrite)
             {
-                status = storageApi.RMW_ObjectStore(ref key, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
+                status = storageApi.RMW_ObjectStore(ref key, ref Unsafe.AsRef<ObjectInput>(inputPtr), ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
                 switch (status)
@@ -182,7 +182,7 @@ namespace Garnet.server
             }
             else
             {
-                status = storageApi.Read_ObjectStore(ref key, ref Unsafe.AsRef<SpanByte>(inputPtr), ref output);
+                status = storageApi.Read_ObjectStore(ref key, ref Unsafe.AsRef<ObjectInput>(inputPtr), ref output);
                 Debug.Assert(!output.spanByteAndMemory.IsSpanByte);
 
                 switch (status)

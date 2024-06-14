@@ -190,7 +190,7 @@ namespace Garnet.server
         public abstract void Operate(byte subCommand, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output, out bool removeKey);
 
         /// <inheritdoc />
-        public sealed override unsafe bool Operate(ref SpanByte input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
+        public sealed override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
             var header = (RespInputHeader*)input.ToPointer();
             sizeChange = 0;

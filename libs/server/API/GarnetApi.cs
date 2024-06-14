@@ -17,7 +17,7 @@ namespace Garnet.server
     /// </summary>
     public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
         where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
     {
         readonly StorageSession storageSession;
         TContext context;
@@ -241,11 +241,11 @@ namespace Garnet.server
             => storageSession.Read_MainStore(ref key, ref input, ref output, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus RMW_ObjectStore(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output)
+        public GarnetStatus RMW_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
             => storageSession.RMW_ObjectStore(ref key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus Read_ObjectStore(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output)
+        public GarnetStatus Read_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
             => storageSession.Read_ObjectStore(ref key, ref input, ref output, ref objectContext);
         #endregion
 

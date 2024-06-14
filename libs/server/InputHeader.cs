@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Garnet.server
@@ -125,6 +126,36 @@ namespace Garnet.server
         /// </summary>
         internal unsafe bool CheckSetGetFlag()
             => (flags & RespInputFlags.SetGet) != 0;
+    }
+
+    [StructLayout(LayoutKind.Explicit, Size = Size)]
+    public struct ObjectInput
+    {
+        public const int Size = RespInputHeader.Size + 2 * sizeof(int) + ArgSlice.Size;
+
+        [FieldOffset(0)]
+        public RespInputHeader header;
+        [FieldOffset(RespInputHeader.Size)]
+        public int count;
+        [FieldOffset(RespInputHeader.Size + sizeof(int))]
+        public int done;
+        [FieldOffset(RespInputHeader.Size + sizeof(int) + sizeof(int))]
+        public ArgSlice payload;
+
+        public unsafe byte* ToPointer()
+            => (byte*)Unsafe.AsPointer(ref header);
+
+        public long ExtraMetadata
+            => payload.SpanByte.ExtraMetadata;
+
+        public unsafe Span<byte> AsSpan()
+            => new Span<byte>(ToPointer(), Size);
+
+        public unsafe ReadOnlySpan<byte> AsReadOnlySpan()
+            => new ReadOnlySpan<byte>(ToPointer(), Size);
+
+        public int Length
+            => AsSpan().Length;
     }
 
     /// <summary>
