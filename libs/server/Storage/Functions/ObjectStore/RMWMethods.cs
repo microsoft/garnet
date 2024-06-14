@@ -61,17 +61,16 @@ namespace Garnet.server
 
         bool InPlaceUpdaterWorker(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
-            var header = (RespInputHeader*)input.ToPointer();
             sizeChange = 0;
 
             // Expired data
-            if (value.Expiration > 0 && header->CheckExpiry(value.Expiration))
+            if (value.Expiration > 0 && input.header.CheckExpiry(value.Expiration))
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
 
-            switch (header->type)
+            switch (input.header.type)
             {
                 case GarnetObjectType.Expire:
                     var optionType = (ExpireOption)(*(input.ToPointer() + RespInputHeader.Size));
