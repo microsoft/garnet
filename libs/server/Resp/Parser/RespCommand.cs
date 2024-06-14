@@ -164,6 +164,7 @@ namespace Garnet.server
 
         MONITOR,
         MODULE,
+        MODULE_LOAD,
         REGISTERCS,
 
         MULTI,

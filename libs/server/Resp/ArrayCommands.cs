@@ -827,11 +827,9 @@ namespace Garnet.server
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var modulePath, ref ptr, recvBufferPtr + bytesRead))
                     return false;
 
-                var modulePathStr = Encoding.ASCII.GetString(modulePath);
-
                 // Read module args
-                var leftTokens = count - 3;
-                List<string> moduleArgs = new();
+                var leftTokens = count - 2;
+                List<string> moduleArgs = [];
                 while (leftTokens > 0)
                 {
                     if (!RespReadUtils.ReadStringWithLengthHeader(out var arg, ref ptr, recvBufferPtr + bytesRead))
@@ -841,7 +839,7 @@ namespace Garnet.server
                     moduleArgs.Add(arg);
                 }
 
-                if (LoadAssemblies([modulePathStr], out var loadedAssemblies, out var errorMsg))
+                if (LoadAssemblies([Encoding.ASCII.GetString(modulePath)], out var loadedAssemblies, out var errorMsg))
                 {
                     Debug.Assert(loadedAssemblies != null && loadedAssemblies.Length == 1, "Only one assembly per module load");
                     var loadedAssembly = loadedAssemblies[0];
@@ -849,19 +847,23 @@ namespace Garnet.server
                     {
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();
-                        return true;
                     }
                 }
 
-                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                if (errorMsg != default)
+                {
+                    while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+            else
+            {
+                // TODO: pending implementation for other module commands support.
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
-                return false;
             }
 
-            // TODO: pending implementation for other module commands support.
-            while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
-                SendAndReset();
-
+            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 

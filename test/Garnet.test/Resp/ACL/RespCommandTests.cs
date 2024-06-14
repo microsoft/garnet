@@ -3718,7 +3718,7 @@ namespace Garnet.test.Resp.ACL
             {
                 try
                 {
-                    server.Execute("MODULE", "LIST");
+                    server.Execute("MODULE", "LOAD", "nonexisting.dll");
 
                     Assert.Fail("Shouldn't be reachable, MODULE is only parsed - not implemented");
                 }
