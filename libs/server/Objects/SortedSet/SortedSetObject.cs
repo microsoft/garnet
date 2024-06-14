@@ -179,11 +179,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public override unsafe bool Operate(ref ObjectInput input, ref SpanByteAndMemory output, out long sizeChange, out bool removeKey)
         {
-            fixed (byte* _input = input.AsSpan())
+            byte* _input = null;
+
             fixed (byte* _output = output.SpanByte.AsSpan())
             {
-                var header = (RespInputHeader*)_input;
-                if (header->type != GarnetObjectType.SortedSet)
+                var header = input.header;
+                if (header.type != GarnetObjectType.SortedSet)
                 {
                     // Indicates an incorrect type of key
                     output.Length = 0;
@@ -193,13 +194,13 @@ namespace Garnet.server
                 }
 
                 long prevSize = this.Size;
-                switch (header->SortedSetOp)
+                switch (header.SortedSetOp)
                 {
                     case SortedSetOperation.ZADD:
-                        SortedSetAdd(_input, input.Length, _output);
+                        SortedSetAdd(ref input, _output);
                         break;
                     case SortedSetOperation.ZREM:
-                        SortedSetRemove(_input, input.Length, _output);
+                        SortedSetRemove(ref input, _output);
                         break;
                     case SortedSetOperation.ZCARD:
                         SortedSetLength(_output);

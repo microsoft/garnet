@@ -13,6 +13,26 @@ namespace Garnet.server
     {
         #region Common ObjectStore Methods
 
+        unsafe GarnetStatus RMWObjectStoreOperation<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+        {
+            output = new();
+            var _output = new GarnetObjectStoreOutput { spanByteAndMemory = new(SpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref output), ObjectOutputHeader.Size)) };
+
+            // Perform RMW on object store
+            var status = objectStoreContext.RMW(ref key, ref input, ref _output);
+
+            if (status.IsPending)
+                CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
+
+            if (_output.spanByteAndMemory.Length == 0)
+                return GarnetStatus.WRONGTYPE;
+
+            Debug.Assert(_output.spanByteAndMemory.IsSpanByte);
+
+            return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
         unsafe GarnetStatus RMWObjectStoreOperation<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {

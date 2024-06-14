@@ -285,7 +285,7 @@ namespace Garnet.server
         /// <param name="input">Formatted input arguments with header [ObjectInputHeader][RESP score][RESP member]...</param>
         /// <param name="zaddCount">Number of adds performed</param>
         /// <returns></returns>
-        GarnetStatus SortedSetAdd(byte[] key, ArgSlice input, out int zaddCount);
+        GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, out int zaddCount);
 
         /// <summary>
         /// Adds the specified member with the specified score to the sorted set stored at key.
@@ -315,7 +315,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetAdd(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Removes the specified member from the sorted set stored at key.
@@ -340,7 +340,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemove(byte[] key, ArgSlice input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output);
 
         /// <summary>
         /// Removes all elements in the sorted set between the

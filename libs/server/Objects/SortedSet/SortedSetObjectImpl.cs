@@ -5,7 +5,6 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -32,17 +31,16 @@ namespace Garnet.server
             public bool WithScores { get; set; }
         };
 
-        private void SortedSetAdd(byte* input, int length, byte* output)
+        private void SortedSetAdd(ref ObjectInput input, byte* output)
         {
-            var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            int count = _input->count;
+            int count = input.count;
             *_output = default;
 
-            byte* startptr = input + sizeof(ObjectInputHeader);
+            byte* startptr = input.payload.ptr;
             byte* ptr = startptr;
-            byte* end = input + length;
+            byte* end = startptr + input.payload.length;
             for (int c = 0; c < count; c++)
             {
                 if (!RespReadUtils.ReadDoubleWithLengthHeader(out var score, out var parsed, ref ptr, end))
@@ -50,7 +48,7 @@ namespace Garnet.server
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref ptr, end))
                     return;
 
-                if (c < _input->done)
+                if (c < input.done)
                     continue;
 
                 _output->countDone++;
@@ -79,24 +77,23 @@ namespace Garnet.server
             }
         }
 
-        private void SortedSetRemove(byte* input, int length, byte* output)
+        private void SortedSetRemove(ref ObjectInput input, byte* output)
         {
-            var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            int count = _input->count;
+            int count = input.count;
             *_output = default;
 
-            byte* startptr = input + sizeof(ObjectInputHeader);
+            byte* startptr = input.payload.ptr;
             byte* ptr = startptr;
-            byte* end = input + length;
+            byte* end = startptr + input.payload.length;
 
             for (int c = 0; c < count; c++)
             {
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var value, ref ptr, end))
                     return;
 
-                if (c < _input->done)
+                if (c < input.done)
                     continue;
 
                 _output->countDone++;

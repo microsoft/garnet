@@ -17,9 +17,9 @@ namespace Garnet.server
         #region SortedSet Methods
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetAdd(byte[] key, ArgSlice input, out int zaddCount)
+        public GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, out int zaddCount)
         {
-            var status = storageSession.SortedSetAdd(key, input, out var output, ref objectContext);
+            var status = storageSession.SortedSetAdd(key, ref input, out var output, ref objectContext);
             zaddCount = output.countDone;
             return status;
         }
@@ -33,8 +33,8 @@ namespace Garnet.server
             => storageSession.SortedSetAdd(key, inputs, out zaddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetAdd(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SortedSetAdd(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetAdd(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.SortedSetAdd(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRemove(ArgSlice key, ArgSlice member, out int zremCount)
@@ -45,8 +45,8 @@ namespace Garnet.server
             => storageSession.SortedSetRemove(key.ToArray(), members, out zaddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemove(byte[] key, ArgSlice input, out ObjectOutputHeader output)
-            => storageSession.SortedSetRemove(key, input, out output, ref objectContext);
+        public GarnetStatus SortedSetRemove(byte[] key, ref ObjectInput input, out ObjectOutputHeader output)
+            => storageSession.SortedSetRemove(key, ref input, out output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetLength(ArgSlice key, out int len)

@@ -57,28 +57,19 @@ namespace Garnet.server
                 return true;
             }
 
-            // Prepare input
-            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            ObjectInput input = new ObjectInput
+            {
+                header = new RespInputHeader
+                {
+                    type = GarnetObjectType.SortedSet,
+                    SortedSetOp = SortedSetOperation.ZADD,
+                },
+                count = (count - 1) / 2,
+                done = zaddDoneCount,
+                payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+            };
 
-            // Save old values on buffer
-            var save = *inputPtr;
-
-            // Prepare length of header in input buffer
-            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-            int inputCount = (count - 1) / 2;
-
-            // Prepare header in input buffer
-            inputPtr->header.type = GarnetObjectType.SortedSet;
-            inputPtr->header.flags = 0;
-            inputPtr->header.SortedSetOp = SortedSetOperation.ZADD;
-            inputPtr->count = inputCount;
-            inputPtr->done = zaddDoneCount;
-
-            var status = storageApi.SortedSetAdd(key, new ArgSlice((byte*)inputPtr, inputLength), out ObjectOutputHeader output);
-
-            // Reset input buffer
-            *inputPtr = save;
+            var status = storageApi.SortedSetAdd(key, ref input, out ObjectOutputHeader output);
 
             switch (status)
             {
@@ -95,7 +86,7 @@ namespace Garnet.server
                     zaddAddCount += output.opsDone;
 
                     // Reset buffer and return if command is only partially done
-                    if (zaddDoneCount < inputCount)
+                    if (zaddDoneCount < input.count)
                         return false;
                     while (!RespWriteUtils.WriteInteger(zaddAddCount, ref dcurr, dend))
                         SendAndReset();
@@ -139,28 +130,19 @@ namespace Garnet.server
                     return true;
                 }
 
-                int inputCount = count - 1;
+                ObjectInput input = new ObjectInput
+                {
+                    header = new RespInputHeader
+                    {
+                        type = GarnetObjectType.SortedSet,
+                        SortedSetOp = SortedSetOperation.ZREM,
+                    },
+                    count = count - 1,
+                    done = zaddDoneCount,
+                    payload = new ArgSlice(ptr, (int)(recvBufferPtr + bytesRead - ptr)),
+                };
 
-                // Prepare input
-                var rmwInput = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values on buffer for possible revert
-                var save = *rmwInput;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)rmwInput);
-
-                // Prepare header in input buffer
-                rmwInput->header.type = GarnetObjectType.SortedSet;
-                rmwInput->header.flags = 0;
-                rmwInput->header.SortedSetOp = SortedSetOperation.ZREM;
-                rmwInput->count = inputCount;
-                rmwInput->done = zaddDoneCount;
-
-                var status = storageApi.SortedSetRemove(key, new ArgSlice((byte*)rmwInput, inputLength), out ObjectOutputHeader rmwOutput);
-
-                // Reset input buffer
-                *rmwInput = save;
+                var status = storageApi.SortedSetRemove(key, ref input, out ObjectOutputHeader rmwOutput);
 
                 if (status != GarnetStatus.OK)
                 {
@@ -177,7 +159,7 @@ namespace Garnet.server
                         zaddAddCount += rmwOutput.opsDone;
 
                         // Reset buffer and return if ZREM is only partially done
-                        if (zaddDoneCount < inputCount)
+                        if (zaddDoneCount < input.count)
                             return false;
 
                         ptr += rmwOutput.bytesDone;
