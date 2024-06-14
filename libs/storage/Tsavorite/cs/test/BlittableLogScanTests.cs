@@ -17,7 +17,7 @@ namespace Tsavorite.test
         const int totalRecords = 2000;
         const int PageSizeBits = 10;
 
-        struct KeyStructComparerModulo : ITsavoriteEqualityComparer<KeyStruct>
+        struct KeyStructComparerModulo : IKeyComparer<KeyStruct>
         {
             readonly long mod;
 
@@ -41,7 +41,7 @@ namespace Tsavorite.test
         {
             DeleteDirectory(MethodTestDir, wait: true);
 
-            ITsavoriteEqualityComparer<KeyStruct> comparer = null;
+            IKeyComparer<KeyStruct> comparer = null;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is HashModulo mod && mod == HashModulo.Hundred)

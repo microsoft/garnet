@@ -193,7 +193,7 @@ namespace Tsavorite.test.recovery.objects
         }
     }
 
-    public class MyKey : ITsavoriteEqualityComparer<MyKey>
+    public class MyKey : IKeyComparer<MyKey>
     {
         public int key;
         public string name;

@@ -142,7 +142,7 @@ namespace Tsavorite.test.SingleWriter
 
             public override string ToString() => stringField;
 
-            public class Comparer : ITsavoriteEqualityComparer<StructWithString>
+            public class Comparer : IKeyComparer<StructWithString>
             {
                 public long GetHashCode64(ref StructWithString k) => Utility.GetHashCode(k.intField);
 

@@ -8,7 +8,7 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    public struct KeyStruct : ITsavoriteEqualityComparer<KeyStruct>
+    public struct KeyStruct : IKeyComparer<KeyStruct>
     {
         public long kfield1;
         public long kfield2;

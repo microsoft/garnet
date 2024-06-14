@@ -45,7 +45,7 @@ namespace Tsavorite.test.ReadCacheTests
         // so we get outsplicing rather than successively overwriting the hash table entry on ReadCacheEvict.
         long readCacheBelowMidChainKeyEvictionAddress;
 
-        internal class ChainComparer : ITsavoriteEqualityComparer<long>
+        internal class ChainComparer : IKeyComparer<long>
         {
             readonly int mod;
 
@@ -638,7 +638,7 @@ namespace Tsavorite.test.ReadCacheTests
 
         const long numKeys = 2_000;
 
-        struct LongComparerModulo : ITsavoriteEqualityComparer<long>
+        struct LongComparerModulo : IKeyComparer<long>
         {
             readonly HashModulo modRange;
 
@@ -887,7 +887,7 @@ namespace Tsavorite.test.ReadCacheTests
 
         const long numKeys = 2_000;
 
-        struct SpanByteComparerModulo : ITsavoriteEqualityComparer<SpanByte>
+        struct SpanByteComparerModulo : IKeyComparer<SpanByte>
         {
             readonly HashModulo modRange;
 

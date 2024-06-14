@@ -10,7 +10,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.ModifiedBit
 {
-    internal class ModifiedBitTestComparer : ITsavoriteEqualityComparer<int>
+    internal class ModifiedBitTestComparer : IKeyComparer<int>
     {
         public bool Equals(ref int k1, ref int k2) => k1 == k2;
 

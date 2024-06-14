@@ -12,7 +12,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LockTable
 {
-    internal class SingleBucketComparer : ITsavoriteEqualityComparer<long>
+    internal class SingleBucketComparer : IKeyComparer<long>
     {
         public bool Equals(ref long k1, ref long k2) => k1 == k2;
 
@@ -25,7 +25,7 @@ namespace Tsavorite.test.LockTable
     [TestFixture]
     internal class OverflowBucketLockTableTests
     {
-        ITsavoriteEqualityComparer<long> comparer = new LongTsavoriteEqualityComparer();
+        IKeyComparer<long> comparer = new LongKeyComparer();
         long SingleBucketKey = 1;   // We use a single bucket here for most tests so this lets us use 'ref' easily
 
         // For OverflowBucketLockTable, we need an instance of TsavoriteKV
@@ -47,7 +47,7 @@ namespace Tsavorite.test.LockTable
                     break;
                 }
             }
-            comparer ??= new LongTsavoriteEqualityComparer();
+            comparer ??= new LongKeyComparer();
 
             store = new TsavoriteKV<long, long>(1L << 20, new LogSettings { LogDevice = log, ObjectLogDevice = null, PageSizeBits = 12, MemorySizeBits = 22 },
                                             comparer: comparer);

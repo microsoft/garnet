@@ -10,11 +10,15 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    internal sealed class GenericScanIterator<Key, Value> : ScanIteratorBase, ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
+    internal sealed class GenericScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
+        where TKeyComparer : IKeyComparer<Key>
+        where TKeySerializer : IObjectSerializer<Key>
+        where TValueSerializer : IObjectSerializer<Value>
+        where TRecordDisposer : IRecordDisposer<Key, Value>
+        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
     {
         private readonly TsavoriteKV<Key, Value> store;
-        private readonly GenericAllocator<Key, Value> hlog;
-        private readonly ITsavoriteEqualityComparer<Key> comparer;
+        private readonly GenericAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> hlog;
         private readonly GenericFrame<Key, Value> frame;
         private readonly int recordSize;
 
@@ -26,12 +30,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocator<Key, Value> hlog, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, ILogger logger = null)
+        public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> hlog,
+                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
-            recordSize = hlog.GetRecordSize(0).Item2;
+            recordSize = hlog.GetRecordSize(0).allocatedSize;
             if (frameSize > 0)
                 frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
         }
@@ -39,13 +44,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocator<Key, Value> hlog, ITsavoriteEqualityComparer<Key> comparer, long beginAddress, LightEpoch epoch, ILogger logger = null)
+        public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> hlog,
+                long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
-            this.comparer = comparer;
-            recordSize = hlog.GetRecordSize(0).Item2;
+            recordSize = hlog.GetRecordSize(0).allocatedSize;
             if (frameSize > 0)
                 frame = new GenericFrame<Key, Value>(frameSize, hlog.PageSize);
         }
@@ -66,7 +71,7 @@ namespace Tsavorite.core
         public bool SnapCursorToLogicalAddress(ref long cursor)
         {
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
-            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, GenericAllocator<Key, Value>.RecordSize);
+            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, GenericAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>.RecordSize);
             return true;
         }
 
@@ -112,7 +117,7 @@ namespace Tsavorite.core
                 currentOffset = (currentAddress & hlog.PageSizeMask) / recordSize;
 
                 if (currentAddress < headAddress)
-                    BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
+                    _ = BufferAndLoad(currentAddress, currentPage, currentPage % frameSize, headAddress, stopAddress);
 
                 // Check if record fits on page, if not skip to next page
                 if ((currentAddress & hlog.PageSizeMask) + recordSize > hlog.PageSize)
@@ -218,7 +223,7 @@ namespace Tsavorite.core
                 nextAddress = currentAddress + recordSize;
 
                 bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                if (skipOnScan || recordInfo.IsNull() || !comparer.Equals(ref hlog.values[currentPage][currentOffset].key, ref key))
+                if (skipOnScan || recordInfo.IsNull() || !hlog._storeFunctions.KeyComparer.Equals(ref hlog.values[currentPage][currentOffset].key, ref key))
                 {
                     epoch?.Suspend();
                     continue;
@@ -292,7 +297,7 @@ namespace Tsavorite.core
             }
 
             if (errorCode == 0)
-                result.handle?.Signal();
+                _ = (result.handle?.Signal());
 
             Interlocked.MemoryBarrier();
         }

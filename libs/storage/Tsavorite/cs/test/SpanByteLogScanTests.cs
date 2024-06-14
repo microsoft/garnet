@@ -20,7 +20,7 @@ namespace Tsavorite.test
         const int totalRecords = 2000;
         const int PageSizeBits = 15;
 
-        struct SpanByteComparerModulo : ITsavoriteEqualityComparer<SpanByte>
+        struct SpanByteComparerModulo : IKeyComparer<SpanByte>
         {
             readonly long mod;
 
@@ -39,7 +39,7 @@ namespace Tsavorite.test
         [SetUp]
         public void Setup()
         {
-            ITsavoriteEqualityComparer<SpanByte> comparer = null;
+            IKeyComparer<SpanByte> comparer = null;
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
                 if (arg is HashModulo mod && mod == HashModulo.Hundred)

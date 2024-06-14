@@ -96,7 +96,7 @@ namespace Tsavorite.test
         }
     }
 
-    class ByteArrayEC : ITsavoriteEqualityComparer<byte[]>
+    class ByteArrayEC : IKeyComparer<byte[]>
     {
         public bool Equals(ref byte[] k1, ref byte[] k2)
         {

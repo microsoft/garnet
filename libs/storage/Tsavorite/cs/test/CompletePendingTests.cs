@@ -10,7 +10,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    public struct LocalKeyStructComparer : ITsavoriteEqualityComparer<KeyStruct>
+    public struct LocalKeyStructComparer : IKeyComparer<KeyStruct>
     {
         internal long? forceCollisionHash;
 

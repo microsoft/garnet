@@ -10,19 +10,23 @@ namespace Tsavorite.core
     /// <summary>
     /// Wrapper to process log-related commands
     /// </summary>
-    /// <typeparam name="Key"></typeparam>
-    /// <typeparam name="Value"></typeparam>
-    public sealed class LogAccessor<Key, Value> : IObservable<ITsavoriteScanIterator<Key, Value>>
+    public sealed class LogAccessor<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> : IObservable<ITsavoriteScanIterator<Key, Value>>
+        where TKeyComparer : IKeyComparer<Key>
+        where TKeySerializer : IObjectSerializer<Key>
+        where TValueSerializer : IObjectSerializer<Value>
+        where TRecordDisposer : IRecordDisposer<Key, Value>
+        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+        where TAllocatorCallbacks : IAllocatorCallbacks<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
     {
         private readonly TsavoriteKV<Key, Value> store;
-        private readonly AllocatorBase<Key, Value> allocator;
+        private readonly AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> allocator;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="store"></param>
         /// <param name="allocator"></param>
-        internal LogAccessor(TsavoriteKV<Key, Value> store, AllocatorBase<Key, Value> allocator)
+        internal LogAccessor(TsavoriteKV<Key, Value> store, AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> allocator)
         {
             this.store = store;
             this.allocator = allocator;
@@ -59,7 +63,7 @@ namespace Tsavorite.core
         /// 8 bytes (reference) on the main log (i.e., the heap space occupied by
         /// class objects is not included in the result of this call).
         /// </summary>
-        public int FixedRecordSize => allocator.GetFixedRecordSize();
+        public int FixedRecordSize => allocator._derived.GetFixedRecordSize();
 
         /// <summary>
         /// Number of pages left empty or unallocated in the in-memory buffer (between 0 and BufferSize-1)
@@ -103,7 +107,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Actual memory used by log (not including heap objects) and overflow pages
         /// </summary>
-        public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+        public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator._derived.OverflowPageCount)) << allocator.LogPageSizeBits;
 
         /// <summary>
         /// Number of pages allocated
@@ -194,7 +198,7 @@ namespace Tsavorite.core
         public IDisposable Subscribe(IObserver<ITsavoriteScanIterator<Key, Value>> readOnlyObserver)
         {
             allocator.OnReadOnlyObserver = readOnlyObserver;
-            return new LogSubscribeDisposable(allocator, true);
+            return new LogSubscribeDisposable(allocator, isReadOnly: true);
         }
 
         /// <summary>
@@ -207,13 +211,13 @@ namespace Tsavorite.core
         public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator<Key, Value>> evictionObserver)
         {
             allocator.OnEvictionObserver = evictionObserver;
-            return new LogSubscribeDisposable(allocator, false);
+            return new LogSubscribeDisposable(allocator, isReadOnly: false);
         }
 
         public IDisposable SubscribeDeserializations(IObserver<ITsavoriteScanIterator<Key, Value>> deserializationObserver)
         {
             allocator.OnDeserializationObserver = deserializationObserver;
-            return new LogSubscribeDisposable(allocator, false);
+            return new LogSubscribeDisposable(allocator, isReadOnly: false);
         }
 
         /// <summary>
@@ -221,13 +225,13 @@ namespace Tsavorite.core
         /// </summary>
         class LogSubscribeDisposable : IDisposable
         {
-            private readonly AllocatorBase<Key, Value> allocator;
+            private readonly AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> allocator;
             private readonly bool readOnly;
 
-            public LogSubscribeDisposable(AllocatorBase<Key, Value> allocator, bool readOnly)
+            public LogSubscribeDisposable(AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> allocator, bool isReadOnly)
             {
                 this.allocator = allocator;
-                this.readOnly = readOnly;
+                this.readOnly = isReadOnly;
             }
 
             public void Dispose()

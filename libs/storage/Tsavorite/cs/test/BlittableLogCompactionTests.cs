@@ -18,7 +18,7 @@ namespace Tsavorite.test
         private TsavoriteKV<KeyStruct, ValueStruct> store;
         private IDevice log;
 
-        struct HashModuloComparer : ITsavoriteEqualityComparer<KeyStruct>
+        struct HashModuloComparer : IKeyComparer<KeyStruct>
         {
             readonly HashModulo modRange;
 

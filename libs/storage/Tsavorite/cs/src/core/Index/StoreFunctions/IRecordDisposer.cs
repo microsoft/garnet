@@ -25,22 +25,22 @@ namespace Tsavorite.core
     /// Default no-op implementation if <see cref="IRecordDisposer{Key, Value}"/>
     /// </summary>
     /// <remarks>It is appropriate to call methods on this instance as a no-op.</remarks>
-    public class DefaultRecordDisposer<Key, Value> : IRecordDisposer<Key, Value>
+    public struct DefaultRecordDisposer<Key, Value> : IRecordDisposer<Key, Value>
     {
         /// <summary>
         /// Default instance
         /// </summary>
-        public static readonly DefaultRecordDisposer<Key, Value> Default = new();
+        public static readonly DefaultRecordDisposer<Key, Value> Instance = new();
 
         /// <summary>
         /// Assumes the key and value have no need of Dispose(), and does nothing.
         /// </summary>
-        public bool DisposeOnPageEviction => false;
+        public readonly bool DisposeOnPageEviction => false;
 
         /// <summary>
         /// Assumes the key and value have no need of Dispose(), and does nothing.
         /// </summary>
-        public void DisposeRecord(ref Key key, ref Value value, DisposeReason reason)
+        public readonly void DisposeRecord(ref Key key, ref Value value, DisposeReason reason)
         {
         }
     }
@@ -48,7 +48,23 @@ namespace Tsavorite.core
     /// <summary>
     /// Default no-op implementation if <see cref="IRecordDisposer{Key, Value}"/> for SpanByte
     /// </summary>
-    public class SpanByteRecordDisposer : DefaultRecordDisposer<SpanByte, SpanByte>
+    public struct SpanByteRecordDisposer : IRecordDisposer<SpanByte, SpanByte>
     {
+        /// <summary>
+        /// Default instance
+        /// </summary>
+        public static readonly SpanByteRecordDisposer Instance = new();
+
+        /// <summary>
+        /// Assumes the key and value have no need of Dispose(), and does nothing.
+        /// </summary>
+        public readonly bool DisposeOnPageEviction => false;
+
+        /// <summary>
+        /// Assumes the key and value have no need of Dispose(), and does nothing.
+        /// </summary>
+        void IRecordDisposer<SpanByte, SpanByte>.DisposeRecord(ref SpanByte key, ref SpanByte value, DisposeReason reason)
+        {
+        }
     }
 }

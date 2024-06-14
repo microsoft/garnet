@@ -6,7 +6,7 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.sumstore
 {
-    public struct AdId : ITsavoriteEqualityComparer<AdId>
+    public struct AdId : IKeyComparer<AdId>
     {
         public long adId;
 

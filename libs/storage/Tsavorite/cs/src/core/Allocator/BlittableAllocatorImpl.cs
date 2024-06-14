@@ -9,9 +9,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    internal sealed unsafe class BlittableAllocatorImpl<Key, Value, TKeyComparer>
-        : AllocatorBase<Key, Value, TKeyComparer, NoSerializer<Key>, NoSerializer<Value>, DefaultRecordDisposer<Key, Value>, StoreFunctions_FixedLenBlittable<Key, Value, TKeyComparer>, BlittableAllocator<Key, Value, TKeyComparer>>
-        where TKeyComparer : ITsavoriteEqualityComparer<Key>
+    internal sealed unsafe class BlittableAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
+        : AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, BlittableAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>>
+        where TKeyComparer : IKeyComparer<Key>
+        where TKeySerializer : IObjectSerializer<Key>
+        where TValueSerializer : IObjectSerializer<Value>
+        where TRecordDisposer : IRecordDisposer<Key, Value>
+        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
     {
         // Circular buffer definition
         private readonly byte[][] values;
@@ -20,12 +24,12 @@ namespace Tsavorite.core
 
         private static int KeySize => Unsafe.SizeOf<Key>();
         private static int ValueSize => Unsafe.SizeOf<Value>();
-        internal static int RecordSize => Unsafe.SizeOf<Record<Key, Value>>();
+        internal static int RecordSize => Unsafe.SizeOf<AllocatorRecord<Key, Value>>();
 
         private readonly OverflowPool<PageUnit> overflowPagePool;
 
-        public BlittableAllocatorImpl(LogSettings settings, TKeyComparer keyComparer, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null, ILogger logger = null)
-            : base(settings, new StoreFunctions_FixedLenBlittable<Key, Value, TKeyComparer>(keyComparer), evictCallback, epoch, flushCallback, logger)
+        public BlittableAllocatorImpl(LogSettings settings, TStoreFunctions storeFunctions, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null, ILogger logger = null)
+            : base(settings, storeFunctions, evictCallback, epoch, flushCallback, logger)
         {
             overflowPagePool = new OverflowPool<PageUnit>(4, p => { });
 
@@ -91,6 +95,9 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetAverageRecordSize() => RecordSize;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int GetFixedRecordSize() => RecordSize;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static (int actualSize, int allocatedSize, int keySize) GetRecordSize(ref Key key, ref Value value) => (RecordSize, RecordSize, KeySize);
@@ -245,14 +252,14 @@ namespace Tsavorite.core
         /// Iterator interface for pull-scanning Tsavorite log
         /// </summary>
         public override ITsavoriteScanIterator<Key, Value> Scan(TsavoriteKV<Key, Value> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
-            => new BlittableScanIterator<Key, Value, TKeyComparer>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
+            => new BlittableScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, logger: logger);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
         internal override bool Scan<TScanFunctions>(TsavoriteKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            using BlittableScanIterator<Key, Value, TKeyComparer> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
+            using BlittableScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -261,8 +268,8 @@ namespace Tsavorite.core
         /// </summary>
         internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<Key, Value> store, ScanCursorState<Key, Value> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using BlittableScanIterator<Key, Value, TKeyComparer> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
-            return ScanLookup<long, long, TScanFunctions, BlittableScanIterator<Key, Value, TKeyComparer>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            using BlittableScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
+            return ScanLookup<long, long, TScanFunctions, BlittableScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
         }
 
         /// <summary>
@@ -270,14 +277,14 @@ namespace Tsavorite.core
         /// </summary>
         internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using BlittableScanIterator<Key, Value, TKeyComparer> iter = new(store, this, store.comparer, beginAddress, epoch, logger: logger);
+            using BlittableScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
             return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator<Key, Value>> observer)
         {
-            using var iter = new BlittableScanIterator<Key, Value, TKeyComparer>(store: null, this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, false, epoch, true, logger: logger);
+            using var iter = new BlittableScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>(store: null, this, beginAddress, endAddress, ScanBufferingMode.NoBuffering, false, epoch, true, logger: logger);
             observer?.OnNext(iter);
         }
 

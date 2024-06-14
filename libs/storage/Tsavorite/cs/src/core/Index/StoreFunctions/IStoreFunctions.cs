@@ -13,7 +13,7 @@ namespace Tsavorite.core
     /// functionality is needed.
     /// </remarks>
     public interface IStoreFunctions<TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
-        where TKeyComparer: ITsavoriteEqualityComparer<TKey> 
+        where TKeyComparer: IKeyComparer<TKey> 
         where TKeySerializer: IObjectSerializer<TKey>
         where TValueSerializer : IObjectSerializer<TValue>
         where TRecordDisposer : IRecordDisposer<TKey, TValue>

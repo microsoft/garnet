@@ -6,7 +6,7 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
-    public class MyKey : ITsavoriteEqualityComparer<MyKey>
+    public class MyKey : IKeyComparer<MyKey>
     {
         public int key;
 
@@ -24,7 +24,7 @@ namespace Tsavorite.test
         public override void Serialize(ref MyKey obj) => writer.Write(obj.key);
     }
 
-    public class MyValue : ITsavoriteEqualityComparer<MyValue>
+    public class MyValue : IKeyComparer<MyValue>
     {
         public int value;
 

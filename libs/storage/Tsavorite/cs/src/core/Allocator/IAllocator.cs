@@ -8,14 +8,18 @@ namespace Tsavorite.core
     /// abstract/virtual methods may be called via <see cref="AllocatorBase{Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks}"/>.
     /// </summary>
     public interface IAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> : IAllocatorCallbacks<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
-        where TKeyComparer : ITsavoriteEqualityComparer<Key>
+        where TKeyComparer : IKeyComparer<Key>
         where TKeySerializer : IObjectSerializer<Key>
         where TValueSerializer : IObjectSerializer<Value>
         where TRecordDisposer : IRecordDisposer<Key, Value>
         where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
     {
-        /// <summary>The <see cref="StoreFunctions{Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer}"/> implementation instance for this allocator instance</summary>
+        /// <summary>The <see cref="IStoreFunctions{Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer}"/> implementation instance for this allocator instance</summary>
         TStoreFunctions StoreFunctions { get; }
+
+        /// <summary>The base class instance of the allocator implementation</summary>
+        AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> GetBase<TAllocator>()
+            where TAllocator : IAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>;
 
         /// <summary>Initialize</summary>
         void Initialize();
@@ -45,15 +49,6 @@ namespace Tsavorite.core
 
         /// <summary>Get segment offsets</summary>
         long[] GetSegmentOffsets();
-
-        /// <summary>Number of extra overflow pages allocated</summary>
-        int OverflowPageCount { get; }
-
-        /// <summary>Invokes eviction observer if set and then frees the page.</summary>
-        void EvictPage(long page);
-
-        /// <summary>Invokes the log device(s) to try to complete an IO operation.</summary>
-        bool TryComplete();
 
         /// <summary>Serialize key to log</summary>
         void SerializeKey(ref Key key, long physicalAddress);

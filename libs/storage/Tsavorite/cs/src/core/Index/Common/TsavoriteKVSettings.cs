@@ -10,7 +10,13 @@ namespace Tsavorite.core
     /// <summary>
     /// Configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
     /// </summary>
-    public sealed class TsavoriteKVSettings<Key, Value> : IDisposable
+    public sealed class TsavoriteKVSettings<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> : IDisposable
+        where TKeyComparer : IKeyComparer<Key>
+        where TKeySerializer : IObjectSerializer<Key>
+        where TValueSerializer : IObjectSerializer<Value>
+        where TRecordDisposer : IRecordDisposer<Key, Value>
+        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+        where TAllocator : IAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
     {
         readonly bool disposeDevices = false;
         readonly bool deleteDirOnDispose = false;
@@ -62,19 +68,9 @@ namespace Tsavorite.core
         public bool PreallocateLog = false;
 
         /// <summary>
-        /// Key serializer
+        /// StoreFunctions for this TsavoriteKV instance
         /// </summary>
-        public Func<IObjectSerializer<Key>> KeySerializer;
-
-        /// <summary>
-        /// Value serializer
-        /// </summary>
-        public Func<IObjectSerializer<Value>> ValueSerializer;
-
-        /// <summary>
-        /// Equality comparer for key
-        /// </summary>
-        public ITsavoriteEqualityComparer<Key> EqualityComparer;
+        public TStoreFunctions StoreFunctions;
 
         /// <summary>
         /// Whether read cache is enabled
@@ -230,18 +226,6 @@ namespace Tsavorite.core
                     SecondChanceFraction = ReadCacheSecondChanceFraction
                 }
                 : null;
-        }
-
-        internal SerializerSettings<Key, Value> GetSerializerSettings()
-        {
-            if (KeySerializer == null && ValueSerializer == null)
-                return null;
-
-            return new SerializerSettings<Key, Value>
-            {
-                keySerializer = KeySerializer,
-                valueSerializer = ValueSerializer
-            };
         }
 
         internal CheckpointSettings GetCheckpointSettings()

@@ -150,7 +150,7 @@ namespace Tsavorite.test.Revivification
             => numRecords - GetRevivifiableRecordCount(store, numRecords);
     }
 
-    internal readonly struct RevivificationSpanByteComparer : ITsavoriteEqualityComparer<SpanByte>
+    internal readonly struct RevivificationSpanByteComparer : IKeyComparer<SpanByte>
     {
         private readonly SpanByteComparer defaultComparer;
         private readonly int collisionRange;
@@ -1694,11 +1694,11 @@ namespace Tsavorite.test.Revivification
 
         internal class RevivificationStressFunctions : SpanByteFunctions<Empty>
         {
-            internal ITsavoriteEqualityComparer<SpanByte> keyComparer;     // non-null if we are doing key comparisons (and thus expectedKey is non-default)
+            internal IKeyComparer<SpanByte> keyComparer;     // non-null if we are doing key comparisons (and thus expectedKey is non-default)
             internal SpanByte expectedKey = default;                    // Set for each operation by the calling thread
             internal bool isFirstLap = true;                            // For first 
 
-            internal RevivificationStressFunctions(ITsavoriteEqualityComparer<SpanByte> keyComparer) => this.keyComparer = keyComparer;
+            internal RevivificationStressFunctions(IKeyComparer<SpanByte> keyComparer) => this.keyComparer = keyComparer;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void VerifyKey(ref SpanByte functionsKey)

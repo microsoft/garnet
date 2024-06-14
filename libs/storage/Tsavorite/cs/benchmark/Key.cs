@@ -8,7 +8,7 @@ using Tsavorite.core;
 namespace Tsavorite.benchmark
 {
     [StructLayout(LayoutKind.Explicit, Size = 8)]
-    public struct Key : ITsavoriteEqualityComparer<Key>
+    public struct Key : IKeyComparer<Key>
     {
         [FieldOffset(0)]
         public long value;

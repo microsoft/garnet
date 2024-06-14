@@ -1177,7 +1177,7 @@ namespace Tsavorite.core
     }
 
     public abstract partial class AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> : IDisposable
-        where TKeyComparer : ITsavoriteEqualityComparer<Key>
+        where TKeyComparer : IKeyComparer<Key>
         where TKeySerializer : IObjectSerializer<Key>
         where TValueSerializer : IObjectSerializer<Value>
         where TRecordDisposer : IRecordDisposer<Key, Value>
@@ -1241,8 +1241,8 @@ namespace Tsavorite.core
                 ((headAddress == untilAddress) && (GetOffsetInPage(headAddress) == 0)) // Empty in-memory page
                 )
             {
-                if (!IsAllocated(GetPageIndexForAddress(headAddress)))
-                    AllocatePage(GetPageIndexForAddress(headAddress));
+                if (!_derived.IsAllocated(GetPageIndexForAddress(headAddress)))
+                    _derived.AllocatePage(GetPageIndexForAddress(headAddress));
             }
             else
             {
@@ -1287,7 +1287,7 @@ namespace Tsavorite.core
 
             if (result.freeBuffer1 != null)
             {
-                PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                _derived.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
                 result.freeBuffer1.Return();
             }
             int pageIndex = GetPageIndexForPage(result.page);

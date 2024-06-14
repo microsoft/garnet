@@ -4,80 +4,65 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Default compositor of the StoreFunctions components.
+    /// Store functions for <see cref="SpanByte"/> Key and Value
     /// </summary>
-    public class StoreFunctions<TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer> : IStoreFunctions<TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
-        where TKeyComparer : ITsavoriteEqualityComparer<TKey>
+    public struct StoreFunctions_SpanByte()
+            : IStoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>
+    {
+        /// <inheritdoc/>
+        public SpanByteComparer KeyComparer { get; private set; } = SpanByteComparer.Instance;
+
+        /// <inheritdoc/>
+        public NoSerializer<SpanByte> KeySerializer { get; private set; } = NoSerializer<SpanByte>.Instance;
+
+        /// <inheritdoc/>
+        public NoSerializer<SpanByte> ValueSerializer { get; private set; } = NoSerializer<SpanByte>.Instance;
+
+        /// <inheritdoc/>
+        public SpanByteRecordDisposer RecordDisposer { get; private set; } = SpanByteRecordDisposer.Instance;
+    }
+
+    /// <summary>
+    /// Store functions for <typeparamref name="TKey"/> and <typeparamref name="TValue"/> that take only the <paramref name="keyComparer"/>
+    /// </summary>
+    public struct StoreFunctions_KeyComparerOnly<TKey, TValue, TKeyComparer>(TKeyComparer keyComparer)
+            : IStoreFunctions<TKey, TValue, TKeyComparer, NoSerializer<TKey>, NoSerializer<TValue>, DefaultRecordDisposer<TKey, TValue>>
+        where TKeyComparer : IKeyComparer<TKey>
+    {
+        /// <inheritdoc/>
+        public TKeyComparer KeyComparer { get; private set; } = keyComparer;
+
+        /// <inheritdoc/>
+        public NoSerializer<TKey> KeySerializer { get; private set; } = NoSerializer<TKey>.Instance;
+
+        /// <inheritdoc/>
+        public NoSerializer<TValue> ValueSerializer { get; private set; } = NoSerializer<TValue>.Instance;
+
+        /// <inheritdoc/>
+        public DefaultRecordDisposer<TKey, TValue> RecordDisposer { get; private set; } = DefaultRecordDisposer<TKey, TValue>.Instance;
+    }
+
+    /// <summary>
+    /// Store functions for <typeparamref name="TKey"/> and <typeparamref name="TValue"/> that take parameters for all fields. This is usually Object types.
+    /// </summary>
+    /// <remarks>Constructor</remarks>
+    public struct StoreFunctions_All<TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>(TKeyComparer keyComparer, TKeySerializer keySerializer, TValueSerializer valueSerializer, TRecordDisposer recordDisposer) 
+            : IStoreFunctions<TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+        where TKeyComparer : IKeyComparer<TKey>
         where TKeySerializer : IObjectSerializer<TKey>
         where TValueSerializer : IObjectSerializer<TValue>
         where TRecordDisposer : IRecordDisposer<TKey, TValue>
     {
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        public StoreFunctions(TKeyComparer keyComparer, TKeySerializer keySerializer, TValueSerializer valueSerializer, TRecordDisposer recordDisposer)
-        {
-            KeyComparer = keyComparer;
-            KeySerializer = keySerializer;
-            ValueSerializer = valueSerializer;
-            RecordDisposer = recordDisposer;
-        }
+        /// <inheritdoc/>
+        public TKeyComparer KeyComparer { get; private set; } = keyComparer;
 
         /// <inheritdoc/>
-        public TKeyComparer KeyComparer { get; private set; }
+        public TKeySerializer KeySerializer { get; private set; } = keySerializer;
 
         /// <inheritdoc/>
-        public TKeySerializer KeySerializer { get; private set; }
+        public TValueSerializer ValueSerializer { get; private set; } = valueSerializer;
 
         /// <inheritdoc/>
-        public TValueSerializer ValueSerializer { get; private set; }
-
-        /// <inheritdoc/>
-        public TRecordDisposer RecordDisposer { get; private set; }
-    }
-
-    /// <summary>
-    /// Store functions for <see cref="SpanByte"/> Key and Value, using <see cref="SpanByteAllocator"/>
-    /// </summary>
-    public sealed class StoreFunctions_SpanByte : StoreFunctions<SpanByte, SpanByte, SpanByteComparer, NoSerializer<SpanByte>, NoSerializer<SpanByte>, SpanByteRecordDisposer>
-    {
-        /// <summary>Default instance</summary>
-        public static readonly StoreFunctions_SpanByte Default = new();
-
-        /// <summary>Constructor</summary>
-        public StoreFunctions_SpanByte()
-            : base(new SpanByteComparer(), new NoSerializer<SpanByte>(), new NoSerializer<SpanByte>(), new SpanByteRecordDisposer())
-        { }
-    }
-
-    /// <summary>
-    /// Store functions for object Key and Value, using <see cref="GenericAllocator{TKey, TValue}"/>
-    /// </summary>
-    public sealed class StoreFunctions_Generic<TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer> : StoreFunctions<TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
-        where TKeyComparer : ITsavoriteEqualityComparer<TKey>
-        where TKeySerializer : IObjectSerializer<TKey>
-        where TValueSerializer : IObjectSerializer<TValue>
-        where TRecordDisposer : IRecordDisposer<TKey, TValue>
-    {
-        // There is no default instance because there is no parameterless ctor.
-
-        /// <summary>Constructor</summary>
-        public StoreFunctions_Generic(TKeyComparer keyComparer, TKeySerializer keySerializer, TValueSerializer valueSerializer, TRecordDisposer recordDisposer)
-            : base(keyComparer, keySerializer, valueSerializer, recordDisposer)
-        { }
-    }
-
-    /// <summary>
-    /// Store functions for <typeparamref name="TKey"/> and <typeparamref name="TValue"/>, using <see cref="BlittableAllocatorImpl{Key, Value, TKeyComparer}"/>
-    /// </summary>
-    public sealed class StoreFunctions_FixedLenBlittable<TKey, TValue, TKeyComparer> : StoreFunctions<TKey, TValue, TKeyComparer, NoSerializer<TKey>, NoSerializer<TValue>, DefaultRecordDisposer<TKey, TValue>>
-        where TKeyComparer : ITsavoriteEqualityComparer<TKey>
-    {
-        // There is no default instance because there is no parameterless ctor.
-
-        /// <summary>Constructor</summary>
-        public StoreFunctions_FixedLenBlittable(TKeyComparer keyComparer)
-            : base(keyComparer, new NoSerializer<TKey>(), new NoSerializer<TValue>(), new DefaultRecordDisposer<TKey, TValue>())
-        { }
+        public TRecordDisposer RecordDisposer { get; private set; } = recordDisposer;
     }
 }

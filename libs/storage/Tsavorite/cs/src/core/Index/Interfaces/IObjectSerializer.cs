@@ -76,12 +76,15 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// For use with <see cref="StoreFunctions{TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer}"/> for types
-    /// that do not have serialization, or have a custom implementation (e.g. <see cref="SpanByte"/>) that is handled entirely by the allocator.
+    /// For use with <see cref="IStoreFunctions{TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer}"/> implementations
+    /// for Key or Value types that do not have serialization or have a custom implementation that is handled entirely by the allocator (e.g. <see cref="SpanByte"/>).
     /// </summary>
     /// <remarks>Calling methods on this type an error, so it throws rather than no-ops.</remarks>>
     public sealed class NoSerializer<T> : IObjectSerializer<T>
     {
+        /// <summary>Default instance</summary>
+        public static NoSerializer<T> Instance = new();
+
         /// <inheritdoc/>
         public void BeginDeserialize(Stream stream) => throw new System.NotImplementedException();
 

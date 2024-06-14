@@ -29,7 +29,7 @@ namespace Tsavorite.test.readaddress
 
             public override string ToString() => key.ToString();
 
-            internal class Comparer : ITsavoriteEqualityComparer<Key>
+            internal class Comparer : IKeyComparer<Key>
             {
                 public long GetHashCode64(ref Key key) => Utility.GetHashCode(key.key);
 

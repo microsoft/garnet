@@ -16,9 +16,9 @@ namespace Tsavorite.test
         private IDevice log, objlog;
         const int totalRecords = 250;
 
-        ITsavoriteEqualityComparer<MyKey> comparer = null;
+        IKeyComparer<MyKey> comparer = null;
 
-        public class MyObjectComparerModulo : ITsavoriteEqualityComparer<MyKey>
+        public class MyObjectComparerModulo : IKeyComparer<MyKey>
         {
             readonly long mod;
 

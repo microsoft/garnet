@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.CompilerServices;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -9,7 +11,7 @@ namespace Tsavorite.core
     /// to the fully derived allocator, including both record accessors and Scan calls.
     /// </summary>
     public interface IAllocatorCallbacks<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
-        where TKeyComparer : ITsavoriteEqualityComparer<Key>
+        where TKeyComparer : IKeyComparer<Key>
         where TKeySerializer : IObjectSerializer<Key>
         where TValueSerializer : IObjectSerializer<Value>
         where TRecordDisposer : IRecordDisposer<Key, Value>
@@ -61,6 +63,11 @@ namespace Tsavorite.core
 
         /// <summary>Free the page at <paramref name="pageIndex"/></summary>
         void FreePage(long pageIndex);
+
+        /// <summary>Number of extra overflow pages allocated</summary>
+        int OverflowPageCount { get; }
+
+        int GetFixedRecordSize();
 
         /// <summary>Retrieve key from IO context record</summary>
         ref Key GetContextRecordKey(ref AsyncIOContext<Key, Value> ctx);

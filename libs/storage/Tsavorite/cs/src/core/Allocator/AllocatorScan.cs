@@ -25,7 +25,7 @@ namespace Tsavorite.core
     }
 
     public abstract partial class AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> : IDisposable
-        where TKeyComparer : ITsavoriteEqualityComparer<Key>
+        where TKeyComparer : IKeyComparer<Key>
         where TKeySerializer : IObjectSerializer<Key>
         where TValueSerializer : IObjectSerializer<Value>
         where TRecordDisposer : IRecordDisposer<Key, Value>

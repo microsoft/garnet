@@ -15,14 +15,14 @@ namespace Tsavorite.core
         /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
         /// <param name="key">The key to obtain a code for</param>
         /// </summary>
-        /// <returns>The hashcode of the key; created and returned by <see cref="ITsavoriteEqualityComparer{Key}.GetHashCode64(ref Key)"/></returns>
+        /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer{Key}.GetHashCode64(ref Key)"/></returns>
         long GetKeyHash(Key key);
 
         /// <summary>
         /// Obtain a code by which groups of keys will be sorted for manual locking, to avoid deadlocks.
         /// <param name="key">The key to obtain a code for</param>
         /// </summary>
-        /// <returns>The hashcode of the key; created and returned by <see cref="ITsavoriteEqualityComparer{Key}.GetHashCode64(ref Key)"/></returns>
+        /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer{Key}.GetHashCode64(ref Key)"/></returns>
         long GetKeyHash(ref Key key);
     }
 

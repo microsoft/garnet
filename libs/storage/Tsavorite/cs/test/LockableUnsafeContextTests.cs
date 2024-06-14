@@ -35,7 +35,7 @@ namespace Tsavorite.test.LockableUnsafeContext
         }
     }
 
-    internal class LockableUnsafeComparer : ITsavoriteEqualityComparer<long>
+    internal class LockableUnsafeComparer : IKeyComparer<long>
     {
         internal int maxSleepMs;
         readonly Random rng = new(101);

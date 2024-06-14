@@ -60,7 +60,7 @@ namespace Tsavorite.test.LockTests
             }
         }
 
-        internal class LocalComparer : ITsavoriteEqualityComparer<int>
+        internal class LocalComparer : IKeyComparer<int>
         {
             internal int mod = numRecords;
 

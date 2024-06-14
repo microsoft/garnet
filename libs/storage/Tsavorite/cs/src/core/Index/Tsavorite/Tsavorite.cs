@@ -12,15 +12,23 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<Key, Value> : TsavoriteBase, IDisposable
+    /// <summary>
+    /// The Tsavorite Key/Value store class
+    /// </summary>
+    public partial class TsavoriteKV<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> : TsavoriteBase, IDisposable
+        where TKeyComparer : IKeyComparer<Key>
+        where TKeySerializer : IObjectSerializer<Key>
+        where TValueSerializer : IObjectSerializer<Value>
+        where TRecordDisposer : IRecordDisposer<Key, Value>
+        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+        where TAllocator : IAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
     {
-        internal readonly AllocatorBase<Key, Value> hlog;
-        internal readonly AllocatorBase<Key, Value> readcache;
+        internal readonly TAllocator hlog;
+        internal readonly AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> hlogBase;
+        internal readonly TAllocator readcache;
+        internal readonly AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> readCacheBase;
 
-        /// <summary>
-        /// Compares two keys
-        /// </summary>
-        internal readonly ITsavoriteEqualityComparer<Key> comparer;
+        internal readonly TStoreFunctions storeFunctions;
 
         internal readonly bool UseReadCache;
         private readonly ReadCopyOptions ReadCopyOptions;
@@ -34,7 +42,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Maximum number of memory pages ever allocated
         /// </summary>
-        public long MaxAllocatedPageCount => hlog.MaxAllocatedPageCount;
+        public long MaxAllocatedPageCount => hlogBase.MaxAllocatedPageCount;
 
         /// <summary>
         /// Size of index in #cache lines (64 bytes each)
@@ -50,19 +58,14 @@ namespace Tsavorite.core
         public long OverflowBucketAllocations => overflowBucketsAllocator.NumAllocations;
 
         /// <summary>
-        /// Comparer used by Tsavorite
-        /// </summary>
-        public ITsavoriteEqualityComparer<Key> Comparer => comparer;
-
-        /// <summary>
         /// Hybrid log used by this Tsavorite instance
         /// </summary>
-        public LogAccessor<Key, Value> Log { get; }
+        public LogAccessor<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> Log { get; }
 
         /// <summary>
         /// Read cache used by this Tsavorite instance
         /// </summary>
-        public LogAccessor<Key, Value> ReadCache { get; }
+        public LogAccessor<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> ReadCache { get; }
 
         int maxSessionID;
 
@@ -72,9 +75,9 @@ namespace Tsavorite.core
         internal void IncrementNumLockingSessions()
         {
             _hybridLogCheckpoint.info.manualLockingActive = true;
-            Interlocked.Increment(ref hlog.NumActiveLockingSessions);
+            Interlocked.Increment(ref hlogBase.NumActiveLockingSessions);
         }
-        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlog.NumActiveLockingSessions);
+        internal void DecrementNumLockingSessions() => Interlocked.Decrement(ref hlogBase.NumActiveLockingSessions);
 
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 
@@ -84,12 +87,11 @@ namespace Tsavorite.core
         /// Create TsavoriteKV instance
         /// </summary>
         /// <param name="tsavoriteKVSettings">Config settings</param>
-        public TsavoriteKV(TsavoriteKVSettings<Key, Value> tsavoriteKVSettings) :
+        public TsavoriteKV(TsavoriteKVSettings<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> tsavoriteKVSettings) :
             this(
                 tsavoriteKVSettings.GetIndexSizeCacheLines(), tsavoriteKVSettings.GetLogSettings(),
-                tsavoriteKVSettings.GetCheckpointSettings(), tsavoriteKVSettings.GetSerializerSettings(),
-                tsavoriteKVSettings.EqualityComparer, tsavoriteKVSettings.TryRecoverLatest,
-                null, revivificationSettings: tsavoriteKVSettings.RevivificationSettings)
+                tsavoriteKVSettings.StoreFunctions, tsavoriteKVSettings.GetCheckpointSettings(),
+                tsavoriteKVSettings.TryRecoverLatest, revivificationSettings: tsavoriteKVSettings.RevivificationSettings)
         { }
 
         /// <summary>
@@ -98,40 +100,19 @@ namespace Tsavorite.core
         /// <param name="size">Size of core index (#cache lines)</param>
         /// <param name="logSettings">Log settings</param>
         /// <param name="checkpointSettings">Checkpoint settings</param>
-        /// <param name="serializerSettings">Serializer settings</param>
-        /// <param name="comparer">Tsavorite equality comparer for key</param>
+        /// <param name="storeFunctions">StoreFunctions</param>
         /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
-        /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in (e.g. from <see cref="TsavoriteKVSettings{Key, Value}"/>).</param>
+        /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in.</param>
         /// <param name="logger">Logger to use.</param>
         /// <param name="revivificationSettings">Settings for recycling deleted records on the log.</param>
-        public TsavoriteKV(long size, LogSettings logSettings,
-            CheckpointSettings checkpointSettings = null, SerializerSettings<Key, Value> serializerSettings = null,
-            ITsavoriteEqualityComparer<Key> comparer = null, bool tryRecoverLatest = false,
+        public TsavoriteKV(long size, LogSettings logSettings, TStoreFunctions storeFunctions,
+            CheckpointSettings checkpointSettings = null, bool tryRecoverLatest = false,
             ILoggerFactory loggerFactory = null, ILogger logger = null, RevivificationSettings revivificationSettings = null)
         {
             this.loggerFactory = loggerFactory;
             this.logger = logger ?? this.loggerFactory?.CreateLogger("TsavoriteKV Constructor");
 
-            if (comparer != null)
-                this.comparer = comparer;
-            else
-            {
-                if (typeof(ITsavoriteEqualityComparer<Key>).IsAssignableFrom(typeof(Key)))
-                {
-                    if (default(Key) is not null)
-                    {
-                        this.comparer = default(Key) as ITsavoriteEqualityComparer<Key>;
-                    }
-                    else if (typeof(Key).GetConstructor(Type.EmptyTypes) != null)
-                    {
-                        this.comparer = Activator.CreateInstance(typeof(Key)) as ITsavoriteEqualityComparer<Key>;
-                    }
-                }
-                else
-                {
-                    this.comparer = TsavoriteEqualityComparer.Get<Key>();
-                }
-            }
+            this.storeFunctions = storeFunctions;
 
             checkpointSettings ??= new CheckpointSettings();
 
@@ -186,7 +167,7 @@ namespace Tsavorite.core
             else if (typeof(Key) == typeof(SpanByte) && typeof(Value) == typeof(SpanByte))
             {
                 isFixedLenReviv = false;
-                var spanByteComparer = this.comparer as ITsavoriteEqualityComparer<SpanByte>;
+                var spanByteComparer = this.comparer as IKeyComparer<SpanByte>;
                 hlog = new SpanByteAllocator(logSettings, spanByteComparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("SpanByteAllocator HybridLog")) as AllocatorBase<Key, Value>;
                 Log = new LogAccessor<Key, Value>(this, hlog);
                 if (UseReadCache)

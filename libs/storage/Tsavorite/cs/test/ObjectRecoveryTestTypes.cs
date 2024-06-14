@@ -6,7 +6,7 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
 {
-    public class AdId : ITsavoriteEqualityComparer<AdId>
+    public class AdId : IKeyComparer<AdId>
     {
         public long adId;
 
