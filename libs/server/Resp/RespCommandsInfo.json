@@ -763,6 +763,314 @@
         "Tips": null,
         "KeySpecifications": null,
         "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|ADDSLOTS",
+        "IsInternal": false,
+        "Arity": -3,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|ADDSLOTSRANGE",
+        "IsInternal": false,
+        "Arity": -4,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|BUMPEPOCH",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|COUNTKEYSINSLOT",
+        "IsInternal": false,
+        "Arity": 3,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|DELSLOTS",
+        "IsInternal": false,
+        "Arity": -3,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|DELSLOTSRANGE",
+        "IsInternal": false,
+        "Arity": -4,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|FAILOVER",
+        "IsInternal": false,
+        "Arity": -2,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|FORGET",
+        "IsInternal": false,
+        "Arity": 3,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|GETKEYSINSLOT",
+        "IsInternal": false,
+        "Arity": 4,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|INFO",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|KEYSLOT",
+        "IsInternal": false,
+        "Arity": 3,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|MEET",
+        "IsInternal": false,
+        "Arity": -4,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|MYID",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|NODES",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|REPLICAS",
+        "IsInternal": false,
+        "Arity": 3,
+        "Flags": "Admin, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|REPLICATE",
+        "IsInternal": false,
+        "Arity": 3,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|RESET",
+        "IsInternal": false,
+        "Arity": -2,
+        "Flags": "Admin, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|SET-CONFIG-EPOCH",
+        "IsInternal": false,
+        "Arity": 3,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|SETSLOT",
+        "IsInternal": false,
+        "Arity": -4,
+        "Flags": "Admin, NoAsyncLoading, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|SHARDS",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER",
+        "Name": "CLUSTER|SLOTS",
+        "IsInternal": false,
+        "Arity": 2,
+        "Flags": "Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Slow",
+        "Tips": [
+          "nondeterministic_output"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
       }
     ]
   },
@@ -2096,6 +2404,41 @@
         "Step": 0,
         "AclCategories": "Slow, Garnet",
         "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "LATENCY",
+        "Name": "LATENCY|HISTOGRAM",
+        "IsInternal": false,
+        "Arity": -2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "nondeterministic_output",
+          "request_policy:all_nodes",
+          "response_policy:special"
+        ],
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
+        "Command": "LATENCY",
+        "Name": "LATENCY|RESET",
+        "IsInternal": false,
+        "Arity": -2,
+        "Flags": "Admin, Loading, NoScript, Stale",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": [
+          "request_policy:all_nodes",
+          "response_policy:all_succeeded"
+        ],
         "KeySpecifications": null,
         "SubCommands": null
       }

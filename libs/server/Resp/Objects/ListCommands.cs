@@ -233,8 +233,6 @@ namespace Garnet.server
 
             if (NetworkKeyArraySlotVerify(ref keys, false))
             {
-                if (!DrainCommands(count))
-                    return false;
                 return true;
             }
 
@@ -286,8 +284,6 @@ namespace Garnet.server
 
             if (NetworkKeyArraySlotVerify(ref keys, false))
             {
-                if (!DrainCommands(count))
-                    return false;
                 return true;
             }
 
