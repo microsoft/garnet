@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace Garnet.common
 {
@@ -23,7 +22,6 @@ namespace Garnet.common
         /// </summary>
         public byte* entryPtr;
 
-        GCHandle handle;
         readonly LimitedFixedBufferPool pool;
         bool disposed;
 
