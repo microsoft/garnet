@@ -1,41 +1,79 @@
 ﻿// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT license.
 
+using System.IO;
+
 namespace Tsavorite.core
 {
     /// <summary>
     /// The interface to define functions on the TsavoriteKV store itself (rather than a session).
     /// </summary>
-    /// <remarks>
-    /// The implementation takes instances of the supported interfaces (e.g. <see cref="IObjectSerializer{T}"/>) to allow custom
-    /// implementation of any/all. We also provide standard implementations for standard types. The design exposes the instances
-    /// because there is no need to wrap calls to them with additional functionality. This can be changed to redirect if such wrapper
-    /// functionality is needed.
-    /// </remarks>
-    public interface IStoreFunctions<TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
-        where TKeyComparer: IKeyComparer<TKey> 
-        where TKeySerializer: IObjectSerializer<TKey>
-        where TValueSerializer : IObjectSerializer<TValue>
-        where TRecordDisposer : IRecordDisposer<TKey, TValue>
+    public interface IStoreFunctions<TKey, TValue>
     {
-        /// <summary>
-        /// Compare two keys for equality, and get a key's hash code.
-        /// </summary>
-        TKeyComparer KeyComparer { get; }
+        #region Key Comparer
+        /// <summary>Get a 64-bit hash code for a key</summary>
+        long GetKeyHashCode64(ref TKey key);
 
-        /// <summary>
-        /// Serialize a Key to persistent storage
-        /// </summary>
-        TKeySerializer KeySerializer { get; }
+        /// <summary>Compare two keys for equality</summary>
+        bool KeysEqual(ref TKey k1, ref TKey k2);
+        #endregion Key Comparer
 
-        /// <summary>
-        /// Serialize a Value to persistent storage
-        /// </summary>
-        TValueSerializer ValueSerializer { get; }
+        #region Key Serializer
+        /// <summary>Indicates whether the Key Serializer is to be used</summary>
+        bool HasKeySerializer { get; }
 
+        /// <summary>Begin Key serialization to given stream</summary>
+        void BeginSerializeKey(Stream stream);
+
+        /// <summary>Serialize Key to stream</summary>
+        void SerializeKey(ref TKey key);
+
+        /// <summary>End Key serialization to stream</summary>
+        void EndSerializeKey();
+
+        /// <summary>Begin Key deserialization from stream</summary>
+        void BeginDeserializeKey(Stream stream);
+
+        /// <summary>Deserialize Key from stream</summary>
+        void DeserializeKey(out TKey key);
+
+        /// <summary>End Key deserialization from stream</summary>
+        void EndDeserializeKey();
+        #endregion Key Serializer
+
+        #region Value Serializer
+        /// <summary>Indicates whether the Value Serializer is to be used</summary>
+        bool HasValueSerializer { get; }
+
+        /// <summary>Begin Value serialization to given stream</summary>
+        void BeginSerializeValue(Stream stream);
+
+        /// <summary>Serialize Value to stream</summary>
+        void SerializeValue(ref TValue value);
+
+        /// <summary>End Value serialization to stream</summary>
+        void EndSerializeValue();
+
+        /// <summary>Begin Value deserialization from stream</summary>
+        void BeginDeserializeValue(Stream stream);
+
+        /// <summary>Deserialize Value from stream</summary>
+        void DeserializeValue(out TValue value);
+
+        /// <summary>End Value deserialization from stream</summary>
+        void EndDeserializeValue();
+        #endregion Value Serializer
+
+        #region Record Disposer
         /// <summary>
-        /// Dispose a record
+        /// If true, <see cref="DisposeRecord(ref TKey, ref TValue, DisposeReason)"/> with <see cref="DisposeReason.PageEviction"/> 
+        /// is called on page evictions from both readcache and main log. Otherwise, the user can register an Observer and
+        /// do any needed disposal there.
         /// </summary>
-        TRecordDisposer RecordDisposer { get; }
+        bool DisposeOnPageEviction { get; }
+
+        /// <summary>Dispose the Key and Value of a record, if necessary.</summary>
+        void DisposeRecord(ref TKey key, ref TValue value, DisposeReason reason);
+        #endregion Record Disposer
     }
 }

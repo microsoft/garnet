@@ -4,7 +4,7 @@
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Interface to implement the Disposer component of <see cref="IStoreFunctions{Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer}"/>
+    /// Interface to implement the Disposer component of <see cref="IStoreFunctions{Key, Value}"/>
     /// </summary>
     public interface IRecordDisposer<Key, Value>
     {

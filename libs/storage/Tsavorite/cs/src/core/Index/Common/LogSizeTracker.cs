@@ -26,13 +26,15 @@ namespace Tsavorite.core
         Deserialize
     }
 
-    public class LogOperationObserver<Key, Value, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<Key, Value>>
+    public class LogOperationObserver<Key, Value, TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<Key, Value>>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
         where TLogSizeCalculator : ILogSizeCalculator<Key, Value>
     {
-        private readonly LogSizeTracker<Key, Value, TLogSizeCalculator> logSizeTracker;
+        private readonly LogSizeTracker<Key, Value, TStoreFunctions, TAllocator, TLogSizeCalculator> logSizeTracker;
         private readonly LogOperationType logOperationType;
 
-        public LogOperationObserver(LogSizeTracker<Key, Value, TLogSizeCalculator> logSizeTracker, LogOperationType logOperationType)
+        public LogOperationObserver(LogSizeTracker<Key, Value, TStoreFunctions, TAllocator, TLogSizeCalculator> logSizeTracker, LogOperationType logOperationType)
         {
             this.logSizeTracker = logSizeTracker;
             this.logOperationType = logOperationType;
@@ -66,9 +68,13 @@ namespace Tsavorite.core
     /// <summary>Tracks and controls size of log</summary>
     /// <typeparam name="Key">Type of key</typeparam>
     /// <typeparam name="Value">Type of value</typeparam>
+    /// <typeparam name="TStoreFunctions"></typeparam>
+    /// <typeparam name="TAllocator"></typeparam>
     /// <typeparam name="TLogSizeCalculator">Type of the log size calculator</typeparam>
-    public class LogSizeTracker<Key, Value, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<Key, Value>>
+    public class LogSizeTracker<Key, Value, TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator<Key, Value>>
         where TLogSizeCalculator : ILogSizeCalculator<Key, Value>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         private ConcurrentCounter logSize;
         private long lowTargetSize;
@@ -77,7 +83,7 @@ namespace Tsavorite.core
         private readonly ILogger logger;
         internal const int resizeTaskDelaySeconds = 10;
 
-        internal LogAccessor<Key, Value> logAccessor;
+        internal LogAccessor<Key, Value, TStoreFunctions, TAllocator> logAccessor;
 
         internal Action<int> PostEmptyPageCountIncrease { get; set; } = (int count) => { };
 
@@ -95,7 +101,7 @@ namespace Tsavorite.core
         /// <param name="targetSize">Target size for the hybrid log memory utilization</param>
         /// <param name="delta">Delta from target size to maintain memory utilization</param>
         /// <param name="logger"></param>
-        public LogSizeTracker(LogAccessor<Key, Value> logAccessor, TLogSizeCalculator logSizeCalculator, long targetSize, long delta, ILogger logger)
+        public LogSizeTracker(LogAccessor<Key, Value, TStoreFunctions, TAllocator> logAccessor, TLogSizeCalculator logSizeCalculator, long targetSize, long delta, ILogger logger)
         {
             Debug.Assert(logAccessor != null);
             Debug.Assert(logSizeCalculator != null);

@@ -1,21 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.CompilerServices;
-
 namespace Tsavorite.core
 {
     /// <summary>
     /// Interface for hybrid log memory allocator struct wrapper callbacks for inlining performance-path callbacks from 
-    /// <see cref="AllocatorBase{Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks}"/>
+    /// <see cref="AllocatorBase{Key, Value, TStoreFunctions, TAllocatorCallbacks}"/>
     /// to the fully derived allocator, including both record accessors and Scan calls.
     /// </summary>
-    public interface IAllocatorCallbacks<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
-        where TKeyComparer : IKeyComparer<Key>
-        where TKeySerializer : IObjectSerializer<Key>
-        where TValueSerializer : IObjectSerializer<Value>
-        where TRecordDisposer : IRecordDisposer<Key, Value>
-        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+    /// <remarks>This interface does not currently appear in type constraints, but the organization may prove useful.</remarks>
+    public interface IAllocatorCallbacks<Key, Value, TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
     {
         /// <summary>Get start logical address on <paramref name="page"/></summary>
         long GetStartLogicalAddress(long page);

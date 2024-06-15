@@ -3,30 +3,24 @@
 
 namespace Tsavorite.core
 {
-    // Allocator for SpanByte, possibly with a Blittable Key or Value.
-    internal struct SpanByteAllocator<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> 
-        : IAllocator<SpanByte, SpanByte, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
-        where TKeyComparer : IKeyComparer<SpanByte>
-        where TKeySerializer : IObjectSerializer<SpanByte>
-        where TValueSerializer : IObjectSerializer<SpanByte>
-        where TRecordDisposer : IRecordDisposer<SpanByte, SpanByte>
-        where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+    // Allocator for SpanByte Keys and Values.
+    internal struct SpanByteAllocator<TStoreFunctions>(AllocatorSettings settings, TStoreFunctions storeFunctions)
+        : IAllocator<SpanByte, SpanByte, TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions<SpanByte, SpanByte>
     {
-        /// <summary>
-        /// The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).
-        /// </summary>
-        private readonly SpanByteAllocatorImpl<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> _this;
+        /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
+        private readonly SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>> _this = new(settings, storeFunctions);
 
         /// <inheritdoc/>
-        public readonly AllocatorBase<SpanByte, SpanByte, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> GetBase<TAllocator>()
-            where TAllocator : IAllocator<SpanByte, SpanByte, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
-            => (AllocatorBase<SpanByte, SpanByte, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator>)(object)_this;
+        public readonly AllocatorBase<SpanByte, SpanByte, TStoreFunctions, TAllocator> GetBase<TAllocator>()
+            where TAllocator : IAllocator<SpanByte, SpanByte, TStoreFunctions>
+            => (AllocatorBase<SpanByte, SpanByte, TStoreFunctions, TAllocator>)(object)_this;
 
         /// <inheritdoc/>
-        public readonly TStoreFunctions StoreFunctions => _this._storeFunctions;
+        public readonly bool IsFixedLength => false;
 
         /// <inheritdoc/>
-        public readonly void Initialize() => _this.Initialize();
+        public readonly bool HasObjectLog => false;
 
         /// <inheritdoc/>
         public readonly long GetStartLogicalAddress(long page) => _this.GetStartLogicalAddress(page);
@@ -39,15 +33,15 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly ref RecordInfo GetInfo(long physicalAddress) 
-            => ref SpanByteAllocatorImpl<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>.GetInfo(physicalAddress);
+            => ref SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetInfo(physicalAddress);
 
         /// <inheritdoc/>
         public readonly unsafe ref RecordInfo GetInfoFromBytePointer(byte* ptr) 
-            => ref SpanByteAllocatorImpl<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>.GetInfoFromBytePointer(ptr);
+            => ref SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetInfoFromBytePointer(ptr);
 
         /// <inheritdoc/>
         public readonly ref SpanByte GetKey(long physicalAddress) 
-            => ref SpanByteAllocatorImpl<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>.GetKey(physicalAddress);
+            => ref SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetKey(physicalAddress);
 
         /// <inheritdoc/>
         public readonly ref SpanByte GetValue(long physicalAddress) => ref _this.GetValue(physicalAddress);
@@ -82,11 +76,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly int GetValueLength(ref SpanByte value) 
-            => SpanByteAllocatorImpl<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>.GetValueLength(ref value);
+            => SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetValueLength(ref value);
 
         /// <inheritdoc/>
         public readonly unsafe bool RetrievedFullRecord(byte* record, ref AsyncIOContext<SpanByte, SpanByte> ctx) 
-            => SpanByteAllocatorImpl<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>.RetrievedFullRecord(record, ref ctx);
+            => SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.RetrievedFullRecord(record, ref ctx);
 
         /// <inheritdoc/>
         public readonly void AllocatePage(int pageIndex) => _this.AllocatePage(pageIndex);
@@ -123,13 +117,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public readonly long[] GetSegmentOffsets() 
-            => SpanByteAllocatorImpl<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>.GetSegmentOffsets();
+            => SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.GetSegmentOffsets();
 
         /// <inheritdoc/>
         public readonly int OverflowPageCount => _this.OverflowPageCount;
 
         /// <inheritdoc/>
         public readonly void SerializeKey(ref SpanByte key, long physicalAddress) 
-            => SpanByteAllocatorImpl<TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>.SerializeKey(ref key, physicalAddress);
+            => SpanByteAllocatorImpl<TStoreFunctions, SpanByteAllocator<TStoreFunctions>>.SerializeKey(ref key, physicalAddress);
     }
 }

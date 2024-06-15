@@ -6,29 +6,22 @@ namespace Tsavorite.core
     /// <summary>
     /// Struct wrapper (for inlining) around the fixed-length Blittable allocator.
     /// </summary>
-    public struct GenericAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
-            : IAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
-        where TKeyComparer : IKeyComparer<Key>
-        where TKeySerializer : IObjectSerializer<Key>
-        where TValueSerializer : IObjectSerializer<Value>
-        where TRecordDisposer : IRecordDisposer<Key, Value>
-        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+    public struct GenericAllocator<Key, Value, TStoreFunctions>(AllocatorSettings settings, TStoreFunctions storeFunctions) : IAllocator<Key, Value, TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
     {
-        /// <summary>
-        /// The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).
-        /// </summary>
-        private readonly GenericAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> _this;
+        /// <summary>The wrapped class containing all data and most actual functionality. This must be the ONLY field in this structure so its size is sizeof(IntPtr).</summary>
+        private readonly GenericAllocatorImpl<Key, Value, TStoreFunctions, GenericAllocator<Key, Value, TStoreFunctions>> _this = new(settings, storeFunctions);
 
         /// <inheritdoc/>
-        public readonly AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> GetBase<TAllocator>()
-            where TAllocator : IAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
-            => (AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator>)(object)_this;
+        public readonly AllocatorBase<Key, Value, TStoreFunctions, TAllocator> GetBase<TAllocator>()
+            where TAllocator : IAllocator<Key, Value, TStoreFunctions>
+            => (AllocatorBase<Key, Value, TStoreFunctions, TAllocator>)(object)_this;
 
         /// <inheritdoc/>
-        public readonly TStoreFunctions StoreFunctions => _this._storeFunctions;
+        public readonly bool IsFixedLength => true;
 
         /// <inheritdoc/>
-        public readonly void Initialize() => _this.Initialize();
+        public readonly bool HasObjectLog => false;
 
         /// <inheritdoc/>
         public readonly long GetStartLogicalAddress(long page) => _this.GetStartLogicalAddress(page);

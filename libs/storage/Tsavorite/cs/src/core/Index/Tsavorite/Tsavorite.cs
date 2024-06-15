@@ -15,18 +15,14 @@ namespace Tsavorite.core
     /// <summary>
     /// The Tsavorite Key/Value store class
     /// </summary>
-    public partial class TsavoriteKV<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> : TsavoriteBase, IDisposable
-        where TKeyComparer : IKeyComparer<Key>
-        where TKeySerializer : IObjectSerializer<Key>
-        where TValueSerializer : IObjectSerializer<Value>
-        where TRecordDisposer : IRecordDisposer<Key, Value>
-        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
-        where TAllocator : IAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
+    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase, IDisposable
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         internal readonly TAllocator hlog;
-        internal readonly AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> hlogBase;
+        internal readonly AllocatorBase<Key, Value, TStoreFunctions, TAllocator> hlogBase;
         internal readonly TAllocator readcache;
-        internal readonly AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> readCacheBase;
+        internal readonly AllocatorBase<Key, Value, TStoreFunctions, TAllocator> readcacheBase;
 
         internal readonly TStoreFunctions storeFunctions;
 
@@ -60,17 +56,17 @@ namespace Tsavorite.core
         /// <summary>
         /// Hybrid log used by this Tsavorite instance
         /// </summary>
-        public LogAccessor<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> Log { get; }
+        public LogAccessor<Key, Value, TStoreFunctions, TAllocator> Log { get; }
 
         /// <summary>
         /// Read cache used by this Tsavorite instance
         /// </summary>
-        public LogAccessor<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> ReadCache { get; }
+        public LogAccessor<Key, Value, TStoreFunctions, TAllocator> ReadCache { get; }
 
         int maxSessionID;
 
         internal readonly bool CheckpointVersionSwitchBarrier;  // version switch barrier
-        internal readonly OverflowBucketLockTable<Key, Value> LockTable;
+        internal readonly OverflowBucketLockTable<Key, Value, TStoreFunctions, TAllocator> LockTable;
 
         internal void IncrementNumLockingSessions()
         {
@@ -81,40 +77,26 @@ namespace Tsavorite.core
 
         internal readonly int ThrottleCheckpointFlushDelayMs = -1;
 
-        internal RevivificationManager<Key, Value> RevivificationManager;
+        internal RevivificationManager<Key, Value, TStoreFunctions, TAllocator> RevivificationManager;
+
+        internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
 
         /// <summary>
         /// Create TsavoriteKV instance
         /// </summary>
-        /// <param name="tsavoriteKVSettings">Config settings</param>
-        public TsavoriteKV(TsavoriteKVSettings<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> tsavoriteKVSettings) :
-            this(
-                tsavoriteKVSettings.GetIndexSizeCacheLines(), tsavoriteKVSettings.GetLogSettings(),
-                tsavoriteKVSettings.StoreFunctions, tsavoriteKVSettings.GetCheckpointSettings(),
-                tsavoriteKVSettings.TryRecoverLatest, revivificationSettings: tsavoriteKVSettings.RevivificationSettings)
-        { }
-
-        /// <summary>
-        /// Create TsavoriteKV instance
-        /// </summary>
-        /// <param name="size">Size of core index (#cache lines)</param>
-        /// <param name="logSettings">Log settings</param>
-        /// <param name="checkpointSettings">Checkpoint settings</param>
-        /// <param name="storeFunctions">StoreFunctions</param>
-        /// <param name="tryRecoverLatest">Try to recover from latest checkpoint, if any</param>
-        /// <param name="loggerFactory">Logger factory to create an ILogger, if one is not passed in.</param>
-        /// <param name="logger">Logger to use.</param>
-        /// <param name="revivificationSettings">Settings for recycling deleted records on the log.</param>
-        public TsavoriteKV(long size, LogSettings logSettings, TStoreFunctions storeFunctions,
-            CheckpointSettings checkpointSettings = null, bool tryRecoverLatest = false,
-            ILoggerFactory loggerFactory = null, ILogger logger = null, RevivificationSettings revivificationSettings = null)
+        /// <param name="settings">Config settings</param>
+        /// <param name="storeFunctions">Store-level user function implementations</param>
+        /// <param name="allocatorFactory">Func to call to create the allocator(s, if doing readcache)</param>
+        public TsavoriteKV(TsavoriteKVSettings<Key, Value> settings, TStoreFunctions storeFunctions, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory)
+            : base(settings.logger ?? settings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
         {
-            this.loggerFactory = loggerFactory;
-            this.logger = logger ?? this.loggerFactory?.CreateLogger("TsavoriteKV Constructor");
+            this.allocatorFactory = allocatorFactory;
+            loggerFactory = settings.loggerFactory;
+            logger = settings.logger ?? settings.loggerFactory?.CreateLogger("TsavoriteKV");
 
             this.storeFunctions = storeFunctions;
 
-            checkpointSettings ??= new CheckpointSettings();
+            var checkpointSettings = settings.GetCheckpointSettings() ?? new CheckpointSettings();
 
             CheckpointVersionSwitchBarrier = checkpointSettings.CheckpointVersionSwitchBarrier;
             ThrottleCheckpointFlushDelayMs = checkpointSettings.ThrottleCheckpointFlushDelayMs;
@@ -131,6 +113,8 @@ namespace Tsavorite.core
             if (checkpointSettings.CheckpointManager is null)
                 disposeCheckpointManager = true;
 
+            var logSettings = settings.GetLogSettings();
+
             UseReadCache = logSettings.ReadCacheSettings is not null;
 
             ReadCopyOptions = logSettings.ReadCopyOptions;
@@ -142,80 +126,38 @@ namespace Tsavorite.core
             if (ReadCopyOptions.CopyFrom == ReadCopyFrom.Inherit)
                 ReadCopyOptions.CopyFrom = ReadCopyFrom.Device;
 
-            bool isFixedLenReviv = true;
+            bool isFixedLenReviv = hlog.IsFixedLength;
 
-            if (!Utility.IsBlittable<Key>() || !Utility.IsBlittable<Value>())
+            // Create the allocator
+            var allocatorSettings = new AllocatorSettings(logSettings, epoch, settings.logger ?? settings.loggerFactory?.CreateLogger(typeof(TAllocator).Name));
+            hlog = allocatorFactory(allocatorSettings, storeFunctions);
+            Log = new(this, hlog);
+            if (UseReadCache)
             {
-                hlog = new GenericAllocator<Key, Value>(logSettings, serializerSettings, this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator HybridLog"));
-                Log = new LogAccessor<Key, Value>(this, hlog);
-                if (UseReadCache)
+                allocatorSettings.logSettings = new()
                 {
-                    readcache = new GenericAllocator<Key, Value>(
-                        new LogSettings
-                        {
-                            LogDevice = new NullDevice(),
-                            ObjectLogDevice = new NullDevice(),
-                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, serializerSettings, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("GenericAllocator ReadCache"));
-                    readcache.Initialize();
-                    ReadCache = new LogAccessor<Key, Value>(this, readcache);
-                }
+                    LogDevice = new NullDevice(),
+                    ObjectLogDevice = hlog.HasObjectLog ? new NullDevice() : null,
+                    PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
+                    MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                    SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
+                    MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
+                };
+                allocatorSettings.logger = settings.logger ?? settings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
+                allocatorSettings.evictCallback = ReadCacheEvict;
+                ReadCache = new(this, readcache);
             }
-            else if (typeof(Key) == typeof(SpanByte) && typeof(Value) == typeof(SpanByte))
-            {
-                isFixedLenReviv = false;
-                var spanByteComparer = this.comparer as IKeyComparer<SpanByte>;
-                hlog = new SpanByteAllocator(logSettings, spanByteComparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("SpanByteAllocator HybridLog")) as AllocatorBase<Key, Value>;
-                Log = new LogAccessor<Key, Value>(this, hlog);
-                if (UseReadCache)
-                {
-                    readcache = new SpanByteAllocator(
-                        new LogSettings
-                        {
-                            LogDevice = new NullDevice(),
-                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, spanByteComparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("SpanByteAllocator ReadCache")) as AllocatorBase<Key, Value>;
-                    readcache.Initialize();
-                    ReadCache = new LogAccessor<Key, Value>(this, readcache);
-                }
-            }
-            else
-            {
-                hlog = new BlittableAllocator<Key, Value>(logSettings, this.comparer, null, epoch, logger: logger ?? loggerFactory?.CreateLogger("BlittableAllocator HybridLog"));
-                Log = new LogAccessor<Key, Value>(this, hlog);
-                if (UseReadCache)
-                {
-                    readcache = new BlittableAllocator<Key, Value>(
-                        new LogSettings
-                        {
-                            LogDevice = new NullDevice(),
-                            PageSizeBits = logSettings.ReadCacheSettings.PageSizeBits,
-                            MemorySizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            SegmentSizeBits = logSettings.ReadCacheSettings.MemorySizeBits,
-                            MutableFraction = 1 - logSettings.ReadCacheSettings.SecondChanceFraction
-                        }, this.comparer, ReadCacheEvict, epoch, logger: logger ?? loggerFactory?.CreateLogger("BlittableAllocator ReadCache"));
-                    readcache.Initialize();
-                    ReadCache = new LogAccessor<Key, Value>(this, readcache);
-                }
-            }
-
-            hlog.Initialize();
+            hlogBase.Initialize();
 
             sectorSize = (int)logSettings.LogDevice.SectorSize;
-            Initialize(size, sectorSize);
+            Initialize(settings.GetIndexSizeCacheLines(), sectorSize);
 
-            LockTable = new OverflowBucketLockTable<Key, Value>(this);
-            RevivificationManager = new(this, isFixedLenReviv, revivificationSettings, logSettings);
+            LockTable = new OverflowBucketLockTable<Key, Value, TStoreFunctions, TAllocator>(this);
+            RevivificationManager = new(this, isFixedLenReviv, settings.RevivificationSettings, logSettings);
 
             systemState = SystemState.Make(Phase.REST, 1);
 
-            if (tryRecoverLatest)
+            if (settings.TryRecoverLatest)
             {
                 try
                 {
@@ -226,11 +168,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get the hashcode for a key.</summary>
-        public long GetKeyHash(Key key) => comparer.GetHashCode64(ref key);
+        public long GetKeyHash(Key key) => storeFunctions.GetKeyHashCode64(ref key);
 
         /// <summary>Get the hashcode for a key.</summary>
-        public long GetKeyHash(ref Key key) => comparer.GetHashCode64(ref key);
-
+        public long GetKeyHash(ref Key key) => storeFunctions.GetKeyHashCode64(ref key);
+        
         /// <summary>
         /// Initiate full checkpoint
         /// </summary>
@@ -248,15 +190,15 @@ namespace Tsavorite.core
         /// </returns>
         public bool TryInitiateFullCheckpoint(out Guid token, CheckpointType checkpointType, long targetVersion = -1)
         {
-            ISynchronizationTask backend;
+            ISynchronizationTask<Key, Value, TStoreFunctions, TAllocator> backend;
             if (checkpointType == CheckpointType.FoldOver)
-                backend = new FoldOverCheckpointTask();
+                backend = new FoldOverCheckpointTask<Key, Value, TStoreFunctions, TAllocator>();
             else if (checkpointType == CheckpointType.Snapshot)
-                backend = new SnapshotCheckpointTask();
+                backend = new SnapshotCheckpointTask<Key, Value, TStoreFunctions, TAllocator>();
             else
                 throw new TsavoriteException("Unsupported full checkpoint type");
 
-            var result = StartStateMachine(new FullCheckpointStateMachine(backend, targetVersion));
+            var result = StartStateMachine(new FullCheckpointStateMachine<Key, Value, TStoreFunctions, TAllocator>(backend, targetVersion));
             if (result)
                 token = _hybridLogCheckpointToken;
             else
@@ -300,7 +242,7 @@ namespace Tsavorite.core
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateIndexCheckpoint(out Guid token)
         {
-            var result = StartStateMachine(new IndexSnapshotStateMachine());
+            var result = StartStateMachine(new IndexSnapshotStateMachine<Key, Value, TStoreFunctions, TAllocator>());
             token = _indexCheckpointToken;
             return result;
         }
@@ -342,20 +284,20 @@ namespace Tsavorite.core
         public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
             long targetVersion = -1)
         {
-            ISynchronizationTask backend;
+            ISynchronizationTask<Key, Value, TStoreFunctions, TAllocator> backend;
             if (checkpointType == CheckpointType.FoldOver)
-                backend = new FoldOverCheckpointTask();
+                backend = new FoldOverCheckpointTask<Key, Value, TStoreFunctions, TAllocator>();
             else if (checkpointType == CheckpointType.Snapshot)
             {
-                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlog.FlushedUntilAddress && (hlog is not GenericAllocator<Key, Value>))
-                    backend = new IncrementalSnapshotCheckpointTask();
+                if (tryIncremental && _lastSnapshotCheckpoint.info.guid != default && _lastSnapshotCheckpoint.info.finalLogicalAddress > hlogBase.FlushedUntilAddress && !hlog.HasObjectLog)
+                    backend = new IncrementalSnapshotCheckpointTask<Key, Value, TStoreFunctions, TAllocator>();
                 else
-                    backend = new SnapshotCheckpointTask();
+                    backend = new SnapshotCheckpointTask<Key, Value, TStoreFunctions, TAllocator>();
             }
             else
                 throw new TsavoriteException("Unsupported checkpoint type");
 
-            var result = StartStateMachine(new HybridLogCheckpointStateMachine(backend, targetVersion));
+            var result = StartStateMachine(new HybridLogCheckpointStateMachine<Key, Value, TStoreFunctions, TAllocator>(backend, targetVersion));
             token = _hybridLogCheckpointToken;
             return result;
         }
@@ -516,11 +458,11 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Output output, Context context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<Input, Output, Context>(sessionFunctions.Ctx.ReadCopyOptions);
             OperationStatus internalStatus;
-            var keyHash = comparer.GetHashCode64(ref key);
+            var keyHash = storeFunctions.GetKeyHashCode64(ref key);
 
             do
                 internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
@@ -534,11 +476,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context,
                 TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<Input, Output, Context>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
             OperationStatus internalStatus;
-            var keyHash = readOptions.KeyHash ?? comparer.GetHashCode64(ref key);
+            var keyHash = readOptions.KeyHash ?? storeFunctions.GetKeyHashCode64(ref key);
 
             do
                 internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
@@ -551,7 +493,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<Input, Output, Context, TSessionFunctionsWrapper>(long address, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<Input, Output, Context>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions, noKey: true);
             Key key = default;
@@ -560,7 +502,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<Input, Output, Context, TSessionFunctionsWrapper>(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, Context context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var pcontext = new PendingContext<Input, Output, Context>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions, noKey: false);
             return ContextReadAtAddress(address, ref key, ref input, ref output, ref readOptions, out recordMetadata, context, ref pcontext, sessionFunctions);
@@ -569,7 +511,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status ContextReadAtAddress<Input, Output, Context, TSessionFunctionsWrapper>(long address, ref Key key, ref Input input, ref Output output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 Context context, ref PendingContext<Input, Output, Context> pcontext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             OperationStatus internalStatus;
             do
@@ -583,7 +525,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, Context context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
@@ -599,7 +541,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output, out RecordMetadata recordMetadata,
                                                                             Context context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
@@ -616,7 +558,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, long keyHash, ref Input input, ref Output output, out RecordMetadata recordMetadata,
                                                                           Context context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
@@ -632,7 +574,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextDelete<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, long keyHash, Context context, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var pcontext = default(PendingContext<Input, Output, Context>);
             OperationStatus internalStatus;
@@ -654,7 +596,7 @@ namespace Tsavorite.core
             if (epoch.ThisInstanceProtected())
                 throw new TsavoriteException("Cannot use GrowIndex when using non-async sessions");
 
-            if (!StartStateMachine(new IndexResizeStateMachine()))
+            if (!StartStateMachine(new IndexResizeStateMachine<Key, Value, TStoreFunctions, TAllocator>()))
                 return false;
 
             epoch.Resume();
@@ -663,7 +605,7 @@ namespace Tsavorite.core
             {
                 while (true)
                 {
-                    SystemState _systemState = SystemState.Copy(ref systemState);
+                    var _systemState = SystemState.Copy(ref systemState);
                     if (_systemState.Phase == Phase.PREPARE_GROW)
                         ThreadStateMachineStep<Empty, Empty, Empty, NullSession>(null, NullSession.Instance, default);
                     else if (_systemState.Phase == Phase.IN_PROGRESS_GROW)
@@ -671,7 +613,7 @@ namespace Tsavorite.core
                     else if (_systemState.Phase == Phase.REST)
                         break;
                     epoch.ProtectAndDrain();
-                    Thread.Yield();
+                    _ = Thread.Yield();
                 }
             }
             finally
@@ -687,8 +629,8 @@ namespace Tsavorite.core
         public void Dispose()
         {
             Free();
-            hlog.Dispose();
-            readcache?.Dispose();
+            hlogBase.Dispose();
+            readcacheBase?.Dispose();
             LockTable.Dispose();
             _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
@@ -706,7 +648,7 @@ namespace Tsavorite.core
             var table_size_ = state[version].size;
             var ptable_ = state[version].tableAligned;
             long total_entry_count = 0;
-            long beginAddress = hlog.BeginAddress;
+            long beginAddress = hlogBase.BeginAddress;
 
             for (long bucket = 0; bucket < table_size_; ++bucket)
             {
@@ -728,7 +670,7 @@ namespace Tsavorite.core
             var table_size_ = state[version].size;
             var ptable_ = state[version].tableAligned;
             long total_record_count = 0;
-            long beginAddress = hlog.BeginAddress;
+            long beginAddress = hlogBase.BeginAddress;
             Dictionary<int, long> histogram = new();
 
             for (long bucket = 0; bucket < table_size_; ++bucket)
@@ -742,7 +684,7 @@ namespace Tsavorite.core
                     {
                         var x = default(HashBucketEntry);
                         x.word = b.bucket_entries[bucket_entry];
-                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readcache.HeadAddress)))
+                        if (((!x.ReadCache) && (x.Address >= beginAddress)) || (x.ReadCache && (x.AbsoluteAddress >= readcacheBase.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new TsavoriteException("Duplicate tag found in index");

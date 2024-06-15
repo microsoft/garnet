@@ -11,14 +11,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    internal sealed unsafe class GenericAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> 
-            : AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions,
-                            GenericAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>>
-        where TKeyComparer : IKeyComparer<Key>
-        where TKeySerializer : IObjectSerializer<Key>
-        where TValueSerializer : IObjectSerializer<Value>
-        where TRecordDisposer : IRecordDisposer<Key, Value>
-        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+    internal sealed unsafe class GenericAllocatorImpl<Key, Value, TStoreFunctions, TAllocator> : AllocatorBase<Key, Value, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         // Circular buffer definition
         internal AllocatorRecord<Key, Value>[][] values;
@@ -39,12 +34,13 @@ namespace Tsavorite.core
 
         private bool keyHasObjects, valueHasObjects;
 
-        public GenericAllocatorImpl(LogSettings settings, TStoreFunctions storeFunctions, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null, ILogger logger = null)
-            : base(settings, storeFunctions, evictCallback, epoch, flushCallback, logger)
+        public GenericAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions)
+//        public GenericAllocatorImpl(LogSettings settings, TStoreFunctions storeFunctions, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null, ILogger logger = null)
+            : base(settings.logSettings, storeFunctions, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
             overflowPagePool = new OverflowPool<AllocatorRecord<Key, Value>[]>(4);
 
-            if (settings.ObjectLogDevice == null)
+            if (settings.logSettings.ObjectLogDevice == null)
                 throw new TsavoriteException("LogSettings.ObjectLogDevice needs to be specified (e.g., use Devices.CreateLogDevice, AzureStorageDevice, or NullDevice)");
 
             if (typeof(Key) == typeof(SpanByte))
@@ -55,9 +51,9 @@ namespace Tsavorite.core
             values = new AllocatorRecord<Key, Value>[BufferSize][];
             segmentOffsets = new long[SegmentBufferSize];
 
-            objectLogDevice = settings.ObjectLogDevice;
+            objectLogDevice = settings.logSettings.ObjectLogDevice;
 
-            if ((settings.LogDevice as NullDevice) == null && (KeyHasObjects() || ValueHasObjects()))
+            if ((settings.logSettings.LogDevice as NullDevice) == null && (KeyHasObjects() || ValueHasObjects()))
             {
                 if (objectLogDevice == null)
                     throw new TsavoriteException("Objects in key/value, but object log not provided during creation of Tsavorite instance");
@@ -65,8 +61,8 @@ namespace Tsavorite.core
                     throw new TsavoriteException("Object log device should not have fixed segment size. Set preallocateFile to false when calling CreateLogDevice for object log");
             }
 
-            keyHasObjects = !(_storeFunctions.KeySerializer is null or NoSerializer<Key>);
-            valueHasObjects = !(_storeFunctions.ValueSerializer is null or NoSerializer<Value>);
+            keyHasObjects = _storeFunctions.HasKeySerializer;
+            valueHasObjects = _storeFunctions.HasValueSerializer;
         }
 
         internal int OverflowPageCount => overflowPagePool.Count;
@@ -389,19 +385,10 @@ namespace Tsavorite.core
 
                 // Object keys and values are serialized into this MemoryStream.
                 MemoryStream ms = new();
-                IObjectSerializer<Key> keySerializer = null;
-                IObjectSerializer<Value> valueSerializer = null;
-
                 if (KeyHasObjects())
-                {
-                    keySerializer = _storeFunctions.KeySerializer;
-                    keySerializer.BeginSerialize(ms);
-                }
+                    _storeFunctions.BeginSerializeKey(ms);
                 if (ValueHasObjects())
-                {
-                    valueSerializer = _storeFunctions.ValueSerializer;
-                    valueSerializer.BeginSerialize(ms);
-                }
+                    _storeFunctions.BeginSerializeValue(ms);
 
                 // Track the size to be written to the object log.
                 long endPosition = 0;
@@ -438,7 +425,7 @@ namespace Tsavorite.core
                             if (KeyHasObjects())
                             {
                                 long pos = ms.Position;
-                                keySerializer.Serialize(ref src[i].key);
+                                _storeFunctions.SerializeKey(ref src[i].key);
 
                                 // Store the key address into the 'buffer' AddressInfo image as an offset into 'ms'.
                                 key_address->Address = pos;
@@ -450,7 +437,7 @@ namespace Tsavorite.core
                             if (ValueHasObjects() && !record.info.Tombstone)
                             {
                                 long pos = ms.Position;
-                                valueSerializer.Serialize(ref src[i].value);
+                                _storeFunctions.SerializeValue(ref src[i].value);
 
                                 // Store the value address into the 'buffer' AddressInfo image as an offset into 'ms'.
                                 value_address->Address = pos;
@@ -474,9 +461,9 @@ namespace Tsavorite.core
                         endPosition = 0;
 
                         if (KeyHasObjects())
-                            keySerializer.EndSerialize();
+                            _storeFunctions.EndSerializeKey();
                         if (ValueHasObjects())
-                            valueSerializer.EndSerialize();
+                            _storeFunctions.EndSerializeValue();
                         ms.Close();
 
                         // Get the total serialized length rounded up to sectorSize
@@ -505,9 +492,9 @@ namespace Tsavorite.core
                             // Create a new MemoryStream for the next chunk of records to be written.
                             ms = new MemoryStream();
                             if (KeyHasObjects())
-                                keySerializer.BeginSerialize(ms);
+                                _storeFunctions.BeginSerializeKey(ms);
                             if (ValueHasObjects())
-                                valueSerializer.BeginSerialize(ms);
+                                _storeFunctions.BeginSerializeValue(ms);
 
                             // Reset address list for the next chunk of records to be written.
                             addr = new List<long>();
@@ -791,22 +778,14 @@ namespace Tsavorite.core
         /// <param name="stream">Stream</param>
         public void Deserialize(byte* raw, long ptr, long untilptr, AllocatorRecord<Key, Value>[] src, Stream stream)
         {
-            IObjectSerializer<Key> keySerializer = null;
-            IObjectSerializer<Value> valueSerializer = null;
-
             long streamStartPos = stream.Position;
             long start_addr = -1;
             int start_offset = -1, end_offset = -1;
+
             if (KeyHasObjects())
-            {
-                keySerializer = _storeFunctions.KeySerializer;
-                keySerializer.BeginDeserialize(stream);
-            }
+                _storeFunctions.BeginDeserializeKey(stream);
             if (ValueHasObjects())
-            {
-                valueSerializer = _storeFunctions.ValueSerializer;
-                valueSerializer.BeginDeserialize(stream);
-            }
+                _storeFunctions.BeginDeserializeValue(stream);
 
             while (ptr < untilptr)
             {
@@ -826,7 +805,7 @@ namespace Tsavorite.core
                         if (stream.Position != streamStartPos + key_addr->Address - start_addr)
                             _ = stream.Seek(streamStartPos + key_addr->Address - start_addr, SeekOrigin.Begin);
 
-                        keySerializer.Deserialize(out src[ptr / RecordSize].key);
+                        _storeFunctions.DeserializeKey(out src[ptr / RecordSize].key);
                     }
                     else
                         src[ptr / RecordSize].key = record.key;
@@ -840,7 +819,7 @@ namespace Tsavorite.core
                             if (stream.Position != streamStartPos + value_addr->Address - start_addr)
                                 stream.Seek(streamStartPos + value_addr->Address - start_addr, SeekOrigin.Begin);
 
-                            valueSerializer.Deserialize(out src[ptr / RecordSize].value);
+                            _storeFunctions.DeserializeValue(out src[ptr / RecordSize].value);
                         }
                         else
                             src[ptr / RecordSize].value = record.value;
@@ -849,9 +828,9 @@ namespace Tsavorite.core
                 ptr += GetRecordSize(ptr).Item2;
             }
             if (KeyHasObjects())
-                keySerializer.EndDeserialize();
+                _storeFunctions.EndDeserializeKey();
             if (ValueHasObjects())
-                valueSerializer.EndDeserialize();
+                _storeFunctions.EndDeserializeValue();
 
             if (OnDeserializationObserver != null && start_offset != -1 && end_offset != -1)
             {
@@ -871,8 +850,8 @@ namespace Tsavorite.core
         /// <param name="size"></param>
         public void GetObjectInfo(byte* raw, ref long ptr, long untilptr, int objectBlockSize, out long startptr, out long size)
         {
-            long minObjAddress = long.MaxValue;
-            long maxObjAddress = long.MinValue;
+            var minObjAddress = long.MaxValue;
+            var maxObjAddress = long.MinValue;
             var done = false;
 
             while (!done && (ptr < untilptr))
@@ -910,7 +889,7 @@ namespace Tsavorite.core
                             done = true;
                     }
                 }
-                ptr += GetRecordSize(ptr).Item2;
+                ptr += GetRecordSize(ptr).allocatedSize;
             }
 
             // Handle the case where no objects are to be written
@@ -974,22 +953,20 @@ namespace Tsavorite.core
 
             // Parse the key and value objects
             var ms = new MemoryStream(ctx.objBuffer.buffer);
-            ms.Seek(ctx.objBuffer.offset + ctx.objBuffer.valid_offset, SeekOrigin.Begin);
+            _ = ms.Seek(ctx.objBuffer.offset + ctx.objBuffer.valid_offset, SeekOrigin.Begin);
 
             if (KeyHasObjects())
             {
-                var keySerializer = _storeFunctions.KeySerializer;
-                keySerializer.BeginDeserialize(ms);
-                keySerializer.Deserialize(out ctx.key);
-                keySerializer.EndDeserialize();
+                _storeFunctions.BeginDeserializeKey(ms);
+                _storeFunctions.DeserializeKey(out ctx.key);
+                _storeFunctions.EndDeserializeKey();
             }
 
             if (ValueHasObjects() && !GetInfoFromBytePointer(record).Tombstone)
             {
-                var valueSerializer = _storeFunctions.ValueSerializer;
-                valueSerializer.BeginDeserialize(ms);
-                valueSerializer.Deserialize(out ctx.value);
-                valueSerializer.EndDeserialize();
+                _storeFunctions.BeginDeserializeValue(ms);
+                _storeFunctions.DeserializeValue(out ctx.value);
+                _storeFunctions.EndDeserializeValue();
             }
 
             ctx.objBuffer.Return();
@@ -1024,33 +1001,33 @@ namespace Tsavorite.core
         /// Iterator interface for scanning Tsavorite log
         /// </summary>
         /// <returns></returns>
-        public override ITsavoriteScanIterator<Key, Value> Scan(TsavoriteKV<Key, Value> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
-            => new GenericScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch);
+        public override ITsavoriteScanIterator<Key, Value> Scan(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords)
+            => new GenericScanIterator<Key, Value, TStoreFunctions, TAllocator>(store, this, beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
         /// </summary>
-        internal override bool Scan<TScanFunctions>(TsavoriteKV<Key, Value> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
+        internal override bool Scan<TScanFunctions>(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ref TScanFunctions scanFunctions, ScanBufferingMode scanBufferingMode)
         {
-            using GenericScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
+            using GenericScanIterator<Key, Value, TStoreFunctions, TAllocator> iter = new(store, this, beginAddress, endAddress, scanBufferingMode, false, epoch, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log with a cursor, called from LogAccessor
         /// </summary>
-        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<Key, Value> store, ScanCursorState<Key, Value> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
+        internal override bool ScanCursor<TScanFunctions>(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, ScanCursorState<Key, Value> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor)
         {
-            using GenericScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
-            return ScanLookup<long, long, TScanFunctions, GenericScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
+            using GenericScanIterator<Key, Value, TStoreFunctions, TAllocator> iter = new(store, this, cursor, endAddress, ScanBufferingMode.SinglePageBuffering, false, epoch, logger: logger);
+            return ScanLookup<long, long, TScanFunctions, GenericScanIterator<Key, Value, TStoreFunctions, TAllocator>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor);
         }
 
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
-        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<Key, Value> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
+        internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, ref Key key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using GenericScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> iter = new(store, this, beginAddress, epoch, logger: logger);
+            using GenericScanIterator<Key, Value, TStoreFunctions, TAllocator> iter = new(store, this, beginAddress, epoch, logger: logger);
             return IterateKeyVersionsImpl(store, ref key, beginAddress, ref scanFunctions, iter);
         }
 

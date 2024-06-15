@@ -11,10 +11,12 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
+    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, NoSerializer<KeyStruct>, NoSerializer<ValueStruct>, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+
     [TestFixture]
     internal class BlittableIterationTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct> store;
+        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>> store;
         private IDevice log;
 
         [SetUp]
@@ -61,8 +63,18 @@ namespace Tsavorite.test
         public void BlittableIterationBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"{deviceType}.log"));
-            store = new TsavoriteKV<KeyStruct, ValueStruct>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
+
+            store = new(
+                new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                {
+                    IndexSize = 1L << 26,
+                    LogDevice = log, 
+                    MemorySize = 1 << 15,
+                    PageSize = 1 << 9,
+                    SegmentSize = 1 << 22
+                }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+                , (allocatorSettings, storeFunctions) => new BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>()
+            );
 
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
@@ -146,8 +158,18 @@ namespace Tsavorite.test
         public void BlittableIterationPushStopTest()
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "stop_test.log"));
-            store = new TsavoriteKV<KeyStruct, ValueStruct>
-                 (1L << 20, new LogSettings { LogDevice = log, MemorySizeBits = 15, PageSizeBits = 9, SegmentSizeBits = 22 });
+
+            store = new(
+                new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                {
+                    IndexSize = 1L << 26,
+                    LogDevice = log,
+                    MemorySize = 1 << 15,
+                    PageSize = 1 << 9,
+                    SegmentSize = 1 << 22
+                }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+                , (allocatorSettings, storeFunctions) => new BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>()
+            );
 
             using var session = store.NewSession<InputStruct, OutputStruct, int, FunctionsCompaction>(new FunctionsCompaction());
             var bContext = session.BasicContext;
@@ -185,9 +207,19 @@ namespace Tsavorite.test
         public unsafe void BlittableIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ScanMode scanMode)
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "lock_test.log"));
+
             // Must be large enough to contain all records in memory to exercise locking
-            store = new TsavoriteKV<KeyStruct, ValueStruct>(1L << 20,
-                 new LogSettings { LogDevice = log, MemorySizeBits = 25, PageSizeBits = 20, SegmentSizeBits = 22 });
+            store = new(
+                new TsavoriteKVSettings<KeyStruct, ValueStruct>()
+                {
+                    IndexSize = 1L << 26,
+                    LogDevice = log,
+                    MemorySize = 1 << 25,
+                    PageSize = 1 << 20,
+                    SegmentSize = 1 << 22
+                }, StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+                , (allocatorSettings, storeFunctions) => new BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>()
+            );
 
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;

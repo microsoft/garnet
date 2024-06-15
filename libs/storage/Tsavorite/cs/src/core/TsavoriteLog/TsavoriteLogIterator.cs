@@ -12,6 +12,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+    using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, NoSerializer<Empty>, NoSerializer<byte>, DefaultRecordDisposer<Empty, byte>>;
+
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
@@ -19,7 +21,7 @@ namespace Tsavorite.core
     {
         private readonly string name;
         private readonly TsavoriteLog tsavoriteLog;
-        private readonly BlittableAllocator<Empty, byte> allocator;
+        private readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions, BlittableAllocator<Empty, byte, EmptyStoreFunctions>> allocator;
         private readonly BlittableFrame frame;
         private readonly GetMemory getMemory;
         private readonly int headerSize;
@@ -52,7 +54,7 @@ namespace Tsavorite.core
         /// <param name="getMemory"></param>
         /// <param name="scanUncommitted"></param>
         /// <param name="logger"></param>
-        internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, BlittableAllocator<Empty, byte> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false, ILogger logger = null)
+        internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions, BlittableAllocator<Empty, byte, EmptyStoreFunctions>> hlog, long beginAddress, long endAddress, GetMemory getMemory, ScanBufferingMode scanBufferingMode, LightEpoch epoch, int headerSize, string name, bool scanUncommitted = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;
@@ -681,7 +683,7 @@ namespace Tsavorite.core
                 if (result.freeBuffer1 != null)
                 {
                     if (errorCode == 0)
-                        allocator.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
+                        allocator._wrapper.PopulatePage(result.freeBuffer1.GetValidPointer(), result.freeBuffer1.required_bytes, result.page);
                     result.freeBuffer1.Return();
                     result.freeBuffer1 = null;
                 }

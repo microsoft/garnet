@@ -10,15 +10,12 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for hybrid log
     /// </summary>
-    internal sealed class GenericScanIterator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> : ScanIteratorBase, ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
-        where TKeyComparer : IKeyComparer<Key>
-        where TKeySerializer : IObjectSerializer<Key>
-        where TValueSerializer : IObjectSerializer<Value>
-        where TRecordDisposer : IRecordDisposer<Key, Value>
-        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+    internal sealed class GenericScanIterator<Key, Value, TStoreFunctions, TAllocator> : ScanIteratorBase, ITsavoriteScanIterator<Key, Value>, IPushScanIterator<Key>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
-        private readonly TsavoriteKV<Key, Value> store;
-        private readonly GenericAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> hlog;
+        private readonly TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store;
+        private readonly GenericAllocatorImpl<Key, Value, TStoreFunctions, TAllocator> hlog;
         private readonly GenericFrame<Key, Value> frame;
         private readonly int recordSize;
 
@@ -30,7 +27,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> hlog,
+        public GenericScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, GenericAllocatorImpl<Key, Value, TStoreFunctions, TAllocator> hlog,
                 long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
@@ -44,7 +41,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        public GenericScanIterator(TsavoriteKV<Key, Value> store, GenericAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> hlog,
+        public GenericScanIterator(TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> store, GenericAllocatorImpl<Key, Value, TStoreFunctions, TAllocator> hlog,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, hlog.GetTailAddress(), ScanBufferingMode.SinglePageBuffering, false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
@@ -71,15 +68,8 @@ namespace Tsavorite.core
         public bool SnapCursorToLogicalAddress(ref long cursor)
         {
             Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
-            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, GenericAllocatorImpl<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>.RecordSize);
+            beginAddress = nextAddress = hlog.SnapToFixedLengthLogicalAddressBoundary(ref cursor, GenericAllocatorImpl<Key, Value, TStoreFunctions, TAllocator>.RecordSize);
             return true;
-        }
-
-        ref RecordInfo IPushScanIterator<Key>.GetLockableInfo()
-        {
-            Debug.Assert(currentFrame < 0, "GetLockableInfo() should be in-memory (i.e.should not have a frame)");
-            Debug.Assert(epoch.ThisInstanceProtected(), "GetLockableInfo() should be called with the epoch held");
-            return ref hlog.values[currentPage][currentOffset].info;
         }
 
         /// <summary>
@@ -143,15 +133,14 @@ namespace Tsavorite.core
                         continue;
                     }
 
-                    // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend()
-                    // (except for GetLockableInfo which we know is safe). These are pointer-sized shallow copies but we need to lock to ensure
-                    // no value tearing inside the object while copying to temp storage.
-                    OperationStackContext<Key, Value> stackCtx = default;
+                    // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
+                    // These are pointer-sized shallow copies but we need to lock to ensure no value tearing inside the object while copying to temp storage.
+                    OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = default;
                     try
                     {
-                        // We cannot use GetKey() and GetLockableInfo() because they have not yet been set.
+                        // We cannot use GetKey() because it has not yet been set.
                         if (currentAddress >= headAddress && store is not null)
-                            store.LockForScan(ref stackCtx, ref hlog.values[currentPage][currentOffset].key, ref hlog.values[currentPage][currentOffset].info);
+                            store.LockForScan(ref stackCtx, ref hlog.values[currentPage][currentOffset].key);
 
                         recordInfo = hlog.values[currentPage][currentOffset].info;
                         currentKey = hlog.values[currentPage][currentOffset].key;
@@ -160,7 +149,7 @@ namespace Tsavorite.core
                     finally
                     {
                         if (stackCtx.recSrc.HasLock)
-                            store.UnlockForScan(ref stackCtx, ref hlog.values[currentPage][currentOffset].key, ref hlog.values[currentPage][currentOffset].info);
+                            store.UnlockForScan(ref stackCtx);
                     }
 
                     // Success
@@ -180,7 +169,7 @@ namespace Tsavorite.core
                 // Copy the object values from the frame to data members.
                 currentKey = frame.GetKey(currentFrame, currentOffset);
                 currentValue = frame.GetValue(currentFrame, currentOffset);
-                currentPage = currentOffset = -1; // We should no longer use these except for GetLockableInfo()
+                currentPage = currentOffset = -1;
 
                 // Success
                 epoch?.Suspend();
@@ -223,14 +212,14 @@ namespace Tsavorite.core
                 nextAddress = currentAddress + recordSize;
 
                 bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                if (skipOnScan || recordInfo.IsNull() || !hlog._storeFunctions.KeyComparer.Equals(ref hlog.values[currentPage][currentOffset].key, ref key))
+                if (skipOnScan || recordInfo.IsNull() || !hlog._storeFunctions.KeysEqual(ref hlog.values[currentPage][currentOffset].key, ref key))
                 {
                     epoch?.Suspend();
                     continue;
                 }
 
-                // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend()
-                // (except for GetLockableInfo which we know is safe). These are pointer-sized shallow copies.
+                // Copy the object values from cached page memory to data members; we have no ref into the log after the epoch.Suspend().
+                // These are pointer-sized shallow copies.
                 recordInfo = hlog.values[currentPage][currentOffset].info;
                 currentKey = hlog.values[currentPage][currentOffset].key;
                 currentValue = hlog.values[currentPage][currentOffset].value;

@@ -10,13 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
     /// </summary>
-    public sealed class TsavoriteKVSettings<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> : IDisposable
-        where TKeyComparer : IKeyComparer<Key>
-        where TKeySerializer : IObjectSerializer<Key>
-        where TValueSerializer : IObjectSerializer<Value>
-        where TRecordDisposer : IRecordDisposer<Key, Value>
-        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
-        where TAllocator : IAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
+    public sealed class TsavoriteKVSettings<Key, Value> : IDisposable
     {
         readonly bool disposeDevices = false;
         readonly bool deleteDirOnDispose = false;
@@ -66,11 +60,6 @@ namespace Tsavorite.core
         /// Whether to preallocate the entire log (pages) in memory
         /// </summary>
         public bool PreallocateLog = false;
-
-        /// <summary>
-        /// StoreFunctions for this TsavoriteKV instance
-        /// </summary>
-        public TStoreFunctions StoreFunctions;
 
         /// <summary>
         /// Whether read cache is enabled
@@ -138,6 +127,7 @@ namespace Tsavorite.core
         /// </summary>
         public TsavoriteKVSettings() { }
 
+        internal readonly ILoggerFactory loggerFactory;
         internal readonly ILogger logger;
 
         /// <summary>
@@ -148,8 +138,9 @@ namespace Tsavorite.core
         /// <param name="baseDir">Base directory (without trailing path separator)</param>
         /// <param name="deleteDirOnDispose">Whether to delete base directory on dispose. This option prevents later recovery.</param>
         /// <param name="logger"></param>
-        public TsavoriteKVSettings(string baseDir, bool deleteDirOnDispose = false, ILogger logger = null)
+        public TsavoriteKVSettings(string baseDir, bool deleteDirOnDispose = false, ILoggerFactory loggerFactory = null, ILogger logger = null)
         {
+            this.loggerFactory = loggerFactory;
             this.logger = logger;
             disposeDevices = true;
             this.deleteDirOnDispose = deleteDirOnDispose;
@@ -199,6 +190,9 @@ namespace Tsavorite.core
                 logger?.LogInformation("Warning: using lower value {0} instead of specified {1} for {2}", adjustedSize, IndexSize, nameof(IndexSize));
             return adjustedSize / 64;
         }
+
+        internal static long SetIndexSizeFromCacheLines(long cacheLines)
+            => cacheLines * 64;
 
         internal LogSettings GetLogSettings()
         {

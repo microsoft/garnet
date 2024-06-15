@@ -6,7 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         /// <summary>
         /// Read operation. Computes the 'output' from 'input' and current value corresponding to 'key'.
@@ -50,9 +52,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRead<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, long keyHash, ref Input input, ref Output output,
                                     Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
-            OperationStackContext<Key, Value> stackCtx = new(keyHash);
+            OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
@@ -60,7 +62,7 @@ namespace Tsavorite.core
 
             if (!FindTagAndTryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
                 return status;
-            stackCtx.SetRecordSourceToHashEntry(hlog);
+            stackCtx.SetRecordSourceToHashEntry(hlogBase);
 
             // We have to assign a reference on declaration, so assign it here before we know whether LogicalAddress is above or below HeadAddress.
             // It must be at this scope so it can be unlocked in 'finally'.
@@ -97,7 +99,7 @@ namespace Tsavorite.core
                 }
 
                 // recSrc.LogicalAddress is set and is not in the readcache. Traceback for key match.
-                if (!TryFindRecordForRead(ref key, ref stackCtx, hlog.HeadAddress, out status))
+                if (!TryFindRecordForRead(ref key, ref stackCtx, hlogBase.HeadAddress, out status))
                     return status;
 
                 // Track the latest searched-below addresses. They are the same if there are no readcache records.
@@ -111,7 +113,7 @@ namespace Tsavorite.core
                 if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
                     return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
 
-                if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress)
+                if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress)
                 {
                     // Mutable region (even fuzzy region is included here)
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
@@ -126,7 +128,7 @@ namespace Tsavorite.core
                     return CheckFalseActionStatus(readInfo);
                 }
 
-                if (stackCtx.recSrc.LogicalAddress >= hlog.HeadAddress)
+                if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
                 {
                     // Immutable region
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
@@ -145,13 +147,13 @@ namespace Tsavorite.core
                     return CheckFalseActionStatus(readInfo);
                 }
 
-                if (stackCtx.recSrc.LogicalAddress >= hlog.BeginAddress)
+                if (stackCtx.recSrc.LogicalAddress >= hlogBase.BeginAddress)
                 {
                     // On-Disk Region
                     Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLocked(ref stackCtx.hei), "A Lockable-session Read() of an on-disk key requires a LockTable lock");
 
                     // Note: we do not lock here; we wait until reading from disk, then lock in the ContinuePendingRead chain.
-                    if (hlog.IsNullDevice)
+                    if (hlogBase.IsNullDevice)
                         return OperationStatus.NOTFOUND;
                     CreatePendingReadContext(ref key, ref input, output, userContext, ref pendingContext, sessionFunctions, stackCtx.recSrc.LogicalAddress);
                     return OperationStatus.RECORD_ON_DISK;
@@ -170,8 +172,9 @@ namespace Tsavorite.core
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalRead to have this be a virtcall.
         private OperationStatus CopyFromImmutable<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Output output, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, Value recordValue)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions,
+                ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, Value recordValue)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             if (pendingContext.readCopyOptions.CopyTo == ReadCopyTo.MainLog)
             {
@@ -243,15 +246,15 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalReadAtAddress<Input, Output, Context, TSessionFunctionsWrapper>(long readAtAddress, ref Key key, ref Input input, ref Output output,
                                     ref ReadOptions readOptions, Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
-            if (readAtAddress < hlog.BeginAddress)
+            if (readAtAddress < hlogBase.BeginAddress)
                 return OperationStatus.NOTFOUND;
 
             pendingContext.IsReadAtAddress = true;
 
             // We do things in a different order here than in InternalRead, in part to handle NoKey (especially with Revivification).
-            if (readAtAddress < hlog.HeadAddress)
+            if (readAtAddress < hlogBase.HeadAddress)
             {
                 // Do not trace back in the pending callback if it is a key mismatch.
                 pendingContext.NoKey = true;
@@ -267,12 +270,12 @@ namespace Tsavorite.core
             if (readOptions.KeyHash.HasValue)
                 pendingContext.keyHash = readOptions.KeyHash.Value;
             else if (!pendingContext.NoKey)
-                pendingContext.keyHash = comparer.GetHashCode64(ref key);
+                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(ref key);
             else
             {
                 // We have NoKey and an in-memory address so we must get the record to get the key to get the hashcode check for index growth,
                 // possibly lock the bucket, etc.
-                pendingContext.keyHash = comparer.GetHashCode64(ref hlog.GetKey(physicalAddress));
+                pendingContext.keyHash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
 
 #pragma warning disable CS9085 // "This ref-assigns a value that has a narrower escape scope than the target", but we don't return the reference.
                 // Note: With bucket-based locking the key is not used for Transient locks (only the key's hashcode is used). A key-based locking system
@@ -281,16 +284,16 @@ namespace Tsavorite.core
 #pragma warning restore CS9085
             }
 
-            OperationStackContext<Key, Value> stackCtx = new(pendingContext.keyHash);
+            OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
             if (!FindTagAndTryTransientSLock<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx, out OperationStatus status))
                 return status;
 
-            stackCtx.SetRecordSourceToHashEntry(hlog);
+            stackCtx.SetRecordSourceToHashEntry(hlogBase);
             stackCtx.recSrc.LogicalAddress = readAtAddress;
-            stackCtx.recSrc.SetPhysicalAddress();
+            _ = stackCtx.recSrc.SetPhysicalAddress();
 
             // Note: We read directly from the address either in memory or pending, so do not do any ReadCache operations.
 
@@ -319,7 +322,7 @@ namespace Tsavorite.core
 
                 // Ignore the return value from the ISessionFunctions calls; we're doing nothing else based on it.
                 status = OperationStatus.SUCCESS;
-                if (stackCtx.recSrc.LogicalAddress >= hlog.SafeReadOnlyAddress)
+                if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress)
                 {
                     // Mutable region (even fuzzy region is included here).
                     sessionFunctions.ConcurrentReader(ref stackCtx.recSrc.GetKey(), ref input, ref stackCtx.recSrc.GetValue(), ref output, ref readInfo, ref srcRecordInfo);
@@ -341,7 +344,7 @@ namespace Tsavorite.core
         // No AggressiveInlining; this is called only for the pending case and may improve inlining of InternalRead in the normal case if the compiler decides not to inline this.
         private void CreatePendingReadContext<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, Output output, Context userContext,
                 ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions, long logicalAddress)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.READ;
             if (!pendingContext.NoKey && pendingContext.key == default)    // If this is true, we don't have a valid key

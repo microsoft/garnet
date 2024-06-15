@@ -13,6 +13,11 @@ namespace Tsavorite.core
     public interface IObjectSerializer<T>
     {
         /// <summary>
+        /// Indicates whether the struct is to be used. Primarily for serializers implemented as structs (e.g. for inlining).
+        /// </summary>
+        bool IsNull { get; }
+
+        /// <summary>
         /// Begin serialization to given stream
         /// </summary>
         /// <param name="stream"></param>
@@ -56,6 +61,9 @@ namespace Tsavorite.core
         protected BinaryReader reader;
         protected BinaryWriter writer;
 
+        /// <summary>If this class is non-null it is always to be used</summary>
+        public bool IsNull => false;
+
         /// <summary>Begin deserialization</summary>
         public void BeginDeserialize(Stream stream) => reader = new BinaryReader(stream, new UTF8Encoding(), true);
 
@@ -76,14 +84,17 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// For use with <see cref="IStoreFunctions{TKey, TValue, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer}"/> implementations
-    /// for Key or Value types that do not have serialization or have a custom implementation that is handled entirely by the allocator (e.g. <see cref="SpanByte"/>).
+    /// For use with <see cref="IStoreFunctions{TKey, TValue}"/> implementations for Key or Value types that do not have serialization 
+    /// or have a custom implementation that is handled entirely by the allocator (e.g. <see cref="SpanByte"/>).
     /// </summary>
     /// <remarks>Calling methods on this type an error, so it throws rather than no-ops.</remarks>>
-    public sealed class NoSerializer<T> : IObjectSerializer<T>
+    public struct NoSerializer<T> : IObjectSerializer<T>
     {
         /// <summary>Default instance</summary>
         public static NoSerializer<T> Instance = new();
+
+        /// <inheritdoc/>
+        public readonly bool IsNull => true;
 
         /// <inheritdoc/>
         public void BeginDeserialize(Stream stream) => throw new System.NotImplementedException();

@@ -98,7 +98,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public override unsafe void DisposeForRevivification(ref SpanByte key, ref SpanByte value, int newKeySize)
         {
-            var oldKeySize = RoundUp(key.TotalSize, SpanByteAllocator.kRecordAlignment);
+            var oldKeySize = RoundUp(key.TotalSize, Constants.kRecordAlignment);
 
             // We don't have to do anything with the Value unless the new key size requires adjusting the key length.
             // newKeySize == -1 means we are preserving the existing key (e.g. for in-chain revivification).
@@ -107,7 +107,7 @@ namespace Tsavorite.core
 
             // We are changing the key size (e.g. revivification from the freelist with a new key).
             // Our math here uses record alignment of keys as in the allocator, and assumes this will always be at least int alignment.
-            newKeySize = RoundUp(newKeySize, SpanByteAllocator.kRecordAlignment);
+            newKeySize = RoundUp(newKeySize, Constants.kRecordAlignment);
             int keySizeChange = newKeySize - oldKeySize;
             if (keySizeChange == 0)
                 return;

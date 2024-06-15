@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Internal;
 using Tsavorite.core;
@@ -29,7 +28,7 @@ namespace Tsavorite.test
         public void Setup()
         {
             // Clean up log files from previous test runs in case they weren't cleaned up
-            DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
         }
 
         private void Setup(long size, LogSettings logSettings, DeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)

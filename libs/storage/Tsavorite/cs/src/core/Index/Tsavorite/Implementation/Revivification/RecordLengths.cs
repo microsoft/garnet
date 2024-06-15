@@ -8,11 +8,13 @@ namespace Tsavorite.core
 {
     using static Utility;
 
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long GetMinRevivifiableAddress()
-            => RevivificationManager.GetMinRevivifiableAddress(hlog.GetTailAddress(), hlog.ReadOnlyAddress);
+            => RevivificationManager.GetMinRevivifiableAddress(hlogBase.GetTailAddress(), hlogBase.ReadOnlyAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetValueOffset(long physicalAddress, ref Value recordValue) => (int)((long)Unsafe.AsPointer(ref recordValue) - physicalAddress);
@@ -58,7 +60,7 @@ namespace Tsavorite.core
         {
             // FixedLen may be GenericAllocator which does not point physicalAddress to the actual record location, so calculate fullRecordLength via GetAverageRecordSize().
             if (RevivificationManager.IsFixedLength)
-                return (RevivificationManager<Key, Value>.FixedValueLength, RevivificationManager<Key, Value>.FixedValueLength, hlog.GetAverageRecordSize());
+                return (RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength, RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength, hlog.GetAverageRecordSize());
 
             int usedValueLength, fullValueLength, allocatedSize, valueOffset = GetValueOffset(physicalAddress, ref recordValue);
             if (recordInfo.Filler)
@@ -88,7 +90,7 @@ namespace Tsavorite.core
         {
             // Called after a new record is allocated
             if (RevivificationManager.IsFixedLength)
-                return (RevivificationManager<Key, Value>.FixedValueLength, RevivificationManager<Key, Value>.FixedValueLength);
+                return (RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength, RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength);
 
             int valueOffset = GetValueOffset(newPhysicalAddress, ref recordValue);
             int usedValueLength = actualSize - valueOffset;
@@ -145,7 +147,7 @@ namespace Tsavorite.core
         // Do not try to inline this; it causes TryAllocateRecord to bloat and slow
         bool TryTakeFreeRecord<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, int requiredSize, ref int allocatedSize, int newKeySize, long minRevivAddress,
                     out long logicalAddress, out long physicalAddress)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             // Caller checks for UseFreeRecordPool
             if (RevivificationManager.TryTake(allocatedSize, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
@@ -207,7 +209,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal (bool ok, int usedValueLength) TryReinitializeTombstonedValue<Input, Output, Context, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref RecordInfo srcRecordInfo, ref Key key, ref Value recordValue, int requiredSize, (int usedValueLength, int fullValueLength, int allocatedSize) recordLengths)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             if (RevivificationManager.IsFixedLength || recordLengths.allocatedSize < requiredSize)
                 return (false, recordLengths.usedValueLength);

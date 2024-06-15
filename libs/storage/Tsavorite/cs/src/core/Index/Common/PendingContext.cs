@@ -5,7 +5,9 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         internal struct PendingContext<Input, Output, Context>
         {

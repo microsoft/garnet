@@ -14,13 +14,9 @@ namespace Tsavorite.core
     /// <summary>
     /// Base class for hybrid log memory allocator. Contains utility methods, some of which are not performance-critical so can be virtual.
     /// </summary>
-    public abstract partial class AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks> : IDisposable
-        where TKeyComparer : IKeyComparer<Key>
-        where TKeySerializer : IObjectSerializer<Key>
-        where TValueSerializer : IObjectSerializer<Value>
-        where TRecordDisposer : IRecordDisposer<Key, Value>
-        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
-        where TAllocatorCallbacks : IAllocatorCallbacks<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
+    public abstract partial class AllocatorBase<Key, Value, TStoreFunctions, TAllocator> : IDisposable
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         /// <summary>The epoch we are operating with</summary>
         protected readonly LightEpoch epoch;
@@ -31,7 +27,7 @@ namespace Tsavorite.core
         internal readonly TStoreFunctions _storeFunctions;
         
         /// <summary>The fully-derived allocator struct wrapper (so calls on it are inlined rather than virtual) for this log.</summary>
-        internal readonly TAllocatorCallbacks _derived;
+        internal readonly TAllocator _wrapper;
 
         #region Protected size definitions
         /// <summary>Buffer size</summary>
@@ -234,7 +230,7 @@ namespace Tsavorite.core
             {
                 long startPage = GetPage(startAddress);
                 long endPage = GetPage(endAddress);
-                if (endAddress > _derived.GetStartLogicalAddress(endPage))
+                if (endAddress > _wrapper.GetStartLogicalAddress(endPage))
                     endPage++;
 
                 long prevEndPage = GetPage(prevEndAddress);
@@ -263,7 +259,7 @@ namespace Tsavorite.core
                             continue;
 
                         var logicalAddress = p << LogPageSizeBits;
-                        var physicalAddress = _derived.GetPhysicalAddress(logicalAddress);
+                        var physicalAddress = _wrapper.GetPhysicalAddress(logicalAddress);
 
                         var endLogicalAddress = logicalAddress + PageSize;
                         if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
@@ -278,8 +274,8 @@ namespace Tsavorite.core
 
                         while (physicalAddress < endPhysicalAddress)
                         {
-                            ref var info = ref _derived.GetInfo(physicalAddress);
-                            var (_, alignedRecordSize) = _derived.GetRecordSize(physicalAddress);
+                            ref var info = ref _wrapper.GetInfo(physicalAddress);
+                            var (_, alignedRecordSize) = _wrapper.GetRecordSize(physicalAddress);
                             if (info.Dirty)
                             {
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
@@ -405,8 +401,8 @@ namespace Tsavorite.core
         {
             if (log == null) return;
 
-            long startLogicalAddress = _derived.GetStartLogicalAddress(startPage);
-            long endLogicalAddress = _derived.GetStartLogicalAddress(endPage);
+            long startLogicalAddress = _wrapper.GetStartLogicalAddress(startPage);
+            long endLogicalAddress = _wrapper.GetStartLogicalAddress(endPage);
 
             log.Reset();
             while (log.GetNext(out long physicalAddress, out int entryLength, out var type))
@@ -424,10 +420,10 @@ namespace Tsavorite.core
                             physicalAddress += sizeof(int);
                             if (address >= startLogicalAddress && address < endLogicalAddress)
                             {
-                                var destination = _derived.GetPhysicalAddress(address);
+                                var destination = _wrapper.GetPhysicalAddress(address);
 
                                 // Clear extra space (if any) in old record
-                                var oldSize = _derived.GetRecordSize(destination).Item2;
+                                var oldSize = _wrapper.GetRecordSize(destination).Item2;
                                 if (oldSize > size)
                                     new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
 
@@ -435,7 +431,7 @@ namespace Tsavorite.core
                                 Buffer.MemoryCopy((void*)physicalAddress, (void*)destination, size, size);
 
                                 // Clean up temporary bits when applying the delta log
-                                ref var destInfo = ref _derived.GetInfo(destination);
+                                ref var destInfo = ref _wrapper.GetInfo(destination);
                                 destInfo.ClearBitsForDiskImages();
                             }
                             physicalAddress += size;
@@ -631,7 +627,7 @@ namespace Tsavorite.core
             var firstAvailSegment = device.StartSegment;
             var lastAvailSegment = device.EndSegment;
 
-            if (FlushedUntilAddress > _derived.GetFirstValidLogicalAddress(0))
+            if (FlushedUntilAddress > _wrapper.GetFirstValidLogicalAddress(0))
             {
                 int currTailSegment = (int)(FlushedUntilAddress >> LogSegmentSizeBits);
                 if ((FlushedUntilAddress & ((1L << LogSegmentSizeBits) - 1)) == 0)
@@ -673,21 +669,21 @@ namespace Tsavorite.core
             {
                 long tailPage = firstValidAddress >> LogPageSizeBits;
                 int tailPageIndex = (int)(tailPage % BufferSize);
-                if (!_derived.IsAllocated(tailPageIndex))
-                    _derived.AllocatePage(tailPageIndex);
+                if (!_wrapper.IsAllocated(tailPageIndex))
+                    _wrapper.AllocatePage(tailPageIndex);
 
                 // Allocate next page as well
                 int nextPageIndex = (int)(tailPage + 1) % BufferSize;
-                if (!_derived.IsAllocated(nextPageIndex))
-                    _derived.AllocatePage(nextPageIndex);
+                if (!_wrapper.IsAllocated(nextPageIndex))
+                    _wrapper.AllocatePage(nextPageIndex);
             }
 
             if (PreallocateLog)
             {
                 for (int i = 0; i < BufferSize; i++)
                 {
-                    if (!_derived.IsAllocated(i))
-                        _derived.AllocatePage(i);
+                    if (!_wrapper.IsAllocated(i))
+                        _wrapper.AllocatePage(i);
                 }
             }
 
@@ -815,12 +811,12 @@ namespace Tsavorite.core
             try
             {
                 // Allocate this page, if needed
-                if (!_derived.IsAllocated(pageIndex % BufferSize))
-                    _derived.AllocatePage(pageIndex % BufferSize);
+                if (!_wrapper.IsAllocated(pageIndex % BufferSize))
+                    _wrapper.AllocatePage(pageIndex % BufferSize);
 
                 // Allocate next page in advance, if needed
-                if (!_derived.IsAllocated((pageIndex + 1) % BufferSize))
-                    _derived.AllocatePage((pageIndex + 1) % BufferSize);
+                if (!_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
+                    _wrapper.AllocatePage((pageIndex + 1) % BufferSize);
             }
             catch
             {
@@ -893,7 +889,7 @@ namespace Tsavorite.core
                     return -1; // RETRY_NOW
                 }
 
-                if (!_derived.IsAllocated(pageIndex % BufferSize) || !_derived.IsAllocated((pageIndex + 1) % BufferSize))
+                if (!_wrapper.IsAllocated(pageIndex % BufferSize) || !_wrapper.IsAllocated((pageIndex + 1) % BufferSize))
                     AllocatePagesWithException(pageIndex, localTailPageOffset);
 
                 localTailPageOffset.Page++;
@@ -1021,7 +1017,7 @@ namespace Tsavorite.core
             var end = (page + 1) << LogPageSizeBits;
             if (OnEvictionObserver is not null)
                 MemoryPageScan(start, end, OnEvictionObserver);
-            _derived.FreePage(page);
+            _wrapper.FreePage(page);
         }
 
         /// <summary>
@@ -1104,7 +1100,7 @@ namespace Tsavorite.core
 
                     // If the end of the closing range is at the end of the page, free the page
                     if (end == closePageAddress + PageSize)
-                        _derived.FreePage((int)(closePageAddress >> LogPageSizeBits));
+                        _wrapper.FreePage((int)(closePageAddress >> LogPageSizeBits));
 
                     _ = Utility.MonotonicUpdate(ref ClosedUntilAddress, end, out _);
                 }
@@ -1249,13 +1245,13 @@ namespace Tsavorite.core
 
             // Allocate current page if necessary
             var pageIndex = TailPageOffset.Page % BufferSize;
-            if (!_derived.IsAllocated(pageIndex))
-                _derived.AllocatePage(pageIndex);
+            if (!_wrapper.IsAllocated(pageIndex))
+                _wrapper.AllocatePage(pageIndex);
 
             // Allocate next page as well - this is an invariant in the allocator!
             var nextPageIndex = (pageIndex + 1) % BufferSize;
-            if (!_derived.IsAllocated(nextPageIndex))
-                _derived.AllocatePage(nextPageIndex);
+            if (!_wrapper.IsAllocated(nextPageIndex))
+                _wrapper.AllocatePage(nextPageIndex);
 
             BeginAddress = beginAddress;
             HeadAddress = headAddress;
@@ -1269,7 +1265,7 @@ namespace Tsavorite.core
             pageIndex = GetPageIndexForAddress(tailAddress);
 
             // clear the last page starting from tail address
-            _derived.ClearPage(pageIndex, (int)GetOffsetInPage(tailAddress));
+            _wrapper.ClearPage(pageIndex, (int)GetOffsetInPage(tailAddress));
 
             // Printing debug info
             logger?.LogInformation("******* Recovered HybridLog Stats *******");
@@ -1360,10 +1356,10 @@ namespace Tsavorite.core
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
                 var pageIndex = (int)(readPage % BufferSize);
-                if (!_derived.IsAllocated(pageIndex))
-                    _derived.AllocatePage(pageIndex);
+                if (!_wrapper.IsAllocated(pageIndex))
+                    _wrapper.AllocatePage(pageIndex);
                 else
-                    _derived.ClearPage(readPage);
+                    _wrapper.ClearPage(readPage);
 
                 var asyncResult = new PageAsyncReadResult<TContext>()
                 {
@@ -1593,20 +1589,20 @@ namespace Tsavorite.core
             try
             {
                 var record = ctx.record.GetValidPointer();
-                int requiredBytes = _derived.GetRequiredRecordSize((long)record, ctx.record.available_bytes);
+                int requiredBytes = _wrapper.GetRequiredRecordSize((long)record, ctx.record.available_bytes);
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
-                    Debug.Assert(!_derived.GetInfoFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");
+                    Debug.Assert(!_wrapper.GetInfoFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");
 
                     // We have all the required bytes. If we don't have the complete record, RetrievedFullRecord calls AsyncGetFromDisk.
-                    if (!_derived.RetrievedFullRecord(record, ref ctx))
+                    if (!_wrapper.RetrievedFullRecord(record, ref ctx))
                         return;
 
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
-                    if (ctx.request_key is not null && !_storeFunctions.KeyComparer.Equals(ref ctx.request_key.Get(), ref _derived.GetContextRecordKey(ref ctx)))
+                    if (ctx.request_key is not null && !_storeFunctions.KeysEqual(ref ctx.request_key.Get(), ref _wrapper.GetContextRecordKey(ref ctx)))
                     {
                         // Keys don't match so request the previous record in the chain if it is in the range to resolve.
-                        ctx.logicalAddress = _derived.GetInfoFromBytePointer(record).PreviousAddress;
+                        ctx.logicalAddress = _wrapper.GetInfoFromBytePointer(record).PreviousAddress;
                         if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
                         {
                             ctx.record.Return();
@@ -1743,13 +1739,13 @@ namespace Tsavorite.core
 
                     if (flushWidth > 0)
                     {
-                        var physicalAddress = _derived.GetPhysicalAddress(startAddress);
+                        var physicalAddress = _wrapper.GetPhysicalAddress(startAddress);
                         var endPhysicalAddress = physicalAddress + flushWidth;
 
                         while (physicalAddress < endPhysicalAddress)
                         {
-                            ref var info = ref _derived.GetInfo(physicalAddress);
-                            var (_, alignedRecordSize) = _derived.GetRecordSize(physicalAddress);
+                            ref var info = ref _wrapper.GetInfo(physicalAddress);
+                            var (_, alignedRecordSize) = _wrapper.GetRecordSize(physicalAddress);
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;

@@ -29,8 +29,10 @@ namespace Tsavorite.core
     /// <summary>
     /// Interface for Tsavorite operations
     /// </summary>
-    public interface ITsavoriteContext<Key, Value, Input, Output, Context, Functions> : ITsavoriteContext<Key>
+    public interface ITsavoriteContext<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> : ITsavoriteContext<Key>
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         /// <summary>
         /// Indicates whether this context has been initialized.
@@ -38,9 +40,9 @@ namespace Tsavorite.core
         public bool IsNull { get; }
 
         /// <summary>
-        /// Obtain the underlying <see cref="ClientSession{Key, Value, Input, Output, Context, Functions}"/>
+        /// Obtain the underlying <see cref="ClientSession{Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator}"/>
         /// </summary>
-        ClientSession<Key, Value, Input, Output, Context, Functions> Session { get; }
+        ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> Session { get; }
 
         /// <summary>
         /// Synchronously complete outstanding pending synchronous operations.

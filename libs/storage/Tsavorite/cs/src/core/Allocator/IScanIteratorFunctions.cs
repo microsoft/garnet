@@ -74,8 +74,6 @@ namespace Tsavorite.core
         bool BeginGetPrevInMemory(ref Key key, out RecordInfo recordInfo, out bool continueOnDisk);
         bool EndGetPrevInMemory();
 
-        ref RecordInfo GetLockableInfo();
-
         /// <summary>
         /// When beginning a cursor scan, if it is not the last cursor returned, snap it to the preceding logical address boundary.
         /// </summary>

@@ -155,6 +155,24 @@ namespace Tsavorite.core
     }
 
     /// <summary>
+    /// No-op equality comparer for Empty (used by TsavoriteLog)
+    /// </summary>
+    public sealed class EmptyKeyComparer : IKeyComparer<Empty>
+    {
+        /// <summary>
+        /// The default instance.
+        /// </summary>
+        /// <remarks>Used to avoid allocating new comparers.</remarks>
+        public static readonly EmptyKeyComparer Instance = new();
+
+        /// <inheritdoc />
+        public bool Equals(ref Empty key1, ref Empty key2) => throw new NotImplementedException();
+
+        /// <inheritdoc />
+        public long GetHashCode64(ref Empty key) => throw new NotImplementedException();
+    }
+
+    /// <summary>
     /// Low-performance Tsavorite equality comparer wrapper around EqualityComparer.Default
     /// </summary>
     /// <typeparam name="T"></typeparam>

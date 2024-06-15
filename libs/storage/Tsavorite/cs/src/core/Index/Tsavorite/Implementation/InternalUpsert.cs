@@ -6,7 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<Key, Value> : TsavoriteBase
+    public unsafe partial class TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
         /// <summary>
         /// Upsert operation. Replaces the value corresponding to 'key' with provided 'value', if one exists 
@@ -43,11 +45,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalUpsert<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, long keyHash, ref Input input, ref Value value, ref Output output,
                             ref Context userContext, ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var latchOperation = LatchOperation.None;
 
-            OperationStackContext<Key, Value> stackCtx = new(keyHash);
+            OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
@@ -63,7 +65,7 @@ namespace Tsavorite.core
             try
             {
                 // We blindly insert if the key isn't in the mutable region, so only check down to ReadOnlyAddress (minRevivifiableAddress is always >= ReadOnlyAddress).
-                if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlog.ReadOnlyAddress, out status))
+                if (!TryFindRecordForUpdate(ref key, ref stackCtx, hlogBase.ReadOnlyAddress, out status))
                     return status;
 
                 // Note: Upsert does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingUpsert
@@ -91,7 +93,7 @@ namespace Tsavorite.core
                     }
                 }
 
-                if (stackCtx.recSrc.LogicalAddress >= hlog.ReadOnlyAddress)
+                if (stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
                 {
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
 
@@ -178,8 +180,8 @@ namespace Tsavorite.core
 
         // No AggressiveInlining; this is a less-common function and it may improve inlining of InternalUpsert if the compiler decides not to inline this.
         private void CreatePendingUpsertContext<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Value value, Output output, Context userContext,
-                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value> stackCtx)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+                ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.UPSERT;
             if (pendingContext.key == default)
@@ -197,14 +199,15 @@ namespace Tsavorite.core
         }
 
         private bool TryRevivifyInChain<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Value value, ref Output output, ref PendingContext<Input, Output, Context> pendingContext,
-                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo, ref UpsertInfo upsertInfo, out OperationStatus status, ref Value recordValue)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, ref UpsertInfo upsertInfo, 
+                out OperationStatus status, ref Value recordValue)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             if (IsFrozen<Input, Output, Context, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcRecordInfo))
                 goto NeedNewRecord;
 
             // This record is safe to revivify even if its PreviousAddress points to a valid record, because it is revivified for the same key.
-            bool ok = true;
+            var ok = true;
             try
             {
                 if (srcRecordInfo.Tombstone)
@@ -212,7 +215,7 @@ namespace Tsavorite.core
                     srcRecordInfo.Tombstone = false;
 
                     if (RevivificationManager.IsFixedLength)
-                        upsertInfo.UsedValueLength = upsertInfo.FullValueLength = RevivificationManager<Key, Value>.FixedValueLength;
+                        upsertInfo.UsedValueLength = upsertInfo.FullValueLength = RevivificationManager<Key, Value, TStoreFunctions, TAllocator>.FixedValueLength;
                     else
                     {
                         var recordLengths = GetRecordLengths(stackCtx.recSrc.PhysicalAddress, ref recordValue, ref srcRecordInfo);
@@ -252,7 +255,7 @@ namespace Tsavorite.core
             return false;
         }
 
-        private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<Key, Value> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
+        private LatchDestination CheckCPRConsistencyUpsert(Phase phase, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status, ref LatchOperation latchOperation)
         {
             // See explanatory comments in CheckCPRConsistencyRMW.
 
@@ -287,14 +290,14 @@ namespace Tsavorite.core
         /// <param name="output">The result of ISessionFunctions.SingleWriter</param>
         /// <param name="pendingContext">Information about the operation context</param>
         /// <param name="sessionFunctions">The current session</param>
-        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value}"/> structures for this operation,
+        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}"/> structures for this operation,
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        /// <param name="srcRecordInfo">If <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value}.HasInMemorySrc"/>,
-        ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value}.LogicalAddress"/></param>
+        /// <param name="srcRecordInfo">If <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}.HasInMemorySrc"/>,
+        ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}.LogicalAddress"/></param>
         private OperationStatus CreateNewRecordUpsert<Input, Output, Context, TSessionFunctionsWrapper>(ref Key key, ref Input input, ref Value value, ref Output output,
                                                                                              ref PendingContext<Input, Output, Context> pendingContext, TSessionFunctionsWrapper sessionFunctions,
-                                                                                             ref OperationStackContext<Key, Value> stackCtx, ref RecordInfo srcRecordInfo)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+                                                                                             ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         {
             var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);   // Input is not included in record-length calculations for Upsert
             AllocateOptions allocOptions = new()
@@ -309,7 +312,7 @@ namespace Tsavorite.core
                     out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
                 return status;
 
-            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlog, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
+            ref RecordInfo newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, tombstone: false, stackCtx.recSrc.LatestLogicalAddress);
             if (allocOptions.IgnoreHeiAddress)
                 newRecordInfo.PreviousAddress = srcRecordInfo.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);

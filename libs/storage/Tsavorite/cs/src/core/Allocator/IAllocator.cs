@@ -5,24 +5,20 @@ namespace Tsavorite.core
 {
     /// <summary>
     /// Interface for hybrid log memory allocator struct wrapper for inlining. This contains the performance-critical methods that must be inlined;
-    /// abstract/virtual methods may be called via <see cref="AllocatorBase{Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocatorCallbacks}"/>.
+    /// abstract/virtual methods may be called via <see cref="AllocatorBase{Key, Value, TStoreFunctions, TAllocatorCallbacks}"/>.
     /// </summary>
-    public interface IAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions> : IAllocatorCallbacks<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>
-        where TKeyComparer : IKeyComparer<Key>
-        where TKeySerializer : IObjectSerializer<Key>
-        where TValueSerializer : IObjectSerializer<Value>
-        where TRecordDisposer : IRecordDisposer<Key, Value>
-        where TStoreFunctions : IStoreFunctions<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer>
+    public interface IAllocator<Key, Value, TStoreFunctions> : IAllocatorCallbacks<Key, Value, TStoreFunctions>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
     {
-        /// <summary>The <see cref="IStoreFunctions{Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer}"/> implementation instance for this allocator instance</summary>
-        TStoreFunctions StoreFunctions { get; }
-
         /// <summary>The base class instance of the allocator implementation</summary>
-        AllocatorBase<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions, TAllocator> GetBase<TAllocator>()
-            where TAllocator : IAllocator<Key, Value, TKeyComparer, TKeySerializer, TValueSerializer, TRecordDisposer, TStoreFunctions>;
+        AllocatorBase<Key, Value, TStoreFunctions, TAllocator> GetBase<TAllocator>()
+            where TAllocator : IAllocator<Key, Value, TStoreFunctions>;
 
-        /// <summary>Initialize</summary>
-        void Initialize();
+        /// <summary>Whether this allocator uses fixed-length records</summary>
+        bool IsFixedLength { get; }
+
+        /// <summary>Whether this allocator uses a separate object log</summary>
+        bool HasObjectLog { get; }
 
         /// <summary>Cast address range to <typeparamref name="Value"/>. For <see cref="SpanByte"/> this will also initialize the value to span the address range.</summary>
         ref Value GetAndInitializeValue(long physicalAddress, long endPhysicalAddress);

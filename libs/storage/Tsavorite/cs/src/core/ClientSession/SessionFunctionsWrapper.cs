@@ -5,21 +5,24 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal readonly struct SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, TSessionLocker> : ISessionFunctionsWrapper<Key, Value, Input, Output, Context>
+    internal readonly struct SessionFunctionsWrapper<Key, Value, Input, Output, Context, Functions, TSessionLocker, TStoreFunctions, TAllocator> 
+            : ISessionFunctionsWrapper<Key, Value, Input, Output, Context, TStoreFunctions, TAllocator>
         where Functions : ISessionFunctions<Key, Value, Input, Output, Context>
-        where TSessionLocker : struct, ISessionLocker<Key, Value>
+        where TSessionLocker : struct, ISessionLocker<Key, Value, TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions<Key, Value>
+        where TAllocator : IAllocator<Key, Value, TStoreFunctions>
     {
-        private readonly ClientSession<Key, Value, Input, Output, Context, Functions> _clientSession;
+        private readonly ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> _clientSession;
         private readonly TSessionLocker _sessionLocker;  // Has no data members
 
-        public SessionFunctionsWrapper(ClientSession<Key, Value, Input, Output, Context, Functions> clientSession)
+        public SessionFunctionsWrapper(ClientSession<Key, Value, Input, Output, Context, Functions, TStoreFunctions, TAllocator> clientSession)
         {
             _clientSession = clientSession;
             _sessionLocker = new TSessionLocker();
         }
 
-        public TsavoriteKV<Key, Value> Store => _clientSession.store;
-        public OverflowBucketLockTable<Key, Value> LockTable => _clientSession.store.LockTable;
+        public TsavoriteKV<Key, Value, TStoreFunctions, TAllocator> Store => _clientSession.store;
+        public OverflowBucketLockTable<Key, Value, TStoreFunctions, TAllocator> LockTable => _clientSession.store.LockTable;
 
         #region Reads
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -160,19 +163,19 @@ namespace Tsavorite.core
         public bool IsManualLocking => _sessionLocker.IsManualLocking;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx) =>
+        public bool TryLockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx) =>
             _sessionLocker.TryLockTransientExclusive(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+        public bool TryLockTransientShared(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
             => _sessionLocker.TryLockTransientShared(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+        public void UnlockTransientExclusive(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
             => _sessionLocker.UnlockTransientExclusive(Store, ref stackCtx);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value> stackCtx)
+        public void UnlockTransientShared(ref Key key, ref OperationStackContext<Key, Value, TStoreFunctions, TAllocator> stackCtx)
             => _sessionLocker.UnlockTransientShared(Store, ref stackCtx);
         #endregion Transient locking
 
@@ -184,7 +187,7 @@ namespace Tsavorite.core
         public IHeapContainer<Input> GetHeapContainer(ref Input input)
         {
             if (typeof(Input) == typeof(SpanByte))
-                return new SpanByteHeapContainer(ref Unsafe.As<Input, SpanByte>(ref input), _clientSession.store.hlog.bufferPool) as IHeapContainer<Input>;
+                return new SpanByteHeapContainer(ref Unsafe.As<Input, SpanByte>(ref input), _clientSession.store.hlogBase.bufferPool) as IHeapContainer<Input>;
             return new StandardHeapContainer<Input>(ref input);
         }
 
@@ -195,7 +198,7 @@ namespace Tsavorite.core
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<Key, Value, Input, Output, Context> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
             => _clientSession.CompletePendingWithOutputs(this, out completedOutputs, wait, spinWaitForCommit);
 
-        public TsavoriteKV<Key, Value>.TsavoriteExecutionContext<Input, Output, Context> Ctx => _clientSession.ctx;
+        public TsavoriteKV<Key, Value, TStoreFunctions, TAllocator>.TsavoriteExecutionContext<Input, Output, Context> Ctx => _clientSession.ctx;
         #endregion Internal utilities
     }
 }
