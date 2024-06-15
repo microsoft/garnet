@@ -78,7 +78,8 @@ namespace Garnet
 
                         dict[key] = value;
                         UpdateSize(key, value);
-                        break; // +OK is sent as response, by default
+                        WriteSimpleString(ref output, "OK");
+                        break;
                     }
                 case 1: // MYDICTGET
                     {

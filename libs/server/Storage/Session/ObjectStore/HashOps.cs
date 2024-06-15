@@ -46,10 +46,11 @@ namespace Garnet.server
             rmwInput->count = 1;
             rmwInput->done = 0;
 
-            RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.opsDone;
-            return GarnetStatus.OK;
+
+            return status;
         }
 
         /// <summary>
@@ -256,10 +257,11 @@ namespace Garnet.server
             rmwInput->count = 1;
             rmwInput->done = 0;
 
-            ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             items = output.countDone;
-            return GarnetStatus.OK;
+
+            return status;
         }
 
         /// <summary>
@@ -288,11 +290,11 @@ namespace Garnet.server
             rmwInput->count = 1;
             rmwInput->done = 0;
 
-            ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
             exists = output.countDone == 1;
 
-            return GarnetStatus.OK;
+            return status;
         }
 
         /// <summary>

@@ -167,8 +167,8 @@ namespace Garnet.cluster
             var ptr = recvBufferPtr + readHead;
             var end = recvBufferPtr + bytesRead;
 
-            // Try the command length
-            if (!RespReadUtils.ReadLengthHeader(out int length, ref ptr, end))
+            // Try to read the command length
+            if (!RespReadUtils.ReadUnsignedLengthHeader(out int length, ref ptr, end))
             {
                 return false;
             }

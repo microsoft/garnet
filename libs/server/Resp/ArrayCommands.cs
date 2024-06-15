@@ -19,47 +19,28 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        int opsDone = 0;
-        int keysDeleted = 0;
-
         /// <summary>
         /// MGET
         /// </summary>
-        private bool NetworkMGET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkMGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
-                return NetworkMGET_SG(count, ptr, ref storageApi);
+                return NetworkMGET_SG(ref storageApi);
 
             SpanByte input = default;
 
-            if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: true, out bool retVal))
-                return retVal;
+            if (NetworkArraySlotVerify(interleavedKeys: false, readOnly: true))
+                return true;
 
-            for (int c = 0; c < count; c++)
+            while (!RespWriteUtils.WriteArrayLength(parseState.count, ref dcurr, dend))
+                SendAndReset();
+
+            for (int c = 0; c < parseState.count; c++)
             {
-                byte* keyPtr = null;
-                int ksize = 0;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                keyPtr -= sizeof(int);
-
-                if (c < opsDone)
-                    continue;
-
-                if (opsDone == 0)
-                {
-                    while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
-                        SendAndReset();
-                }
-                opsDone++;
-
-                int save = *(int*)keyPtr;
-                *(int*)keyPtr = ksize;
-
+                var key = parseState.GetArgSliceByRef(c).SpanByte;
                 var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                var status = storageApi.GET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref o);
+                var status = storageApi.GET(ref key, ref input, ref o);
 
                 switch (status)
                 {
@@ -75,70 +56,46 @@ namespace Garnet.server
                             SendAndReset();
                         break;
                 }
-
-                *(int*)keyPtr = save;
             }
-
-            opsDone = 0;
-            readHead = (int)(ptr - recvBufferPtr);
-
             return true;
         }
 
         /// <summary>
         /// MGET - scatter gather version
         /// </summary>
-        private bool NetworkMGET_SG<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkMGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
             SpanByte input = default;
             long ctx = default;
 
-            if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: true, out bool retVal))
+            if (NetworkArraySlotVerify(interleavedKeys: false, readOnly: true))
             {
-                return retVal;
+                return true;
             }
 
             int firstPending = -1;
             (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
+
+            // Write array length header
+            while (!RespWriteUtils.WriteArrayLength(parseState.count, ref dcurr, dend))
+                SendAndReset();
+
             SpanByteAndMemory o = new(dcurr, (int)(dend - dcurr));
-
-            for (int c = 0; c < count; c++)
+            for (int c = 0; c < parseState.count; c++)
             {
-                byte* keyPtr = null;
-                int ksize = 0;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                    break;
-
-                if (c < opsDone)
-                    continue;
-
-                if (opsDone == 0)
-                {
-                    while (!RespWriteUtils.WriteArrayLength(count, ref dcurr, dend))
-                        SendAndReset();
-                    o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-                }
-                opsDone++;
-
-                // Store length header for the key
-                keyPtr -= sizeof(int);
-                int save = *(int*)keyPtr;
-                *(int*)keyPtr = ksize;
+                var key = parseState.GetArgSliceByRef(c).SpanByte;
 
                 // Store index in context, since completions are not in order
                 ctx = c;
 
-                var status = storageApi.GET_WithPending(ref Unsafe.AsRef<SpanByte>(keyPtr), ref input, ref o, ctx, out bool isPending);
-
-                *(int*)keyPtr = save;
+                var status = storageApi.GET_WithPending(ref key, ref input, ref o, ctx, out bool isPending);
 
                 if (isPending)
                 {
                     if (firstPending == -1)
                     {
-                        outputArr = new (GarnetStatus, SpanByteAndMemory)[count];
+                        outputArr = new (GarnetStatus, SpanByteAndMemory)[parseState.count];
                         firstPending = c;
                     }
                     outputArr[c] = (status, default);
@@ -187,7 +144,7 @@ namespace Garnet.server
                 storageApi.GET_CompletePending(outputArr, true);
 
                 // Write the outputs to network buffer
-                for (int i = firstPending; i < opsDone; i++)
+                for (int i = firstPending; i < parseState.count; i++)
                 {
                     var status = outputArr[i].Item1;
                     var output = outputArr[i].Item2;
@@ -205,13 +162,6 @@ namespace Garnet.server
                     }
                 }
             }
-
-            if (opsDone < count)
-                return false;
-
-            opsDone = 0;
-            readHead = (int)(ptr - recvBufferPtr);
-
             return true;
         }
 
@@ -551,48 +501,22 @@ namespace Garnet.server
         /// <summary>
         /// MSET
         /// </summary>
-        private bool NetworkMSET<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkMSET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            Debug.Assert(parseState.count % 2 == 0);
 
-            if (NetworkArraySlotVerify(count / 2, ptr, interleavedKeys: true, readOnly: false, out bool retVal))
+            if (NetworkArraySlotVerify(interleavedKeys: true, readOnly: false))
             {
-                return retVal;
+                return true;
             }
 
-            for (int c = 0; c < count / 2; c++)
+            for (int c = 0; c < parseState.count; c += 2)
             {
-                byte* keyPtr = null, valPtr = null;
-                int ksize = 0, vsize = 0;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                keyPtr -= sizeof(int);
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                valPtr -= sizeof(int);
-
-                if (c < opsDone)
-                    continue;
-
-                opsDone++;
-
-                int saveK = *(int*)keyPtr;
-                *(int*)keyPtr = ksize;
-
-                int saveV = *(int*)valPtr;
-                *(int*)valPtr = vsize;
-
-                var status = storageApi.SET(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
-                Debug.Assert(status == GarnetStatus.OK);
-
-                *(int*)keyPtr = saveK;
-                *(int*)valPtr = saveV;
-
-                readHead = (int)(ptr - recvBufferPtr);
+                var key = parseState.GetArgSliceByRef(c).SpanByte;
+                var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
+                _ = storageApi.SET(ref key, ref val);
             }
-            opsDone = 0;
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
@@ -601,37 +525,27 @@ namespace Garnet.server
         /// <summary>
         /// MSETNX
         /// </summary>
-        private bool NetworkMSETNX<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkMSETNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (NetworkArraySlotVerify(count / 2, ptr, interleavedKeys: true, readOnly: false, out bool retVal))
+            if (NetworkArraySlotVerify(interleavedKeys: true, readOnly: false))
             {
-                return retVal;
+                return true;
             }
 
             byte* hPtr = stackalloc byte[RespInputHeader.Size];
 
             bool anyValuesSet = false;
-            for (int c = 0; c < count / 2; c++)
+            for (int c = 0; c < parseState.count; c += 2)
             {
-                byte* keyPtr = null, valPtr = null;
-                int ksize = 0, vsize = 0;
+                var key = parseState.GetArgSliceByRef(c).SpanByte;
+                var val = parseState.GetArgSliceByRef(c + 1).SpanByte;
 
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                keyPtr -= sizeof(int);
+                // We have to access the raw pointer in order to inject the input header
+                byte* valPtr = val.ToPointer();
+                int vsize = val.Length;
 
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
                 valPtr -= sizeof(int);
-
-                if (c < opsDone)
-                    continue;
-
-                opsDone++;
-
-                int saveK = *(int*)keyPtr;
-                *(int*)keyPtr = ksize;
 
                 int saveV = *(int*)valPtr;
                 *(int*)valPtr = vsize;
@@ -646,74 +560,45 @@ namespace Garnet.server
                 ((RespInputHeader*)(valPtr + sizeof(int)))->cmd = RespCommand.SETEXNX;
                 ((RespInputHeader*)(valPtr + sizeof(int)))->flags = 0;
 
-                var status = storageApi.SET_Conditional(ref Unsafe.AsRef<SpanByte>(keyPtr), ref Unsafe.AsRef<SpanByte>(valPtr));
+                var status = storageApi.SET_Conditional(ref key, ref Unsafe.AsRef<SpanByte>(valPtr));
 
                 // Status tells us whether an old image was found during RMW or not
                 // For a "set if not exists", NOTFOUND means that the operation succeeded
                 if (status == GarnetStatus.NOTFOUND)
                     anyValuesSet = true;
 
-                // Put things back in place (in case message is partitioned)
-                *(int*)keyPtr = saveK;
+                // Put things back in place so that network buffer is not clobbered
                 Buffer.MemoryCopy(hPtr, valPtr, RespInputHeader.Size, RespInputHeader.Size);
                 valPtr += RespInputHeader.Size;
                 *(int*)valPtr = saveV;
-
-                readHead = (int)(ptr - recvBufferPtr);
             }
-
-            opsDone = 0;
 
             while (!RespWriteUtils.WriteInteger(anyValuesSet ? 1 : 0, ref dcurr, dend))
                 SendAndReset();
-
             return true;
         }
 
-        private bool NetworkDEL<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkDEL<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: false, out bool retVal))
+            if (NetworkArraySlotVerify(interleavedKeys: false, readOnly: false))
             {
-                return retVal;
+                return true;
             }
 
-            for (int c = 0; c < count; c++)
+            int keysDeleted = 0;
+            for (int c = 0; c < parseState.count; c++)
             {
-                byte* keyPtr = null;
-                int ksize = 0;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                keyPtr -= sizeof(int);
-
-                if (c < opsDone)
-                    continue;
-
-                // Update processed count
-                opsDone++;
-
-                // Save ptr data
-                int save = *(int*)keyPtr;
-                *(int*)keyPtr = ksize;
-
-                var status = storageApi.DELETE(ref Unsafe.AsRef<SpanByte>(keyPtr), StoreType.All);
-
-                // Restore ptr data
-                *(int*)keyPtr = save;
+                var key = parseState.GetArgSliceByRef(c).SpanByte;
+                var status = storageApi.DELETE(ref key, StoreType.All);
 
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
                 if (status == GarnetStatus.OK)
                     keysDeleted++;
-                readHead = (int)(ptr - recvBufferPtr);
             }
 
             while (!RespWriteUtils.WriteInteger(keysDeleted, ref dcurr, dend))
                 SendAndReset();
-
-            opsDone = 0;
-            keysDeleted = 0;
             return true;
         }
 
@@ -756,7 +641,6 @@ namespace Garnet.server
         private bool NetworkDBSIZE<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            readHead = (int)(ptr - recvBufferPtr);
             while (!RespWriteUtils.WriteInteger(storageApi.GetDbSize(), ref dcurr, dend))
                 SendAndReset();
             return true;
@@ -916,11 +800,6 @@ namespace Garnet.server
         {
             if (count != 1)
                 return AbortWithWrongNumberOfArguments("MODULE", count);
-
-            if (!DrainCommands(1))
-            {
-                return false;
-            }
 
             // TODO: pending implementation for module support.
             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))

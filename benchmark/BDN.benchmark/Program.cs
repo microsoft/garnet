@@ -33,6 +33,9 @@ public class BaseConfig : ManualConfig
         Net8BaseJob = baseJob.WithRuntime(CoreRuntime.Core80)
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
 
-        AddJob(Net6BaseJob.WithId(".NET 6"), Net8BaseJob.WithId(".NET 8"));
+        AddJob(
+            Net6BaseJob.WithId(".NET 6"),
+            Net8BaseJob.WithId(".NET 8")
+            );
     }
 }

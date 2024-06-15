@@ -20,7 +20,6 @@ namespace Garnet.common
     {
         readonly PoolLevel[] pool;
         readonly int numLevels, minAllocationSize, maxEntriesPerLevel;
-        readonly bool useHandlesForPin;
         readonly ILogger logger;
 
         /// <summary>
@@ -33,12 +32,11 @@ namespace Garnet.common
         /// <summary>
         /// Constructor
         /// </summary>
-        public LimitedFixedBufferPool(int minAllocationSize, int maxEntriesPerLevel = 16, int numLevels = 4, bool useHandlesForPin = false, ILogger logger = null)
+        public LimitedFixedBufferPool(int minAllocationSize, int maxEntriesPerLevel = 16, int numLevels = 4, ILogger logger = null)
         {
             this.minAllocationSize = minAllocationSize;
             this.maxEntriesPerLevel = maxEntriesPerLevel;
             this.numLevels = numLevels;
-            this.useHandlesForPin = useHandlesForPin;
             this.logger = logger;
             pool = new PoolLevel[numLevels];
         }
@@ -97,7 +95,7 @@ namespace Garnet.common
                     return page;
                 }
             }
-            return new PoolEntry(size, this, useHandlesForPin);
+            return new PoolEntry(size, this);
         }
 
         /// <summary>

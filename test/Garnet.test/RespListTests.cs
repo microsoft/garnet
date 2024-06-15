@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -925,7 +926,7 @@ namespace Garnet.test
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand("HSET myhash onekey onepair");
             lightClientRequest.SendCommand("LINSERT myhash BEFORE one two");
-            var expectedResponse = "-ERR wrong key type used in LINSERT command.\r\n";
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -1223,7 +1224,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("RPUSHX mylist value-one");
             var len = lightClientRequest.SendCommand("LLEN mylist");
 
-            var expectedResponse = ":0\r\n";
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
             var actualValue = Encoding.ASCII.GetString(len).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
         }
@@ -1243,6 +1244,52 @@ namespace Garnet.test
 
             var keyExists = db.KeyExists(key);
             Assert.IsFalse(keyExists);
+        }
+
+        [Test]
+        public void CheckListOperationsOnWrongTypeObjectSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var keys = new[] { new RedisKey("user1:obj1"), new RedisKey("user1:obj2") };
+            var key1Values = new[] { new RedisValue("Hello"), new RedisValue("World") };
+            var key2Values = new[] { new RedisValue("Hola"), new RedisValue("Mundo") };
+            var values = new[] { key1Values, key2Values };
+
+            // Set up different type objects
+            RespTestsUtils.SetUpTestObjects(db, GarnetObjectType.Set, keys, values);
+
+            // LPOP
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPop(keys[0]));
+            // LPUSH
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPush(keys[0], values[0]));
+            // LPUSHX
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListLeftPush(keys[0], values[0], When.Exists));
+            // RPOP
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPop(keys[0]));
+            // RPUSH
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPush(keys[0], values[0]));
+            // RPUSHX
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPush(keys[0], values[0], When.Exists));
+            // LLEN
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListLength(keys[0]));
+            // LTRIM
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListTrim(keys[0], 2, 5));
+            // LRANGE
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRange(keys[0], 2, 5));
+            // LINDEX
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListGetByIndex(keys[0], 2));
+            // LINSERT
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListInsertAfter(keys[0], values[0][0], values[0][1]));
+            // LREM
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRemove(keys[0], values[0][0]));
+            // RPOPLPUSH
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListRightPopLeftPush(keys[0], keys[1]));
+            // LMOVE
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListMove(keys[0], keys[1], ListSide.Left, ListSide.Right));
+            // LSET
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.ListSetByIndex(keys[0], 2, values[0][1]));
         }
     }
 }

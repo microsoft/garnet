@@ -27,9 +27,6 @@ namespace Garnet.server
             // No additional args allowed
             if (count != 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LIST.", ref dcurr, dend))
                     SendAndReset();
             }
@@ -61,9 +58,6 @@ namespace Garnet.server
             // No additional args allowed
             if (count != 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL USERS.", ref dcurr, dend))
                     SendAndReset();
             }
@@ -95,9 +89,6 @@ namespace Garnet.server
             // No additional args allowed
             if (count != 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL CAT.", ref dcurr, dend))
                     SendAndReset();
             }
@@ -126,9 +117,6 @@ namespace Garnet.server
             // Have to have at least the username
             if (count == 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SETUSER.", ref dcurr, dend))
                     SendAndReset();
             }
@@ -168,8 +156,6 @@ namespace Garnet.server
                     logger?.LogDebug("ACLException: {message}", exception.Message);
 
                     // Abort command execution
-                    if (!DrainCommands(count - opsParsed - 3))
-                        return false;
                     while (!RespWriteUtils.WriteError($"ERR {exception.Message}", ref dcurr, dend))
                         SendAndReset();
 
@@ -193,9 +179,6 @@ namespace Garnet.server
             // Have to have at least the username
             if (count == 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL DELUSER.", ref dcurr, dend))
                     SendAndReset();
             }
@@ -225,8 +208,6 @@ namespace Garnet.server
                     logger?.LogDebug("ACLException: {message}", exception.Message);
 
                     // Abort command execution
-                    if (!DrainCommands(count - attemptedDeletes - 2))
-                        return false;
                     while (!RespWriteUtils.WriteError($"ERR {exception.Message}", ref dcurr, dend))
                         SendAndReset();
 
@@ -251,9 +232,6 @@ namespace Garnet.server
             // No additional args allowed
             if (count != 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL WHOAMI.", ref dcurr, dend))
                     SendAndReset();
             }
@@ -281,9 +259,6 @@ namespace Garnet.server
             // No additional args allowed
             if (count != 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL LOAD.", ref dcurr, dend))
                     SendAndReset();
             }
@@ -322,9 +297,6 @@ namespace Garnet.server
         {
             if (count != 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for ACL SAVE.", ref dcurr, dend))
                     SendAndReset();
             }

@@ -179,8 +179,16 @@ namespace Garnet.server
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <inheritdoc />
-        public unsafe GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output)
+        public GarnetStatus Increment(ArgSlice key, ArgSlice input, ref ArgSlice output)
             => storageSession.Increment(key, input, ref output, ref context);
+
+        /// <inheritdoc />
+        public GarnetStatus Increment(ArgSlice key, out long output, long incrementCount = 1)
+            => storageSession.Increment(key, out output, incrementCount, ref context);
+
+        /// <inheritdoc />
+        public GarnetStatus Decrement(ArgSlice key, out long output, long decrementCount = 1)
+            => Increment(key, out output, -decrementCount);
         #endregion
 
         #region DELETE

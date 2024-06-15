@@ -27,8 +27,10 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
 
-            Debug.Assert(_output.spanByteAndMemory.IsSpanByte);
+            if (_output.spanByteAndMemory.Length == 0)
+                return GarnetStatus.WRONGTYPE;
 
+            Debug.Assert(_output.spanByteAndMemory.IsSpanByte);
 
             return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
@@ -54,6 +56,9 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
 
+            if (outputFooter.spanByteAndMemory.Length == 0)
+                return GarnetStatus.WRONGTYPE;
+
             return status.Found || status.Record.Created ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
@@ -77,6 +82,9 @@ namespace Garnet.server
 
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref outputFooter, ref objectStoreContext);
+
+            if (outputFooter.spanByteAndMemory.Length == 0)
+                return GarnetStatus.WRONGTYPE;
 
             if (status.NotFound)
                 return GarnetStatus.NOTFOUND;
@@ -119,7 +127,7 @@ namespace Garnet.server
                         if (isScanOutput)
                         {
                             // Read the first two elements
-                            if (!RespReadUtils.ReadArrayLength(out var outerArraySize, ref refPtr, outputPtr + outputSpan.Length))
+                            if (!RespReadUtils.ReadUnsignedArrayLength(out var outerArraySize, ref refPtr, outputPtr + outputSpan.Length))
                                 return default;
 
                             element = null;
@@ -130,7 +138,7 @@ namespace Garnet.server
                         }
 
                         // Get the number of elements
-                        if (!RespReadUtils.ReadArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
+                        if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
 
                         // Create the argslice[]
@@ -192,6 +200,8 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
 
+            if (_output.spanByteAndMemory.Length == 0)
+                return GarnetStatus.WRONGTYPE;
             Debug.Assert(_output.spanByteAndMemory.IsSpanByte);
 
             if (status.Found && (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated))

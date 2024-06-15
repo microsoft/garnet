@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -239,6 +240,16 @@ namespace Garnet.client
         /// </summary>
         public bool InitMigrateCommand => curr == null;
 
+        /// <summary>
+        /// Getter to compute how much space to leave at the front of the buffer
+        /// in order to write the maximum possible RESP length header (of length bufferSize)
+        /// </summary>
+        int ExtraSpace =>
+            1                   // $
+            + bufferSizeDigits  // Number of digits in maximum possible length (will be written with zero padding)
+            + 2                 // \r\n
+            + 4;                // We write a 4-byte int keyCount at the start of the payload
+
         byte* curr, head;
         int keyCount;
         TaskCompletionSource<string> currTcsMigrate = null;
@@ -262,11 +273,17 @@ namespace Garnet.client
         {
             if (keyCount == 0) return null;
 
-            // Size of payload = [number of keys] [raw key value pairs]
-            int size = (int)(curr - head - 4);
-            *(int*)head = size;
+            Debug.Assert(end - curr >= 2);
+            *curr++ = (byte)'\r';
+            *curr++ = (byte)'\n';
+
+            // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
+            int size = (int)(curr - 2 - head - (ExtraSpace - 4));
+            var success = RespWriteUtils.WritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
+            Debug.Assert(success);
+
             // Number of key value pairs in payload
-            *(int*)(head + 4) = keyCount;
+            *(int*)head = keyCount;
 
             // Reset offset and flush buffer
             offset = curr;
@@ -339,7 +356,7 @@ namespace Garnet.client
             currTcsMigrate = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(currTcsMigrate);
             curr = offset;
-            int arraySize = 5;
+            int arraySize = 6;
 
             while (!RespWriteUtils.WriteArrayLength(arraySize, ref curr, end))
             {
@@ -348,7 +365,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //1
+            // 1
             while (!RespWriteUtils.WriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
@@ -356,7 +373,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //2
+            // 2
             while (!RespWriteUtils.WriteBulkString(MIGRATE, ref curr, end))
             {
                 Flush();
@@ -364,7 +381,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //3
+            // 3
             while (!RespWriteUtils.WriteAsciiBulkString(sourceNodeId, ref curr, end))
             {
                 Flush();
@@ -372,7 +389,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //4
+            // 4
             while (!RespWriteUtils.WriteBulkString(replaceOption.Span, ref curr, end))
             {
                 Flush();
@@ -380,20 +397,29 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //5
+            // 5
             while (!RespWriteUtils.WriteBulkString(storeType.Span, ref curr, end))
             {
                 Flush();
                 curr = offset;
             }
             offset = curr;
+
+            // 6
+            // Reserve space for the bulk string header + final newline
+            while (ExtraSpace + 2 > (int)(end - curr))
+            {
+                Flush();
+                curr = offset;
+            }
             head = curr;
-            curr += 8;// leave space for payload size + keyCount
+            curr += ExtraSpace;
         }
 
         private bool WriteSerializedSpanByte(ref SpanByte key, ref SpanByte value)
         {
-            int totalLen = key.TotalSize + value.TotalSize + 2;
+            // We include space for newline at the end, to be added before sending
+            int totalLen = key.TotalSize + value.TotalSize + 2 + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 
@@ -414,7 +440,8 @@ namespace Garnet.client
 
         private bool WriteSerializedKeyValueByteArray(byte[] key, byte[] value, long expiration)
         {
-            int totalLen = 4 + key.Length + 4 + value.Length + 8;
+            // We include space for newline at the end, to be added before sending
+            int totalLen = 4 + key.Length + 4 + value.Length + 8 + 2;
             if (totalLen > (int)(end - curr))
                 return false;
 

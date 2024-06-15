@@ -20,9 +20,6 @@ namespace Garnet.server
             // No additional arguments
             if (count != 0)
             {
-                if (!DrainCommands(count))
-                    return false;
-
                 while (!RespWriteUtils.WriteError($"ERR Unknown subcommand or wrong number of arguments for LATENCY HELP.", ref dcurr, dend))
                     SendAndReset();
             }

@@ -26,6 +26,10 @@ namespace BDN.benchmark.Resp
         byte[] setRequestBuffer;
         byte* setRequestBufferPointer;
 
+        static ReadOnlySpan<byte> SETEX => "*4\r\n$5\r\nSETEX\r\n$1\r\nd\r\n$1\r\n9\r\n$1\r\nd\r\n"u8;
+        byte[] setexRequestBuffer;
+        byte* setexRequestBufferPointer;
+
         static ReadOnlySpan<byte> GET => "*2\r\n$3\r\nGET\r\n$1\r\nb\r\n"u8;
         byte[] getRequestBuffer;
         byte* getRequestBufferPointer;
@@ -54,6 +58,11 @@ namespace BDN.benchmark.Resp
             setRequestBufferPointer = (byte*)Unsafe.AsPointer(ref setRequestBuffer[0]);
             for (int i = 0; i < batchSize; i++)
                 SET.CopyTo(new Span<byte>(setRequestBuffer).Slice(i * SET.Length));
+
+            setexRequestBuffer = GC.AllocateArray<byte>(SETEX.Length * batchSize, pinned: true);
+            setexRequestBufferPointer = (byte*)Unsafe.AsPointer(ref setexRequestBuffer[0]);
+            for (int i = 0; i < batchSize; i++)
+                SETEX.CopyTo(new Span<byte>(setexRequestBuffer).Slice(i * SETEX.Length));
 
             getRequestBuffer = GC.AllocateArray<byte>(GET.Length * batchSize, pinned: true);
             getRequestBufferPointer = (byte*)Unsafe.AsPointer(ref getRequestBuffer[0]);
@@ -86,6 +95,12 @@ namespace BDN.benchmark.Resp
         public void Set()
         {
             _ = session.TryConsumeMessages(setRequestBufferPointer, setRequestBuffer.Length);
+        }
+
+        [Benchmark]
+        public void SetEx()
+        {
+            _ = session.TryConsumeMessages(setexRequestBufferPointer, setexRequestBuffer.Length);
         }
 
         [Benchmark]

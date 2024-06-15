@@ -24,6 +24,7 @@ namespace Garnet.client
         readonly string address;
         readonly int port;
         readonly int bufferSize;
+        readonly int bufferSizeDigits;
         INetworkSender networkSender;
         readonly ElasticCircularBuffer<TaskType> tasksTypes = new();
         readonly ElasticCircularBuffer<TaskCompletionSource<string>> tcsQueue = new();
@@ -89,6 +90,7 @@ namespace Garnet.client
             this.address = address;
             this.port = port;
             this.bufferSize = bufferSize;
+            this.bufferSizeDigits = NumUtils.NumDigits(bufferSize);
             this.logger = logger;
             this.sslOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
@@ -340,28 +342,28 @@ namespace Garnet.client
                 switch (*ptr)
                 {
                     case (byte)'+':
-                        if (!RespReadUtils.ReadSimpleString(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.ReadSimpleString(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
                     case (byte)':':
-                        if (!RespReadUtils.ReadIntegerAsString(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.ReadIntegerAsString(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
                     case (byte)'-':
                         error = true;
-                        if (!RespReadUtils.ReadErrorAsString(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.ReadErrorAsString(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
                     case (byte)'$':
-                        if (!RespReadUtils.ReadStringWithLengthHeader(out result, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.ReadStringWithLengthHeader(out result, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
                     case (byte)'*':
                         isArray = true;
-                        if (!RespReadUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, recvBufferPtr + bytesRead))
+                        if (!RespReadResponseUtils.ReadStringArrayWithLengthHeader(out resultArray, ref ptr, recvBufferPtr + bytesRead))
                             success = false;
                         break;
 
