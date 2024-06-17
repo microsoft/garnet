@@ -2,22 +2,88 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.server.Module
 {
     public interface IModule
     {
-        void OnLoad(List<string> moduleArgs);
+        void OnLoad(ModuleLoadContext context, List<string> moduleArgs);
     }
 
-    internal class ModuleInfo
+    public enum ModuleActionStatus
     {
-        internal string Name { get; set; }
+        Success,
+        Failure,
+        AlreadyLoaded,
+        AlreadyExists,
+        InvalidRegistrationInfo,
+    }
 
-        internal object Instance { get; set; }
+    public class ModuleLoadContext
+    {
+        internal string Name;
+        internal int Version;
+
+        private bool initialized;
+        private ModuleRegistrar moduleRegistrar;
+        private CustomCommandManager customCommandManager;
+
+        internal ModuleLoadContext(ModuleRegistrar moduleRegistrar, CustomCommandManager customCommandManager)
+        {
+            Debug.Assert(moduleRegistrar != null);
+            Debug.Assert(customCommandManager != null);
+
+            initialized = false;
+            this.moduleRegistrar = moduleRegistrar;
+            this.customCommandManager = customCommandManager;
+        }
+
+        public ModuleActionStatus Initialize(string name, int version)
+        {
+            if (initialized)
+                return ModuleActionStatus.AlreadyLoaded;
+
+            Name = name;
+            Version = version;
+
+            if (!moduleRegistrar.TryAdd(this))
+                return ModuleActionStatus.AlreadyExists;
+
+            initialized = true;
+            return ModuleActionStatus.Success;
+        }
+
+        public ModuleActionStatus RegisterCommand(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, long expirationTicks = 0)
+        {
+            if (string.IsNullOrEmpty(name))
+                return ModuleActionStatus.InvalidRegistrationInfo;
+            if (customFunctions == null)
+                return ModuleActionStatus.InvalidRegistrationInfo;
+            if (commandInfo == null)
+                return ModuleActionStatus.InvalidRegistrationInfo;
+
+            customCommandManager.Register(name, numParams, type, customFunctions, commandInfo, expirationTicks);
+
+            return ModuleActionStatus.Success;
+        }
+
+        public ModuleActionStatus RegisterTransaction(string name, int numParams, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
+        {
+            if (string.IsNullOrEmpty(name))
+                return ModuleActionStatus.InvalidRegistrationInfo;
+            if (proc == null)
+                return ModuleActionStatus.InvalidRegistrationInfo;
+
+            customCommandManager.Register(name, numParams, proc, commandInfo);
+
+            return ModuleActionStatus.Success;
+        }
     }
 
     internal sealed class ModuleRegistrar
@@ -28,11 +94,12 @@ namespace Garnet.server.Module
 
         private ModuleRegistrar()
         {
+            modules = new();
         }
 
-        private readonly List<ModuleInfo> _modules = new List<ModuleInfo>();
+        private readonly ConcurrentDictionary<string, ModuleLoadContext> modules;
 
-        public bool LoadModule(Assembly loadedAssembly, List<string> moduleArgs, out ReadOnlySpan<byte> errorMessage)
+        public bool LoadModule(CustomCommandManager customCommandManager, Assembly loadedAssembly, List<string> moduleArgs, ILogger logger, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
 
@@ -71,7 +138,7 @@ namespace Garnet.server.Module
 
             try
             {
-                instance.OnLoad(moduleArgs);
+                instance.OnLoad(new ModuleLoadContext(this, customCommandManager), moduleArgs);
                 return true;
             }
             catch (Exception)
@@ -81,10 +148,9 @@ namespace Garnet.server.Module
             }
         }
 
-
-        public IEnumerable<ModuleInfo> GetModules()
+        internal bool TryAdd(ModuleLoadContext moduleLoadContext)
         {
-            return _modules;
+            return modules.TryAdd(moduleLoadContext.Name, moduleLoadContext);
         }
     }
 }
