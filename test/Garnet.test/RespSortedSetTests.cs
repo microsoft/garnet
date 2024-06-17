@@ -133,6 +133,15 @@ namespace Garnet.test
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 1952;
             Assert.AreEqual(expectedResponse, actualValue);
+
+            var deleted = db.KeyDelete(key);
+            Assert.IsTrue(deleted);
+
+            added = db.SortedSetAdd(key, []);
+            Assert.AreEqual(0, added);
+
+            var exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
         }
 
 
@@ -274,6 +283,55 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             Assert.IsTrue(response.IsNull);
+        }
+
+        [Test]
+        public void AddRemoveBy()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "SortedSet_AddRemoveBy";
+
+            // 10 entries are added
+            var added = db.SortedSetAdd(key, entries);
+            Assert.AreEqual(entries.Length, added);
+
+            var result = db.SortedSetRemoveRangeByValue(key, new RedisValue("e"), new RedisValue("g"));
+            Assert.AreEqual(3, result);
+
+            result = db.SortedSetRemoveRangeByScore(key, 9, 10);
+            Assert.AreEqual(2, result);
+
+            result = db.SortedSetRemoveRangeByRank(key, 0, 1);
+            Assert.AreEqual(2, result);
+
+            var members = db.SortedSetRangeByRank(key);
+            Assert.AreEqual(new[] { new RedisValue("c"), new RedisValue("d"), new RedisValue("h") }, members);
+
+            result = db.SortedSetRemoveRangeByRank(key, 0, 2);
+            Assert.AreEqual(3, result);
+
+            var exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
+
+            added = db.SortedSetAdd(key, entries);
+            Assert.AreEqual(entries.Length, added);
+
+            result = db.SortedSetRemoveRangeByScore(key, 0, 10);
+            Assert.AreEqual(10, result);
+
+            exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
+
+            added = db.SortedSetAdd(key, entries);
+            Assert.AreEqual(entries.Length, added);
+
+            result = db.SortedSetRemoveRangeByValue(key, "a", "j");
+            Assert.AreEqual(10, result);
+
+            exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
         }
 
         [Test]
