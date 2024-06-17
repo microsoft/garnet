@@ -11,7 +11,7 @@ namespace GarnetClientSample
     class Program
     {
         static readonly string address = "127.0.0.1";
-        static readonly int port = 3278;
+        static readonly int port = 6379;
         static readonly bool useTLS = false;
 
         static async Task Main()
