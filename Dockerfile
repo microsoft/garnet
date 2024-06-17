@@ -39,4 +39,4 @@ USER $APP_UID
 EXPOSE 6379
 
 # Run GarnetServer with an index size of 128MB
-ENTRYPOINT ["./GarnetServer", "-i", "128m", "--port", "6379"]
+ENTRYPOINT ["/app/GarnetServer", "-i", "128m", "--port", "6379"]
