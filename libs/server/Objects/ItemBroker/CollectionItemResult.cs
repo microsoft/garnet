@@ -6,7 +6,7 @@ namespace Garnet.server
     /// <summary>
     /// Result of item retrieved from observed collection
     /// </summary>
-    internal class CollectionItemResult
+    internal readonly struct CollectionItemResult(byte[] key, byte[] item)
     {
         /// <summary>
         /// True if item was found
@@ -16,22 +16,16 @@ namespace Garnet.server
         /// <summary>
         /// Key of collection from which item was retrieved
         /// </summary>
-        internal byte[] Key { get; }
+        internal byte[] Key { get; } = key;
 
         /// <summary>
         /// Item retrieved from collection
         /// </summary>
-        internal byte[] Item { get; }
+        internal byte[] Item { get; } = item;
 
         /// <summary>
         /// Instance of empty result
         /// </summary>
         internal static readonly CollectionItemResult Empty = new(null, null);
-
-        public CollectionItemResult(byte[] key, byte[] item)
-        {
-            Key = key;
-            Item = item;
-        }
     }
 }

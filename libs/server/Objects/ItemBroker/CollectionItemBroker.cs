@@ -24,24 +24,35 @@ namespace Garnet.server
     public class CollectionItemBroker : IDisposable
     {
         // Queue of events to be handled by the main loops
-        private readonly AsyncQueue<BrokerEventBase> brokerEventsQueue = new();
+        private AsyncQueue<BrokerEventBase> BrokerEventsQueue => brokerEventsQueueLazy.Value;
 
         // Mapping of RespServerSession ID (ObjectStoreSessionID) to observer instance
-        private readonly ConcurrentDictionary<int, CollectionItemObserver> sessionIdToObserver = new();
+        private ConcurrentDictionary<int, CollectionItemObserver> SessionIdToObserver => sessionIdToObserverLazy.Value;
 
         // Mapping of observed keys to queue of observers, by order of subscription
-        private readonly Dictionary<byte[], Queue<CollectionItemObserver>> keysToObservers = new(new ByteArrayComparer());
+        private Dictionary<byte[], Queue<CollectionItemObserver>> KeysToObservers => keysToObserversLazy.Value;
 
         // Cancellation token for the main loop
-        private readonly CancellationTokenSource cts = new();
+        private CancellationTokenSource Cts => ctsLazy.Value;
 
         // Synchronization event for awaiting main loop to finish
-        private readonly ManualResetEventSlim done = new(true);
+        private ManualResetEventSlim Done => doneLazy.Value;
+
+        private ReaderWriterLockSlim IsStartedLock => isStartedLockLazy.Value;
+        private ReaderWriterLockSlim KeysToObserversLock => keysToObserversLockLazy.Value;
+        
+        private readonly Lazy<AsyncQueue<BrokerEventBase>> brokerEventsQueueLazy = new();
+        private readonly Lazy<ConcurrentDictionary<int, CollectionItemObserver>> sessionIdToObserverLazy = new();
+        private readonly Lazy<Dictionary<byte[], Queue<CollectionItemObserver>>> keysToObserversLazy =
+            new(() => new Dictionary<byte[], Queue<CollectionItemObserver>>(new ByteArrayComparer()));
+
+        private readonly Lazy<CancellationTokenSource> ctsLazy = new();
+        private readonly Lazy<ManualResetEventSlim> doneLazy = new(() => new ManualResetEventSlim(true));
+        private readonly Lazy<ReaderWriterLockSlim> isStartedLockLazy = new();
+        private readonly Lazy<ReaderWriterLockSlim> keysToObserversLockLazy = new();
 
         private bool disposed = false;
         private bool isStarted = false;
-        private readonly ReaderWriterLockSlim isStartedLock = new();
-        private readonly ReaderWriterLockSlim keysToObserversLock = new();
 
         /// <summary>
         /// Asynchronously wait for item from collection object
@@ -59,20 +70,20 @@ namespace Garnet.server
             var observer = new CollectionItemObserver(session, command, cmdArgs);
 
             // Add the session ID to observer mapping
-            sessionIdToObserver.TryAdd(session.ObjectStoreSessionID, observer);
+            SessionIdToObserver.TryAdd(session.ObjectStoreSessionID, observer);
 
             // Add a new observer event to the event queue
-            brokerEventsQueue.Enqueue(new NewObserverEvent(observer, keys));
+            BrokerEventsQueue.Enqueue(new NewObserverEvent(observer, keys));
 
             // Check if main loop has started, if not, start the main loop
             if (!isStarted)
             {
-                isStartedLock.EnterUpgradeableReadLock();
+                IsStartedLock.EnterUpgradeableReadLock();
                 try
                 {
                     if (!isStarted)
                     {
-                        isStartedLock.EnterWriteLock();
+                        IsStartedLock.EnterWriteLock();
                         try
                         {
                             _ = Task.Run(Start);
@@ -80,13 +91,13 @@ namespace Garnet.server
                         }
                         finally
                         {
-                            isStartedLock.ExitWriteLock();
+                            IsStartedLock.ExitWriteLock();
                         }
                     }
                 }
                 finally
                 {
-                    isStartedLock.ExitUpgradeableReadLock();
+                    IsStartedLock.ExitUpgradeableReadLock();
                 }
             }
 
@@ -103,7 +114,7 @@ namespace Garnet.server
             {
             }
 
-            sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
+            SessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
 
             // Check if observer is still waiting for result
             if (observer.Status == ObserverStatus.WaitingForResult)
@@ -140,32 +151,32 @@ namespace Garnet.server
         internal void HandleCollectionUpdate(byte[] key)
         {
             // Check if main loop is started
-            isStartedLock.EnterReadLock();
+            IsStartedLock.EnterReadLock();
             try
             {
                 if (!isStarted) return;
             }
             finally
             {
-                isStartedLock.ExitReadLock();
+                IsStartedLock.ExitReadLock();
             }
 
             // Check if there are any observers to specified key
-            if (!keysToObservers.ContainsKey(key) || keysToObservers[key].Count == 0)
+            if (!KeysToObservers.ContainsKey(key) || KeysToObservers[key].Count == 0)
             {
-                keysToObserversLock.EnterReadLock();
+                KeysToObserversLock.EnterReadLock();
                 try
                 {
-                    if (!keysToObservers.ContainsKey(key) || keysToObservers[key].Count == 0) return;
+                    if (!KeysToObservers.ContainsKey(key) || KeysToObservers[key].Count == 0) return;
                 }
                 finally
                 {
-                    keysToObserversLock.ExitReadLock();
+                    KeysToObserversLock.ExitReadLock();
                 }
             }
 
             // Add collection updated event to queue
-            brokerEventsQueue.Enqueue(new CollectionUpdatedEvent(key));
+            BrokerEventsQueue.Enqueue(new CollectionUpdatedEvent(key));
         }
 
         /// <summary>
@@ -175,7 +186,7 @@ namespace Garnet.server
         internal void HandleSessionDisposed(RespServerSession session)
         {
             // Try to remove session ID from mapping & get the observer object for the specified session, if exists
-            if (!sessionIdToObserver.TryRemove(session.ObjectStoreSessionID, out var observer))
+            if (!SessionIdToObserver.TryRemove(session.ObjectStoreSessionID, out var observer))
                 return;
 
             // Change observer status to reflect that its session has been disposed
@@ -207,7 +218,7 @@ namespace Garnet.server
         private void InitializeObserver(CollectionItemObserver observer, byte[][] keys)
         {
             // This lock is for synchronization with incoming collection updated events 
-            keysToObserversLock.EnterWriteLock();
+            KeysToObserversLock.EnterWriteLock();
             try
             {
                 // Iterate over the keys in order, set the observer's result if collection in key contains an item
@@ -215,12 +226,12 @@ namespace Garnet.server
                 {
                     // If the key already has a non-empty observer queue, it does not have an item to retrieve
                     // Otherwise, try to retrieve next available item
-                    if ((keysToObservers.ContainsKey(key) && keysToObservers[key].Count > 0) ||
+                    if ((KeysToObservers.ContainsKey(key) && KeysToObservers[key].Count > 0) ||
                         !TryGetNextItem(key, observer.Session.storageSession, observer.Command, observer.CommandArgs,
                             out _, out var nextItem)) continue;
 
                     // An item was found - set the observer result and return
-                    sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
+                    SessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
                     observer.HandleSetResult(new CollectionItemResult(key, nextItem));
                     return;
                 }
@@ -228,15 +239,15 @@ namespace Garnet.server
                 // No item was found, enqueue new observer in every observed keys queue
                 foreach (var key in keys)
                 {
-                    if (!keysToObservers.ContainsKey(key))
-                        keysToObservers.Add(key, new Queue<CollectionItemObserver>());
+                    if (!KeysToObservers.ContainsKey(key))
+                        KeysToObservers.Add(key, new Queue<CollectionItemObserver>());
 
-                    keysToObservers[key].Enqueue(observer);
+                    KeysToObservers[key].Enqueue(observer);
                 }
             }
             finally
             {
-                keysToObserversLock.ExitWriteLock();
+                KeysToObserversLock.ExitWriteLock();
             }
         }
 
@@ -248,7 +259,7 @@ namespace Garnet.server
         private bool TryAssignItemFromKey(byte[] key)
         {
             // If queue doesn't exist for key or is empty, nothing to do
-            if (!keysToObservers.TryGetValue(key, out var observers) || observers.Count == 0)
+            if (!KeysToObservers.TryGetValue(key, out var observers) || observers.Count == 0)
                 return false;
 
             // Peek at next observer in queue
@@ -284,7 +295,7 @@ namespace Garnet.server
                     // Dequeue the observer, and set the observer's result
                     observers.TryDequeue(out observer);
 
-                    sessionIdToObserver.TryRemove(observer!.Session.ObjectStoreSessionID, out _);
+                    SessionIdToObserver.TryRemove(observer!.Session.ObjectStoreSessionID, out _);
                     observer.HandleSetResult(new CollectionItemResult(key, nextItem));
 
                     return true;
@@ -522,18 +533,18 @@ namespace Garnet.server
             try
             {
                 // Repeat while not disposed or cancelled
-                while (!disposed && !cts.IsCancellationRequested)
+                while (!disposed && !Cts.IsCancellationRequested)
                 {
                     // Check if current task is done
                     if (handleNextEvent == null || handleNextEvent.IsCompleted)
                     {
                         // Set task to asynchronously dequeue next event in broker's queue
                         // once event is dequeued successfully, call handler method
-                        handleNextEvent = brokerEventsQueue.DequeueAsync(cts.Token).ContinueWith(t =>
+                        handleNextEvent = BrokerEventsQueue.DequeueAsync(Cts.Token).ContinueWith(t =>
                         {
                             if (t.Status == TaskStatus.RanToCompletion)
                                 HandleBrokerEvent(t.Result);
-                        }, cts.Token);
+                        }, Cts.Token);
                     }
 
                     // Wait until the current task completes
@@ -548,7 +559,7 @@ namespace Garnet.server
             }
             finally
             {
-                done.Set();
+                Done.Set();
             }
         }
 
@@ -556,8 +567,8 @@ namespace Garnet.server
         public void Dispose()
         {
             disposed = true;
-            cts.Cancel();
-            foreach (var observer in sessionIdToObserver.Values)
+            Cts.Cancel();
+            foreach (var observer in SessionIdToObserver.Values)
             {
                 if (observer.Status == ObserverStatus.WaitingForResult &&
                     !observer.CancellationTokenSource.IsCancellationRequested)
@@ -572,7 +583,7 @@ namespace Garnet.server
                     }
                 }
             }
-            done.Wait();
+            Done.Wait();
         }
     }
 }
