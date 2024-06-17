@@ -26,6 +26,23 @@ namespace Garnet.cluster
         public int GetMigrationTaskCount()
             => migrationTaskStore.GetNumSession();
 
+        /// <summary>
+        ///  Add a new migration task in response to an associated request.
+        /// </summary>
+        /// <param name="sourceNodeId"></param>
+        /// <param name="targetAddress"></param>
+        /// <param name="targetPort"></param>
+        /// <param name="targetNodeId"></param>
+        /// <param name="username"></param>
+        /// <param name="passwd"></param>
+        /// <param name="copyOption"></param>
+        /// <param name="replaceOption"></param>
+        /// <param name="timeout"></param>
+        /// <param name="slots"></param>
+        /// <param name="keys"></param>
+        /// <param name="transferOption"></param>
+        /// <param name="mSession"></param>
+        /// <returns></returns>
         public bool TryAddMigrationTask(
             string sourceNodeId,
             string targetAddress,
@@ -37,7 +54,8 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            List<ArgSlice> keys,
+            Dictionary<ArgSlice, KeyMigrateState> keys,
+            TransferOption transferOption,
             out MigrateSession mSession) => migrationTaskStore.TryAddMigrateSession(
                 clusterProvider,
                 sourceNodeId,
@@ -51,8 +69,14 @@ namespace Garnet.cluster
                 timeout,
                 slots,
                 keys,
+                transferOption,
                 out mSession);
 
+        /// <summary>
+        /// Remove provided migration task
+        /// </summary>
+        /// <param name="mSession"></param>
+        /// <returns></returns>
         public bool TryRemoveMigrationTask(MigrateSession mSession)
             => migrationTaskStore.TryRemove(mSession);
     }

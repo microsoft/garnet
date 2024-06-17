@@ -75,7 +75,8 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            List<ArgSlice> keysWithSize,
+            Dictionary<ArgSlice, KeyMigrateState> keysWithSize,
+            TransferOption transferOption,
             out MigrateSession mSession)
         {
             var success = true;
@@ -92,6 +93,7 @@ namespace Garnet.cluster
                 timeout,
                 slots,
                 keysWithSize,
+                transferOption,
                 clusterProvider.loggerFactory.CreateLogger("MigrateSession"));
 
             try
@@ -136,7 +138,7 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 if (_disposed) return true;
-                for (int i = 0; i < numSessions; i++)
+                for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
 

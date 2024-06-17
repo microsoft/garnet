@@ -11,6 +11,12 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
+    internal enum TransferOption : byte
+    {
+        NONE,
+        KEYS,
+        SLOTS,
+    }
 
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
@@ -30,6 +36,7 @@ namespace Garnet.cluster
             INCOMPLETESLOTSRANGE,
             SLOTOUTOFRANGE,
             NOTMIGRATING,
+            MULTI_TRANSFER_OPTION,
         }
 
         private bool HandleCommandParsingErrors(MigrateCmdParseState mpState, string targetAddress, int targetPort, int slotMultiRef)
@@ -87,14 +94,15 @@ namespace Garnet.cluster
             var replaceOption = false;
             string username = null;
             string passwd = null;
-            List<ArgSlice> keys = null;
-            HashSet<int> slots = [];
+            Dictionary<ArgSlice, KeyMigrateState> keys = null;
+            HashSet<int> slots = null;
 
             ClusterConfig current = null;
             string sourceNodeId = null;
             string targetNodeId = null;
             var pstate = MigrateCmdParseState.CLUSTERDOWN;
             var slotParseError = -1;
+            var transferOption = TransferOption.NONE;
             if (clusterProvider.serverOptions.EnableCluster)
             {
                 pstate = MigrateCmdParseState.SUCCESS;
@@ -107,8 +115,11 @@ namespace Garnet.cluster
             // Add single key if specified
             if (sksize > 0)
             {
-                keys = [];
-                keys.Add(new ArgSlice(singleKeyPtr, sksize));
+                transferOption = TransferOption.KEYS;
+                keys = new Dictionary<ArgSlice, KeyMigrateState>(ArgSliceComparer.Instance)
+                {
+                    { new (singleKeyPtr, sksize), KeyMigrateState.PENDING }
+                };
             }
 
             while (args > 0)
@@ -137,7 +148,12 @@ namespace Garnet.cluster
                 }
                 else if (option.Equals("KEYS", StringComparison.OrdinalIgnoreCase))
                 {
-                    keys ??= [];
+                    slots = [];
+                    if (transferOption == TransferOption.SLOTS)
+                        pstate = MigrateCmdParseState.MULTI_TRANSFER_OPTION;
+
+                    transferOption = TransferOption.KEYS;
+                    keys = new Dictionary<ArgSlice, KeyMigrateState>(ArgSliceComparer.Instance);
                     while (args > 0)
                     {
                         byte* keyPtr = null;
@@ -173,11 +189,16 @@ namespace Garnet.cluster
                         }
 
                         // Add pointer of current parsed key
-                        keys.Add(new ArgSlice(keyPtr, ksize));
+                        if (!keys.TryAdd(new ArgSlice(keyPtr, ksize), KeyMigrateState.PENDING))
+                            logger?.LogWarning($"Failed to add {{key}}", Encoding.ASCII.GetString(keyPtr, ksize));
                     }
                 }
                 else if (option.Equals("SLOTS", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (transferOption == TransferOption.KEYS)
+                        pstate = MigrateCmdParseState.MULTI_TRANSFER_OPTION;
+                    transferOption = TransferOption.SLOTS;
+                    slots = [];
                     while (args > 0)
                     {
                         if (!RespReadUtils.ReadIntWithLengthHeader(out var slot, ref ptr, recvBufferPtr + bytesRead))
@@ -214,6 +235,7 @@ namespace Garnet.cluster
                 }
                 else if (option.Equals("SLOTSRANGE", StringComparison.OrdinalIgnoreCase))
                 {
+                    slots = [];
                     if (args == 0 || (args & 0x1) > 0)
                     {
                         pstate = MigrateCmdParseState.INCOMPLETESLOTSRANGE;
@@ -269,6 +291,7 @@ namespace Garnet.cluster
                 }
             }
             readHead = (int)(ptr - recvBufferPtr);
+
             #endregion
 
             #region checkParseErrors
@@ -295,6 +318,7 @@ namespace Garnet.cluster
                 timeout,
                 slots,
                 keys,
+                transferOption,
                 out var mSession))
             {
                 // Migration task could not be added due to possible conflicting migration tasks
