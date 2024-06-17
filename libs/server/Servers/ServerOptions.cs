@@ -16,7 +16,7 @@ namespace Garnet.server
         /// <summary>
         /// Port to run server on.
         /// </summary>
-        public int Port = 3278;
+        public int Port = 6379;
 
         /// <summary>
         /// IP address to bind server to.
