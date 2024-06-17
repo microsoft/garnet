@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include "spdk_device.h"
 
 #include <error.h>
@@ -22,6 +24,8 @@ static struct spdk_ns_entry g_spdk_ns_list[NS_MAX_NUM];
 static int32_t device_num = 0;
 static struct spdk_device g_spdk_device_list[DEVICE_MAX_NUM];
 static pthread_mutex_t device_init_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static pthread_t poller_thread;
 
 struct internal_io_context {
     struct spdk_device *device;
@@ -323,6 +327,27 @@ uint64_t spdk_device_get_segment_size(struct spdk_device *device,
     return (uint32_t)100 * SIZE_1G;
 }
 
+void *poller(void *arg)
+{
+    while (true) {
+        spdk_device_poll(5000);
+    }
+}
+
+void begin_poller()
+{
+    int rc;
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(31, &cpuset);
+
+    // TODO: chyin error handle.
+    rc = pthread_create(&poller_thread, NULL, poller, NULL);
+    rc = pthread_setaffinity_np(poller_thread, sizeof(cpuset), &cpuset);
+    rc = pthread_setname_np(poller_thread, "poller");
+}
+
 int32_t spdk_device_poll(uint32_t timeout)
 {
     static int qp_pointer = 0;
@@ -330,28 +355,25 @@ int32_t spdk_device_poll(uint32_t timeout)
     int t = 0;
     struct spdk_device *device = NULL;
 
-    clock_t start = 0, diff = 0;
-    start = clock();
+    // clock_t start = 0, diff = 0;
+    // start = clock();
 
     while (true) {
         device = &g_spdk_device_list[qp_pointer];
         int complete_io_num =
             spdk_nvme_qpair_process_completions(device->qpair, IO_BATCH_NUM);
         if (complete_io_num > 0) {
-            start = clock();
+            // start = clock();
             n += complete_io_num;
         }
 
         qp_pointer += 1;
         qp_pointer %= device_num;
 
-        if (n >= IO_BATCH_NUM) {
-            break;
-        }
-        diff = clock() - start;
-        if (diff * 1000 / CLOCKS_PER_SEC >= timeout) {
-            break;
-        }
+        // diff = clock() - start;
+        // if (diff * 1000 / CLOCKS_PER_SEC >= timeout) {
+        //     break;
+        // }
     }
     return n;
 }

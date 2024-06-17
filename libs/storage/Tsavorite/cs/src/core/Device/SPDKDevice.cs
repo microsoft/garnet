@@ -17,8 +17,6 @@ namespace Tsavorite.core
         readonly ILogger logger;
 
         private int num_pending = 0;
-        private readonly CancellationTokenSource completion_cancellation_token;
-        private readonly Thread completion_thread;
 
         private long elapsed_ticks = 0;
         private uint io_num = 0;
@@ -124,6 +122,10 @@ namespace Tsavorite.core
                                                   AsyncIOCallback callback,
                                                   IntPtr context);
 
+        [DllImport(spdk_library_name, EntryPoint = "begin_poller",
+                   CallingConvention = CallingConvention.Cdecl)]
+        static extern void begin_poller();
+
         [DllImport(spdk_library_name, EntryPoint = "spdk_device_poll",
                    CallingConvention = CallingConvention.Cdecl)]
         static extern int spdk_device_poll(uint timeout);
@@ -140,16 +142,14 @@ namespace Tsavorite.core
 
             spdk_device_init();
 
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < 2; i++)
             {
                 this.spdk_device_queue.Enqueue(
                     spdk_device_create(SPDKDevice.nsid)
                 );
             }
 
-            this.completion_cancellation_token = new CancellationTokenSource();
-            this.completion_thread = new Thread(this.completion_worker);
-            this.completion_thread.Start();
+            begin_poller();
         }
 
         public override bool Throttle() => this.num_pending > ThrottleLimit;
@@ -281,34 +281,10 @@ namespace Tsavorite.core
                 Thread.Yield();
             }
 
-            this.completion_cancellation_token.Cancel();
-            this.completion_thread.Join();
-            this.completion_cancellation_token.Dispose();
+            // TODO: chyin join poller thread.
 
             // TODO: chyin call device destroy function.
 
-        }
-
-        void completion_worker()
-        {
-            while (true)
-            {
-                if (this.completion_cancellation_token.IsCancellationRequested)
-                {
-                    break;
-                }
-                spdk_device_poll(5000);
-                Console.WriteLine(
-                    "avg io: {0}\n avg io size is {1} bytes",
-                    this.elapsed_ticks * this.nanosec_per_tick
-                      / (float)this.io_num,
-                    this.io_size / (float)this.io_num
-                );
-                this.io_num = 0;
-                this.elapsed_ticks = 0;
-                this.io_size = 0;
-                Thread.Yield();
-            }
         }
     }
 }
