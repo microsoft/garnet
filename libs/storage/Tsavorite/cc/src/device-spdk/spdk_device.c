@@ -117,6 +117,8 @@ int spdk_device_init()
         goto exit;
     }
 
+    spdk_unaffinitize_thread();
+
     rc = spdk_nvme_probe(NULL, NULL, probe_cb, attach_cb, NULL);
     if (rc != 0) {
         fprintf(stderr, "ERROR: spdk_nvme_probe() failed.\n");
