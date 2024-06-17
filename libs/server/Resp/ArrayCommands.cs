@@ -808,7 +808,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkMODULE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkMODULE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi, CustomCommandManager customCommandManager)
             where TGarnetApi : IGarnetApi
         {
             if (count < 1) // At least one subcommand is required
@@ -843,7 +843,7 @@ namespace Garnet.server
                 {
                     Debug.Assert(loadedAssemblies != null && loadedAssemblies.Length == 1, "Only one assembly per module load");
                     var loadedAssembly = loadedAssemblies[0];
-                    if (ModuleRegistrar.Instance.LoadModule(loadedAssembly, moduleArgs, out errorMsg))
+                    if (ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssembly, moduleArgs, logger, out errorMsg))
                     {
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();

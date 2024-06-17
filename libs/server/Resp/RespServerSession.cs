@@ -472,7 +472,7 @@ namespace Garnet.server
                 RespCommand.WATCH_MS => NetworkWATCH_MS(count),
                 RespCommand.WATCH_OS => NetworkWATCH_OS(count),
                 RespCommand.STRLEN => NetworkSTRLEN(ptr, ref storageApi),
-                RespCommand.MODULE => NetworkMODULE(count, ptr, ref storageApi),
+                RespCommand.MODULE => NetworkMODULE(count, ptr, ref storageApi, storeWrapper.customCommandManager),
                 //General key commands
                 RespCommand.DBSIZE => NetworkDBSIZE(ptr, ref storageApi),
                 RespCommand.KEYS => NetworkKEYS(ptr, ref storageApi),
