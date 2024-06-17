@@ -72,7 +72,7 @@ namespace Garnet.test.Resp.ACL
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> allInfo), "Couldn't load all command details");
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
-            IEnumerable<string> withOnlySubCommands = allInfo.Where(static x => (x.Value.SubCommands?.Length ?? 0) != 0 && x.Value.Flags == RespCommandFlags.None).Select(static x => x.Key);
+            IEnumerable<string> withOnlySubCommands = ["ACL", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             // Check tests against RespCommandsInfo
@@ -3705,26 +3705,26 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ModuleACLs()
+        public void ModuleLoadACLs()
         {
             // MODULE isn't a proper redis command, but this is the placeholder today... so validate it for completeness
 
             CheckCommands(
                 "MODULE",
-                [DoModuleList]
+                [DoModuleLoad]
             );
 
-            static void DoModuleList(IServer server)
+            static void DoModuleLoad(IServer server)
             {
                 try
                 {
                     server.Execute("MODULE", "LOAD", "nonexisting.dll");
 
-                    Assert.Fail("Shouldn't be reachable, MODULE is only parsed - not implemented");
+                    Assert.Fail("Shouldn't succeed using a non-existing binary");
                 }
                 catch (RedisException e)
                 {
-                    if (e.Message == "ERR unknown command")
+                    if (e.Message == "ERR unable to access one or more binary files.")
                     {
                         return;
                     }

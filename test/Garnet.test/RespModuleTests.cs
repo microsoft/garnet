@@ -48,6 +48,7 @@ namespace Garnet.test
                 Path.Combine(runtimePath, "System.Private.CoreLib.dll"),
                 Path.Combine(runtimePath, "System.Runtime.dll"),
                 Path.Combine(binPath, "Garnet.server.dll"),
+                Path.Combine(binPath, "Garnet.common.dll"),
                 Path.Combine(binPath, "Tsavorite.core.dll"),
             };
 
@@ -73,15 +74,21 @@ namespace Garnet.test
                     "       { " +
                     "            context.Initialize(\"TestModule\", 1); " +
                     "            context.RegisterCommand(\"TestModule.SetIfPM\", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand()," +
-                    "            new RespCommandsInfo{ Name = \"TestModule.SETIFPM\", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1, " +
+                    "            new RespCommandsInfo{ Name = \"TestModule.SETIFPM\", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1," +
                     "            Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.String | RespAclCategories.Write}); " +
+                    "            context.RegisterTransaction(\"TestModule.READWRITETX\", 3, () => new ReadWriteTxn()," +
+                    "            new RespCommandsInfo{ Name = \"TestModule.READWRITETX\", Arity = 4, FirstKey = 1, LastKey = 3, Step = 1," +
+                    "            Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write}); " +
                     "       } " +
                     "   } " +
                     "}");
             }
 
             var modulePath = Path.Combine(dir1, "TestModule.dll");
-            var filesToCompile = new[] { testFilePath, Path.GetFullPath(@"../main/GarnetServer/Extensions/SetIfPM.cs", TestUtils.RootTestsProjectPath) };
+            var filesToCompile = new[] {
+                testFilePath,
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/SetIfPM.cs", TestUtils.RootTestsProjectPath),
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath)};
             TestUtils.CreateTestLibrary(null, referenceFiles, filesToCompile, modulePath);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -102,6 +109,21 @@ namespace Garnet.test
             Assert.AreEqual("OK", (string)resp);
             retValue = db.StringGet(key);
             Assert.AreEqual(newValue, retValue.ToString());
+
+            string writekey1 = "writekey1";
+            string writekey2 = "writekey2";
+
+            var result = db.Execute("TestModule.READWRITETX", key, writekey1, writekey2);
+            Assert.AreEqual("SUCCESS", (string)result);
+
+            // Read keys to verify transaction succeeded
+            retValue = db.StringGet(writekey1);
+            Assert.IsNotNull(retValue);
+            Assert.AreEqual(newValue, retValue.ToString());
+
+            retValue = db.StringGet(writekey2);
+            Assert.AreEqual(newValue, retValue.ToString());
+
         }
     }
 }
