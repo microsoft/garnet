@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -32,11 +33,25 @@ namespace Garnet.cluster
          */
 
         /// <summary>
+        /// Wait for config propagation based on the type of MigrateSession that is currently in progress
+        /// </summary>
+        /// <exception cref="GarnetException"></exception>
+        private void WaitForConfigPropagation()
+        {
+            if (transferOption == TransferOption.KEYS)
+                clusterSession.UnsafeBumpAndWaitForEpochTransition();
+            else if (transferOption == TransferOption.SLOTS)
+                _ = clusterProvider.BumpAndWaitForEpochTransition();
+            else
+                throw new GarnetException($"MigrateSession Invalid TransferOption {transferOption}");
+        }
+
+        /// <summary>
         /// Try to transition all keys handled by this session to the provided state
         /// Valid state transitions are as follows:
         ///     PREPARE to MIGRATING
         ///     MIGRATING to MIGRATED or DELETING
-        /// If state transition is not valid it will result in a noop and the key state will remain unchanged
+        /// If state transition is not valid it will result in a no-op and the key state will remain unchanged
         /// </summary>
         /// <param name="state"></param>
         private void TryTransitionState(KeyMigrationStatus state)
@@ -71,7 +86,7 @@ namespace Garnet.cluster
             {
                 // Transition keys to MIGRATING status
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
-                clusterSession.UnsafeBumpAndWaitForEpochTransition();
+                WaitForConfigPropagation();
 
                 // 4 byte length of input
                 // 1 byte RespCommand
@@ -155,7 +170,7 @@ namespace Garnet.cluster
                 // NOTE: Any keys not found in main store are automatically set to QUEUED before this method is called
                 // Transition all QUEUED to MIGRATING state
                 TryTransitionState(KeyMigrationStatus.MIGRATING);
-                clusterSession.UnsafeBumpAndWaitForEpochTransition();
+                WaitForConfigPropagation();
 
                 foreach (var mKey in _keys)
                 {
@@ -209,7 +224,7 @@ namespace Garnet.cluster
 
             // Transition to deleting to block read requests
             TryTransitionState(KeyMigrationStatus.DELETING);
-            clusterSession.UnsafeBumpAndWaitForEpochTransition();
+            WaitForConfigPropagation();
 
             foreach (var mKey in _keys)
             {
