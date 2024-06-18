@@ -1009,7 +1009,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(21)]
         [Category("REPLICATION")]
-        public void FailedReplication()
+        public void ClusterReplicateFails()
         {
             const string UserName = "temp-user";
             const string Password = "temp-password";
