@@ -167,7 +167,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool LoadAssemblies(IEnumerable<string> binaryPaths, out Assembly[] loadedAssemblies, out ReadOnlySpan<byte> errorMessage)
+        private bool LoadAssemblies(IEnumerable<string> binaryPaths, out IEnumerable<Assembly> loadedAssemblies, out ReadOnlySpan<byte> errorMessage)
         {
             loadedAssemblies = null;
             errorMessage = default;
@@ -190,13 +190,11 @@ namespace Garnet.server
             }
 
             // Get all assemblies from binary files
-            if (!FileUtils.TryLoadAssemblies(binaryFiles, out var assemblies, out _))
+            if (!FileUtils.TryLoadAssemblies(binaryFiles, out loadedAssemblies, out _))
             {
                 errorMessage = CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
                 return false;
             }
-
-            loadedAssemblies = assemblies.ToArray();
 
             // If necessary, check that all assemblies are digitally signed
             if (!storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies)
@@ -841,8 +839,11 @@ namespace Garnet.server
 
                 if (LoadAssemblies([Encoding.ASCII.GetString(modulePath)], out var loadedAssemblies, out var errorMsg))
                 {
-                    Debug.Assert(loadedAssemblies != null && loadedAssemblies.Length == 1, "Only one assembly per module load");
-                    if (ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies[0], moduleArgs, logger, out errorMsg))
+                    Debug.Assert(loadedAssemblies != null);
+                    var assembliesList = loadedAssemblies.ToList();
+                    Debug.Assert(assembliesList.Count == 1, "Only one assembly per module load");
+
+                    if (ModuleRegistrar.Instance.LoadModule(customCommandManager, assembliesList[0], moduleArgs, logger, out errorMsg))
                     {
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                             SendAndReset();

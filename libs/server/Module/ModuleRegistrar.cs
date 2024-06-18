@@ -11,11 +11,22 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server.Module
 {
+    /// <summary>
+    /// Common interface that all Garnet modules must implement.
+    /// </summary>
     public interface IModule
     {
+        /// <summary>
+        /// Called when the module is loaded.
+        /// </summary>
+        /// <param name="context">Module load context</param>
+        /// <param name="moduleArgs">Module load args</param>
         void OnLoad(ModuleLoadContext context, List<string> moduleArgs);
     }
 
+    /// <summary>
+    /// Represents the status of a module action.
+    /// </summary>
     public enum ModuleActionStatus
     {
         Success,
@@ -25,12 +36,15 @@ namespace Garnet.server.Module
         InvalidRegistrationInfo,
     }
 
+    /// <summary>
+    /// Provides context for a loading module to invoke initialization and registration methods.
+    /// </summary>
     public class ModuleLoadContext
     {
         internal string Name;
-        internal int Version;
+        internal uint Version;
+        internal bool Initialized;
 
-        private bool initialized;
         private ModuleRegistrar moduleRegistrar;
         private CustomCommandManager customCommandManager;
 
@@ -39,14 +53,23 @@ namespace Garnet.server.Module
             Debug.Assert(moduleRegistrar != null);
             Debug.Assert(customCommandManager != null);
 
-            initialized = false;
+            Initialized = false;
             this.moduleRegistrar = moduleRegistrar;
             this.customCommandManager = customCommandManager;
         }
 
-        public ModuleActionStatus Initialize(string name, int version)
+        /// <summary>
+        /// Initializes the module load context
+        /// </summary>
+        /// <param name="name">Module name</param>
+        /// <param name="version">Module version</param>
+        /// <returns>Initialization status</returns>
+        public ModuleActionStatus Initialize(string name, uint version)
         {
-            if (initialized)
+            if (string.IsNullOrEmpty(name))
+                return ModuleActionStatus.InvalidRegistrationInfo;
+
+            if (Initialized)
                 return ModuleActionStatus.AlreadyLoaded;
 
             Name = name;
@@ -55,10 +78,20 @@ namespace Garnet.server.Module
             if (!moduleRegistrar.TryAdd(this))
                 return ModuleActionStatus.AlreadyExists;
 
-            initialized = true;
+            Initialized = true;
             return ModuleActionStatus.Success;
         }
 
+        /// <summary>
+        /// Registers a raw string custom command
+        /// </summary>
+        /// <param name="name">Command name</param>
+        /// <param name="numParams">Number of parameters</param>
+        /// <param name="type">Command type</param>
+        /// <param name="customFunctions">Custom raw string function implementation</param>
+        /// <param name="commandInfo">Command info</param>
+        /// <param name="expirationTicks">Expiration ticks for the key</param>
+        /// <returns>Registration status</returns>
         public ModuleActionStatus RegisterCommand(string name, int numParams, CommandType type, CustomRawStringFunctions customFunctions, RespCommandsInfo commandInfo, long expirationTicks = 0)
         {
             if (string.IsNullOrEmpty(name))
@@ -73,6 +106,14 @@ namespace Garnet.server.Module
             return ModuleActionStatus.Success;
         }
 
+        /// <summary>
+        /// Registers a custom transaction
+        /// </summary>
+        /// <param name="name">Transaction name</param>
+        /// <param name="numParams">Number of parameters</param>
+        /// <param name="proc">Transaction procedure implemenation</param>
+        /// <param name="commandInfo">Command info</param>
+        /// <returns>Registration status</returns>
         public ModuleActionStatus RegisterTransaction(string name, int numParams, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null)
         {
             if (string.IsNullOrEmpty(name))
@@ -90,7 +131,7 @@ namespace Garnet.server.Module
     {
         private static readonly Lazy<ModuleRegistrar> lazy = new Lazy<ModuleRegistrar>(() => new ModuleRegistrar());
 
-        public static ModuleRegistrar Instance { get { return lazy.Value; } }
+        internal static ModuleRegistrar Instance { get { return lazy.Value; } }
 
         private ModuleRegistrar()
         {
@@ -99,7 +140,7 @@ namespace Garnet.server.Module
 
         private readonly ConcurrentDictionary<string, ModuleLoadContext> modules;
 
-        public bool LoadModule(CustomCommandManager customCommandManager, Assembly loadedAssembly, List<string> moduleArgs, ILogger logger, out ReadOnlySpan<byte> errorMessage)
+        internal bool LoadModule(CustomCommandManager customCommandManager, Assembly loadedAssembly, List<string> moduleArgs, ILogger logger, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
 
@@ -138,12 +179,22 @@ namespace Garnet.server.Module
 
             try
             {
-                instance.OnLoad(new ModuleLoadContext(this, customCommandManager), moduleArgs);
+                var moduleLoadContext = new ModuleLoadContext(this, customCommandManager);
+                instance.OnLoad(moduleLoadContext, moduleArgs);
+
+                if (!moduleLoadContext.Initialized)
+                {
+                    errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD;
+                    return false;
+                }
+
+                logger?.LogInformation("Module {0} version {1} loaded", moduleLoadContext.Name, moduleLoadContext.Version);
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD_EXCEPTION;
+                logger?.LogError(ex, "Error loading module");
+                errorMessage = CmdStrings.RESP_ERR_MODULE_ONLOAD;
                 return false;
             }
         }

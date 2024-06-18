@@ -152,7 +152,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_NO_INTERFACE => "ERR Module does not implement the required interface"u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_MULTIPLE_INTERFACES => "ERR Multiple modules present"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_MODULE_ONLOAD_EXCEPTION => "ERR Exception in module OnLoad"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_MODULE_ONLOAD => "ERR Error during module OnLoad"u8;
 
         /// <summary>
         /// Response string templates

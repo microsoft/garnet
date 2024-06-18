@@ -35,8 +35,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(Directory.GetParent(testModuleDir)?.FullName);
         }
 
-        [Test]
-        public void TestModuleLoad()
+        private string CreateTestModule(string onLoadBody)
         {
             var runtimePath = RuntimeEnvironment.GetRuntimeDirectory();
             var binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -72,13 +71,7 @@ namespace Garnet.test
                     "   { " +
                     "       public void OnLoad(ModuleLoadContext context, List<string> moduleArgs)" +
                     "       { " +
-                    "            context.Initialize(\"TestModule\", 1); " +
-                    "            context.RegisterCommand(\"TestModule.SetIfPM\", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand()," +
-                    "            new RespCommandsInfo{ Name = \"TestModule.SETIFPM\", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1," +
-                    "            Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.String | RespAclCategories.Write}); " +
-                    "            context.RegisterTransaction(\"TestModule.READWRITETX\", 3, () => new ReadWriteTxn()," +
-                    "            new RespCommandsInfo{ Name = \"TestModule.READWRITETX\", Arity = 4, FirstKey = 1, LastKey = 3, Step = 1," +
-                    "            Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write}); " +
+                    onLoadBody +
                     "       } " +
                     "   } " +
                     "}");
@@ -90,6 +83,22 @@ namespace Garnet.test
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/SetIfPM.cs", TestUtils.RootTestsProjectPath),
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath)};
             TestUtils.CreateTestLibrary(null, referenceFiles, filesToCompile, modulePath);
+            return modulePath;
+        }
+
+        [Test]
+        public void TestModuleLoad()
+        {
+            var onLoad =
+                    "            context.Initialize(\"TestModule\", 1); " +
+                    "            context.RegisterCommand(\"TestModule.SetIfPM\", 2, CommandType.ReadModifyWrite, new SetIfPMCustomCommand()," +
+                    "            new RespCommandsInfo{ Name = \"TestModule.SETIFPM\", Arity = 4, FirstKey = 1, LastKey = 1, Step = 1," +
+                    "            Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.String | RespAclCategories.Write}); " +
+                    "            context.RegisterTransaction(\"TestModule.READWRITETX\", 3, () => new ReadWriteTxn()," +
+                    "            new RespCommandsInfo{ Name = \"TestModule.READWRITETX\", Arity = 4, FirstKey = 1, LastKey = 3, Step = 1," +
+                    "            Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write}); ";
+
+            var modulePath = CreateTestModule(onLoad);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -124,6 +133,45 @@ namespace Garnet.test
             retValue = db.StringGet(writekey2);
             Assert.AreEqual(newValue, retValue.ToString());
 
+        }
+
+        [Test]
+        public void TestUninitializedModule()
+        {
+            var modulePath = CreateTestModule("");
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            try
+            {
+                db.Execute($"MODULE", ["LOAD", modulePath]);
+                Assert.Fail("Module with empty OnLoad should not load successfully");
+            }
+            catch (RedisException ex)
+            {
+                Assert.AreEqual("ERR Error during module OnLoad", ex.Message);
+            }
+        }
+
+        [Test]
+        public void TestNonExistingModule()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Test loading non-existent module
+            var nonExistentModulePath = "NonExistentModule.dll";
+
+            try
+            {
+                db.Execute($"MODULE", ["LOAD", nonExistentModulePath]);
+                Assert.Fail("Non existing module assembly should not load successfully");
+            }
+            catch (RedisException ex)
+            {
+                Assert.AreEqual("ERR unable to access one or more binary files.", ex.Message);
+            }
         }
     }
 }
