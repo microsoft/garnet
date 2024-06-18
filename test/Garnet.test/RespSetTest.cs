@@ -50,6 +50,13 @@ namespace Garnet.test
 
             result = db.SetAdd(key, "World");
             Assert.IsFalse(result);
+
+            var emptySetKey = $"{key}_empty";
+            var added = db.SetAdd(key, []);
+            Assert.AreEqual(0, added);
+
+            result = db.KeyExists(emptySetKey);
+            Assert.IsFalse(result);
         }
 
         [Test]
@@ -166,10 +173,11 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var result = db.SetAdd(new RedisKey("user1:set"), ["ItemOne", "ItemTwo", "ItemThree", "ItemFour"]);
+            var key = new RedisKey("user1:set");
+            var result = db.SetAdd(key, ["ItemOne", "ItemTwo", "ItemThree", "ItemFour"]);
             Assert.AreEqual(4, result);
 
-            var existingMemberExists = db.SetContains(new RedisKey("user1:set"), "ItemOne");
+            var existingMemberExists = db.SetContains(key, "ItemOne");
             Assert.IsTrue(existingMemberExists, "Existing member 'ItemOne' does not exist in the set.");
 
             var memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
@@ -177,7 +185,7 @@ namespace Garnet.test
             var expectedResponse = 424;
             Assert.AreEqual(expectedResponse, actualValue);
 
-            var response = db.SetRemove(new RedisKey("user1:set"), new RedisValue("ItemOne"));
+            var response = db.SetRemove(key, new RedisValue("ItemOne"));
             Assert.AreEqual(true, response);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
@@ -185,7 +193,7 @@ namespace Garnet.test
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
-            response = db.SetRemove(new RedisKey("user1:set"), new RedisValue("ItemFive"));
+            response = db.SetRemove(key, new RedisValue("ItemFive"));
             Assert.AreEqual(false, response);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
@@ -193,7 +201,7 @@ namespace Garnet.test
             expectedResponse = 352;
             Assert.AreEqual(expectedResponse, actualValue);
 
-            var longResponse = db.SetRemove(new RedisKey("user1:set"), ["ItemTwo", "ItemThree"]);
+            var longResponse = db.SetRemove(key, ["ItemTwo", "ItemThree"]);
             Assert.AreEqual(2, longResponse);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
@@ -201,8 +209,14 @@ namespace Garnet.test
             expectedResponse = 200;
             Assert.AreEqual(expectedResponse, actualValue);
 
-            var members = db.SetMembers(new RedisKey("user1:set"));
+            var members = db.SetMembers(key);
             Assert.AreEqual(1, members.Length);
+
+            response = db.SetRemove(key, new RedisValue("ItemFour"));
+            Assert.IsTrue(response);
+
+            var exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
         }
 
         [Test]
@@ -397,12 +411,22 @@ namespace Garnet.test
             var key2 = "key2";
             var key2Value = new RedisValue[] { "c", "d", "e" };
 
+            var key3 = "key3";
+            var key3Value = new RedisValue[] { };
+
+            var key4 = "key4";
+            var key4Value = new RedisValue[] { };
+
             var addResult = db.SetAdd(key1, key1Value);
             Assert.AreEqual(3, addResult);
             addResult = db.SetAdd(key2, key2Value);
             Assert.AreEqual(3, addResult);
+            addResult = db.SetAdd(key3, key3Value);
+            Assert.AreEqual(0, addResult);
+            addResult = db.SetAdd(key4, key4Value);
+            Assert.AreEqual(0, addResult);
 
-            var result = (int)db.Execute("SUNIONSTORE", key, key1, key2);
+            var result = db.SetCombineAndStore(SetOperation.Union, key, key1, key2);
             Assert.AreEqual(5, result);
 
             var membersResult = db.SetMembers(key);
@@ -410,6 +434,12 @@ namespace Garnet.test
             var strResult = membersResult.Select(m => m.ToString()).ToArray();
             var expectedResult = new[] { "a", "b", "c", "d", "e" };
             Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
+
+            result = db.SetCombineAndStore(SetOperation.Union, key, key3, key4);
+            Assert.AreEqual(0, result);
+
+            var exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
         }
 
 
@@ -465,12 +495,17 @@ namespace Garnet.test
             var key2 = "key2";
             var key2Value = new RedisValue[] { "c", "d", "e" };
 
+            var key3 = "key3";
+            var key3Value = new RedisValue[] { "d", "e" };
+
             var addResult = db.SetAdd(key1, key1Value);
             Assert.AreEqual(key1Value.Length, addResult);
             addResult = db.SetAdd(key2, key2Value);
             Assert.AreEqual(key2Value.Length, addResult);
+            addResult = db.SetAdd(key3, key3Value);
+            Assert.AreEqual(key3Value.Length, addResult);
 
-            var result = (int)db.Execute("SINTERSTORE", key, key1, key2);
+            var result = db.SetCombineAndStore(SetOperation.Intersect, key, key1, key2);
             Assert.AreEqual(1, result);
 
             var membersResult = db.SetMembers(key);
@@ -478,6 +513,12 @@ namespace Garnet.test
             var strResult = membersResult.Select(m => m.ToString()).ToArray();
             var expectedResult = new[] { "c" };
             Assert.IsTrue(expectedResult.SequenceEqual(strResult));
+
+            result = db.SetCombineAndStore(SetOperation.Intersect, key, key1, key3);
+            Assert.AreEqual(0, result);
+
+            var exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
         }
 
 
@@ -499,7 +540,7 @@ namespace Garnet.test
             addResult = db.SetAdd(key2, key2Value);
             Assert.AreEqual(1, addResult);
 
-            var result = (RedisResult[])db.Execute("SDIFF", key1, key2);
+            var result = db.SetCombine(SetOperation.Difference, key1, key2);
             Assert.AreEqual(3, result.Length);
             var strResult = result.Select(r => r.ToString()).ToArray();
             var expectedResult = new[] { "a", "b", "d" };
@@ -512,7 +553,7 @@ namespace Garnet.test
             addResult = db.SetAdd(key3, key3Value);
             Assert.AreEqual(3, addResult);
 
-            result = (RedisResult[])db.Execute("SDIFF", key1, key2, key3);
+            result = db.SetCombine(SetOperation.Difference, new[] { new RedisKey(key1), new RedisKey(key2), new RedisKey(key3) });
             Assert.AreEqual(2, result.Length);
             strResult = result.Select(r => r.ToString()).ToArray();
             expectedResult = ["b", "d"];
@@ -541,7 +582,7 @@ namespace Garnet.test
             addResult = db.SetAdd(key2, key2Value);
             Assert.AreEqual(1, addResult);
 
-            var result = db.Execute("SDIFFSTORE", key, key1, key2);
+            var result = db.SetCombineAndStore(SetOperation.Difference, key, key1, key2);
             Assert.AreEqual(3, int.Parse(result.ToString()));
 
             var membersResult = db.SetMembers("key");
@@ -561,12 +602,24 @@ namespace Garnet.test
             addResult = db.SetAdd(key4, key4Value);
             Assert.AreEqual(2, addResult);
 
-            result = db.Execute("SDIFFSTORE", key, key3, key4);
+            result = db.SetCombineAndStore(SetOperation.Difference, key, key3, key4);
             Assert.AreEqual(1, (int)result);
 
             membersResult = db.SetMembers("key");
             Assert.AreEqual(1, membersResult.Length);
             Assert.IsTrue(Array.Exists(membersResult, t => t.ToString().Equals("c")));
+
+            var key5 = "key5";
+            var key5Value = new RedisValue[] { "a", "b", "c" };
+
+            addResult = db.SetAdd(key5, key5Value);
+            Assert.AreEqual(3, addResult);
+
+            result = db.SetCombineAndStore(SetOperation.Difference, key, key3, key5);
+            Assert.AreEqual(0, (int)result);
+
+            var exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
         }
 
         [Test]
@@ -599,6 +652,17 @@ namespace Garnet.test
             membersResult = db.SetMembers(destination);
             strResult = membersResult.Select(r => r.ToString()).ToArray();
             expectedResult = ["three", "two"];
+            Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
+
+            result = db.SetMove(source, destination, "one");
+            Assert.IsTrue(result);
+
+            var exists = db.KeyExists(source);
+            Assert.IsFalse(exists);
+
+            membersResult = db.SetMembers(destination);
+            strResult = membersResult.Select(r => r.ToString()).ToArray();
+            expectedResult = ["three", "two", "one"];
             Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
         }
         #endregion
@@ -1312,15 +1376,16 @@ namespace Garnet.test
             // SUNION
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Union, keys[0], keys[1]));
             // SUNIONSTORE
-            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.Execute("SUNIONSTORE", keys[0], keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombineAndStore(SetOperation.Union, keys[0], new[] { keys[1] }));
             // SDIFF
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Difference, keys[0], keys[1]));
             // SDIFFSTORE
-            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.Execute("SDIFFSTORE", keys[0], keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() =>
+                db.SetCombineAndStore(SetOperation.Difference, keys[0], new[] { keys[1] }));
             // SINTER
             RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombine(SetOperation.Intersect, keys[0], keys[1]));
             // SINTERSTORE
-            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.Execute("SINTERSTORE", keys[0], keys[1]));
+            RespTestsUtils.CheckCommandOnWrongTypeObjectSE(() => db.SetCombineAndStore(SetOperation.Intersect, keys[0], new[] { keys[1] }));
         }
 
         #endregion

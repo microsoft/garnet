@@ -195,8 +195,8 @@ namespace Garnet.server
             element = default;
             var objectLockableContext = txnManager.ObjectStoreLockableContext;
 
-            //If source and destination are the same, the operation is equivalent to removing the last element from the list
-            //and pushing it as first element of the list, so it can be considered as a list rotation command.
+            // If source and destination are the same, the operation is equivalent to removing the last element from the list
+            // and pushing it as first element of the list, so it can be considered as a list rotation command.
             bool sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
 
             bool createTransaction = false;
@@ -212,7 +212,7 @@ namespace Garnet.server
 
             try
             {
-                // get the source key
+                // Get the source key
                 var statusOp = GET(sourceKey.ToArray(), out var sourceList, ref objectLockableContext);
 
                 if (statusOp == GarnetStatus.NOTFOUND)
@@ -230,7 +230,7 @@ namespace Garnet.server
                     ListObject dstListObject = default;
                     if (!sameKey)
                     {
-                        // read destination key
+                        // Read destination key
                         var arrDestKey = destinationKey.ToArray();
                         statusOp = GET(arrDestKey, out var destinationList, ref objectStoreLockableContext);
 
@@ -245,7 +245,7 @@ namespace Garnet.server
                         dstListObject = listObject;
                     }
 
-                    // right pop (removelast) from source
+                    // Right pop (removelast) from source
                     if (sourceDirection == OperationDirection.Right)
                     {
                         element = srcListObject.LnkList.Last.Value;
@@ -253,19 +253,22 @@ namespace Garnet.server
                     }
                     else
                     {
-                        // left pop (removefirst) from source
+                        // Left pop (removefirst) from source
                         element = srcListObject.LnkList.First.Value;
                         srcListObject.LnkList.RemoveFirst();
                     }
                     srcListObject.UpdateSize(element, false);
 
-                    //update sourcelist
-                    SET(sourceKey.ToArray(), srcListObject, ref objectStoreLockableContext);
-
                     IGarnetObject newListValue = null;
                     if (!sameKey)
                     {
-                        //left push (addfirst) to destination
+                        if (srcListObject.LnkList.Count == 0)
+                        {
+                            _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None,
+                                ref lockableContext, ref objectLockableContext);
+                        }
+
+                        // Left push (addfirst) to destination
                         if (destinationDirection == OperationDirection.Left)
                             dstListObject.LnkList.AddFirst(element);
                         else
@@ -273,10 +276,13 @@ namespace Garnet.server
 
                         dstListObject.UpdateSize(element);
                         newListValue = new ListObject(dstListObject.LnkList, dstListObject.Expiration, dstListObject.Size);
+
+                        // Upsert
+                        SET(destinationKey.ToArray(), newListValue, ref objectStoreLockableContext);
                     }
                     else
                     {
-                        // when the source and the destination key is the same the operation is done only in the sourceList
+                        // When the source and the destination key is the same the operation is done only in the sourceList
                         if (sourceDirection == OperationDirection.Right && destinationDirection == OperationDirection.Left)
                             srcListObject.LnkList.AddFirst(element);
                         else if (sourceDirection == OperationDirection.Left && destinationDirection == OperationDirection.Right)
@@ -284,9 +290,6 @@ namespace Garnet.server
                         newListValue = srcListObject;
                         ((ListObject)newListValue).UpdateSize(element);
                     }
-
-                    // upsert
-                    SET(destinationKey.ToArray(), newListValue, ref objectStoreLockableContext);
                 }
             }
             finally
