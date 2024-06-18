@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// This class defines an observer for a specific blocking command
     /// </summary>
-    internal class CollectionItemObserver
+    internal struct CollectionItemObserver
     {
         /// <summary>
         /// The session in which the blocking command was called
@@ -21,9 +21,9 @@ namespace Garnet.server
         internal RespCommand Command { get; }
 
         /// <summary>
-        /// Additional arguments required by the command
+        /// Additional arguments for the command
         /// </summary>
-        internal object[] CommandArgs { get; }
+        internal ArgSlice[] CommandArgs { get; }
 
         /// <summary>
         /// Status of the observer
@@ -50,11 +50,12 @@ namespace Garnet.server
         /// </summary>
         internal CancellationTokenSource CancellationTokenSource { get; } = new();
 
-        internal CollectionItemObserver(RespServerSession session, RespCommand command, object[] commandArgs = null)
+        internal CollectionItemObserver(RespServerSession session, RespCommand command, ArgSlice[] commandArgs = null)
         {
             Session = session;
             Command = command;
             CommandArgs = commandArgs;
+            Result = CollectionItemResult.Empty;
         }
 
         /// <summary>

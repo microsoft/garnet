@@ -39,7 +39,7 @@ namespace Garnet.server
     /// <summary>
     /// Direction for the List operations
     /// </summary>
-    public enum OperationDirection
+    public enum OperationDirection : byte
     {
         /// <summary>
         /// Left or head

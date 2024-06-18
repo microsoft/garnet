@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Tsavorite.core;
@@ -61,16 +60,36 @@ namespace Garnet.server
         /// <param name="keys">Keys of objects to observe</param>
         /// <param name="session">Calling session instance</param>
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
-        /// <param name="cmdArgs">Additional command arguments</param>
         /// <returns>Result of operation</returns>
         internal async Task<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
-            RespServerSession session, double timeoutInSeconds, object[] cmdArgs = null)
+            RespServerSession session, double timeoutInSeconds)
         {
-            // Create the new observer object
-            var observer = new CollectionItemObserver(session, command, cmdArgs);
+            var observer = new CollectionItemObserver(session, command);
+            return await this.GetCollectionItemAsync(observer, keys, timeoutInSeconds);
+        }
 
+        /// <summary>
+        /// Asynchronously wait for item from collection object at srcKey and
+        /// atomically add it to collection at dstKey
+        /// </summary>
+        /// <param name="command">RESP command</param>
+        /// <param name="srcKey">Key of the object to observe</param>
+        /// <param name="session">Calling session instance</param>
+        /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
+        /// <param name="cmdArgs">Additional arguments for command</param>
+        /// <returns>Result of operation</returns>
+        internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey, 
+            RespServerSession session, double timeoutInSeconds, ArgSlice[] cmdArgs)
+        {
+            var observer = new CollectionItemObserver(session, command,cmdArgs);
+            return await this.GetCollectionItemAsync(observer, new [] { srcKey }, timeoutInSeconds);
+        }
+
+        private async Task<CollectionItemResult> GetCollectionItemAsync(CollectionItemObserver observer, byte[][] keys,
+            double timeoutInSeconds)
+        {
             // Add the session ID to observer mapping
-            SessionIdToObserver.TryAdd(session.ObjectStoreSessionID, observer);
+            SessionIdToObserver.TryAdd(observer.Session.ObjectStoreSessionID, observer);
 
             // Add a new observer event to the event queue
             BrokerEventsQueue.Enqueue(new NewObserverEvent(observer, keys));
@@ -124,24 +143,6 @@ namespace Garnet.server
             }
 
             return observer.Result;
-        }
-
-        /// <summary>
-        /// Asynchronously wait for item from collection object at srcKey and
-        /// atomically add it to collection at dstKey
-        /// </summary>
-        /// <param name="command">RESP command</param>
-        /// <param name="srcKey">Key of object to observe</param>
-        /// <param name="dstKey">Key of object to add item into</param>
-        /// <param name="session">Calling session instance</param>
-        /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
-        /// <param name="cmdArgs">Additional command arguments</param>
-        /// <returns>Result of operation</returns>
-        internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey, byte[] dstKey
-            , RespServerSession session, double timeoutInSeconds, object[] cmdArgs = null)
-        {
-            var args = cmdArgs == null ? new[] { dstKey } : new object[] { dstKey }.Union(cmdArgs).ToArray();
-            return await this.GetCollectionItemAsync(command, new[] { srcKey }, session, timeoutInSeconds, args);
         }
 
         /// <summary>
@@ -302,7 +303,7 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    observer?.ObserverStatusLock.ExitUpgradeableReadLock();
+                    observer.ObserverStatusLock.ExitUpgradeableReadLock();
                 }
             }
 
@@ -418,7 +419,7 @@ namespace Garnet.server
         /// <param name="currCount">Collection size</param>
         /// <param name="nextItem">Retrieved item</param>
         /// <returns>True if found available item</returns>
-        private bool TryGetNextItem(byte[] key, StorageSession storageSession, RespCommand command, object[] cmdArgs, out int currCount, out byte[] nextItem)
+        private bool TryGetNextItem(byte[] key, StorageSession storageSession, RespCommand command, ArgSlice[] cmdArgs, out int currCount, out byte[] nextItem)
         {
             currCount = default;
             nextItem = default;
@@ -430,10 +431,10 @@ namespace Garnet.server
                 _ => throw new NotSupportedException()
             };
 
-            byte[] dstKey = default;
+            ArgSlice dstKey = default;
             if (command == RespCommand.BLMOVE)
             {
-                dstKey = (byte[])cmdArgs[0];
+                dstKey = cmdArgs[0];
             }
 
             // Create a transaction if not currently in a running transaction
@@ -444,10 +445,9 @@ namespace Garnet.server
                 var asKey = storageSession.scratchBufferManager.CreateArgSlice(key);
                 storageSession.txnManager.SaveKeyEntryToLock(asKey, true, LockType.Exclusive);
 
-                if (dstKey != null)
+                if (command == RespCommand.BLMOVE)
                 {
-                    var asDestKey = storageSession.scratchBufferManager.CreateArgSlice(dstKey);
-                    storageSession.txnManager.SaveKeyEntryToLock(asDestKey, true, LockType.Exclusive);
+                    storageSession.txnManager.SaveKeyEntryToLock(dstKey, true, LockType.Exclusive);
                 }
 
                 _ = storageSession.txnManager.Run(true);
@@ -461,11 +461,12 @@ namespace Garnet.server
                 var statusOp = storageSession.GET(key, out var osObject, ref objectLockableContext);
                 if (statusOp == GarnetStatus.NOTFOUND) return false;
 
-                var dstStatusOp = GarnetStatus.OK;
                 IGarnetObject dstObj = null;
-                if (dstKey != null)
+                byte[] arrDstKey = default;
+                if (command == RespCommand.BLMOVE)
                 {
-                    dstStatusOp = storageSession.GET(dstKey, out var osDstObject, ref objectLockableContext);
+                    arrDstKey = dstKey.ToArray();
+                    var dstStatusOp = storageSession.GET(arrDstKey, out var osDstObject, ref objectLockableContext);
                     if (dstStatusOp != GarnetStatus.NOTFOUND) dstObj = osDstObject.garnetObject;
                 }
 
@@ -495,12 +496,12 @@ namespace Garnet.server
                                 }
                                 else return false;
 
-                                var isSuccessful = TryMoveNextListItem(listObj, dstList, (OperationDirection)cmdArgs[1],
-                                    (OperationDirection)cmdArgs[2], out nextItem);
+                                var isSuccessful = TryMoveNextListItem(listObj, dstList, (OperationDirection)cmdArgs[1].ReadOnlySpan[0],
+                                    (OperationDirection)cmdArgs[2].ReadOnlySpan[0], out nextItem);
 
                                 if (isSuccessful && newObj)
                                 {
-                                    isSuccessful = storageSession.SET(dstKey, dstList, ref objectLockableContext) ==
+                                    isSuccessful = storageSession.SET(arrDstKey, dstList, ref objectLockableContext) ==
                                                    GarnetStatus.OK;
                                 }
 

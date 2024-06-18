@@ -240,8 +240,7 @@ namespace Garnet.server
                 recvBufferPtr + bytesRead) || !parsed)
                 return false;
 
-            var arrKeys = keys.Select(k => k.Span.ToArray()).ToArray();
-            var result = itemBroker.GetCollectionItemAsync(command, arrKeys, this, timeout).Result;
+            var result = itemBroker.GetCollectionItemAsync(command, keys, this, timeout).Result;
 
             if (!result.Found)
             {
@@ -265,7 +264,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool ListBlockingMove<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private unsafe bool ListBlockingMove<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (count != 5)
@@ -273,22 +272,26 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
             }
 
-            var keys = new ArgSlice[2];
+            ArgSlice srcKey = default;
+            var cmdArgs = new ArgSlice[] {default, default, default};
 
-            for (var i = 0; i < keys.Length; i++)
-            {
-                keys[i] = default;
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-            }
+            // Read source key
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref srcKey.ptr, ref srcKey.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
 
-            if (NetworkKeyArraySlotVerify(ref keys, false))
+            if (NetworkSingleKeySlotVerify(srcKey.ReadOnlySpan, false))
             {
                 return true;
             }
 
-            var srcKey = keys[0].ToArray();
-            var dstKey = keys[1].ToArray();
+            // Read destination key
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref cmdArgs[0].ptr, ref cmdArgs[0].length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(cmdArgs[0].ReadOnlySpan, false))
+            {
+                return true;
+            }
 
             ArgSlice srcDir = default, dstDir = default;
 
@@ -306,12 +309,17 @@ namespace Garnet.server
                 return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
             }
 
+            var pSrcDir = (byte*)&sourceDirection;
+            var pDstDir = (byte*)&destinationDirection;
+            cmdArgs[1] = new ArgSlice(pSrcDir, 1);
+            cmdArgs[2] = new ArgSlice(pDstDir, 1);
+
             if (!RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
                     recvBufferPtr + bytesRead) || !parsed)
                 return false;
 
-            var result = itemBroker.MoveCollectionItemAsync(command, srcKey, dstKey, this, timeout,
-                new object[] { sourceDirection, destinationDirection }).Result;
+            var result = itemBroker.MoveCollectionItemAsync(command, srcKey, this, timeout,
+                cmdArgs).Result;
 
             if (!result.Found)
             {
