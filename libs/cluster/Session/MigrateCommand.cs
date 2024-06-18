@@ -94,7 +94,7 @@ namespace Garnet.cluster
             var replaceOption = false;
             string username = null;
             string passwd = null;
-            Dictionary<ArgSlice, KeyMigrateState> keys = null;
+            Dictionary<ArgSlice, KeyMigrationStatus> keys = null;
             HashSet<int> slots = null;
 
             ClusterConfig current = null;
@@ -116,9 +116,9 @@ namespace Garnet.cluster
             if (sksize > 0)
             {
                 transferOption = TransferOption.KEYS;
-                keys = new Dictionary<ArgSlice, KeyMigrateState>(ArgSliceComparer.Instance)
+                keys = new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance)
                 {
-                    { new (singleKeyPtr, sksize), KeyMigrateState.PENDING }
+                    { new (singleKeyPtr, sksize), KeyMigrationStatus.QUEUED }
                 };
             }
 
@@ -153,7 +153,7 @@ namespace Garnet.cluster
                         pstate = MigrateCmdParseState.MULTI_TRANSFER_OPTION;
 
                     transferOption = TransferOption.KEYS;
-                    keys = new Dictionary<ArgSlice, KeyMigrateState>(ArgSliceComparer.Instance);
+                    keys = new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance);
                     while (args > 0)
                     {
                         byte* keyPtr = null;
@@ -189,7 +189,7 @@ namespace Garnet.cluster
                         }
 
                         // Add pointer of current parsed key
-                        if (!keys.TryAdd(new ArgSlice(keyPtr, ksize), KeyMigrateState.PENDING))
+                        if (!keys.TryAdd(new ArgSlice(keyPtr, ksize), KeyMigrationStatus.QUEUED))
                             logger?.LogWarning($"Failed to add {{key}}", Encoding.ASCII.GetString(keyPtr, ksize));
                     }
                 }
@@ -307,6 +307,7 @@ namespace Garnet.cluster
 
             #region scheduleMigration
             if (!clusterProvider.migrationManager.TryAddMigrationTask(
+                this,
                 sourceNodeId,
                 targetAddress,
                 targetPort,

@@ -474,7 +474,7 @@ namespace Garnet.test.cluster
 
             //4. request write on source node to existing key try-again migrating
             respState = context.clusterTestUtils.SetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}0"), Encoding.ASCII.GetBytes("5678"), out _, out _, out _, logger: context.logger);
-            Assert.AreEqual(respState, ResponseState.MIGRATING);
+            Assert.AreEqual(respState, ResponseState.OK);
 
             //5. request write on source node to new key redirect.
             respState = context.clusterTestUtils.SetKey(sourcePortIndex, Encoding.ASCII.GetBytes("{abc}1"), Encoding.ASCII.GetBytes("5678"), out slot, out address, out port, logger: context.logger);

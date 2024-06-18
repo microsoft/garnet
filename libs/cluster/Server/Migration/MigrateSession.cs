@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
@@ -22,6 +23,7 @@ namespace Garnet.cluster
         static readonly Memory<byte> NODE = "NODE"u8.ToArray();
         static readonly Memory<byte> STABLE = "STABLE"u8.ToArray();
 
+        readonly ClusterSession clusterSession;
         readonly ClusterProvider clusterProvider;
         readonly LocalServerSession localServerSession;
 
@@ -41,7 +43,7 @@ namespace Garnet.cluster
         readonly bool _replaceOption;
         readonly TimeSpan _timeout;
         readonly List<(int, int)> _slotRanges;
-        readonly Dictionary<ArgSlice, KeyMigrateState> _keys;
+        readonly Dictionary<ArgSlice, KeyMigrationStatus> _keys;
 
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
@@ -61,6 +63,36 @@ namespace Garnet.cluster
         /// </summary>
         public HashSet<int> GetSlots => _sslots;
 
+        /// <summary>
+        /// Check if it is safe to operate on the provided key when a slot state is set to MIGRATING
+        /// </summary>
+        /// <param name="slot"></param>
+        /// <param name="key"></param>
+        /// <param name="readOnly"></param>
+        /// <returns></returns>
+        /// <exception cref="GarnetException"></exception>
+        public bool CanOperateOnKey(int slot, ArgSlice key, bool readOnly)
+        {
+            // Skip operation check since this session is not responsible for migrating the associated slot
+            if (!_sslots.Contains(slot))
+                return true;
+
+            // If key is not queued for migration then
+            if (!_keys.TryGetValue(key, out var state))
+                return true;
+
+            // NOTE:
+            // Caller responsible for spin-wait
+            // Check definition of KeyMigrationStatus for more info
+            return state switch
+            {
+                KeyMigrationStatus.QUEUED or KeyMigrationStatus.MIGRATED => true,
+                KeyMigrationStatus.MIGRATING => readOnly,
+                KeyMigrationStatus.DELETING => true,
+                _ => throw new GarnetException($"Invalid KeyMigrationStatus: {state}")
+            };
+        }
+
         readonly GarnetClientSession _gcs;
 
         /// <summary>
@@ -78,6 +110,7 @@ namespace Garnet.cluster
         /// <summary>
         /// MigrateSession Constructor
         /// </summary>
+        /// <param name="clusterSession"></param>
         /// <param name="clusterProvider"></param>
         /// <param name="_targetAddress"></param>
         /// <param name="_targetPort"></param>
@@ -93,6 +126,7 @@ namespace Garnet.cluster
         /// <param name="transferOption"></param>
         /// <param name="logger"></param>
         internal MigrateSession(
+            ClusterSession clusterSession,
             ClusterProvider clusterProvider,
             string _targetAddress,
             int _targetPort,
@@ -104,11 +138,12 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            Dictionary<ArgSlice, KeyMigrateState> keys,
+            Dictionary<ArgSlice, KeyMigrationStatus> keys,
             TransferOption transferOption,
             ILogger logger = null)
         {
             this.logger = logger;
+            this.clusterSession = clusterSession;
             this.clusterProvider = clusterProvider;
             this._targetAddress = _targetAddress;
             this._targetPort = _targetPort;
@@ -121,7 +156,7 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keys = keys == null ? new Dictionary<ArgSlice, KeyMigrateState>(ArgSliceComparer.Instance) : keys;
+            this._keys = keys == null ? new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance) : keys;
             this.transferOption = transferOption;
 
             if (clusterProvider != null)

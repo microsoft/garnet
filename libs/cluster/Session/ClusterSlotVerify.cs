@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading;
 using Garnet.common;
 using Garnet.server;
 
@@ -8,6 +9,20 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
+        private bool CanOperateOnKey(int slot, ArgSlice key, bool readOnly)
+        {
+            // For both read and read/write ops we need to ensure that key will not be removed
+            // while we try to operate on it so we will delay the corresponding operation
+            // as long as the key is being actively migrated
+            while (!clusterProvider.migrationManager.CanModifyKey(slot, key, readOnly))
+            {
+                ReleaseCurrentEpoch();
+                Thread.Yield();
+                AcquireCurrentEpoch();
+            }
+            return CheckIfKeyExists(key);
+        }
+
         private bool CheckIfKeyExists(byte[] key)
         {
             fixed (byte* keyPtr = key)
@@ -58,7 +73,7 @@ namespace Garnet.cluster
                 return state switch
                 {
                     SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                    SlotState.MIGRATING => CheckIfKeyExists(keySlice) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                    SlotState.MIGRATING => CanOperateOnKey(slot, keySlice, readOnly: true) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
                     _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                 };
             }
@@ -99,7 +114,7 @@ namespace Garnet.cluster
                 return state switch
                 {
                     SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                    SlotState.MIGRATING => CheckIfKeyExists(keySlice) ? new(SlotVerifiedState.MIGRATING, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                    SlotState.MIGRATING => CanOperateOnKey(slot, keySlice, readOnly: false) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
                     _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                 };
             }

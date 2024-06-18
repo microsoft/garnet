@@ -17,7 +17,7 @@ namespace Garnet.cluster
         public bool TryStartMigrationTask(out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
-            if (_keys != null)
+            if (transferOption == TransferOption.KEYS)
             {
                 try
                 {
@@ -29,14 +29,12 @@ namespace Garnet.cluster
                         return false;
                     }
 
-                    // Delete keys locally if  _copyOption is set to false.
-                    if (!_copyOption)
-                        DeleteKeys(_keys);
                     Status = MigrateState.SUCCESS;
                 }
                 finally
                 {
-                    clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                    if (!clusterProvider.migrationManager.TryRemoveMigrationTask(this))
+                        logger?.LogError("Could not remove MIGRATE KEYS session");
                 }
             }
             else
@@ -75,7 +73,7 @@ namespace Garnet.cluster
                     return;
                 }
 
-                if (!clusterProvider.WaitForConfigTransition()) return;
+                if (!clusterProvider.BumpAndWaitForEpochTransition()) return;
                 #endregion
 
                 #region migrateData

@@ -608,13 +608,13 @@ ClusterRedirectTests.TestFlags testFlags)
             var respMigratingStable = ClusterTestUtils.SetSlot(ref connections[sourceNodeIndex], migrateSlot, "STABLE", "");
             Assert.AreEqual(respMigratingStable, "OK");
 
-            if (CheckFlag(command.testFlags, (TestFlags.KEY_EXISTS | TestFlags.READONLY)))
+            if (CheckFlag(command.testFlags, TestFlags.KEY_EXISTS | TestFlags.READONLY))
             {
                 Assert.AreEqual(status, ResponseState.OK, command.cmdTag);
             }
             else if (CheckFlag(command.testFlags, (TestFlags.KEY_EXISTS)))
             {
-                Assert.AreEqual(status, ResponseState.MIGRATING, command.cmdTag);
+                Assert.AreEqual(status, ResponseState.OK, command.cmdTag);
             }
             else
             {

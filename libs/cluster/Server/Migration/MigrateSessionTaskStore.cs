@@ -64,6 +64,7 @@ namespace Garnet.cluster
         }
 
         public bool TryAddMigrateSession(
+            ClusterSession clusterSession,
             ClusterProvider clusterProvider,
             string sourceNodeId,
             string targetAddress,
@@ -75,12 +76,13 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            Dictionary<ArgSlice, KeyMigrateState> keysWithSize,
+            Dictionary<ArgSlice, KeyMigrationStatus> keysWithSize,
             TransferOption transferOption,
             out MigrateSession mSession)
         {
             var success = true;
             mSession = new MigrateSession(
+                clusterSession,
                 clusterProvider,
                 targetAddress,
                 targetPort,
@@ -137,7 +139,7 @@ namespace Garnet.cluster
             try
             {
                 _lock.WriteLock();
-                if (_disposed) return true;
+                if (_disposed) return false;
                 for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
@@ -156,12 +158,40 @@ namespace Garnet.cluster
                         ShrinkSessionArray();
                     }
                 }
-                return false;
+                return true;
             }
             finally
             {
                 _lock.WriteUnlock();
             }
+        }
+
+        /// <summary>
+        /// Check if provided key can be operated on.
+        /// </summary>
+        /// <param name="slot"></param>
+        /// <param name="key"></param>
+        /// <param name="readOnly"></param>
+        /// <returns>True if we can operate on the key, otherwise false (i.e. key is being migrated)</returns>
+        public bool CanModifyKey(int slot, ArgSlice key, bool readOnly)
+        {
+            try
+            {
+                _lock.ReadLock();
+                if (_disposed) return true;
+                for (var i = 0; i < numSessions; i++)
+                {
+                    var s = sessions[i];
+                    if (!s.CanOperateOnKey(slot, key, readOnly))
+                        return false;
+                }
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+
+            return true;
         }
     }
 }

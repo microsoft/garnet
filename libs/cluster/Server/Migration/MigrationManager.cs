@@ -29,6 +29,7 @@ namespace Garnet.cluster
         /// <summary>
         ///  Add a new migration task in response to an associated request.
         /// </summary>
+        /// <param name="clusterSession"></param>
         /// <param name="sourceNodeId"></param>
         /// <param name="targetAddress"></param>
         /// <param name="targetPort"></param>
@@ -44,6 +45,7 @@ namespace Garnet.cluster
         /// <param name="mSession"></param>
         /// <returns></returns>
         public bool TryAddMigrationTask(
+            ClusterSession clusterSession,
             string sourceNodeId,
             string targetAddress,
             int targetPort,
@@ -54,9 +56,10 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            Dictionary<ArgSlice, KeyMigrateState> keys,
+            Dictionary<ArgSlice, KeyMigrationStatus> keys,
             TransferOption transferOption,
             out MigrateSession mSession) => migrationTaskStore.TryAddMigrateSession(
+                clusterSession,
                 clusterProvider,
                 sourceNodeId,
                 targetAddress,
@@ -79,5 +82,14 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool TryRemoveMigrationTask(MigrateSession mSession)
             => migrationTaskStore.TryRemove(mSession);
+
+        /// <summary>
+        /// Check if provided key can be operated on.
+        /// </summary>
+        /// <param name="slot"></param>
+        /// <param name="key"></param>
+        /// <param name="readOnly"></param>
+        public bool CanModifyKey(int slot, ArgSlice key, bool readOnly)
+            => migrationTaskStore.CanModifyKey(slot, key, readOnly);
     }
 }
