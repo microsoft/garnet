@@ -8,6 +8,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -1440,6 +1441,136 @@ namespace Garnet.test.cluster
             }
 
             context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
+        }
+
+
+        Task<byte[]> WriteWorkload(IPEndPoint endPoint, byte[] key, int keyLen = 16)
+        {
+            var value = new byte[keyLen];
+            byte[] setValue = null;
+            while (true)
+            {
+                context.clusterTestUtils.RandomBytes(ref value);
+                var status = context.clusterTestUtils.SetKey(endPoint, key, value, out int _slot, out string address, out int port, logger: context.logger);
+
+                if (status == ResponseState.OK)
+                {
+                    setValue ??= new byte[keyLen];
+                    // If succeeded keep track of setValue
+                    value.AsSpan().CopyTo(setValue.AsSpan());
+                }
+                else
+                    // If failed then return last setValue
+                    return Task.FromResult(setValue);
+            }
+        }
+
+        [Test, Order(15)]
+        [Category("CLUSTER")]
+        public void ClusterAllowWritesDuringMigrateTest()
+        {
+            context.logger.LogDebug($"0. ClusterSimpleMigrateTestWithReadWrite started");
+            var Shards = defaultShards;
+            context.CreateInstances(Shards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var keyExists = Encoding.ASCII.GetBytes("{abc}01");
+            var keyNotExists = Encoding.ASCII.GetBytes("{abc}02");
+            var oldValue = Encoding.ASCII.GetBytes("initialValue");
+            var newValue = Encoding.ASCII.GetBytes("newValue");
+
+            var config = context.clusterTestUtils.ClusterNodes(0, logger: context.logger);
+            var n01 = config.GetBySlot(keyExists);
+            var n02 = config.GetBySlot(keyNotExists);
+            Assert.AreEqual(n01.NodeId, n02.NodeId);
+
+            // Create key before migration
+            var status = context.clusterTestUtils.SetKey(n01.EndPoint.ToIPEndPoint(), keyExists, oldValue, out _, out _, out _, logger: context.logger);
+            Assert.AreEqual(ResponseState.OK, status);
+
+            // Get slot mapping
+            var slot = context.clusterTestUtils.ClusterKeySlot(n01.EndPoint.ToIPEndPoint(), Encoding.ASCII.GetString(keyExists));
+            var anyOtherNode = context.clusterTestUtils.GetAnyOtherNode(n01.EndPoint.ToIPEndPoint(), logger: context.logger);
+
+            // Set slot to MIGRATING state
+            var resp = context.clusterTestUtils.SetSlot(n01.EndPoint.ToIPEndPoint(), slot, "MIGRATING", anyOtherNode.NodeId);
+            Assert.AreEqual("OK", resp);
+
+            // Set slot to IMPORTING state
+            resp = context.clusterTestUtils.SetSlot(anyOtherNode.EndPoint.ToIPEndPoint(), slot, "IMPORTING", n01.NodeId);
+            Assert.AreEqual("OK", resp);
+
+            // Operate on existing key during migration
+            OperateOnExistingKey(n01.EndPoint, keyExists, oldValue, newValue);
+
+            // Operate on non-existing key during migration
+            OperateOnNonExistentKey(n01.EndPoint, keyNotExists, oldValue);
+
+            // Run background write workload
+            var task = Task.Run(() => WriteWorkload(n01.EndPoint.ToIPEndPoint(), keyExists));
+
+            Thread.Sleep(TimeSpan.FromSeconds(2));
+
+            // Migrate key to target node
+            context.clusterTestUtils.MigrateKeys(n01.EndPoint.ToIPEndPoint(), anyOtherNode.EndPoint.ToIPEndPoint(), [keyExists], context.logger);
+
+            // Wait for write workload to finish
+            // Should finish when ResponseState != OK which means migration has completed
+            oldValue = task.Result;
+            oldValue ??= newValue;
+
+            // Operate on migrated key that should not exist so the expected response will be redirect ASK
+            OperateOnNonExistentKey(n01.EndPoint, keyExists, newValue);
+
+            // Assign slot to target node
+            var respNodeTarget = context.clusterTestUtils.SetSlot(anyOtherNode.EndPoint.ToIPEndPoint(), slot, "NODE", anyOtherNode.NodeId, logger: context.logger);
+            Assert.AreEqual(respNodeTarget, "OK");
+            context.clusterTestUtils.BumpEpoch(anyOtherNode.EndPoint.ToIPEndPoint(), waitForSync: true, logger: context.logger);
+
+            // Relinquish slot ownership from source node
+            var respNodeSource = context.clusterTestUtils.SetSlot(n01.EndPoint.ToIPEndPoint(), slot, "NODE", n01.NodeId, logger: context.logger);
+            Assert.AreEqual(respNodeSource, "OK");
+            context.clusterTestUtils.BumpEpoch(n01.EndPoint.ToIPEndPoint(), waitForSync: true, logger: context.logger);
+
+            // Operate on existing key after migration
+            OperateOnExistingKey(anyOtherNode.EndPoint, keyExists, oldValue, newValue);
+
+            // Operate on non existent when slot is in MIGRATING state
+            void OperateOnNonExistentKey(EndPoint endPoint, byte[] key, byte[] value)
+            {
+                // Perform write => expected response ASK
+                status = context.clusterTestUtils.SetKey(endPoint.ToIPEndPoint(), key, value, out int _slot, out string address, out int port, logger: context.logger);
+                Assert.AreEqual(ResponseState.ASK, status);
+                Assert.AreEqual(slot, _slot);
+                Assert.AreEqual(anyOtherNode.EndPoint.ToIPEndPoint().Address.ToString(), address);
+                Assert.AreEqual(anyOtherNode.EndPoint.ToIPEndPoint().Port, port);
+
+                // Perform read => expected response ASK
+                _ = context.clusterTestUtils.GetKey(endPoint.ToIPEndPoint(), key, out _slot, out address, out port, out status, logger: context.logger);
+                Assert.AreEqual(ResponseState.ASK, status);
+                Assert.AreEqual(slot, _slot);
+                Assert.AreEqual(anyOtherNode.EndPoint.ToIPEndPoint().Address.ToString(), address);
+                Assert.AreEqual(anyOtherNode.EndPoint.ToIPEndPoint().Port, port);
+            }
+
+            // Operate on existing key when slot is in MIGRATING state
+            void OperateOnExistingKey(EndPoint endPoint, byte[] key, byte[] oldValue, byte[] newValue)
+            {
+                // Perform read => expected response OK
+                var _value = context.clusterTestUtils.GetKey(endPoint.ToIPEndPoint(), keyExists, out _, out _, out _, out status, logger: context.logger);
+                Assert.AreEqual(ResponseState.OK, status);
+                Assert.AreEqual(oldValue, _value);
+
+                //  Perform write => expected response OK
+                status = context.clusterTestUtils.SetKey(endPoint.ToIPEndPoint(), key, newValue, out _, out _, out _, logger: context.logger);
+                Assert.AreEqual(ResponseState.OK, status);
+
+                // Perform read => expected response OK
+                _value = context.clusterTestUtils.GetKey(endPoint.ToIPEndPoint(), keyExists, out _, out _, out _, out status, logger: context.logger);
+                Assert.AreEqual(ResponseState.OK, status);
+                Assert.AreEqual(newValue, _value);
+            }
         }
     }
 }

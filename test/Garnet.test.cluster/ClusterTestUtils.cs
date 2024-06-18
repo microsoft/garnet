@@ -99,6 +99,14 @@ namespace Garnet.test.cluster
         PRIMARY_FAILOVER_STATE,
     }
 
+    public static class EndpointExtensions
+    {
+        public static IPEndPoint ToIPEndPoint(this EndPoint endPoint)
+        {
+            return (IPEndPoint)endPoint;
+        }
+    }
+
     public partial class ClusterTestUtils
     {
         private void ThrowException(string msg)
@@ -1579,7 +1587,13 @@ namespace Garnet.test.cluster
 
         public string SetSlot(int nodeIndex, int slot, string state, string nodeid, ILogger logger = null)
         {
-            var server = GetServer(nodeIndex);
+            var endPoint = GetEndPoint(nodeIndex);
+            return SetSlot(endPoint, slot, state, nodeid, logger);
+        }
+
+        public string SetSlot(IPEndPoint endPoint, int slot, string state, string nodeid, ILogger logger = null)
+        {
+            var server = GetServer(endPoint);
             try
             {
                 return (string)server.Execute("cluster", "setslot", $"{slot}", $"{state}", $"{nodeid}");
@@ -2036,12 +2050,31 @@ namespace Garnet.test.cluster
 
         public ResponseState SetKey(int nodeIndex, byte[] key, byte[] value, out int slot, out string address, out int port, bool asking = false, int expiry = -1, ILogger logger = null)
         {
-            var server = GetServer(nodeIndex);
+            var endPoint = GetEndPoint(nodeIndex);
+            return SetKey(endPoint, key, value, out slot, out address, out port, asking, expiry, logger);
+        }
+
+        public ResponseState SetKey(IPEndPoint endPoint, byte[] key, byte[] value, out int slot, out string address, out int port, bool asking = false, int expiry = -1, ILogger logger = null)
+        {
+            var server = GetServer(endPoint);
             slot = -1;
-            address = GetEndPoint(nodeIndex).Address.ToString();
-            port = GetEndPoint(nodeIndex).Port;
+            address = endPoint.Address.ToString();
+            port = endPoint.Port;
+
             if (asking)
-                server.Execute("ASKING");
+            {
+                try
+                {
+                    var resp = (string)server.Execute("ASKING");
+                    Assert.AreEqual("OK", resp);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, $"{nameof(SetKey)}");
+                    Assert.Fail(ex.Message);
+                }
+            }
+
             try
             {
                 if (expiry == -1)
@@ -2109,7 +2142,19 @@ namespace Garnet.test.cluster
             var server = GetServer(endPoint);
             string result;
             if (asking)
-                server.Execute("ASKING");
+            {
+                try
+                {
+                    var resp = (string)server.Execute("ASKING");
+                    Assert.AreEqual("OK", resp);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, $"{nameof(SetKey)}");
+                    Assert.Fail(ex.Message);
+                }
+            }
+
             try
             {
                 ICollection<object> args = new List<object>() { (object)key };
@@ -2783,6 +2828,19 @@ namespace Garnet.test.cluster
                 logger?.LogError(ex, "An error has occurred; AclLoad");
                 Assert.Fail();
             }
+        }
+
+        public ClusterNode GetAnyOtherNode(IPEndPoint endPoint, ILogger logger = null)
+        {
+            var config = ClusterNodes(endPoint, logger);
+            foreach (var node in config.Nodes)
+            {
+                if (!node.EndPoint.ToIPEndPoint().Equals(endPoint))
+                    return node;
+            }
+
+            Assert.Fail("Single node cluster");
+            return null;
         }
     }
 }
