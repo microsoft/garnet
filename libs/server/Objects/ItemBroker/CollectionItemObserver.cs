@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// This class defines an observer for a specific blocking command
     /// </summary>
-    internal struct CollectionItemObserver
+    internal class CollectionItemObserver
     {
         /// <summary>
         /// The session in which the blocking command was called
