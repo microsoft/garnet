@@ -114,6 +114,10 @@ namespace Garnet.test
             Assert.AreEqual("val_8", vals[0].ToString());
             Assert.AreEqual("val_7", vals[1].ToString());
             Assert.AreEqual("val_6", vals[2].ToString());
+
+            db.ListTrim(key, -4, -4);
+            var exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
         }
 
         private static object[] LTrimTestCases = {
@@ -358,6 +362,15 @@ namespace Garnet.test
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
             expectedResponse = 344;
             Assert.AreEqual(expectedResponse, actualValue);
+
+            ret = db.ListRemove(key, "val_2", 0);
+            Assert.AreEqual(2, ret);
+
+            ret = db.ListRemove(key, "val_4", 0);
+            Assert.AreEqual(1, ret);
+
+            var exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
         }
 
         [Test]
@@ -482,6 +495,18 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             Assert.IsTrue(result.IsNull);
+
+            var pushed = db.ListRightPush(key, []);
+            Assert.AreEqual(0, pushed);
+
+            keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
+
+            pushed = db.ListLeftPush(key, []);
+            Assert.AreEqual(0, pushed);
+
+            keyExists = db.KeyExists(key);
+            Assert.IsFalse(keyExists);
         }
 
         [Test]
@@ -1141,6 +1166,37 @@ namespace Garnet.test
             response = lightClientRequest.SendCommandChunks("LRANGE mylist 0 -1", bytesPerSend, 3);
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
+        }
+
+        [Test]
+        public void CanDoBasicLMove()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = new RedisKey("mykey1");
+            var key1Values = new[] { new RedisValue("myval1"), new RedisValue("myval2"), new RedisValue("myval3") };
+
+            var key2 = new RedisKey("mykey2");
+            var key2Values = new[] { new RedisValue("myval4") };
+
+            var pushed = db.ListRightPush(key1, key1Values);
+            Assert.AreEqual(3, pushed);
+            pushed = db.ListRightPush(key2, key2Values);
+            Assert.AreEqual(1, pushed);
+
+            var result = db.ListMove(key1, key2, ListSide.Right, ListSide.Left);
+            Assert.AreEqual(key1Values[2], result);
+            result = db.ListMove(key1, key2, ListSide.Right, ListSide.Left);
+            Assert.AreEqual(key1Values[1], result);
+            result = db.ListMove(key1, key2, ListSide.Right, ListSide.Left);
+            Assert.AreEqual(key1Values[0], result);
+
+            var members = db.ListRange(key2);
+            Assert.AreEqual(key1Values.Union(key2Values).ToArray(), members);
+
+            var exists = db.KeyExists(key1);
+            Assert.IsFalse(exists);
         }
 
 

@@ -7,7 +7,7 @@ namespace GarnetClientStress
 {
     public class Options
     {
-        [Option('p', "port", Required = false, Default = 3278, HelpText = "Port to connect to")]
+        [Option('p', "port", Required = false, Default = 6379, HelpText = "Port to connect to")]
         public int Port { get; set; }
 
         [Option('h', "host", Required = false, Default = "127.0.0.1", HelpText = "IP address to connect to")]
