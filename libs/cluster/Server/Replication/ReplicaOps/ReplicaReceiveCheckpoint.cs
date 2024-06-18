@@ -58,7 +58,7 @@ namespace Garnet.cluster
             {
                 replicateLock.WriteUnlock();
             }
-            return true;
+            return false;
         }
 
         /// <summary>
