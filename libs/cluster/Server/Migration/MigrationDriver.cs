@@ -78,7 +78,7 @@ namespace Garnet.cluster
 
                 #region migrateData
                 //3. Migrate actual data
-                if (!MigrateSlotsDataDriver())
+                if (!MigrateSlotsDriver())
                 {
                     logger?.LogError($"MigrateSlotsDriver failed");
                     TryRecoverFromFailure();
@@ -107,10 +107,7 @@ namespace Garnet.cluster
                 }
                 #endregion
 
-                //7. Delete keys in slot and remove migrate task from set of active migration tasks.            
-                DeleteKeysInSlot();
-
-                //8. Enqueue success log
+                //7. Enqueue success log
                 Status = MigrateState.SUCCESS;
             }
             catch (Exception ex)

@@ -64,6 +64,12 @@ namespace Garnet.cluster
         public HashSet<int> GetSlots => _sslots;
 
         /// <summary>
+        /// Add key to the migrate dictionary for tracking progress during migration
+        /// </summary>
+        /// <param name="key"></param>
+        public void AddKey(ArgSlice key) => _keys.Add(key, KeyMigrationStatus.QUEUED);
+
+        /// <summary>
         /// Check if it is safe to operate on the provided key when a slot state is set to MIGRATING
         /// </summary>
         /// <param name="slot"></param>
