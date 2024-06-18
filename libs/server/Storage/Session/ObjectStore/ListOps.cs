@@ -47,10 +47,11 @@ namespace Garnet.server
             }
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
-            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var arrKey = key.ToArray();
+            var status = RMWObjectStoreOperation(arrKey, input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.countDone;
-            itemBroker.HandleCollectionUpdate(key.Span.ToArray());
+            itemBroker.HandleCollectionUpdate(arrKey);
             return status;
         }
 

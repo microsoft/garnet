@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Tsavorite.core;
@@ -31,24 +32,17 @@ namespace Garnet.server
         // Mapping of observed keys to queue of observers, by order of subscription
         private Dictionary<byte[], Queue<CollectionItemObserver>> KeysToObservers => keysToObserversLazy.Value;
 
-        // Cancellation token for the main loop
-        private CancellationTokenSource Cts => ctsLazy.Value;
-
-        // Synchronization event for awaiting main loop to finish
-        private ManualResetEventSlim Done => doneLazy.Value;
-
-        private ReaderWriterLockSlim IsStartedLock => isStartedLockLazy.Value;
-        private ReaderWriterLockSlim KeysToObserversLock => keysToObserversLockLazy.Value;
-
         private readonly Lazy<AsyncQueue<BrokerEventBase>> brokerEventsQueueLazy = new();
         private readonly Lazy<ConcurrentDictionary<int, CollectionItemObserver>> sessionIdToObserverLazy = new();
         private readonly Lazy<Dictionary<byte[], Queue<CollectionItemObserver>>> keysToObserversLazy =
             new(() => new Dictionary<byte[], Queue<CollectionItemObserver>>(new ByteArrayComparer()));
 
-        private readonly Lazy<CancellationTokenSource> ctsLazy = new();
-        private readonly Lazy<ManualResetEventSlim> doneLazy = new(() => new ManualResetEventSlim(true));
-        private readonly Lazy<ReaderWriterLockSlim> isStartedLockLazy = new();
-        private readonly Lazy<ReaderWriterLockSlim> keysToObserversLockLazy = new();
+        // Cancellation token for the main loop
+        private readonly CancellationTokenSource cts = new();
+        // Synchronization event for awaiting main loop to finish
+        private readonly ManualResetEventSlim done = new(true);
+        private readonly ReaderWriterLockSlim isStartedLock = new();
+        private readonly ReaderWriterLockSlim keysToObserversLock = new();
 
         private bool disposed = false;
         private bool isStarted = false;
@@ -97,12 +91,12 @@ namespace Garnet.server
             // Check if main loop has started, if not, start the main loop
             if (!isStarted)
             {
-                IsStartedLock.EnterUpgradeableReadLock();
+                isStartedLock.EnterUpgradeableReadLock();
                 try
                 {
                     if (!isStarted)
                     {
-                        IsStartedLock.EnterWriteLock();
+                        isStartedLock.EnterWriteLock();
                         try
                         {
                             _ = Task.Run(Start);
@@ -110,13 +104,13 @@ namespace Garnet.server
                         }
                         finally
                         {
-                            IsStartedLock.ExitWriteLock();
+                            isStartedLock.ExitWriteLock();
                         }
                     }
                 }
                 finally
                 {
-                    IsStartedLock.ExitUpgradeableReadLock();
+                    isStartedLock.ExitUpgradeableReadLock();
                 }
             }
 
@@ -152,27 +146,28 @@ namespace Garnet.server
         internal void HandleCollectionUpdate(byte[] key)
         {
             // Check if main loop is started
-            IsStartedLock.EnterReadLock();
+            isStartedLock.EnterReadLock();
             try
             {
                 if (!isStarted) return;
             }
             finally
             {
-                IsStartedLock.ExitReadLock();
+                isStartedLock.ExitReadLock();
             }
+
 
             // Check if there are any observers to specified key
             if (!KeysToObservers.ContainsKey(key) || KeysToObservers[key].Count == 0)
             {
-                KeysToObserversLock.EnterReadLock();
+                keysToObserversLock.EnterReadLock();
                 try
                 {
                     if (!KeysToObservers.ContainsKey(key) || KeysToObservers[key].Count == 0) return;
                 }
                 finally
                 {
-                    KeysToObserversLock.ExitReadLock();
+                    keysToObserversLock.ExitReadLock();
                 }
             }
 
@@ -219,7 +214,7 @@ namespace Garnet.server
         private void InitializeObserver(CollectionItemObserver observer, byte[][] keys)
         {
             // This lock is for synchronization with incoming collection updated events 
-            KeysToObserversLock.EnterWriteLock();
+            keysToObserversLock.EnterWriteLock();
             try
             {
                 // Iterate over the keys in order, set the observer's result if collection in key contains an item
@@ -248,7 +243,7 @@ namespace Garnet.server
             }
             finally
             {
-                KeysToObserversLock.ExitWriteLock();
+                keysToObserversLock.ExitWriteLock();
             }
         }
 
@@ -530,37 +525,34 @@ namespace Garnet.server
         /// <returns>Task</returns>
         private async Task Start()
         {
-            Task handleNextEvent = default;
             try
             {
                 // Repeat while not disposed or cancelled
-                while (!disposed && !Cts.IsCancellationRequested)
+                while (!disposed && !cts.IsCancellationRequested)
                 {
-                    // Check if current task is done
-                    if (handleNextEvent == null || handleNextEvent.IsCompleted)
+                    // Try to synchronously get the next event
+                    if (!BrokerEventsQueue.TryDequeue(out var nextEvent))
                     {
-                        // Set task to asynchronously dequeue next event in broker's queue
+                        // Asynchronously dequeue next event in broker's queue
                         // once event is dequeued successfully, call handler method
-                        handleNextEvent = BrokerEventsQueue.DequeueAsync(Cts.Token).ContinueWith(t =>
+                        try
                         {
-                            if (t.Status == TaskStatus.RanToCompletion)
-                                HandleBrokerEvent(t.Result);
-                        }, Cts.Token);
+                            nextEvent = await BrokerEventsQueue.DequeueAsync(cts.Token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // Ignored
+                        }
                     }
 
-                    // Wait until the current task completes
-                    try
-                    {
-                        await handleNextEvent;
-                    }
-                    catch (OperationCanceledException)
-                    {
-                    }
+                    if (nextEvent == default) continue;
+
+                    HandleBrokerEvent(nextEvent);
                 }
             }
             finally
             {
-                Done.Set();
+                done.Set();
             }
         }
 
@@ -568,7 +560,7 @@ namespace Garnet.server
         public void Dispose()
         {
             disposed = true;
-            Cts.Cancel();
+            cts.Cancel();
             foreach (var observer in SessionIdToObserver.Values)
             {
                 if (observer.Status == ObserverStatus.WaitingForResult &&
@@ -584,7 +576,7 @@ namespace Garnet.server
                     }
                 }
             }
-            Done.Wait();
+            done.Wait();
         }
     }
 }

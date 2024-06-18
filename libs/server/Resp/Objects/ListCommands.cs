@@ -240,7 +240,8 @@ namespace Garnet.server
                 recvBufferPtr + bytesRead) || !parsed)
                 return false;
 
-            var result = itemBroker.GetCollectionItemAsync(command, keys, this, timeout).Result;
+            var arrKeys = keys.Select(k => k.ToArray()).ToArray();
+            var result = itemBroker.GetCollectionItemAsync(command, arrKeys, this, timeout).Result;
 
             if (!result.Found)
             {
@@ -318,7 +319,7 @@ namespace Garnet.server
                     recvBufferPtr + bytesRead) || !parsed)
                 return false;
 
-            var result = itemBroker.MoveCollectionItemAsync(command, srcKey, this, timeout,
+            var result = itemBroker.MoveCollectionItemAsync(command, srcKey.ToArray(), this, timeout,
                 cmdArgs).Result;
 
             if (!result.Found)
