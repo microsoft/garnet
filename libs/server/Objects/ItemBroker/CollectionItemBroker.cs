@@ -39,7 +39,7 @@ namespace Garnet.server
 
         private ReaderWriterLockSlim IsStartedLock => isStartedLockLazy.Value;
         private ReaderWriterLockSlim KeysToObserversLock => keysToObserversLockLazy.Value;
-        
+
         private readonly Lazy<AsyncQueue<BrokerEventBase>> brokerEventsQueueLazy = new();
         private readonly Lazy<ConcurrentDictionary<int, CollectionItemObserver>> sessionIdToObserverLazy = new();
         private readonly Lazy<Dictionary<byte[], Queue<CollectionItemObserver>>> keysToObserversLazy =
@@ -78,11 +78,11 @@ namespace Garnet.server
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
         /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
-        internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey, 
+        internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey,
             RespServerSession session, double timeoutInSeconds, ArgSlice[] cmdArgs)
         {
-            var observer = new CollectionItemObserver(session, command,cmdArgs);
-            return await this.GetCollectionItemAsync(observer, new [] { srcKey }, timeoutInSeconds);
+            var observer = new CollectionItemObserver(session, command, cmdArgs);
+            return await this.GetCollectionItemAsync(observer, new[] { srcKey }, timeoutInSeconds);
         }
 
         private async Task<CollectionItemResult> GetCollectionItemAsync(CollectionItemObserver observer, byte[][] keys,

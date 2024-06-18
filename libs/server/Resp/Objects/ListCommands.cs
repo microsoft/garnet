@@ -273,7 +273,7 @@ namespace Garnet.server
             }
 
             ArgSlice srcKey = default;
-            var cmdArgs = new ArgSlice[] {default, default, default};
+            var cmdArgs = new ArgSlice[] { default, default, default };
 
             // Read source key
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref srcKey.ptr, ref srcKey.length, ref ptr, recvBufferPtr + bytesRead))
