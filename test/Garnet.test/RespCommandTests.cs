@@ -165,22 +165,58 @@ namespace Garnet.test
         /// Test COMMAND INFO [command-name [command-name ...]]
         /// </summary>
         [Test]
-        public void CommandInfoWithCommandNamesTest()
+        [TestCase(new object[] { "GET", "SET", "COSCAN" })]
+        [TestCase(new object[] { "get", "set", "coscan" })]
+        public void CommandInfoWithCommandNamesTest(params string[] commands)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
+            var args = new object[] { "INFO" }.Union(commands).ToArray();
+
             // Get basic commands using COMMAND INFO command
-            var results = (RedisResult[])db.Execute("COMMAND", "INFO", "GET", "SET");
+            var results = (RedisResult[])db.Execute("COMMAND", args);
 
             Assert.IsNotNull(results);
-            Assert.AreEqual(2, results.Length);
+            Assert.AreEqual(commands.Length, results.Length);
 
-            var getInfo = results[0];
-            VerifyCommandInfo("GET", getInfo);
+            for (var i = 0; i < commands.Length; i++)
+            {
+                var info = results[i];
+                VerifyCommandInfo(commands[i], info);
+            }
+        }
 
-            var setInfo = results[1];
-            VerifyCommandInfo("SET", setInfo);
+        /// <summary>
+        /// Test COMMAND INFO with custom commands
+        /// </summary>
+        [Test]
+        [TestCase(new object[] { "SETIFPM", "MYDICTSET", "MGETIFPM", "READWRITETX", "MYDICTGET" })]
+        [TestCase(new object[] { "setifpm", "mydictset", "mgetifpm", "readwritetx", "mydictget" })]
+        public void CommandInfoWithCustomCommandNamesTest(params string[] commands)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Register custom commands
+            RegisterCustomCommands();
+
+            // Dynamically register custom commands
+            DynamicallyRegisterCustomCommands(db);
+
+            var args = new object[] { "INFO" }.Union(commands).ToArray();
+
+            // Get basic commands using COMMAND INFO command
+            var results = (RedisResult[])db.Execute("COMMAND", args);
+
+            Assert.IsNotNull(results);
+            Assert.AreEqual(commands.Length, results.Length);
+
+            for (var i = 0; i < commands.Length; i++)
+            {
+                var info = results[i];
+                VerifyCommandInfo(commands[i], info);
+            }
         }
 
         private string[] RegisterCustomCommands()
