@@ -444,7 +444,6 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.COMMAND => NetworkCOMMAND(ptr, parseState.count),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(ptr, parseState.count),
-                RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(ptr, parseState.count),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(ptr, parseState.count),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)

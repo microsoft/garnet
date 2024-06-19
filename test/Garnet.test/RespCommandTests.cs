@@ -139,24 +139,6 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Test COMMAND DOCS command
-        /// This is not yet implemented, yet it should return an empty array
-        /// so to not crash clients that use this command at initialization
-        /// </summary>
-        [Test]
-        public void CommandDocsTest()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            // Get all commands using COMMAND INFO command
-            var results = (RedisResult[])db.Execute("COMMAND", "DOCS");
-
-            Assert.IsNotNull(results);
-            Assert.IsEmpty(results);
-        }
-
-        /// <summary>
         /// Test COMMAND with unknown subcommand
         /// </summary>
         [Test]
