@@ -1017,7 +1017,7 @@ namespace Garnet.test.cluster
             const string ClusterUserName = "cluster-user";
             const string ClusterPassword = "cluster-password";
 
-            // setup a cluster (mimicing the style in which this bug was first found)
+            // Setup a cluster (mimicking the style in which this bug was first found)
             ServerCredential clusterCreds = new(ClusterUserName, ClusterPassword, IsAdmin: true, UsedForClusterAuth: true, IsClearText: true);
             ServerCredential userCreds = new(UserName, Password, IsAdmin: true, UsedForClusterAuth: false, IsClearText: true);
 
@@ -1037,7 +1037,7 @@ namespace Garnet.test.cluster
             using var replicaConnection = ConnectionMultiplexer.Connect($"{replicaEndpoint.Address}:{replicaEndpoint.Port},user={UserName},password={Password}");
             var replicaServer = replicaConnection.GetServer(replicaEndpoint);
 
-            // try to replicate from a server that doesn't exist
+            // Try to replicate from a server that doesn't exist
             var exc = Assert.Throws<RedisServerException>(() => replicaServer.Execute("CLUSTER", ["REPLICATE", Guid.NewGuid().ToString()], flags: CommandFlags.NoRedirect));
             Assert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
         }

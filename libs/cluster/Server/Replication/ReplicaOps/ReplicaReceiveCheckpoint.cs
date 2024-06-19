@@ -40,25 +40,28 @@ namespace Garnet.cluster
 
             try
             {
-                // TODO: ensure two replicate commands do not execute at once
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeid);
 
-                // TryAddReplica will set the recovering boolean
-                if (clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, out errorMessage))
-                {
-                    // Wait for threads to agree
-                    session.UnsafeWaitForConfigTransition();
+                if (!clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, out errorMessage, logger: logger))
+                    return false;
 
-                    // Resetting here to decide later when to sync from
-                    clusterProvider.replicationManager.ReplicationOffset = 0;
-                    return clusterProvider.replicationManager.TryReplicateFromPrimary(out errorMessage, background);
-                }
+                // Ensure configuration change is visible before proceeding
+                session.UnsafeWaitForConfigTransition();
+
+                // Resetting here to decide later when to sync from
+                clusterProvider.replicationManager.ReplicationOffset = 0;
+                return clusterProvider.replicationManager.TryReplicateFromPrimary(out errorMessage, background);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, $"{nameof(TryBeginReplicate)}");
+                SuspendRecovery();
+                return false;
             }
             finally
             {
                 replicateLock.WriteUnlock();
             }
-            return false;
         }
 
         /// <summary>
