@@ -213,9 +213,6 @@ namespace Garnet.server
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
             var end = input + length;
-            var count = 0;
-
-            _output->result1 = int.MinValue;
 
             // read min
             if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamSpan, ref input_currptr, end))
@@ -229,12 +226,12 @@ namespace Garnet.server
             if (!TryParseParameter(minParamSpan, out var minValue, out var minExclusive) ||
                 !TryParseParameter(maxParamSpan, out var maxValue, out var maxExclusive))
             {
-                count = int.MaxValue;
+                _output->result1 = int.MaxValue;
                 return;
             }
 
             // get the elements within the score range and write the result
-            count = 0;
+            var count = 0;
             if (sortedSet.Count > 0)
             {
                 foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))

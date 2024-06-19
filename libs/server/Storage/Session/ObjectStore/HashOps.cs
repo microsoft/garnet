@@ -274,7 +274,7 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
-            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, key);
+            var input = scratchBufferManager.FormatScratchAsResp(ObjectInputHeader.Size, field);
 
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)input.ptr;

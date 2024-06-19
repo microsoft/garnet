@@ -146,7 +146,6 @@ namespace Garnet.server
             var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            int count = _input->arg1;
             *_output = default;
 
             byte* startptr = input + sizeof(ObjectInputHeader);

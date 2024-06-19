@@ -578,8 +578,6 @@ namespace Garnet.server
                             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT, ref dcurr, dend))
                                 SendAndReset();
                         }
-                        else if (output.result1 == int.MinValue)  // command partially executed
-                            return false;
                         else
                             while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                                 SendAndReset();
