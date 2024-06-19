@@ -104,12 +104,13 @@ namespace Garnet.test.cluster
             bool useAcl = false,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
-            AadAuthenticationSettings authenticationSettings = null)
+            AadAuthenticationSettings authenticationSettings = null,
+            bool disablePubSub = true)
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
                 TestFolder,
-                disablePubSub: true,
+                disablePubSub: disablePubSub,
                 disableObjects: disableObjects,
                 endpoints: endpoints,
                 enableAOF: enableAOF,
