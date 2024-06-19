@@ -49,15 +49,16 @@ namespace Garnet.server
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref ptr, end))
                     return;
 
-                _output->result1++;
-
                 if (parsed)
                 {
                     var memberArray = member.ToArray();
                     if (!sortedSetDict.TryGetValue(memberArray, out var _scoreStored))
                     {
                         sortedSetDict.Add(memberArray, score);
-                        sortedSet.Add((score, memberArray));
+                        if (sortedSet.Add((score, memberArray)))
+                        {
+                            _output->result1++;
+                        }
 
                         this.UpdateSize(member);
                     }
@@ -663,13 +664,12 @@ namespace Garnet.server
             PopMinOrMaxCount(input, ref output, SortedSetOperation.ZPOPMIN);
         }
 
-        private void SortedSetRandomMember(byte* input, int length, ref SpanByteAndMemory output)
+        private void SortedSetRandomMember(byte* input, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
 
-            // Highest bit of arg1 is used to indicate if WITHSCORES is present
-            int count = _input->arg1 & 0x7FFFFFFF;
-            bool withScores = (_input->arg1 & 0x80000000) != 0;
+            int count = _input->arg1;
+            bool withScores = _input->arg2 == 1;
 
             if (count > 0 && count > sortedSet.Count)
                 count = sortedSet.Count;
@@ -684,10 +684,10 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
+                // The count parameter can have a negative value, but the array length can't
                 var arrayLength = Math.Abs(withScores ? count * 2 : count);
                 if (arrayLength > 1)
                 {
-                    // The count parameter can have a negative value, but the array length can't
                     while (!RespWriteUtils.WriteArrayLength(arrayLength, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
@@ -723,10 +723,8 @@ namespace Garnet.server
                     }
                 }
 
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = 0;
+                // Write count done into output footer
                 _output.result1 = count;
-                _output.opsDone = count;
             }
             finally
             {
@@ -854,9 +852,7 @@ namespace Garnet.server
                     }
                 }
 
-                _output.bytesDone = (int)(input_currptr - input_startptr);
                 _output.result1 = _input->arg1;
-                _output.opsDone = 1;
             }
             finally
             {

@@ -75,8 +75,7 @@ namespace Garnet.server
                     currentNode = nextNode;
                 }
             }
-            _output->bytesDone = (int)(ptr - startptr);
-            _output->opsDone = removedCount;
+            _output->result1 = removedCount;
         }
 
         private void ListInsert(byte* input, int length, byte* output)
@@ -108,7 +107,7 @@ namespace Garnet.server
 
                 var insertBefore = position.SequenceEqual(CmdStrings.BEFORE);
 
-                _output->opsDone = -1;
+                _output->result1 = -1;
 
                 // find the first ocurrence of the pivot element
                 var currentNode = list.First;
@@ -122,17 +121,12 @@ namespace Garnet.server
                             list.AddAfter(currentNode, item);
 
                         this.UpdateSize(item);
-                        _output->opsDone = list.Count;
+                        _output->result1 = list.Count;
                         break;
                     }
                 }
                 while ((currentNode = currentNode.Next) != null);
-
-                _output->result1 = _output->opsDone;
             }
-
-            // Write bytes parsed from input and count done, into output footer
-            _output->bytesDone = (int)(ptr - startptr);
         }
 
         private void ListIndex(byte* input, ref SpanByteAndMemory output)
@@ -148,7 +142,7 @@ namespace Garnet.server
             byte[] item = default;
 
             ObjectOutputHeader _output = default;
-            _output.opsDone = -1;
+            _output.result1 = -1;
             try
             {
                 var index = _input->arg1 < 0 ? list.Count + _input->arg1 : _input->arg1;
@@ -157,14 +151,11 @@ namespace Garnet.server
                 {
                     while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    _output.opsDone = 1;
+                    _output.result1 = 1;
                 }
             }
             finally
             {
-                _output.result1 = _output.opsDone;
-                _output.bytesDone = 0;
-
                 while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
@@ -319,7 +310,7 @@ namespace Garnet.server
 
                 this.UpdateSize(value);
             }
-            _output->result1 = count;
+            _output->result1 = list.Count;
         }
 
         private void ListPop(byte* input, ref SpanByteAndMemory output, bool fDelAtHead)

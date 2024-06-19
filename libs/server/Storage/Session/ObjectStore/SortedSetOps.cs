@@ -39,11 +39,10 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.SortedSetOp = SortedSetOperation.ZADD;
             rmwInput->arg1 = 1;
-            rmwInput->done = 0;
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            zaddCount = output.opsDone;
+            zaddCount = output.result1;
             return status;
         }
 
@@ -71,7 +70,6 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.SortedSetOp = SortedSetOperation.ZADD;
             rmwInput->arg1 = inputs.Length;
-            rmwInput->done = 0;
 
             int inputLength = sizeof(ObjectInputHeader);
             foreach (var (score, member) in inputs)
@@ -83,7 +81,7 @@ namespace Garnet.server
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
-            zaddCount = output.opsDone;
+            zaddCount = output.result1;
             return status;
         }
 
@@ -113,11 +111,10 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.SortedSetOp = SortedSetOperation.ZREM;
             rmwInput->arg1 = 1;
-            rmwInput->done = 0;
 
             var status = RMWObjectStoreOperation(key, _inputSlice, out var output, ref objectStoreContext);
 
-            zremCount = output.opsDone;
+            zremCount = output.result1;
             return status;
         }
 
@@ -145,7 +142,6 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.SortedSetOp = SortedSetOperation.ZREM;
             rmwInput->arg1 = members.Length;
-            rmwInput->done = 0;
 
             var inputLength = sizeof(ObjectInputHeader);
             foreach (var member in members)
@@ -157,7 +153,7 @@ namespace Garnet.server
 
             var status = RMWObjectStoreOperation(key, input, out var output, ref objectStoreContext);
 
-            zremCount = output.opsDone;
+            zremCount = output.result1;
             return status;
         }
 
@@ -197,10 +193,9 @@ namespace Garnet.server
                     rmwInput->header.flags = 0;
                     rmwInput->header.SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX;
                     rmwInput->arg1 = 3;
-                    rmwInput->done = 0;
 
                     status = RMWObjectStoreOperation(key.ToArray(), _inputSlice, out var output, ref objectStoreContext);
-                    countRemoved = output.opsDone;
+                    countRemoved = output.result1;
                 }
             }
 
@@ -243,10 +238,9 @@ namespace Garnet.server
                     rmwInput->header.flags = 0;
                     rmwInput->header.SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE;
                     rmwInput->arg1 = 3;
-                    rmwInput->done = 0;
 
                     status = RMWObjectStoreOperation(key.ToArray(), _inputSlice, out var output, ref objectStoreContext);
-                    countRemoved = output.opsDone;
+                    countRemoved = output.result1;
                 }
             }
 
@@ -289,10 +283,9 @@ namespace Garnet.server
                     rmwInput->header.flags = 0;
                     rmwInput->header.SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK;
                     rmwInput->arg1 = 3;
-                    rmwInput->done = 0;
 
                     status = RMWObjectStoreOperation(key.ToArray(), _inputSlice, out var output, ref objectStoreContext);
-                    countRemoved = output.opsDone;
+                    countRemoved = output.result1;
                 }
             }
 
@@ -324,7 +317,6 @@ namespace Garnet.server
             inputPtr->header.flags = 0;
             inputPtr->header.SortedSetOp = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX;
             inputPtr->arg1 = count;
-            inputPtr->done = 0;
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
 
@@ -371,7 +363,6 @@ namespace Garnet.server
                 rmwInput->header.flags = 0;
                 rmwInput->header.SortedSetOp = SortedSetOperation.ZINCRBY;
                 rmwInput->arg1 = 3;
-                rmwInput->done = 0;
 
                 var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
                 status = RMWObjectStoreOperationWithOutput(key.ToArray(), _inputSlice, ref objectStoreContext, ref outputFooter);
@@ -415,11 +406,10 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.SortedSetOp = SortedSetOperation.ZCARD;
             rmwInput->arg1 = 1;
-            rmwInput->done = 0;
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out ObjectOutputHeader output, ref objectStoreContext);
 
-            zcardCount = output.opsDone;
+            zcardCount = output.result1;
             return status;
         }
 
@@ -479,7 +469,6 @@ namespace Garnet.server
             inputPtr->header.flags = 0;
             inputPtr->header.SortedSetOp = sortedOperation;
             inputPtr->arg1 = 2 + (operation != default ? 1 : 0) + (sortedOperation != SortedSetOperation.ZREVRANGE && reverse ? 1 : 0) + (limit != default ? 3 : 0);
-            inputPtr->done = 0;
 
             var inputLength = sizeof(ObjectInputHeader);
 
@@ -644,7 +633,7 @@ namespace Garnet.server
 
             // Number of tokens in the input after the header (match, value, count, value)
             ((ObjectInputHeader*)rmwInput)->arg1 = 4;
-            ((ObjectInputHeader*)rmwInput)->done = (int)cursor;
+            ((ObjectInputHeader*)rmwInput)->arg2 = (int)cursor;
             rmwInput += ObjectInputHeader.Size;
 
             // Object Input Limit
@@ -709,7 +698,6 @@ namespace Garnet.server
             rawInput->header.flags = 0;
             rawInput->header.SortedSetOp = reverse ? SortedSetOperation.ZREVRANK : SortedSetOperation.ZRANK;
             rawInput->arg1 = 1;
-            rawInput->done = 0;
 
             const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
             var outputContainer = stackalloc byte[outputContainerSize];

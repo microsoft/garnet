@@ -990,8 +990,7 @@ namespace Garnet.server
                 inputPtr->header.flags = 0;
                 inputPtr->header.SortedSetOp = SortedSetOperation.ZRANDMEMBER;
                 inputPtr->arg1 = count == 1 ? 1 : paramCount;
-                // set the highest bit of integer if include with scores
-                if (includeWithScores) inputPtr->arg1 |= 1 << 31;
+                inputPtr->arg2 = includeWithScores ? 1 : 0;
 
                 GarnetStatus status = GarnetStatus.NOTFOUND;
                 GarnetObjectStoreOutput outputFooter = default;

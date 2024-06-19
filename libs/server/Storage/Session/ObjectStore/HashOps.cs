@@ -44,11 +44,9 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = nx ? HashOperation.HSETNX : HashOperation.HSET;
             rmwInput->arg1 = 1;
-            rmwInput->done = 0;
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
-
-            itemsDoneCount = output.opsDone;
+            itemsDoneCount = output.result1;
 
             return status;
         }
@@ -78,7 +76,6 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HSET;
             rmwInput->arg1 = elements.Length;
-            rmwInput->done = 0;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
             int inputLength = sizeof(ObjectInputHeader);
@@ -91,7 +88,7 @@ namespace Garnet.server
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
-            itemsDoneCount = output.opsDone;
+            itemsDoneCount = output.result1;
 
             return status;
         }
@@ -133,7 +130,6 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HDEL;
             rmwInput->arg1 = fields.Length;
-            rmwInput->done = 0;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
             int inputLength = sizeof(ObjectInputHeader);
@@ -146,7 +142,7 @@ namespace Garnet.server
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
             var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
-            itemsDoneCount = output.opsDone;
+            itemsDoneCount = output.result1;
 
             return status;
         }
@@ -204,7 +200,6 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = fields == default ? HashOperation.HGETALL : HashOperation.HGET;
             rmwInput->arg1 = fields == default ? 0 : fields.Length;
-            rmwInput->done = 0;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
             int inputLength = sizeof(ObjectInputHeader);
@@ -255,7 +250,6 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HLEN;
             rmwInput->arg1 = 1;
-            rmwInput->done = 0;
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
@@ -288,7 +282,6 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HEXISTS;
             rmwInput->arg1 = 1;
-            rmwInput->done = 0;
 
             var status = ReadObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
 
@@ -319,7 +312,6 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HRANDFIELD;
             rmwInput->arg1 = 2;
-            rmwInput->done = 0;
 
             int inputLength = sizeof(ObjectInputHeader);
 
@@ -362,7 +354,6 @@ namespace Garnet.server
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HRANDFIELD;
             rmwInput->arg1 = 4;
-            rmwInput->done = 0;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
             int inputLength = sizeof(ObjectInputHeader);
@@ -432,7 +423,7 @@ namespace Garnet.server
 
             // Number of tokens in the input after the header (match, value, count, value)
             ((ObjectInputHeader*)rmwInput)->arg1 = 4;
-            ((ObjectInputHeader*)rmwInput)->done = (int)cursor;
+            ((ObjectInputHeader*)rmwInput)->arg2 = (int)cursor;
             rmwInput += ObjectInputHeader.Size;
 
             // Object Input Limit

@@ -60,14 +60,12 @@ namespace Garnet.server
             inputPtr->header.flags = 0;
             inputPtr->header.ListOp = lop;
             inputPtr->arg1 = inputCount;
-            inputPtr->done = listItemsDoneCount;
 
             var input = new ArgSlice((byte*)inputPtr, inputLength);
 
             ObjectOutputHeader output;
-            output = default;
 
-            var status = GarnetStatus.OK;
+            GarnetStatus status;
 
             if (command == RespCommand.LPUSH || command == RespCommand.LPUSHX)
                 status = storageApi.ListLeftPush(sskey, input, out output);
@@ -77,13 +75,6 @@ namespace Garnet.server
             // Restore input buffer
             *inputPtr = save;
 
-            listItemsDoneCount += output.result1;
-            listOpsCount += output.opsDone;
-
-            // Return if command is only partially done
-            if (output.result1 == Int32.MinValue && listOpsCount < inputCount)
-                return false;
-
             if (status == GarnetStatus.WRONGTYPE)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
@@ -92,12 +83,9 @@ namespace Garnet.server
             else
             {
                 // Write result to output
-                while (!RespWriteUtils.WriteInteger(listItemsDoneCount, ref dcurr, dend))
+                while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                     SendAndReset();
             }
-
-            // Reset session counters
-            listItemsDoneCount = listOpsCount = 0;
 
             // Move head
             readHead = (int)(ptr - recvBufferPtr);
@@ -161,10 +149,9 @@ namespace Garnet.server
             inputPtr->header.type = GarnetObjectType.List;
             inputPtr->header.flags = 0;
             inputPtr->header.ListOp = lop;
-            inputPtr->done = 0;
             inputPtr->arg1 = popCount;
 
-            GarnetStatus statusOp = GarnetStatus.NOTFOUND;
+            GarnetStatus statusOp;
 
             if (command == RespCommand.LPOP)
                 statusOp = storageApi.ListLeftPop(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
@@ -179,7 +166,6 @@ namespace Garnet.server
                 case GarnetStatus.OK:
                     //process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                    ptr += objOutputHeader.bytesDone;
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
@@ -237,7 +223,6 @@ namespace Garnet.server
                 inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LLEN;
                 inputPtr->arg1 = count;
-                inputPtr->done = 0;
 
                 var status = storageApi.ListLength(key, new ArgSlice((byte*)inputPtr, inputLength), out var output);
 
@@ -317,7 +302,7 @@ namespace Garnet.server
                 inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LTRIM;
                 inputPtr->arg1 = start;
-                inputPtr->done = stop;
+                inputPtr->arg2 = stop;
 
                 var status = storageApi.ListTrim(key, new ArgSlice((byte*)inputPtr, inputLength));
 
@@ -392,7 +377,7 @@ namespace Garnet.server
                 inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LRANGE;
                 inputPtr->arg1 = start;
-                inputPtr->done = end;
+                inputPtr->arg2 = end;
 
                 var statusOp = storageApi.ListRange(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
 
@@ -403,8 +388,7 @@ namespace Garnet.server
                 {
                     case GarnetStatus.OK:
                         //process output
-                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        ptr += objOutputHeader.bytesDone;
+                        ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                         break;
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
@@ -468,7 +452,6 @@ namespace Garnet.server
                 inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LINDEX;
                 inputPtr->arg1 = index;
-                inputPtr->done = 0;
 
                 var statusOp = storageApi.ListIndex(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
 
@@ -482,8 +465,7 @@ namespace Garnet.server
                     case GarnetStatus.OK:
                         //process output
                         var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        ptr += objOutputHeader.bytesDone;
-                        if (objOutputHeader.opsDone == -1)
+                        if (objOutputHeader.result1 == -1)
                             error = CmdStrings.RESP_ERRNOTFOUND;
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -547,20 +529,12 @@ namespace Garnet.server
                 inputPtr->header.type = GarnetObjectType.List;
                 inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LINSERT;
-                inputPtr->done = 0;
                 inputPtr->arg1 = 0;
 
                 var statusOp = storageApi.ListInsert(key, new ArgSlice((byte*)inputPtr, inputLength), out var output);
 
                 // Restore input buffer
                 *inputPtr = save;
-
-                if (statusOp != GarnetStatus.OK)
-                {
-                    var tokens = ReadLeftToken(count - 1, ref ptr);
-                    if (tokens < count - 1)
-                        return false;
-                }
 
                 switch (statusOp)
                 {
@@ -569,8 +543,7 @@ namespace Garnet.server
                         if (output.result1 == int.MinValue)
                             return false;
                         //process output
-                        ptr += output.bytesDone;
-                        while (!RespWriteUtils.WriteInteger(output.opsDone, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -646,8 +619,7 @@ namespace Garnet.server
                         if (output.result1 == int.MinValue)
                             return false;
                         //process output
-                        ptr += output.bytesDone;
-                        while (!RespWriteUtils.WriteInteger(output.opsDone, ref dcurr, dend))
+                        while (!RespWriteUtils.WriteInteger(output.result1, ref dcurr, dend))
                             SendAndReset();
                         break;
                     case GarnetStatus.NOTFOUND:
@@ -859,7 +831,6 @@ namespace Garnet.server
                 inputPtr->header.flags = 0;
                 inputPtr->header.ListOp = ListOperation.LSET;
                 inputPtr->arg1 = 0;
-                inputPtr->done = 0;
 
                 // Prepare GarnetObjectStore output
                 var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
@@ -869,19 +840,11 @@ namespace Garnet.server
                 //restore input
                 *inputPtr = save;
 
-                if (statusOp != GarnetStatus.OK)
-                {
-                    var tokens = ReadLeftToken(count - 1, ref ptr);
-                    if (tokens < count - 1)
-                        return false;
-                }
-
                 switch (statusOp)
                 {
                     case GarnetStatus.OK:
                         //process output
-                        var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        ptr += objOutputHeader.bytesDone;
+                        ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                         break;
                     case GarnetStatus.NOTFOUND:
                         while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))

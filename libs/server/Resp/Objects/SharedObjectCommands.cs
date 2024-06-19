@@ -49,7 +49,6 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_CURSORVALUE, ref dcurr, dend))
                     SendAndReset();
-                ReadLeftToken(count - 1, ref ptr);
                 return true;
             }
 
@@ -94,7 +93,7 @@ namespace Garnet.server
             (*(ObjectInputHeader*)(pcurr)).arg1 = count - 2;
 
             // Cursor value
-            (*(ObjectInputHeader*)(pcurr)).done = cursorValue;
+            (*(ObjectInputHeader*)(pcurr)).arg2 = cursorValue;
             pcurr += ObjectInputHeader.Size;
 
             // Object Input Limit
@@ -112,22 +111,14 @@ namespace Garnet.server
             *inputPtr = save;
             *ptrToInt = savePtrToInt;
 
-            if (status != GarnetStatus.OK)
-            {
-                var tokens = ReadLeftToken(count - 2, ref ptr);
-                if (tokens < count - 2)
-                    return false;
-            }
-
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process output
                     var objOutputHeader = ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
                     // Validation for partial input reading or error
-                    if (objOutputHeader.result1 == Int32.MinValue)
+                    if (objOutputHeader.result1 == int.MinValue)
                         return false;
-                    ptr += objOutputHeader.bytesDone;
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.WriteScanOutputHeader(0, ref dcurr, dend))
