@@ -72,6 +72,7 @@ namespace Garnet.test.Resp.ACL
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> allInfo), "Couldn't load all command details");
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
+            // TODO: See if these commands could be identified programmatically
             IEnumerable<string> withOnlySubCommands = ["ACL", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 

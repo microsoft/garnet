@@ -12,6 +12,9 @@ namespace Garnet.server.Module
 {
     /// <summary>
     /// Abstract base class that all Garnet modules must inherit from.
+    /// The module must have a parameterless constructor.
+    /// NOTE: This is a feature that is under development.
+    /// If taking a dependency on this, please be prepared for breaking changes.
     /// </summary>
     public abstract class ModuleBase
     {
