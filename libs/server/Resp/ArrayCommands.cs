@@ -6,12 +6,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Text;
 using Garnet.common;
 using Garnet.server.Custom;
-using Garnet.server.Module;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -167,52 +164,6 @@ namespace Garnet.server
             return true;
         }
 
-        private bool LoadAssemblies(IEnumerable<string> binaryPaths, out IEnumerable<Assembly> loadedAssemblies, out ReadOnlySpan<byte> errorMessage)
-        {
-            loadedAssemblies = null;
-            errorMessage = default;
-
-            // Get all binary file paths from inputs binary paths
-            if (!FileUtils.TryGetFiles(binaryPaths, out var files, out _, [".dll", ".exe"],
-                    SearchOption.AllDirectories))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_BINARY_FILES;
-                return false;
-            }
-
-            // Check that all binary files are contained in allowed binary paths
-            var binaryFiles = files.ToArray();
-            if (binaryFiles.Any(f =>
-                    storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(f, p))))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_BINARY_FILES_NOT_IN_ALLOWED_PATHS;
-                return false;
-            }
-
-            // Get all assemblies from binary files
-            if (!FileUtils.TryLoadAssemblies(binaryFiles, out loadedAssemblies, out _))
-            {
-                errorMessage = CmdStrings.RESP_ERR_GENERIC_LOADING_ASSEMBLIES;
-                return false;
-            }
-
-            // If necessary, check that all assemblies are digitally signed
-            if (!storeWrapper.serverOptions.ExtensionAllowUnsignedAssemblies)
-            {
-                foreach (var loadedAssembly in loadedAssemblies)
-                {
-                    var publicKey = loadedAssembly.GetName().GetPublicKey();
-                    if (publicKey == null || publicKey.Length == 0)
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_ASSEMBLY_NOT_SIGNED;
-                        return false;
-                    }
-                }
-            }
-
-            return true;
-        }
-
         /// <summary>
         /// Register all custom commands / transactions
         /// </summary>
@@ -339,174 +290,6 @@ namespace Garnet.server
             // If any assembly was not loaded correctly, return an error
 
             // If any directory was not enumerated correctly, return an error
-        }
-
-        /// <summary>
-        /// REGISTERCS - Registers one or more custom commands / transactions
-        /// </summary>
-        private bool NetworkRegisterCs(int count, byte* ptr, CustomCommandManager customCommandManager)
-        {
-            var leftTokens = count;
-            var readPathsOnly = false;
-            var optionalParamsRead = 0;
-
-            var binaryPaths = new HashSet<string>();
-            string cmdInfoPath = default;
-
-            // Custom class name to arguments read from each sub-command
-            var classNameToRegisterArgs = new Dictionary<string, List<RegisterArgsBase>>();
-
-            ReadOnlySpan<byte> errorMsg = null;
-
-            if (leftTokens < 6)
-                errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
-
-            // Parse the REGISTERCS command - list of registration sub-commands
-            // followed by an optional path to JSON file containing an array of RespCommandsInfo objects,
-            // followed by a list of paths to binary files / folders
-            // Syntax - REGISTERCS cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...]
-            // [INFO path] SRC path [path ...]
-            RegisterArgsBase args = null;
-
-            while (leftTokens > 0)
-            {
-                // Read first token of current sub-command or path
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var tokenSpan, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                leftTokens--;
-
-                // Check if first token defines the start of a new sub-command (cmdType) or a path
-                if (!readPathsOnly && (tokenSpan.SequenceEqual(CmdStrings.READ) ||
-                                       tokenSpan.SequenceEqual(CmdStrings.read)))
-                {
-                    args = new RegisterCmdArgs { CommandType = CommandType.Read };
-                }
-                else if (!readPathsOnly && (tokenSpan.SequenceEqual(CmdStrings.READMODIFYWRITE) ||
-                                            tokenSpan.SequenceEqual(CmdStrings.readmodifywrite) ||
-                                            tokenSpan.SequenceEqual(CmdStrings.RMW) ||
-                                            tokenSpan.SequenceEqual(CmdStrings.rmw)))
-                {
-                    args = new RegisterCmdArgs { CommandType = CommandType.ReadModifyWrite };
-                }
-                else if (!readPathsOnly && (tokenSpan.SequenceEqual(CmdStrings.TRANSACTION) ||
-                                            tokenSpan.SequenceEqual(CmdStrings.transaction) ||
-                                            tokenSpan.SequenceEqual(CmdStrings.TXN) ||
-                                            tokenSpan.SequenceEqual(CmdStrings.txn)))
-                {
-                    args = new RegisterTxnArgs();
-                }
-                else if (tokenSpan.SequenceEqual(CmdStrings.INFO) ||
-                         tokenSpan.SequenceEqual(CmdStrings.info))
-                {
-                    // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
-                    if (classNameToRegisterArgs.Count == 0 || leftTokens == 0)
-                    {
-                        errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
-                        break;
-                    }
-
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out cmdInfoPath, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
-
-                    leftTokens--;
-                    continue;
-                }
-                else if (readPathsOnly || (tokenSpan.SequenceEqual(CmdStrings.SRC) ||
-                                           tokenSpan.SequenceEqual(CmdStrings.src)))
-                {
-                    // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
-                    if (classNameToRegisterArgs.Count == 0)
-                    {
-                        errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
-                        break;
-                    }
-
-                    // Read only binary paths from this point forth
-                    if (readPathsOnly)
-                    {
-                        var path = Encoding.ASCII.GetString(tokenSpan);
-                        binaryPaths.Add(path);
-                    }
-
-                    readPathsOnly = true;
-
-                    continue;
-                }
-                else
-                {
-                    // Check optional parameters for previous sub-command
-                    if (optionalParamsRead == 0 && args is RegisterCmdArgs cmdArgs)
-                    {
-                        var expTicks = NumUtils.BytesToLong(tokenSpan);
-                        cmdArgs.ExpirationTicks = expTicks;
-                        optionalParamsRead++;
-                        continue;
-                    }
-
-                    // Unexpected token
-                    errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
-                    break;
-                }
-
-                optionalParamsRead = 0;
-
-                // At this point we expect at least 6 remaining tokens -
-                // 3 more tokens for command definition + 2 for source definition
-                if (leftTokens < 5)
-                {
-                    errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
-                    break;
-                }
-
-                // Start reading the sub-command arguments
-                // Read custom command name
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var name, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                leftTokens--;
-                args.Name = name;
-
-                // Read custom command number of parameters
-                if (!RespReadUtils.ReadIntWithLengthHeader(out var numParams, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                leftTokens--;
-                args.NumParams = numParams;
-
-                // Read custom command class name
-                if (!RespReadUtils.ReadStringWithLengthHeader(out var className, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                leftTokens--;
-
-                // Add sub-command arguments
-                if (!classNameToRegisterArgs.ContainsKey(className))
-                    classNameToRegisterArgs.Add(className, new List<RegisterArgsBase>());
-
-                classNameToRegisterArgs[className].Add(args);
-            }
-
-            // If ended before reading command, drain tokens not read from pipe
-            while (leftTokens > 0)
-            {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out _, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-                leftTokens--;
-            }
-
-            // If no error is found, continue to try register custom commands in the server
-            if (errorMsg == null &&
-                TryRegisterCustomCommands(binaryPaths, cmdInfoPath, classNameToRegisterArgs, customCommandManager, out errorMsg))
-            {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            readHead = (int)(ptr - recvBufferPtr);
-
-            return true;
         }
 
         /// <summary>
@@ -799,67 +582,6 @@ namespace Garnet.server
             else
             {
                 while (!RespWriteUtils.WriteSimpleString("none"u8, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            readHead = (int)(ptr - recvBufferPtr);
-            return true;
-        }
-
-        private bool NetworkMODULE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi, CustomCommandManager customCommandManager)
-            where TGarnetApi : IGarnetApi
-        {
-            if (count < 1) // At least one subcommand is required
-                return AbortWithWrongNumberOfArguments("MODULE", count);
-
-            // Read sub-command
-            if (!RespReadUtils.TrySliceWithLengthHeader(out var subCommand, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            if (subCommand.SequenceEqual(CmdStrings.LOAD) || subCommand.SequenceEqual(CmdStrings.load))
-            {
-                if (count < 2) // At least module path is required
-                    return AbortWithWrongNumberOfArguments("MODULE LOAD", count);
-
-                // Read path to module file
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var modulePath, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                // Read module args
-                var leftTokens = count - 2;
-                List<string> moduleArgs = [];
-                while (leftTokens > 0)
-                {
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out var arg, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
-                    leftTokens--;
-
-                    moduleArgs.Add(arg);
-                }
-
-                if (LoadAssemblies([Encoding.ASCII.GetString(modulePath)], out var loadedAssemblies, out var errorMsg))
-                {
-                    Debug.Assert(loadedAssemblies != null);
-                    var assembliesList = loadedAssemblies.ToList();
-                    Debug.Assert(assembliesList.Count == 1, "Only one assembly per module load");
-
-                    if (ModuleRegistrar.Instance.LoadModule(customCommandManager, assembliesList[0], moduleArgs, logger, out errorMsg))
-                    {
-                        while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                }
-
-                if (errorMsg != default)
-                {
-                    while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
-            else
-            {
-                // TODO: pending implementation for other module commands support.
-                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                     SendAndReset();
             }
 

@@ -2821,7 +2821,7 @@
     "SubCommands": [
       {
         "Command": "MODULE",
-        "Name": "MODULE|LOAD",
+        "Name": "MODULE|LOADCS",
         "IsInternal": false,
         "Arity": -3,
         "Flags": "Admin, NoAsyncLoading, NoScript",

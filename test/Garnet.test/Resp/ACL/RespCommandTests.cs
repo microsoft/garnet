@@ -3705,7 +3705,7 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ModuleLoadACLs()
+        public void ModuleLoadCSACLs()
         {
             // MODULE isn't a proper redis command, but this is the placeholder today... so validate it for completeness
 
@@ -3718,7 +3718,7 @@ namespace Garnet.test.Resp.ACL
             {
                 try
                 {
-                    server.Execute("MODULE", "LOAD", "nonexisting.dll");
+                    server.Execute("MODULE", "LOADCS", "nonexisting.dll");
 
                     Assert.Fail("Shouldn't succeed using a non-existing binary");
                 }

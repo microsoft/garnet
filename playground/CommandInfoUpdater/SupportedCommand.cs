@@ -162,7 +162,7 @@ namespace CommandInfoUpdater
             new("MIGRATE", RespCommand.MIGRATE),
             new("MODULE", RespCommand.MODULE,
             [
-                 "MODULE|LOAD",
+                 "MODULE|LOADCS",
             ]),
             new ("MONITOR", RespCommand.MONITOR),
             new ("MSET", RespCommand.MSET),

@@ -164,7 +164,7 @@ namespace Garnet.server
 
         MONITOR,
         MODULE,
-        MODULE_LOAD,
+        MODULE_LOADCS,
         REGISTERCS,
 
         MULTI,
@@ -933,10 +933,6 @@ namespace Garnet.server
                                                 }
                                             }
                                         }
-                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("MODULE\r\n"u8))
-                                        {
-                                            return RespCommand.MODULE;
-                                        }
                                         break;
 
                                     case 'R':
@@ -1680,6 +1676,22 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.ASYNC))
             {
                 return RespCommand.ASYNC;
+            }
+            else if (command.SequenceEqual(CmdStrings.MODULE))
+            {
+                Span<byte> subCommand = GetCommand(out var gotSubCommand);
+                if (!gotSubCommand)
+                {
+                    success = false;
+                    return RespCommand.NONE;
+                }
+
+                count--;
+                AsciiUtils.ToUpperInPlace(subCommand);
+                if (subCommand.SequenceEqual(CmdStrings.LOADCS))
+                {
+                    return RespCommand.MODULE_LOADCS;
+                }
             }
             else
             {
