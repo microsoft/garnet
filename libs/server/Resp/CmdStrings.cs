@@ -82,8 +82,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> BARRIER => "BARRIER"u8;
         public static ReadOnlySpan<byte> barrier => "barrier"u8;
         public static ReadOnlySpan<byte> MODULE => "MODULE"u8;
-        public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
-        public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
 
         /// <summary>
         /// Response strings
@@ -205,6 +203,8 @@ namespace Garnet.server
         // subcommand parsing strings
         public static ReadOnlySpan<byte> CAT => "CAT"u8;
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
+        public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
+        public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
         public static ReadOnlySpan<byte> SETUSER => "SETUSER"u8;
         public static ReadOnlySpan<byte> USERS => "USERS"u8;
         public static ReadOnlySpan<byte> WHOAMI => "WHOAMI"u8;

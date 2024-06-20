@@ -10,8 +10,8 @@
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
   </ItemGroup>
 
-	<ItemGroup>
-		<Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="SetIfPM.cs" />
-		<Compile Include="..\..\main\GarnetServer\Extensions\ReadWriteTxn.cs" Link="ReadWriteTxn.cs" />
-	</ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="SetIfPM.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\ReadWriteTxn.cs" Link="ReadWriteTxn.cs" />
+  </ItemGroup>
 </Project>

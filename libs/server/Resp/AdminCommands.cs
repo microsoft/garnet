@@ -803,6 +803,134 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Register all custom commands / transactions
+        /// </summary>
+        /// <param name="binaryPaths">Binary paths from which to load assemblies</param>
+        /// <param name="cmdInfoPath">Path of JSON file containing RespCommandsInfo for custom commands</param>
+        /// <param name="classNameToRegisterArgs">Mapping between class names to register and arguments required for registration</param>
+        /// <param name="customCommandManager">CustomCommandManager instance used to register commands</param>
+        /// <param name="errorMessage">If method returned false, contains ASCII encoded generic error string; otherwise <c>default</c></param>
+        /// <returns>A boolean value indicating whether registration of the custom commands was successful.</returns>
+        private bool TryRegisterCustomCommands(
+            IEnumerable<string> binaryPaths,
+            string cmdInfoPath,
+            Dictionary<string, List<RegisterArgsBase>> classNameToRegisterArgs,
+            CustomCommandManager customCommandManager,
+            out ReadOnlySpan<byte> errorMessage)
+        {
+            errorMessage = default;
+            var classInstances = new Dictionary<string, object>();
+            IReadOnlyDictionary<string, RespCommandsInfo> cmdNameToInfo = new Dictionary<string, RespCommandsInfo>();
+
+            if (cmdInfoPath != null)
+            {
+                // Check command info path, if specified
+                if (!File.Exists(cmdInfoPath))
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_GETTING_CMD_INFO_FILE;
+                    return false;
+                }
+
+                // Check command info path is in allowed paths
+                if (storeWrapper.serverOptions.ExtensionBinPaths.All(p => !FileUtils.IsFileInDirectory(cmdInfoPath, p)))
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CMD_INFO_FILE_NOT_IN_ALLOWED_PATHS;
+                    return false;
+                }
+
+                var streamProvider = StreamProviderFactory.GetStreamProvider(FileLocationType.Local);
+                var commandsInfoProvider = RespCommandsInfoProviderFactory.GetRespCommandsInfoProvider();
+
+                var importSucceeded = commandsInfoProvider.TryImportRespCommandsInfo(cmdInfoPath,
+                    streamProvider, out cmdNameToInfo, logger);
+
+                if (!importSucceeded)
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_MALFORMED_COMMAND_INFO_JSON;
+                    return false;
+                }
+            }
+
+            if (!LoadAssemblies(binaryPaths, out var loadedAssemblies, out errorMessage))
+                return false;
+
+            foreach (var c in classNameToRegisterArgs.Keys)
+            {
+                classInstances.TryAdd(c, null);
+            }
+
+            // Get types from loaded assemblies
+            var loadedTypes = loadedAssemblies
+                .SelectMany(a => a.GetTypes())
+                .Where(t => classInstances.ContainsKey(t.Name)).ToArray();
+
+            // Check that all types implement one of the supported custom command base classes
+            var supportedCustomCommandTypes = RegisterCustomCommandProviderBase.SupportedCustomCommandBaseTypesLazy.Value;
+            if (loadedTypes.Any(t => !supportedCustomCommandTypes.Any(st => st.IsAssignableFrom(t))))
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS;
+                return false;
+            }
+
+            // Check that all types have empty constructors
+            if (loadedTypes.Any(t => t.GetConstructor(Type.EmptyTypes) == null))
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
+                return false;
+            }
+
+            // Instantiate types
+            foreach (var type in loadedTypes)
+            {
+                var instance = Activator.CreateInstance(type);
+                classInstances[type.Name] = instance;
+            }
+
+            // If any class specified in the arguments was not instantiated, return an error
+            if (classNameToRegisterArgs.Keys.Any(c => classInstances[c] == null))
+            {
+                errorMessage = CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
+                return false;
+            }
+
+            // Register each command / transaction using its specified class instance
+            var registerApis = new List<IRegisterCustomCommandProvider>();
+            foreach (var classNameToArgs in classNameToRegisterArgs)
+            {
+                foreach (var args in classNameToArgs.Value)
+                {
+                    // Add command info to register arguments, if exists
+                    if (cmdNameToInfo.ContainsKey(args.Name))
+                    {
+                        args.CommandInfo = cmdNameToInfo[args.Name];
+                    }
+
+                    var registerApi =
+                        RegisterCustomCommandProviderFactory.GetRegisterCustomCommandProvider(classInstances[classNameToArgs.Key], args);
+
+                    if (registerApi == null)
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_REGISTERCS_UNSUPPORTED_CLASS;
+                        return false;
+                    }
+
+                    registerApis.Add(registerApi);
+                }
+            }
+
+            foreach (var registerApi in registerApis)
+            {
+                registerApi.Register(customCommandManager);
+            }
+
+            return true;
+
+            // If any assembly was not loaded correctly, return an error
+
+            // If any directory was not enumerated correctly, return an error
+        }
+
+        /// <summary>
         /// REGISTERCS - Registers one or more custom commands / transactions
         /// </summary>
         private bool NetworkRegisterCs(int count, byte* ptr, CustomCommandManager customCommandManager)
