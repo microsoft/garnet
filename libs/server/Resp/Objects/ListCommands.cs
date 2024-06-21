@@ -200,10 +200,8 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, false))
-            {
+            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: false, firstKeyOffset: 0, lastKeyOffset: parseState.count - 1))
                 return true;
-            }
 
             if (!RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
                 recvBufferPtr + bytesRead) || !parsed)
