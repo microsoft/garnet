@@ -1443,28 +1443,6 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
         }
 
-
-        Task<byte[]> WriteWorkload(IPEndPoint endPoint, byte[] key, int keyLen = 16)
-        {
-            var value = new byte[keyLen];
-            byte[] setValue = null;
-            while (true)
-            {
-                context.clusterTestUtils.RandomBytes(ref value);
-                var status = context.clusterTestUtils.SetKey(endPoint, key, value, out int _slot, out string address, out int port, logger: context.logger);
-
-                if (status == ResponseState.OK)
-                {
-                    setValue ??= new byte[keyLen];
-                    // If succeeded keep track of setValue
-                    value.AsSpan().CopyTo(setValue.AsSpan());
-                }
-                else
-                    // If failed then return last setValue
-                    return Task.FromResult(setValue);
-            }
-        }
-
         [Test, Order(15)]
         [Category("CLUSTER")]
         public void ClusterAllowWritesDuringMigrateTest()
@@ -1570,6 +1548,27 @@ namespace Garnet.test.cluster
                 _value = context.clusterTestUtils.GetKey(endPoint.ToIPEndPoint(), keyExists, out _, out _, out _, out status, logger: context.logger);
                 Assert.AreEqual(ResponseState.OK, status);
                 Assert.AreEqual(newValue, _value);
+            }
+
+            Task<byte[]> WriteWorkload(IPEndPoint endPoint, byte[] key, int keyLen = 16)
+            {
+                var value = new byte[keyLen];
+                byte[] setValue = null;
+                while (true)
+                {
+                    context.clusterTestUtils.RandomBytes(ref value);
+                    var status = context.clusterTestUtils.SetKey(endPoint, key, value, out int _slot, out string address, out int port, logger: context.logger);
+
+                    if (status == ResponseState.OK)
+                    {
+                        setValue ??= new byte[keyLen];
+                        // If succeeded keep track of setValue
+                        value.AsSpan().CopyTo(setValue.AsSpan());
+                    }
+                    else
+                        // If failed then return last setValue
+                        return Task.FromResult(setValue);
+                }
             }
         }
     }
