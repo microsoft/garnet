@@ -104,23 +104,12 @@ namespace Garnet.server
         private bool HyperLogLogLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ArgSlice[] keys = new ArgSlice[count];
-
-            //Read pfmerge dstKey and srckeys
-            for (int i = 0; i < keys.Length; i++)
-            {
-                keys[i] = new();
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-            }
-
-            readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkKeyArraySlotVerify(ref keys, true))
+            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: true))
                 return true;
 
-            //4 byte length of input
-            //1 byte RespCommand
-            //1 byte RespInputFlags
+            // 4 byte length of input
+            // 1 byte RespCommand
+            // 1 byte RespInputFlags
             int inputSize = sizeof(int) + RespInputHeader.Size;
             byte* pbCmdInput = stackalloc byte[inputSize];
 
@@ -130,10 +119,10 @@ namespace Garnet.server
             byte* pcurr = pbCmdInput;
             *(int*)pcurr = inputSize - sizeof(int);
             pcurr += sizeof(int);
-            (*(RespInputHeader*)(pcurr)).cmd = RespCommand.PFCOUNT;
-            (*(RespInputHeader*)(pcurr)).flags = 0;
+            (*(RespInputHeader*)pcurr).cmd = RespCommand.PFCOUNT;
+            (*(RespInputHeader*)pcurr).flags = 0;
 
-            var status = storageApi.HyperLogLogLength(keys, ref Unsafe.AsRef<SpanByte>(pbCmdInput), out long cardinality, out bool error);
+            var status = storageApi.HyperLogLogLength(parseState.Parameters, ref Unsafe.AsRef<SpanByte>(pbCmdInput), out long cardinality, out bool error);
             if (error)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))
@@ -155,22 +144,11 @@ namespace Garnet.server
         private bool HyperLogLogMerge<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            ArgSlice[] keys = new ArgSlice[count];
-
-            //Read pfmerge dstKey and srckeys
-            for (int i = 0; i < keys.Length; i++)
-            {
-                keys[i] = new();
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-            }
-
-            readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkKeyArraySlotVerify(ref keys, false))
+            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: false))
                 return true;
 
-            var status = storageApi.HyperLogLogMerge(keys, out bool error);
-            //Invalid Type
+            var status = storageApi.HyperLogLogMerge(parseState.Parameters, out bool error);
+            // Invalid Type
             if (error)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE_HLL, ref dcurr, dend))

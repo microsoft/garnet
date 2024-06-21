@@ -92,7 +92,7 @@ namespace Garnet.server
             return status;
         }
 
-        public unsafe GarnetStatus StringBitOperation(ArgSlice[] keys, BitmapOperation bitop, out long result)
+        public unsafe GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result)
         {
             var maxBitmapLen = int.MinValue;
             var minBitmapLen = int.MaxValue;

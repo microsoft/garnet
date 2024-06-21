@@ -1100,7 +1100,7 @@ namespace Garnet.server
                             withscoresInclude = true;
                     }
 
-                    if (NetworkKeyArraySlotVerify(ref keys, true))
+                    if (NetworkKeyArraySlotVerify(keys, true))
                     {
                         return true;
                     }

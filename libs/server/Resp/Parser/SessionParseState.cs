@@ -35,6 +35,36 @@ namespace Garnet.server
         ArgSlice* bufferPtr;
 
         /// <summary>
+        /// Whether keys appear in sequence or interleaved (e.g. MSET [k1] [v1])
+        /// </summary>
+        public bool interleavedKeys;
+
+        /// <summary>
+        /// Whether this is a read only command
+        /// </summary>
+        public bool readOnly;
+
+        /// <summary>
+        /// Whether ASKING is enabled for this command
+        /// </summary>
+        public byte sessionAsking;
+
+        /// <summary>
+        /// Offset of first key in the ArgSlice buffer
+        /// </summary>
+        public int firstKeyOffset;
+
+        /// <summary>
+        /// Offset of the last key in the ArgSlice buffer
+        /// </summary>
+        public int lastKeyOffset;
+
+        /// <summary>
+        /// Get a Span of the parsed parameters in the form an ArgSlice
+        /// </summary>
+        public readonly Span<ArgSlice> Parameters => buffer.AsSpan().Slice(0, count);
+
+        /// <summary>
         /// Initialize the parse state at the start of a session
         /// </summary>
         public void Initialize()

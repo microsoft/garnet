@@ -104,7 +104,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
+            if (NetworkKeyArraySlotVerify(keys, true))
             {
                 return true;
             }
@@ -180,7 +180,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
+            if (NetworkKeyArraySlotVerify(keys, true))
             {
                 return true;
             }
@@ -233,7 +233,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
+            if (NetworkKeyArraySlotVerify(keys, true))
             {
                 return true;
             }
@@ -299,7 +299,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
+            if (NetworkKeyArraySlotVerify(keys, true))
             {
                 return true;
             }
@@ -731,7 +731,7 @@ namespace Garnet.server
 
             var keys = new ArgSlice[2] { sourceKey, destinationKey };
 
-            if (NetworkKeyArraySlotVerify(ref keys, false))
+            if (NetworkKeyArraySlotVerify(keys, false))
             {
                 return true;
             }
@@ -903,7 +903,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
+            if (NetworkKeyArraySlotVerify(keys, true))
             {
                 return true;
             }
@@ -966,7 +966,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
+            if (NetworkKeyArraySlotVerify(keys, true))
             {
                 return true;
             }

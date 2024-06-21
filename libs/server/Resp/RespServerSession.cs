@@ -986,8 +986,8 @@ namespace Garnet.server
         /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
         /// <param name="count">Key count if different than keys array length</param>
         /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, int count = -1)
-            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(ref keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
+        bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, int count = -1)
+            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
 
         /// <summary>
         /// Verify if the corresponding command can be served given the status of the slot associated with the parsed keys.
@@ -995,7 +995,14 @@ namespace Garnet.server
         /// <param name="interleavedKeys"></param>
         /// <param name="readOnly"></param>
         /// <returns></returns>
-        bool NetworkMultiKeySlotVerify(bool interleavedKeys, bool readOnly)
-            => clusterSession != null && clusterSession.NetworkMultiKeySlotVerify(parseState, interleavedKeys, readOnly, SessionAsking, ref dcurr, ref dend);
+        bool NetworkMultiKeySlotVerify(bool interleavedKeys, bool readOnly, int firstKeyOffset = 0, int lastKeyOffset = -1)
+        {
+            parseState.interleavedKeys = interleavedKeys;
+            parseState.readOnly = readOnly;
+            parseState.sessionAsking = SessionAsking;
+            parseState.firstKeyOffset = firstKeyOffset;
+            parseState.lastKeyOffset = lastKeyOffset == -1 ? parseState.count : lastKeyOffset;
+            return clusterSession != null && clusterSession.NetworkMultiKeySlotVerify(parseState, ref dcurr, ref dend);
+        }
     }
 }

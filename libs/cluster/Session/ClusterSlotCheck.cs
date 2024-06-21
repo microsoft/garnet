@@ -114,7 +114,7 @@ namespace Garnet.cluster
         /// <param name="dend"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
+        public bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
@@ -129,13 +129,13 @@ namespace Garnet.cluster
             return true;
         }
 
-        public unsafe bool NetworkMultiKeySlotVerify(SessionParseState parser, bool interleaved, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend)
+        public unsafe bool NetworkMultiKeySlotVerify(SessionParseState parser, ref byte* dcurr, ref byte* dend)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, parser, interleaved, readOnly, sessionAsking);
+            var vres = MultiKeySlotVerify(config, parser);
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;

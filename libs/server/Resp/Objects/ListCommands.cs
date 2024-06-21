@@ -903,13 +903,10 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             garnetStatus = GarnetStatus.OK;
-            var keys = new[] { sourceKey, destinationKey };
             node = null;
 
-            if (NetworkKeyArraySlotVerify(ref keys, false))
-            {
+            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: true, firstKeyOffset: 0, lastKeyOffset: 2))
                 return true;
-            }
 
             garnetStatus =
                 storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);

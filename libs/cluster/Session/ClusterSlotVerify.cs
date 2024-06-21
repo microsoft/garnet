@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Threading;
 using Garnet.server;
 
@@ -128,7 +129,7 @@ namespace Garnet.cluster
             }
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref ArgSlice[] keys, bool readOnly, byte sessionAsking, int count)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<ArgSlice> keys, bool readOnly, byte sessionAsking, int count)
         {
             var _end = count < 0 ? keys.Length : count;
             var slot = ArgSliceUtils.HashSlot(keys[0]);
@@ -151,18 +152,18 @@ namespace Garnet.cluster
             return verifyResult;
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, SessionParseState parser, bool interleaved, bool readOnly, byte sessionAsking)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, SessionParseState parser)
         {
-            var key = parser.GetArgSliceByRef(0);
+            var key = parser.GetArgSliceByRef(parser.firstKeyOffset);
             var slot = ArgSliceUtils.HashSlot(key);
-            var verifyResult = SingleKeySlotVerify(config, key, readOnly, sessionAsking);
-            var stride = interleaved ? 2 : 1;
+            var verifyResult = SingleKeySlotVerify(config, key, parser.readOnly, parser.sessionAsking);
+            var stride = parser.firstKeyOffset + (parser.interleavedKeys ? 2 : 1);
 
-            for (var i = stride; i < parser.count; i += stride)
+            for (var i = stride; i < parser.lastKeyOffset; i += stride)
             {
                 key = parser.GetArgSliceByRef(i);
                 var _slot = ArgSliceUtils.HashSlot(key);
-                var _verifyResult = SingleKeySlotVerify(config, key, readOnly, sessionAsking);
+                var _verifyResult = SingleKeySlotVerify(config, key, parser.readOnly, parser.sessionAsking);
 
                 // Check if slot changes between keys
                 if (_slot != slot)

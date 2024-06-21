@@ -52,11 +52,6 @@ namespace Garnet.server
         unsafe bool CheckSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking);
 
         /// <summary>
-        /// Key array slot verify (write result to network)
-        /// </summary>
-        unsafe bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
-
-        /// <summary>
         /// Single key slot verify (write result to network)
         /// </summary>
         unsafe bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
@@ -67,16 +62,18 @@ namespace Garnet.server
         unsafe bool NetworkSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
+        /// Key array slot verify (write result to network)
+        /// </summary>
+        unsafe bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
+
+        /// <summary>
         /// Array slot verify (write result to network)
         /// </summary>
         /// <param name="parser"></param>
-        /// <param name="interleaved"></param>
-        /// <param name="readOnly"></param>
-        /// <param name="sessionAsking"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
         /// <returns></returns>
-        unsafe bool NetworkMultiKeySlotVerify(SessionParseState parser, bool interleaved, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend);
+        unsafe bool NetworkMultiKeySlotVerify(SessionParseState parser, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
         /// Sets the user currently authenticated in this session (used for permission checks)
