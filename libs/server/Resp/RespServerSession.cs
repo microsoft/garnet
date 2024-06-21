@@ -346,6 +346,7 @@ namespace Garnet.server
                             RespCommand.EXEC => NetworkEXEC(),
                             RespCommand.MULTI => NetworkMULTI(),
                             RespCommand.DISCARD => NetworkDISCARD(),
+                            RespCommand.QUIT => NetworkQUIT(),
                             _ => NetworkSKIP(cmd),
                         };
                     }

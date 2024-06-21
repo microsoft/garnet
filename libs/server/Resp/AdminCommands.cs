@@ -351,10 +351,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.QUIT)
             {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
-
-                toDispose = true;
+                return NetworkQUIT();
             }
             else if (command == RespCommand.SAVE)
             {
