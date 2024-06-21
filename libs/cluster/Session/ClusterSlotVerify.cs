@@ -40,13 +40,13 @@ namespace Garnet.cluster
         /// <param name="SessionAsking"></param>
         /// <returns>True if key maps to slot not owned by current node otherwise false.</returns>
         public bool CheckSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking)
-            => SingleKeySlotVerify(keySlice, readOnly, SessionAsking).state == SlotVerifiedState.OK;
-
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking)
         {
             var config = clusterProvider.clusterManager.CurrentConfig;
-            return readOnly ? SingleKeyReadSlotVerify(config, keySlice, SessionAsking) : SingleKeyReadWriteSlotVerify(config, keySlice, SessionAsking);
+            return SingleKeySlotVerify(config, keySlice, readOnly, SessionAsking).state == SlotVerifiedState.OK;
         }
+
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ClusterConfig config, ArgSlice keySlice, bool readOnly, byte SessionAsking)
+            => readOnly ? SingleKeyReadSlotVerify(config, keySlice, SessionAsking) : SingleKeyReadWriteSlotVerify(config, keySlice, SessionAsking);
 
         private ClusterSlotVerificationResult SingleKeyReadSlotVerify(ClusterConfig config, ArgSlice keySlice, byte SessionAsking, int slot = -1)
         {
@@ -129,53 +129,12 @@ namespace Garnet.cluster
             }
         }
 
-        static ClusterSlotVerificationResult ArrayCrosslotVerify(int keyCount, ref byte* ptr, byte* endPtr, bool interleavedKeys, out bool retVal, out byte* keyPtr, out int ksize)
-        {
-            retVal = false;
-            var crossSlot = false;
-            keyPtr = null;
-            ksize = 0;
-
-            byte* valPtr = null;
-            var vsize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, endPtr))
-                return new(SlotVerifiedState.OK, 0);
-
-            // Skip value if key values are interleaved
-            if (interleavedKeys)
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, endPtr))
-                    return new(SlotVerifiedState.OK, 0);
-
-            var slot = HashSlotUtils.HashSlot(keyPtr, ksize);
-
-            for (var c = 1; c < keyCount; c++)
-            {
-                keyPtr = null;
-                ksize = 0;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, endPtr))
-                    return new(SlotVerifiedState.OK, slot);
-
-                // Skip value if key values are interleaved
-                if (interleavedKeys)
-                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, endPtr))
-                        return new(SlotVerifiedState.OK, 0);
-
-                var _slot = HashSlotUtils.HashSlot(keyPtr, ksize);
-                crossSlot |= (_slot != slot);
-            }
-
-            retVal = true;
-            return crossSlot ? new(SlotVerifiedState.CROSSLOT, slot) : new(SlotVerifiedState.OK, slot);
-        }
-
         ClusterSlotVerificationResult KeyArraySlotVerify(ClusterConfig config, int keyCount, ref byte* ptr, byte* endPtr, bool readOnly, bool interleavedKeys, byte SessionAsking, out bool retVal)
         {
             var vres = ArrayCrosslotVerify(keyCount, ref ptr, endPtr, interleavedKeys, out retVal, out byte* keyPtr, out int ksize);
             if (!retVal) return new(SlotVerifiedState.OK, 0);
 
-            if (vres.state == SlotVerifiedState.CROSSLOT)
+            if (vres.state == SlotVerifiedState.CROSSSLOT)
                 return vres;
             else
             {
@@ -183,42 +142,70 @@ namespace Garnet.cluster
                     ? SingleKeyReadSlotVerify(config, new ArgSlice(keyPtr, ksize), SessionAsking, vres.slot)
                     : SingleKeyReadWriteSlotVerify(config, new ArgSlice(keyPtr, ksize), SessionAsking, vres.slot);
             }
+
+            static ClusterSlotVerificationResult ArrayCrosslotVerify(int keyCount, ref byte* ptr, byte* endPtr, bool interleavedKeys, out bool retVal, out byte* keyPtr, out int ksize)
+            {
+                retVal = false;
+                var crossSlot = false;
+                keyPtr = null;
+                ksize = 0;
+
+                byte* valPtr = null;
+                var vsize = 0;
+
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, endPtr))
+                    return new(SlotVerifiedState.OK, 0);
+
+                // Skip value if key values are interleaved
+                if (interleavedKeys)
+                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, endPtr))
+                        return new(SlotVerifiedState.OK, 0);
+
+                var slot = HashSlotUtils.HashSlot(keyPtr, ksize);
+
+                for (var c = 1; c < keyCount; c++)
+                {
+                    keyPtr = null;
+                    ksize = 0;
+
+                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, endPtr))
+                        return new(SlotVerifiedState.OK, slot);
+
+                    // Skip value if key values are interleaved
+                    if (interleavedKeys)
+                        if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, endPtr))
+                            return new(SlotVerifiedState.OK, 0);
+
+                    var _slot = HashSlotUtils.HashSlot(keyPtr, ksize);
+                    crossSlot |= (_slot != slot);
+                }
+
+                retVal = true;
+                return crossSlot ? new(SlotVerifiedState.CROSSSLOT, slot) : new(SlotVerifiedState.OK, slot);
+            }
         }
 
-        static ClusterSlotVerificationResult ArrayCrossSlotVerify(ref ArgSlice[] keys, int count)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref ArgSlice[] keys, bool readOnly, byte sessionAsking, int count)
         {
-            var _offset = 0;
             var _end = count < 0 ? keys.Length : count;
+            var slot = ArgSliceUtils.HashSlot(keys[0]);
+            var verifyResult = SingleKeySlotVerify(config, keys[0], readOnly, sessionAsking);
 
-            var slot = ArgSliceUtils.HashSlot(keys[_offset]);
-            var crossSlot = false;
-            for (var i = _offset; i < _end; i++)
+            for (var i = 1; i < _end; i++)
             {
                 var _slot = ArgSliceUtils.HashSlot(keys[i]);
+                var _verifyResult = SingleKeySlotVerify(config, keys[i], readOnly, sessionAsking);
 
+                // Check if slot changes between keys
                 if (_slot != slot)
-                {
-                    crossSlot = true;
-                    break;
-                }
+                    return new(SlotVerifiedState.CROSSSLOT, slot);
+
+                // Check if state of key changes
+                if (_verifyResult.state != verifyResult.state)
+                    return new(SlotVerifiedState.TRYAGAIN, slot);
             }
 
-            return crossSlot
-                ? new(SlotVerifiedState.CROSSLOT, slot)
-                : new(SlotVerifiedState.OK, slot);
-        }
-
-        ClusterSlotVerificationResult KeyArraySlotVerify(ClusterConfig config, ref ArgSlice[] keys, bool readOnly, byte SessionAsking, int count)
-        {
-            var vres = ArrayCrossSlotVerify(ref keys, count);
-            if (vres.state == SlotVerifiedState.CROSSLOT)
-                return vres;
-            else
-            {
-                return readOnly
-                    ? SingleKeyReadSlotVerify(config, keys[0], SessionAsking, vres.slot)
-                    : SingleKeyReadWriteSlotVerify(config, keys[0], SessionAsking, vres.slot);
-            }
+            return verifyResult;
         }
     }
 }

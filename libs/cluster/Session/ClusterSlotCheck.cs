@@ -55,8 +55,11 @@ namespace Garnet.cluster
                     (address, port) = config.AskEndpointFromSlot(slot);
                     errorMessage = Encoding.ASCII.GetBytes($"ASK {slot} {address}:{port}");
                     break;
-                case SlotVerifiedState.CROSSLOT:
-                    errorMessage = CmdStrings.RESP_ERR_CROSSLOT;
+                case SlotVerifiedState.CROSSSLOT:
+                    errorMessage = CmdStrings.RESP_ERR_CROSSSLOT;
+                    break;
+                case SlotVerifiedState.TRYAGAIN:
+                    errorMessage = CmdStrings.RESP_ERR_TRYAGAIN;
                     break;
                 default:
                     throw new Exception($"Unknown SlotVerifiedState {state}");
@@ -137,18 +140,18 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="readOnly"></param>
-        /// <param name="SessionAsking"></param>
+        /// <param name="sessionAsking"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
+        public bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = KeyArraySlotVerify(config, ref keys, readOnly, SessionAsking, count);
+            var vres = MultiKeySlotVerify(config, ref keys, readOnly, sessionAsking, count);
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;
