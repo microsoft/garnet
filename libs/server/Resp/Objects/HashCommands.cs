@@ -95,110 +95,313 @@ namespace Garnet.server
             return true;
         }
 
+
         /// <summary>
-        /// HashGet: Returns the value associated with field in the hash stored at key.
-        /// HashGetAll: Returns all fields and values of the hash stored at key.
-        /// HashGetMultiple: Returns the values associated with the specified fields in the hash stored at key.
-        /// HashRandomField: Returns a random field from the hash value stored at key.
+        /// Returns the value associated with field in the hash stored at key.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
         /// <param name="count"></param>
         /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private unsafe bool HashGet<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool HashGet<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if ((command == RespCommand.HGETALL && count != 1) ||
-                (command == RespCommand.HRANDFIELD && count < 1) ||
-                (command == RespCommand.HGET && count != 2) ||
-                (command == RespCommand.HMGET && count < 2))
-            {
+            if (count != 2)
                 return AbortWithWrongNumberOfArguments(command.ToString(), count);
-            }
-            else
+
+            // Get the hash key
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, true))
             {
-                // Get the key for Hash
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-
-                if (NetworkSingleKeySlotVerify(key, true))
-                {
-                    return true;
-                }
-
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
-
-                // Save old values on buffer for possible revert
-                var save = *inputPtr;
-
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
-
-                HashOperation op =
-                    command switch
-                    {
-                        RespCommand.HGET => HashOperation.HGET,
-                        RespCommand.HMGET => HashOperation.HMGET,
-                        RespCommand.HGETALL => HashOperation.HGETALL,
-                        RespCommand.HRANDFIELD => HashOperation.HRANDFIELD,
-                        _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
-                    };
-
-                int inputCount = command == RespCommand.HGETALL ? 0 : (command == RespCommand.HRANDFIELD ? count + 1 : count - 1);
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.Hash;
-                inputPtr->header.flags = 0;
-                inputPtr->header.HashOp = op;
-                inputPtr->arg1 = inputCount;
-
-                // Prepare GarnetObjectStore output
-                var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-
-                GarnetStatus status;
-
-                var includeCountParameter = false;
-                if (command == RespCommand.HRANDFIELD)
-                {
-                    includeCountParameter = inputPtr->arg1 > 2; // 4 tokens are: command key count WITHVALUES
-                    status = storageApi.HashRandomField(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-                }
-                else
-                    status = storageApi.HashGet(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-
-                // Reset input buffer
-                *inputPtr = save;
-
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        if (command == RespCommand.HMGET && count - 1 >= 1)
-                        {
-                            // HMGET key field [field ...]
-                            // Write an empty array of count - 1 elements with null values.
-                            while (!RespWriteUtils.WriteArrayWithNullElements(count - 1, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else if (command != RespCommand.HMGET)
-                        {
-                            var respBytes = (includeCountParameter || command == RespCommand.HGETALL) ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
-                            while (!RespWriteUtils.WriteDirect(respBytes, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+                return true;
             }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save old values on buffer for possible revert
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.Hash;
+            inputPtr->header.flags = 0;
+            inputPtr->header.HashOp = HashOperation.HGET;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.HashGet(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Reset input buffer
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
             return true;
         }
 
+        /// <summary>
+        /// Returns all fields and values of the hash stored at key.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private bool HashGetAll<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count != 1)
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+
+            // Get the hash key
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, true))
+            {
+                return true;
+            }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save old values on buffer for possible revert
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.Hash;
+            inputPtr->header.flags = 0;
+            inputPtr->header.HashOp = HashOperation.HGETALL;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.HashGetAll(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Reset input buffer
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// HashGetMultiple: Returns the values associated with the specified fields in the hash stored at key.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private bool HashGetMultiple<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count < 2)
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+
+            // Get the hash key
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, true))
+            {
+                return true;
+            }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save old values on buffer for possible revert
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.Hash;
+            inputPtr->header.flags = 0;
+            inputPtr->header.HashOp = HashOperation.HMGET;
+            inputPtr->arg1 = count - 1;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = storageApi.HashGetMultiple(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+
+            // Reset input buffer
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    // Write an empty array of count - 1 elements with null values.
+                    while (!RespWriteUtils.WriteArrayWithNullElements(count - 1, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// HashRandomField: Returns a random field from the hash value stored at key.
+        /// </summary>
+        /// <typeparam name="TGarnetApi"></typeparam>
+        /// <param name="command"></param>
+        /// <param name="count"></param>
+        /// <param name="ptr"></param>
+        /// <param name="storageApi"></param>
+        /// <returns></returns>
+        private bool HashRandomField<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count < 1 || count > 3)
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+
+            // Get the hash key
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, true))
+            {
+                return true;
+            }
+
+            var paramCount = 1;
+            var withValues = false;
+            var includedCount = false;
+
+            if (count >= 2)
+            {
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var countBytes, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+
+                if (!NumUtils.TryParse(countBytes, out paramCount))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                includedCount = true;
+
+                // Read WITHVALUES
+                if (count == 3)
+                {
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var withValuesBytes, ref ptr, recvBufferPtr + bytesRead))
+                        return false;
+
+                    if (!withValuesBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHVALUES))
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
+                    }
+
+                    withValues = true;
+                }
+            }
+
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+
+            // Save old values on buffer for possible revert
+            var save = *inputPtr;
+
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+
+            // Create a random seed
+            var seed = RandomGen.Next();
+
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.Hash;
+            inputPtr->header.flags = 0;
+            inputPtr->header.HashOp = HashOperation.HRANDFIELD;
+            inputPtr->arg1 = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (withValues ? 1 : 0);
+            inputPtr->arg2 = seed;
+
+            // Prepare GarnetObjectStore output
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+
+            var status = GarnetStatus.NOTFOUND;
+
+            // This prevents going to the backend if HRANDFIELD is called with a count of 0
+            if (paramCount != 0)
+            {
+                // Prepare GarnetObjectStore output
+                outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+                status = storageApi.HashRandomField(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+            }
+
+            // Reset input buffer
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    var respBytes = includedCount ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
+                    while (!RespWriteUtils.WriteDirect(respBytes, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+            }
+
+            return true;
+        }
         /// <summary>
         /// Returns the number of fields contained in the hash key.
         /// </summary>

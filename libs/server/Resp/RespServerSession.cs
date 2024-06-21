@@ -130,6 +130,8 @@ namespace Garnet.server
         /// </summary>
         string clientName = null;
 
+        private static readonly Random RandomGen = new();
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
@@ -544,8 +546,8 @@ namespace Garnet.server
                 RespCommand.HSET => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HGET => HashGet(cmd, count, ptr, ref storageApi),
-                RespCommand.HMGET => HashGet(cmd, count, ptr, ref storageApi),
-                RespCommand.HGETALL => HashGet(cmd, count, ptr, ref storageApi),
+                RespCommand.HMGET => HashGetMultiple(cmd, count, ptr, ref storageApi),
+                RespCommand.HGETALL => HashGetAll(cmd, count, ptr, ref storageApi),
                 RespCommand.HDEL => HashDelete(count, ptr, ref storageApi),
                 RespCommand.HLEN => HashLength(count, ptr, ref storageApi),
                 RespCommand.HSTRLEN => HashStrLength(count, ptr, ref storageApi),
@@ -555,7 +557,7 @@ namespace Garnet.server
                 RespCommand.HINCRBY => HashIncrement(cmd, count, ptr, ref storageApi),
                 RespCommand.HINCRBYFLOAT => HashIncrement(cmd, count, ptr, ref storageApi),
                 RespCommand.HSETNX => HashSet(cmd, count, ptr, ref storageApi),
-                RespCommand.HRANDFIELD => HashGet(cmd, count, ptr, ref storageApi),
+                RespCommand.HRANDFIELD => HashRandomField(cmd, count, ptr, ref storageApi),
                 RespCommand.HSCAN => ObjectScan(count, ptr, GarnetObjectType.Hash, ref storageApi),
                 // Set Commands
                 RespCommand.SADD => SetAdd(count, ptr, ref storageApi),

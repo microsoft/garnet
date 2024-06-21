@@ -220,18 +220,16 @@ namespace Garnet.server
             }
         }
 
-        private void SetRandomMember(byte* input, int length, ref SpanByteAndMemory output)
+        private void SetRandomMember(byte* input, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
-            int count = _input->arg1;
+            var count = _input->arg1;
+            var seed = _input->arg2;
 
-            byte* input_startptr = input + sizeof(ObjectInputHeader);
-            byte* input_currptr = input_startptr;
-
-            int countDone = 0;
-            bool isMemory = false;
+            var countDone = 0;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;
@@ -248,7 +246,7 @@ namespace Garnet.server
                     var countParameter = count > set.Count ? set.Count : count;
 
                     // The order of fields in the reply is not truly random
-                    indexes = Enumerable.Range(0, set.Count).OrderBy(x => Guid.NewGuid()).Take(countParameter).ToArray();
+                    indexes = RandomUtils.PickKRandomIndexes(set.Count, countParameter, seed);
 
                     // Write the size of the array reply
                     while (!RespWriteUtils.WriteArrayLength(countParameter, ref curr, end))
@@ -268,7 +266,7 @@ namespace Garnet.server
                     // Return a single random element from the set
                     if (set.Count > 0)
                     {
-                        int index = RandomNumberGenerator.GetInt32(0, set.Count);
+                        var index = RandomUtils.PickRandomIndex(set.Count, seed);
                         var item = set.ElementAt(index);
                         while (!RespWriteUtils.WriteBulkString(item, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
@@ -284,13 +282,9 @@ namespace Garnet.server
                 else // count < 0
                 {
                     // Return an array with potentially duplicate elements
-                    int countParameter = Math.Abs(count);
+                    var countParameter = Math.Abs(count);
 
-                    indexes = new int[countParameter];
-                    for (int i = 0; i < countParameter; i++)
-                    {
-                        indexes[i] = RandomNumberGenerator.GetInt32(0, set.Count);
-                    }
+                    indexes = RandomUtils.PickKRandomIndexes(set.Count, countParameter, seed, false);
 
                     if (set.Count > 0)
                     {

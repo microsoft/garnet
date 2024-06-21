@@ -941,84 +941,99 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments("ZRANDMEMBER", count);
             }
-            else
-            {
-                // Get the key for the Sorted Set
-                if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
 
-                if (NetworkSingleKeySlotVerify(key, true))
+            // Get the key for the Sorted Set
+            if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(key, true))
+            {
+                return true;
+            }
+
+            var paramCount = 1;
+            var includeWithScores = false;
+            var includedCount = false;
+
+            if (count >= 2)
+            {
+                // Read count
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var countBytes, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+                
+                if (!NumUtils.TryParse(countBytes, out paramCount))
                 {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
                     return true;
                 }
 
-                var paramCount = 0;
-                bool includeWithScores = false;
-                bool includedCount = false;
+                includedCount = true;
 
-                if (count >= 2)
+                // Read withscores
+                if (count == 3)
                 {
-                    // Read count
-                    if (!RespReadUtils.ReadIntWithLengthHeader(out paramCount, ref ptr, recvBufferPtr + bytesRead))
+                    if (!RespReadUtils.TrySliceWithLengthHeader(out var withScoreBytes, ref ptr, recvBufferPtr + bytesRead))
                         return false;
 
-                    includedCount = true;
-
-                    // Read withscores
-                    if (count == 3)
+                    if (!withScoreBytes.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHSCORES))
                     {
-                        if (!RespReadUtils.TrySliceWithLengthHeader(out var withScoreBytes, ref ptr, recvBufferPtr + bytesRead))
-                            return false;
-
-                        includeWithScores = withScoreBytes.SequenceEqual("WITHSCORES"u8);
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
                     }
+
+                    includeWithScores = true;
                 }
+            }
 
-                // Prepare input
-                var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
+            // Prepare input
+            var inputPtr = (ObjectInputHeader*)(ptr - sizeof(ObjectInputHeader));
 
-                // Save input buffer
-                var save = *inputPtr;
+            // Save input buffer
+            var save = *inputPtr;
 
-                // Prepare length of header in input buffer
-                var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
+            // Prepare length of header in input buffer
+            var inputLength = (int)(recvBufferPtr + bytesRead - (byte*)inputPtr);
 
-                // Prepare header in input buffer
-                inputPtr->header.type = GarnetObjectType.SortedSet;
-                inputPtr->header.flags = 0;
-                inputPtr->header.SortedSetOp = SortedSetOperation.ZRANDMEMBER;
-                inputPtr->arg1 = count == 1 ? 1 : paramCount;
-                inputPtr->arg2 = includeWithScores ? 1 : 0;
+            // Create a random seed
+            var seed = RandomGen.Next();
 
-                GarnetStatus status = GarnetStatus.NOTFOUND;
-                GarnetObjectStoreOutput outputFooter = default;
+            // Prepare header in input buffer
+            inputPtr->header.type = GarnetObjectType.SortedSet;
+            inputPtr->header.flags = 0;
+            inputPtr->header.SortedSetOp = SortedSetOperation.ZRANDMEMBER;
+            inputPtr->arg1 = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0);
+            inputPtr->arg2 = seed;
 
-                // This prevents going to the backend if ZRANDMEMBER is called with a count of 0
-                if (inputPtr->arg1 != 0)
-                {
-                    // Prepare GarnetObjectStore output
-                    outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
-                    status = storageApi.SortedSetRandomMember(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
-                }
+            var status = GarnetStatus.NOTFOUND;
+            GarnetObjectStoreOutput outputFooter = default;
 
-                // Restore input buffer
-                *inputPtr = save;
+            // This prevents going to the backend if ZRANDMEMBER is called with a count of 0
+            if (paramCount != 0)
+            {
+                // Prepare GarnetObjectStore output
+                outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
+                status = storageApi.SortedSetRandomMember(key, new ArgSlice((byte*)inputPtr, inputLength), ref outputFooter);
+            }
 
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        var respBytes = includedCount ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
-                        while (!RespWriteUtils.WriteDirect(respBytes, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                    case GarnetStatus.WRONGTYPE:
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                            SendAndReset();
-                        break;
-                }
+            // Restore input buffer
+            *inputPtr = save;
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    ProcessOutputWithHeader(outputFooter.spanByteAndMemory);
+                    break;
+                case GarnetStatus.NOTFOUND:
+                    var respBytes = includedCount ? CmdStrings.RESP_EMPTYLIST : CmdStrings.RESP_ERRNOTFOUND;
+                    while (!RespWriteUtils.WriteDirect(respBytes, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                        SendAndReset();
+                    break;
             }
             return true;
         }

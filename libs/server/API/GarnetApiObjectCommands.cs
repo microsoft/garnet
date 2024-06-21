@@ -384,6 +384,14 @@ namespace Garnet.server
         => storageSession.HashGet(key, input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
+        public GarnetStatus HashGetAll(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashGetAll(key, input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus HashGetMultiple(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+            => storageSession.HashGetMultiple(key, input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
         public GarnetStatus HashLength(ArgSlice key, out int count)
         => storageSession.HashLength(key, out count, ref objectContext);
 
@@ -413,7 +421,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus HashRandomField(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
-            => storageSession.HashGet(key, input, ref outputFooter, ref objectContext);
+            => storageSession.HashRandomField(key, input, ref outputFooter, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashDelete(byte[] key, ArgSlice input, out ObjectOutputHeader output)

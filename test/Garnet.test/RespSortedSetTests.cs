@@ -1596,7 +1596,6 @@ namespace Garnet.test
         [Test]
         public async Task CanUseZRandMemberWithSE()
         {
-
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -1611,15 +1610,54 @@ namespace Garnet.test
             var randMember = await db.SortedSetRandomMemberAsync(key);
             Assert.True(Array.Exists(powOfTwo, element => element.Element.Equals(randMember)));
 
+            // Check ZRANDMEMBER with wrong number of arguments
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("ZRANDMEMBER", key, 3, "WITHSCORES", "bla"));
+            var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.ZRANDMEMBER));
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
+            // Check ZRANDMEMBER with non-numeric count
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZRANDMEMBER", key, "bla"));
+            expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
+            // Check ZRANDMEMBER with syntax error
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZRANDMEMBER", key, 3, "withscore"));
+            expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_SYNTAX_ERROR);
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
             //ZRANDMEMBER count
             var randMemberArray = await db.SortedSetRandomMembersAsync(key, 5);
             Assert.AreEqual(5, randMemberArray.Length);
+            Assert.AreEqual(5, randMemberArray.Distinct().Count());
+            foreach (var member in randMemberArray)
+            {
+                var match = powOfTwo.FirstOrDefault(pt => pt.Element == member);
+                Assert.IsNotNull(match);
+            }
+
             randMemberArray = await db.SortedSetRandomMembersAsync(key, 15);
             Assert.AreEqual(10, randMemberArray.Length);
+            Assert.AreEqual(10, randMemberArray.Distinct().Count());
+            foreach (var member in randMemberArray)
+            {
+                var match = powOfTwo.FirstOrDefault(pt => pt.Element == member);
+                Assert.IsNotNull(match);
+            }
+
             randMemberArray = await db.SortedSetRandomMembersAsync(key, -5);
             Assert.AreEqual(5, randMemberArray.Length);
+
             randMemberArray = await db.SortedSetRandomMembersAsync(key, -15);
             Assert.AreEqual(15, randMemberArray.Length);
+            Assert.GreaterOrEqual(10, randMemberArray.Distinct().Count());
+            foreach (var member in randMemberArray)
+            {
+                var match = powOfTwo.FirstOrDefault(pt => pt.Element == member);
+                Assert.IsNotNull(match);
+            }
 
             //ZRANDMEMBER [count [WITHSCORES]]
             var randMemberArray2 = await db.SortedSetRandomMembersWithScoresAsync(key, 2);

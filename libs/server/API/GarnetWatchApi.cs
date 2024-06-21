@@ -354,6 +354,18 @@ namespace Garnet.server
             return garnetApi.HashGet(key, input, ref outputFooter);
         }
 
+        public GarnetStatus HashGetAll(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.HashGetAll(key, input, ref outputFooter);
+        }
+
+        public GarnetStatus HashGetMultiple(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
+        {
+            garnetApi.WATCH(key, StoreType.Object);
+            return garnetApi.HashGetMultiple(key, input, ref outputFooter);
+        }
+
         /// <inheritdoc />
         public GarnetStatus HashStrLength(byte[] key, ArgSlice input, out ObjectOutputHeader output)
         {

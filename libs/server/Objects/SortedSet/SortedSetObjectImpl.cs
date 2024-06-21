@@ -665,15 +665,17 @@ namespace Garnet.server
         {
             var _input = (ObjectInputHeader*)input;
 
-            int count = _input->arg1;
-            bool withScores = _input->arg2 == 1;
+            var count = _input->arg1 >> 2;
+            var withScores = (_input->arg1 & 1) == 1;
+            var includedCount = ((_input->arg1 >> 1) & 1) == 1;
+            var seed = _input->arg2;
 
             if (count > 0 && count > sortedSet.Count)
                 count = sortedSet.Count;
 
-            bool isMemory = false;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;
@@ -683,28 +685,13 @@ namespace Garnet.server
             {
                 // The count parameter can have a negative value, but the array length can't
                 var arrayLength = Math.Abs(withScores ? count * 2 : count);
-                if (arrayLength > 1)
+                if (arrayLength > 1 || (arrayLength == 1 && includedCount))
                 {
                     while (!RespWriteUtils.WriteArrayLength(arrayLength, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
 
-                int[] indexes = default;
-
-                if (count > 0)
-                {
-                    // The order of fields in the reply is not truly random
-                    indexes = new HashSet<int>(Enumerable.Range(0, sortedSetDict.Count).OrderBy(x => Guid.NewGuid()).Take(count)).ToArray();
-                }
-                else
-                {
-                    // Repeating fields are possible.
-                    // Exactly count fields, or an empty array is returned
-                    // The order of fields in the reply is truly random.
-                    indexes = new int[Math.Abs(count)];
-                    for (int i = 0; i < indexes.Length; i++)
-                        indexes[i] = RandomNumberGenerator.GetInt32(0, sortedSetDict.Count);
-                }
+                var indexes = RandomUtils.PickKRandomIndexes(sortedSetDict.Count, Math.Abs(count), seed, count > 0);
 
                 foreach (var item in indexes)
                 {

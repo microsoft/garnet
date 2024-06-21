@@ -797,13 +797,16 @@ namespace Garnet.server
             // Prepare length of header in input buffer
             var inputLength = sizeof(ObjectInputHeader);
 
+            // Create a random seed
+            var seed = RandomGen.Next();
+
             // Prepare header in input buffer
             inputPtr->header.type = GarnetObjectType.Set;
             inputPtr->header.flags = 0;
             inputPtr->header.SetOp = SetOperation.SRANDMEMBER;
-            inputPtr->arg1 = Int32.MinValue;
+            inputPtr->arg1 = int.MinValue;
+            inputPtr->arg2 = seed;
 
-            int countParameter = 0;
             if (count == 2)
             {
                 // Get the value for the count parameter
@@ -811,7 +814,7 @@ namespace Garnet.server
                     return false;
 
                 // Prepare response
-                if (!NumUtils.TryParse(countParameterBytes, out countParameter))
+                if (!NumUtils.TryParse(countParameterBytes, out int countParameter))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -823,7 +826,8 @@ namespace Garnet.server
                     readHead = (int)(ptr - recvBufferPtr);
                     return true;
                 }
-                else if (countParameter == 0)
+
+                if (countParameter == 0)
                 {
                     while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                         SendAndReset();

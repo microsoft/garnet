@@ -1326,16 +1326,31 @@ namespace Garnet.server
         GarnetStatus HashGet(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values);
 
         /// <summary>
-        /// HashGet: Returns the value associated with field in the hash stored at key.
-        /// HashGetAll: Returns all fields and values of the hash stored at key.
-        /// HashGetMultiple: Returns the values associated with the specified fields in the hash stored at key.
-        /// HashRandomField: Returns a random field from the hash value stored at key.
+        /// Returns the value associated with field in the hash stored at key.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input">The metadata input for the operation</param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus HashGet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Returns all fields and values of the hash stored at key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input">The metadata input for the operation</param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus HashGetAll(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Returns the values associated with the specified fields in the hash stored at key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input">The metadata input for the operation</param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus HashGetMultiple(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns ALL the values in the hash stored at key.

@@ -33,15 +33,12 @@ namespace Garnet.server
 
         private void HashGet(byte* input, int length, ref SpanByteAndMemory output)
         {
-            var _input = (ObjectInputHeader*)input;
-            int count = _input->arg1; // for multiples fields
+            var input_startptr = input + sizeof(ObjectInputHeader);
+            var input_currptr = input_startptr;
 
-            byte* input_startptr = input + sizeof(ObjectInputHeader);
-            byte* input_currptr = input_startptr;
-
-            bool isMemory = false;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;
@@ -49,25 +46,52 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                if (count > 1) // Multiple keys
-                {
-                    while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
-                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref input_currptr, input + length))
+                    return;
 
-                }
-                else if (count == 0 && _input->header.HashOp == HashOperation.HGETALL) // Get all keys
+                if (hash.TryGetValue(key.ToArray(), out var _value))
                 {
-                    while (!RespWriteUtils.WriteArrayLength(hash.Count * 2, ref curr, end))
+                    while (!RespWriteUtils.WriteBulkString(_value, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                    foreach (var item in hash)
-                    {
-                        while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
                 }
+                else
+                {
+                    while (!RespWriteUtils.WriteNull(ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+
+                _output.result1++;
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        private void HashMultipleGet(byte* input, int length, ref SpanByteAndMemory output)
+        {
+            var _input = (ObjectInputHeader*)input;
+            var count = _input->arg1; // for multiples fields
+
+            var input_startptr = input + sizeof(ObjectInputHeader);
+            var input_currptr = input_startptr;
+
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
+                while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
                 while (count > 0)
                 {
@@ -87,6 +111,39 @@ namespace Garnet.server
 
                     _output.result1++;
                     count--;
+                }
+            }
+            finally
+            {
+                while (!RespWriteUtils.WriteDirect(ref _output, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                if (isMemory) ptrHandle.Dispose();
+                output.Length = (int)(curr - ptr);
+            }
+        }
+
+        private void HashGetAll(ref SpanByteAndMemory output)
+        {
+            var isMemory = false;
+            MemoryHandle ptrHandle = default;
+            var ptr = output.SpanByte.ToPointer();
+
+            var curr = ptr;
+            var end = curr + output.Length;
+
+            ObjectOutputHeader _output = default;
+            try
+            {
+                while (!RespWriteUtils.WriteArrayLength(hash.Count * 2, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var item in hash)
+                {
+                    while (!RespWriteUtils.WriteBulkString(item.Key, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    while (!RespWriteUtils.WriteBulkString(item.Value, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
             }
             finally
@@ -186,19 +243,20 @@ namespace Garnet.server
             return;
         }
 
-        private void HashRandomField(byte* input, int length, ref SpanByteAndMemory output)
+        private void HashRandomField(byte* input, ref SpanByteAndMemory output)
         {
             // HRANDFIELD key [count [WITHVALUES]]
             var _input = (ObjectInputHeader*)input;
-            int count = _input->arg1;
+            var countParameter = _input->arg1 >> 2;
+            var withValues = (_input->arg1 & 1) == 1;
+            var includedCount = ((_input->arg1 >> 1) & 1) == 1;
+            var seed = _input->arg2;
 
-            byte* input_startptr = input + sizeof(ObjectInputHeader);
-            byte* input_currptr = input_startptr;
-            int countDone = 0;
+            var countDone = 0;
 
-            bool isMemory = false;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;
@@ -206,90 +264,41 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                var withValues = false;
-                int[] indexes = default;
-
-                // [count [WITHVALUES]]
-                if (count > 2)
+                if (includedCount)
                 {
-                    // Get the value for the count parameter
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out var countParameterBytes, ref input_currptr, input + length))
-                        return;
+                    if (countParameter > 0 && countParameter > hash.Count)
+                        countParameter = hash.Count;
 
-                    if (count == 4)
+                    var absCount = Math.Abs(countParameter);
+                    var indexes = RandomUtils.PickKRandomIndexes(hash.Count, absCount, seed, countParameter > 0);
+
+                    // Write the size of the array reply
+                    while (!RespWriteUtils.WriteArrayLength(withValues ? absCount * 2 : absCount, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                    foreach (var index in indexes)
                     {
-                        // Advance to read the withvalues flag
-                        if (!RespReadUtils.TrySliceWithLengthHeader(out var withValuesBytes, ref input_currptr, input + length))
-                            return;
-
-                        if (withValuesBytes.EqualsUpperCaseSpanIgnoringCase("WITHVALUES"u8))
-                        {
-                            withValues = true;
-                        }
-                    }
-
-                    // All tokens have been read
-                    countDone = count;
-
-                    // Prepare response
-                    if (!NumUtils.TryParse(countParameterBytes, out int countParameter))
-                    {
-                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    }
-                    else
-                    {
-                        if (countParameter == 0)
-                        {
-                            while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        }
-                        else if (countParameter > 0)
-                        {
-                            // No repeated fields are returned.
-                            // If count is bigger than the number of fields in the hash, the command will only return the whole hash without additional fields.
-                            // The order of fields in the reply is not truly random, so it is up to the client to shuffle them if needed.
-                            countParameter = countParameter > hash.Count ? hash.Count : countParameter;
-                            indexes = Enumerable.Range(0, hash.Count).OrderBy(x => Guid.NewGuid()).Take(countParameter).ToArray();
-                        }
-                        else if (countParameter < 0)
-                        {
-                            // Repeating fields are possible.
-                            // Exactly count fields, or an empty array if the hash is empty(non - existing key), are always returned.
-                            // The order of fields in the reply is truly random.
-                            // The number of returned fields is the absolute value of the specified count.
-                            countParameter = Math.Abs(countParameter);
-                            indexes = new int[countParameter];
-                            for (int i = 0; i < countParameter; i++)
-                                indexes[i] = RandomNumberGenerator.GetInt32(0, hash.Count);
-                        }
-
-                        // Write the size of the array reply
-                        while (!RespWriteUtils.WriteArrayLength(withValues ? countParameter * 2 : countParameter, ref curr, end))
+                        var pair = hash.ElementAt(index);
+                        while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
 
-                        foreach (var index in indexes)
+                        if (withValues)
                         {
-                            var pair = hash.ElementAt(index);
-                            while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
+                            while (!RespWriteUtils.WriteBulkString(pair.Value, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                            if (withValues)
-                            {
-                                while (!RespWriteUtils.WriteBulkString(pair.Value, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
                         }
+
+                        countDone++;
                     }
                 }
-                else if (count == 2) // No count parameter or withvalues is present, we just return a random field
+                else // No count parameter is present, we just return a random field
                 {
                     // Write a bulk string value of a random field from the hash value stored at key.
-                    int index = RandomNumberGenerator.GetInt32(0, hash.Count);
+                    var index = RandomUtils.PickRandomIndex(hash.Count, seed);
                     var pair = hash.ElementAt(index);
                     while (!RespWriteUtils.WriteBulkString(pair.Key, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                    countDone = count;
+                    countDone = 1;
                 }
 
                 _output.result1 = countDone;
