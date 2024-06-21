@@ -997,12 +997,14 @@ namespace Garnet.server
         /// <returns></returns>
         bool NetworkMultiKeySlotVerify(bool interleavedKeys, bool readOnly, int firstKeyOffset = 0, int lastKeyOffset = -1)
         {
+            if (clusterSession == null)
+                return false;
             parseState.interleavedKeys = interleavedKeys;
             parseState.readOnly = readOnly;
             parseState.sessionAsking = SessionAsking;
             parseState.firstKeyOffset = firstKeyOffset;
             parseState.lastKeyOffset = lastKeyOffset == -1 ? parseState.count : lastKeyOffset;
-            return clusterSession != null && clusterSession.NetworkMultiKeySlotVerify(parseState, ref dcurr, ref dend);
+            return clusterSession.NetworkMultiKeySlotVerify(parseState, ref dcurr, ref dend);
         }
     }
 }
