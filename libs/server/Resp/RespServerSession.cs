@@ -80,6 +80,7 @@ namespace Garnet.server
         public readonly StorageSession storageSession;
         internal BasicGarnetApi basicGarnetApi;
         internal LockableGarnetApi lockableGarnetApi;
+        internal CollectionItemBroker itemBroker;
 
         readonly IGarnetAuthenticator _authenticator;
 
@@ -133,7 +134,8 @@ namespace Garnet.server
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
-            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker)
+            SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> subscribeBroker,
+            CollectionItemBroker itemBroker)
             : base(networkSender)
         {
             this.customCommandManagerSession = new CustomCommandManagerSession(storeWrapper.customCommandManager);
@@ -147,13 +149,14 @@ namespace Garnet.server
             this.scratchBufferManager = new ScratchBufferManager();
 
             // Create storage session and API
-            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, logger);
+            this.storageSession = new StorageSession(storeWrapper, scratchBufferManager, sessionMetrics, LatencyMetrics, itemBroker, logger);
 
             this.basicGarnetApi = new BasicGarnetApi(storageSession, storageSession.basicContext, storageSession.objectStoreBasicContext);
             this.lockableGarnetApi = new LockableGarnetApi(storageSession, storageSession.lockableContext, storageSession.objectStoreLockableContext);
 
             this.storeWrapper = storeWrapper;
             this.subscribeBroker = subscribeBroker;
+            this.itemBroker = itemBroker;
             this._authenticator = storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
             // Associate new session with default user and automatically authenticate, if possible
@@ -191,6 +194,7 @@ namespace Garnet.server
                 storeWrapper.monitor.AddMetricsHistory(sessionMetrics, latencyMetrics);
 
             subscribeBroker?.RemoveSubscription(this);
+            itemBroker?.HandleSessionDisposed(this);
 
             // Cancel the async processor, if any
             asyncWaiterCancel?.Cancel();
@@ -444,7 +448,6 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.COMMAND => NetworkCOMMAND(ptr, parseState.count),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(ptr, parseState.count),
-                RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(ptr, parseState.count),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(ptr, parseState.count),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
@@ -472,7 +475,6 @@ namespace Garnet.server
                 RespCommand.WATCH_MS => NetworkWATCH_MS(count),
                 RespCommand.WATCH_OS => NetworkWATCH_OS(count),
                 RespCommand.STRLEN => NetworkSTRLEN(ptr, ref storageApi),
-                RespCommand.MODULE => NetworkMODULE(count, ptr, ref storageApi),
                 //General key commands
                 RespCommand.DBSIZE => NetworkDBSIZE(ptr, ref storageApi),
                 RespCommand.KEYS => NetworkKEYS(ptr, ref storageApi),
@@ -540,6 +542,9 @@ namespace Garnet.server
                 RespCommand.RPOPLPUSH => ListRightPopLeftPush(count, ptr, ref storageApi),
                 RespCommand.LMOVE => ListMove(count, ptr, ref storageApi),
                 RespCommand.LSET => ListSet(count, ptr, ref storageApi),
+                RespCommand.BLPOP => ListBlockingPop(cmd, count, ptr, ref storageApi),
+                RespCommand.BRPOP => ListBlockingPop(cmd, count, ptr, ref storageApi),
+                RespCommand.BLMOVE => ListBlockingMove(cmd, count, ptr, ref storageApi),
                 // Hash Commands
                 RespCommand.HSET => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, count, ptr, ref storageApi),
@@ -617,7 +622,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomCmd)
             {
-                if (count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
+                if (currentCustomCommand.NumParams < int.MaxValue && count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}", ref dcurr, dend))
                         SendAndReset();

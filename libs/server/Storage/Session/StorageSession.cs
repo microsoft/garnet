@@ -37,6 +37,7 @@ namespace Garnet.server
 
         public TransactionManager txnManager;
         readonly ILogger logger;
+        private readonly CollectionItemBroker itemBroker;
 
         public int SessionID => basicContext.Session.ID;
         public int ObjectStoreSessionID => objectStoreBasicContext.Session.ID;
@@ -46,12 +47,15 @@ namespace Garnet.server
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferManager scratchBufferManager,
             GarnetSessionMetrics sessionMetrics,
-            GarnetLatencyMetricsSession LatencyMetrics, ILogger logger = null)
+            GarnetLatencyMetricsSession LatencyMetrics,
+            CollectionItemBroker itemBroker,
+            ILogger logger = null)
         {
             this.sessionMetrics = sessionMetrics;
             this.LatencyMetrics = LatencyMetrics;
             this.scratchBufferManager = scratchBufferManager;
             this.logger = logger;
+            this.itemBroker = itemBroker;
 
             functionsState = storeWrapper.CreateFunctionsState();
 
