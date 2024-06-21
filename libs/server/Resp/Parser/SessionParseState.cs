@@ -105,5 +105,21 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetInt(int i)
             => ParseUtils.ReadInt(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
+
+        /// <summary>
+        /// Get long argument at the given index
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long GetLong(int i)
+            => ParseUtils.ReadLong(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
+
+        /// <summary>
+        /// Get ASCII string argument at the given index
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public string GetString(int i)
+            => ParseUtils.ReadString(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i));
     }
 }

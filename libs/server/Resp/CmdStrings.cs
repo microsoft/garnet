@@ -82,9 +82,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> BARRIER => "BARRIER"u8;
         public static ReadOnlySpan<byte> barrier => "barrier"u8;
         public static ReadOnlySpan<byte> MODULE => "MODULE"u8;
-
         public static ReadOnlySpan<byte> WITHSCORES => "WITHSCORES"u8;
         public static ReadOnlySpan<byte> WITHVALUES => "WITHVALUES"u8;
+        public static ReadOnlySpan<byte> EX => "EX"u8;
+        public static ReadOnlySpan<byte> PX => "PX"u8;
+        public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
+        public static ReadOnlySpan<byte> NX => "NX"u8;
+        public static ReadOnlySpan<byte> XX => "XX"u8;
 
         /// <summary>
         /// Response strings

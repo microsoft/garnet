@@ -29,5 +29,40 @@ namespace Garnet.server
             }
             return number;
         }
+
+        /// <summary>
+        /// Read a signed 64-bit long from a given ArgSlice.
+        /// </summary>
+        /// <returns>
+        /// Parsed integer
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long ReadLong(ref ArgSlice slice)
+        {
+            var ptr = slice.ptr;
+            if (!RespReadUtils.TryReadLong(ref ptr, slice.ptr + slice.length, out var number, out var bytesRead)
+                || ((int)bytesRead != slice.length))
+            {
+                RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
+            }
+            return number;
+        }
+
+        /// <summary>
+        /// Read an ASCII string from a given ArgSlice.
+        /// </summary>
+        /// <returns>
+        /// Parsed integer
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static string ReadString(ref ArgSlice slice)
+        {
+            var ptr = slice.ptr;
+            if (!RespReadUtils.ReadString(out var result, ref ptr, slice.ptr + slice.length))
+            {
+                RespParsingException.ThrowNonTerminatingString(slice.ptr, slice.length);
+            }
+            return result;
+        }
     }
 }

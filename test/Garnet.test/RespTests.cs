@@ -3,17 +3,14 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
-using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using StackExchange.Redis;
-using AggregateException = System.AggregateException;
 
 namespace Garnet.test
 {
