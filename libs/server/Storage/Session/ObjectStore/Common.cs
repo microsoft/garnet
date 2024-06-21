@@ -187,7 +187,7 @@ namespace Garnet.server
             byte* element = null;
             var len = 0;
             ArgSlice result;
-            
+
             var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
                              outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
             try
