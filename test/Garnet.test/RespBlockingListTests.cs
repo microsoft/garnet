@@ -41,7 +41,6 @@ namespace Garnet.test
             var value = "myval";
             var key2 = "mykey2";
             var value2 = "myval2";
-            var key3 = "mykey3";
 
             using var lightClientRequest = TestUtils.CreateRequest();
             var response = lightClientRequest.SendCommand($"LPUSH {key} {value}");
