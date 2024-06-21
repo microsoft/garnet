@@ -266,6 +266,10 @@ namespace Garnet.networking
         /// <param name="bytesTransferred">Number of bytes transferred</param>
         public unsafe void OnNetworkReceive(int bytesTransferred)
         {
+            // Wait for SslStream async processing to complete, if any (e.g., authentication phase)
+            if (sslStream != null)
+                while (readerStatus == TlsReaderStatus.Active) Thread.Yield();
+
             // Increment network bytes read
             networkBytesRead += bytesTransferred;
 
