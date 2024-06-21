@@ -102,6 +102,9 @@ namespace Garnet.server
         LREM,
         LSET,
         LTRIM,
+        BLPOP,
+        BRPOP,
+        BLMOVE,
         MIGRATE,
         MSET,
         MSETNX,
@@ -164,6 +167,7 @@ namespace Garnet.server
 
         MONITOR,
         MODULE,
+        MODULE_LOADCS,
         REGISTERCS,
 
         MULTI,
@@ -739,6 +743,14 @@ namespace Garnet.server
                                                 return RespCommand.NONE;
                                             }
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBRPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BRPOP;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBLPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BLPOP;
+                                        }
                                         break;
 
                                     case 'H':
@@ -865,6 +877,12 @@ namespace Garnet.server
                             case 6:
                                 switch ((ushort)ptr[4])
                                 {
+                                    case 'B':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMOVE\r\n"u8))
+                                        {
+                                            return RespCommand.BLMOVE;
+                                        }
+                                        break;
                                     case 'D':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("DBSIZE\r\n"u8))
                                         {
@@ -930,10 +948,6 @@ namespace Garnet.server
                                                     return RespCommand.MEMORY_USAGE;
                                                 }
                                             }
-                                        }
-                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("MODULE\r\n"u8))
-                                        {
-                                            return RespCommand.MODULE;
                                         }
                                         break;
 
@@ -1674,6 +1688,22 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.ASYNC))
             {
                 return RespCommand.ASYNC;
+            }
+            else if (command.SequenceEqual(CmdStrings.MODULE))
+            {
+                Span<byte> subCommand = GetCommand(out var gotSubCommand);
+                if (!gotSubCommand)
+                {
+                    success = false;
+                    return RespCommand.NONE;
+                }
+
+                count--;
+                AsciiUtils.ToUpperInPlace(subCommand);
+                if (subCommand.SequenceEqual(CmdStrings.LOADCS))
+                {
+                    return RespCommand.MODULE_LOADCS;
+                }
             }
             else
             {

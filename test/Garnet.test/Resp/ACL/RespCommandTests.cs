@@ -72,7 +72,8 @@ namespace Garnet.test.Resp.ACL
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out IReadOnlyDictionary<string, RespCommandsInfo> allInfo), "Couldn't load all command details");
             Assert.IsTrue(RespCommandsInfo.TryGetRespCommandNames(out IReadOnlySet<string> advertisedCommands), "Couldn't get advertised RESP commands");
 
-            IEnumerable<string> withOnlySubCommands = allInfo.Where(static x => (x.Value.SubCommands?.Length ?? 0) != 0 && x.Value.Flags == RespCommandFlags.None).Select(static x => x.Key);
+            // TODO: See if these commands could be identified programmatically
+            IEnumerable<string> withOnlySubCommands = ["ACL", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
 
             // Check tests against RespCommandsInfo
@@ -3288,6 +3289,51 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public void BLMoveACLs()
+        {
+            CheckCommands(
+                    "BLMOVE",
+                [DoBLMove]
+                );
+
+            static void DoBLMove(IServer server)
+            {
+                RedisResult val = server.Execute("BLMOVE", "foo", "bar", "RIGHT", "LEFT", "1");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void BLPopACLs()
+        {
+            CheckCommands(
+                    "BLPOP",
+                [DoBLPop]
+                );
+
+            static void DoBLPop(IServer server)
+            {
+                RedisResult val = server.Execute("BLPOP", "foo", "1");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void BRPopACLs()
+        {
+            CheckCommands(
+                    "BRPOP",
+                [DoBRPop]
+                );
+
+            static void DoBRPop(IServer server)
+            {
+                RedisResult val = server.Execute("BRPOP", "foo", "1");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
         public void LPopACLs()
         {
             CheckCommands(
@@ -3678,26 +3724,26 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void ModuleACLs()
+        public void ModuleLoadCSACLs()
         {
             // MODULE isn't a proper redis command, but this is the placeholder today... so validate it for completeness
 
             CheckCommands(
                 "MODULE",
-                [DoModuleList]
+                [DoModuleLoad]
             );
 
-            static void DoModuleList(IServer server)
+            static void DoModuleLoad(IServer server)
             {
                 try
                 {
-                    server.Execute("MODULE", "LIST");
+                    server.Execute("MODULE", "LOADCS", "nonexisting.dll");
 
-                    Assert.Fail("Shouldn't be reachable, MODULE is only parsed - not implemented");
+                    Assert.Fail("Shouldn't succeed using a non-existing binary");
                 }
                 catch (RedisException e)
                 {
-                    if (e.Message == "ERR unknown command")
+                    if (e.Message == "ERR unable to access one or more binary files.")
                     {
                         return;
                     }

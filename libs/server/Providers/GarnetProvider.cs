@@ -20,6 +20,8 @@ namespace Garnet.server
         /// </summary>
         internal StoreWrapper StoreWrapper => storeWrapper;
 
+        internal CollectionItemBroker itemBroker;
+
         /// <summary>
         /// Create SpanByte TsavoriteKV backend for Garnet
         /// </summary>
@@ -28,10 +30,12 @@ namespace Garnet.server
         /// <param name="maxSizeSettings"></param>        
         public GarnetProvider(StoreWrapper storeWrapper,
             SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker = null,
+            CollectionItemBroker itemBroker = null,
             MaxSizeSettings maxSizeSettings = default)
             : base(storeWrapper.store, new(), broker, false, maxSizeSettings)
         {
             this.storeWrapper = storeWrapper;
+            this.itemBroker = itemBroker;
         }
 
         /// <summary>
@@ -60,7 +64,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)
             => (wireFormat == WireFormat.ASCII)
-                ? new RespServerSession(networkSender, storeWrapper, broker)
+                ? new RespServerSession(networkSender, storeWrapper, broker, itemBroker)
                 : throw new GarnetException($"Unsupported wireFormat {wireFormat}");
     }
 }
