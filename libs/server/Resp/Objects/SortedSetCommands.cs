@@ -960,7 +960,7 @@ namespace Garnet.server
                 // Read count
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var countBytes, ref ptr, recvBufferPtr + bytesRead))
                     return false;
-                
+
                 if (!NumUtils.TryParse(countBytes, out paramCount))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
