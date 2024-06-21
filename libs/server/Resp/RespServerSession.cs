@@ -448,7 +448,6 @@ namespace Garnet.server
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.COMMAND => NetworkCOMMAND(ptr, parseState.count),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(ptr, parseState.count),
-                RespCommand.COMMAND_DOCS => NetworkCOMMAND_DOCS(ptr, parseState.count),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(ptr, parseState.count),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
@@ -476,7 +475,6 @@ namespace Garnet.server
                 RespCommand.WATCH_MS => NetworkWATCH_MS(count),
                 RespCommand.WATCH_OS => NetworkWATCH_OS(count),
                 RespCommand.STRLEN => NetworkSTRLEN(ptr, ref storageApi),
-                RespCommand.MODULE => NetworkMODULE(count, ptr, ref storageApi),
                 //General key commands
                 RespCommand.DBSIZE => NetworkDBSIZE(ptr, ref storageApi),
                 RespCommand.KEYS => NetworkKEYS(ptr, ref storageApi),
@@ -624,7 +622,7 @@ namespace Garnet.server
             }
             else if (command == RespCommand.CustomCmd)
             {
-                if (count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
+                if (currentCustomCommand.NumParams < int.MaxValue && count != currentCustomCommand.NumKeys + currentCustomCommand.NumParams)
                 {
                     while (!RespWriteUtils.WriteError($"ERR Invalid number of parameters, expected {currentCustomCommand.NumKeys + currentCustomCommand.NumParams}, actual {count}", ref dcurr, dend))
                         SendAndReset();

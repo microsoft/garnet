@@ -167,6 +167,7 @@ namespace Garnet.server
 
         MONITOR,
         MODULE,
+        MODULE_LOADCS,
         REGISTERCS,
 
         MULTI,
@@ -206,7 +207,6 @@ namespace Garnet.server
 
         COMMAND,
         COMMAND_COUNT,
-        COMMAND_DOCS,
         COMMAND_INFO,
 
         MEMORY,
@@ -949,10 +949,6 @@ namespace Garnet.server
                                                 }
                                             }
                                         }
-                                        else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("MODULE\r\n"u8))
-                                        {
-                                            return RespCommand.MODULE;
-                                        }
                                         break;
 
                                     case 'R':
@@ -1357,10 +1353,6 @@ namespace Garnet.server
                 {
                     return RespCommand.COMMAND_COUNT;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.DOCS))
-                {
-                    return RespCommand.COMMAND_DOCS;
-                }
                 else if (subCommand.SequenceEqual(CmdStrings.INFO))
                 {
                     return RespCommand.COMMAND_INFO;
@@ -1696,6 +1688,22 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.ASYNC))
             {
                 return RespCommand.ASYNC;
+            }
+            else if (command.SequenceEqual(CmdStrings.MODULE))
+            {
+                Span<byte> subCommand = GetCommand(out var gotSubCommand);
+                if (!gotSubCommand)
+                {
+                    success = false;
+                    return RespCommand.NONE;
+                }
+
+                count--;
+                AsciiUtils.ToUpperInPlace(subCommand);
+                if (subCommand.SequenceEqual(CmdStrings.LOADCS))
+                {
+                    return RespCommand.MODULE_LOADCS;
+                }
             }
             else
             {
