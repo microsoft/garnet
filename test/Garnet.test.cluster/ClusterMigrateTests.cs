@@ -1167,7 +1167,7 @@ namespace Garnet.test.cluster
                     switch (status)
                     {
                         case ResponseState.OK:
-                            Assert.AreEqual(value, getValue);
+                            Assert.AreEqual(Encoding.ASCII.GetString(value), getValue, $"{Encoding.ASCII.GetString(value)} => {getValue}");
                             break;
                         case ResponseState.MOVED: // Everyone redirect to node that is current owner
                             var srcNodeIndex = context.clusterTestUtils.GetEndPointIndexFromPort(redirectPortA);
