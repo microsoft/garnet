@@ -92,7 +92,7 @@ namespace Garnet.cluster
             // Reset the database in preparation for connecting to primary
             storeWrapper.Reset();
 
-            //Initiate remote checkpoint retrieval
+            // Initiate remote checkpoint retrieval
             if (background)
             {
                 logger?.LogInformation("Initiating background checkpoint retrieval");
@@ -118,11 +118,11 @@ namespace Garnet.cluster
         /// <returns>A string representing the error message if error occurred; otherwise <see langword="null"/>.</returns>
         private async Task<string> InitiateReplicaSync()
         {
-            //1. Send request to primary
-            //      primary will initiate background task and start sending checkpoint data
+            // 1. Send request to primary
+            //      Primary will initiate background task and start sending checkpoint data
             //
-            //2. replica waits for retrieval to complete before moving forward to recovery
-            //      retrieval completion coordinated by remoteCheckpointRetrievalCompleted
+            // 2. Replica waits for retrieval to complete before moving forward to recovery
+            //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
             var current = clusterProvider.clusterManager.CurrentConfig;
             var (address, port) = current.GetLocalNodePrimaryAddress();
             GarnetClientSession gcs = null;
@@ -146,12 +146,12 @@ namespace Garnet.cluster
                 storeWrapper.RecoverAOF();
                 logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
 
-                //1. Primary will signal checkpoint send complete
-                //2. Replica will receive signal and recover checkpoint, initialize AOF
-                //3. Replica signals recovery complete (here cluster replicate will return to caller)
-                //4. Replica responds with aofStartAddress sync
-                //5. Primary will initiate aof sync task
-                //6. Primary releases checkpoint
+                // 1. Primary will signal checkpoint send complete
+                // 2. Replica will receive signal and recover checkpoint, initialize AOF
+                // 3. Replica signals recovery complete (here cluster replicate will return to caller)
+                // 4. Replica responds with aofStartAddress sync
+                // 5. Primary will initiate aof sync task
+                // 6. Primary releases checkpoint
                 var resp = await gcs.ExecuteReplicaSync(
                     nodeId,
                     PrimaryReplId,

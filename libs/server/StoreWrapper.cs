@@ -342,11 +342,11 @@ namespace Garnet.server
                 while (true)
                 {
                     if (token.IsCancellationRequested) return;
-                    DoCompaction(serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType);
-                    if (serverOptions.CompactionType != LogCompactionType.ShiftForced)
+                    DoCompaction(serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
+                    if (!serverOptions.CompactionForceDelete)
                         logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
                     else
-                        logger?.LogInformation("NOTE: ShiftForced compaction type - make sure checkpoint/recovery is not being used");
+                        logger?.LogInformation("NOTE: Compaction will delete files, make sure checkpoint/recovery is not being used");
 
                     await Task.Delay(compactionFrequencySecs * 1000, token);
                 }
@@ -361,15 +361,8 @@ namespace Garnet.server
         {
             // Periodic compaction -> no need to compact before checkpointing
             if (serverOptions.CompactionFrequencySecs > 0) return;
-            if (serverOptions.CompactionType == LogCompactionType.ShiftForced)
-            {
-                string error = "Cannot use ShiftForced with checkpointing";
-                logger.LogError(error);
-                Debug.Fail(error);
-                return;
-            }
 
-            DoCompaction(serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType);
+            DoCompaction(serverOptions.CompactionMaxSegments, serverOptions.ObjectStoreCompactionMaxSegments, 1, serverOptions.CompactionType, serverOptions.CompactionForceDelete);
         }
 
         /// <summary>
@@ -388,7 +381,7 @@ namespace Garnet.server
             appendOnlyFile?.Enqueue(header, out _);
         }
 
-        void DoCompaction(int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType)
+        void DoCompaction(int mainStoreMaxSegments, int objectStoreMaxSegments, int numSegmentsToCompact, LogCompactionType compactionType, bool compactionForceDelete)
         {
             if (compactionType == LogCompactionType.None) return;
 
@@ -404,19 +397,25 @@ namespace Garnet.server
                 switch (compactionType)
                 {
                     case LogCompactionType.Shift:
-                        store.Log.ShiftBeginAddress(untilAddress, true, false);
-                        break;
-
-                    case LogCompactionType.ShiftForced:
-                        store.Log.ShiftBeginAddress(untilAddress, true, true);
+                        store.Log.ShiftBeginAddress(untilAddress, true, compactionForceDelete);
                         break;
 
                     case LogCompactionType.Scan:
                         store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Scan);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof();
+                            store.Log.Truncate();
+                        }
                         break;
 
                     case LogCompactionType.Lookup:
                         store.Log.Compact<SpanByte, Empty, Empty, SpanByteFunctions<Empty, Empty>>(new SpanByteFunctions<Empty, Empty>(), untilAddress, CompactionType.Lookup);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof();
+                            store.Log.Truncate();
+                        }
                         break;
 
                     default:
@@ -440,21 +439,27 @@ namespace Garnet.server
                 switch (compactionType)
                 {
                     case LogCompactionType.Shift:
-                        objectStore.Log.ShiftBeginAddress(untilAddress, true, false);
-                        break;
-
-                    case LogCompactionType.ShiftForced:
-                        objectStore.Log.ShiftBeginAddress(untilAddress, true, true);
+                        objectStore.Log.ShiftBeginAddress(untilAddress, compactionForceDelete);
                         break;
 
                     case LogCompactionType.Scan:
                         objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
                             new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Scan);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof();
+                            objectStore.Log.Truncate();
+                        }
                         break;
 
                     case LogCompactionType.Lookup:
                         objectStore.Log.Compact<IGarnetObject, IGarnetObject, Empty, SimpleSessionFunctions<byte[], IGarnetObject, Empty>>(
                             new SimpleSessionFunctions<byte[], IGarnetObject, Empty>(), untilAddress, CompactionType.Lookup);
+                        if (compactionForceDelete)
+                        {
+                            CompactionCommitAof();
+                            objectStore.Log.Truncate();
+                        }
                         break;
 
                     default:
@@ -462,6 +467,24 @@ namespace Garnet.server
                 }
 
                 logger?.LogInformation("End object store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}", untilAddress, store.Log.BeginAddress, readOnlyAddress, store.Log.TailAddress);
+            }
+        }
+
+        void CompactionCommitAof()
+        {
+            // If we are the primary, we commit the AOF
+            // If we are the replica, we commit the AOF if fast commit is disabled
+            if (serverOptions.EnableAOF)
+            {
+                if (serverOptions.EnableCluster && clusterProvider.IsReplica())
+                {
+                    if (!serverOptions.EnableFastCommit)
+                        appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+                else
+                {
+                    appendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                }
             }
         }
 
