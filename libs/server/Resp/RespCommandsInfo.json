@@ -1010,22 +1010,6 @@
       },
       {
         "Command": "COMMAND",
-        "Name": "COMMAND|DOCS",
-        "IsInternal": false,
-        "Arity": -2,
-        "Flags": "Loading, Stale",
-        "FirstKey": 0,
-        "LastKey": 0,
-        "Step": 0,
-        "AclCategories": "Connection, Slow",
-        "Tips": [
-          "nondeterministic_output_order"
-        ],
-        "KeySpecifications": null,
-        "SubCommands": null
-      },
-      {
-        "Command": "COMMAND",
         "Name": "COMMAND|INFO",
         "IsInternal": false,
         "Arity": -2,

@@ -2075,33 +2075,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public void CommandDocsACLs()
-        {
-            CheckCommands(
-                "COMMAND DOCS",
-                [DoCommandDocs, DoCommandDocsOne, DoCommandDocsMulti]
-            );
-
-            static void DoCommandDocs(IServer server)
-            {
-                RedisResult val = server.Execute("COMMAND", "DOCS");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
-            }
-
-            static void DoCommandDocsOne(IServer server)
-            {
-                RedisResult val = server.Execute("COMMAND", "DOCS", "GET");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
-            }
-
-            static void DoCommandDocsMulti(IServer server)
-            {
-                RedisResult val = server.Execute("COMMAND", "DOCS", "GET", "SET", "APPEND");
-                Assert.AreEqual(ResultType.Array, val.Resp2Type);
-            }
-        }
-
-        [Test]
         public void CommandInfoACLs()
         {
             CheckCommands(
