@@ -86,7 +86,7 @@ namespace Garnet.networking
 
         /* TLS related fields */
         readonly SslStream sslStream;
-        readonly SemaphoreSlim receivedData;
+        readonly SemaphoreSlim receivedData, expectingData;
         readonly CancellationTokenSource cancellationTokenSource;
 
         // Stream reader status: Rest = 0, Active = 1, Waiting = 2
@@ -122,6 +122,7 @@ namespace Garnet.networking
                 sslStream = new SslStream(new NetworkHandlerStream(this, logger));
 
                 receivedData = new SemaphoreSlim(0);
+                expectingData = new SemaphoreSlim(0);
                 cancellationTokenSource = new();
 
                 transportReceiveBufferEntry = networkPool.Get(networkPool.MinAllocationSize);
@@ -267,8 +268,8 @@ namespace Garnet.networking
         public unsafe void OnNetworkReceive(int bytesTransferred)
         {
             // Wait for SslStream async processing to complete, if any (e.g., authentication phase)
-            if (sslStream != null)
-                while (readerStatus == TlsReaderStatus.Active) Thread.Yield();
+            while (readerStatus == TlsReaderStatus.Active)
+                expectingData.Wait(cancellationTokenSource.Token);
 
             // Increment network bytes read
             networkBytesRead += bytesTransferred;
@@ -290,7 +291,8 @@ namespace Garnet.networking
                     {
                         readerStatus = TlsReaderStatus.Active;
                         Read();
-                        while (readerStatus == TlsReaderStatus.Active) Thread.Yield();
+                        while (readerStatus == TlsReaderStatus.Active)
+                            expectingData.Wait(cancellationTokenSource.Token);
                     }
                     break;
                 case TlsReaderStatus.Waiting:
@@ -300,7 +302,8 @@ namespace Garnet.networking
                     // Unblock the asynchronous ReadAsync task
                     _ = receivedData.Release();
 
-                    while (readerStatus == TlsReaderStatus.Active) Thread.Yield();
+                    while (readerStatus == TlsReaderStatus.Active)
+                        expectingData.Wait(cancellationTokenSource.Token);
                     break;
                 default:
                     ThrowInvalidOperationException($"Unexpected reader status {readerStatus}");
@@ -402,7 +405,10 @@ namespace Garnet.networking
                 if (networkBytesRead > networkReadHead || retry)
                     _ = SslReaderAsync(token);
                 else
+                {
                     readerStatus = TlsReaderStatus.Rest;
+                    if (expectingData.CurrentCount == 0) expectingData.Release();
+                }
             }
             catch (Exception ex)
             {
@@ -453,6 +459,7 @@ namespace Garnet.networking
             finally
             {
                 readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
             }
         }
 
@@ -614,6 +621,9 @@ namespace Garnet.networking
             // Release the reader so it sees the cancellation
             receivedData?.Release();
             receivedData?.Dispose();
+            // Release the expecter so it sees the cancellation
+            expectingData?.Release();
+            expectingData?.Dispose();
             cancellationTokenSource?.Dispose();
             networkReceiveBufferEntry?.Dispose();
             transportSendBufferEntry?.Dispose();

@@ -555,7 +555,7 @@ namespace Garnet.test
             {
                 EndPoints = defaultEndPoints,
                 CommandMap = CommandMap.Create(cmds),
-                ConnectTimeout = (int)TimeSpan.FromSeconds(2).TotalMilliseconds,
+                ConnectTimeout = (int)TimeSpan.FromSeconds(Debugger.IsAttached ? 100 : 2).TotalMilliseconds,
                 SyncTimeout = (int)TimeSpan.FromSeconds(30).TotalMilliseconds,
                 AsyncTimeout = (int)TimeSpan.FromSeconds(30).TotalMilliseconds,
                 AllowAdmin = allowAdmin,
