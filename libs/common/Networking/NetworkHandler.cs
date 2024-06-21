@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Net.Security;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
@@ -265,56 +266,59 @@ namespace Garnet.networking
         /// <param name="bytesTransferred">Number of bytes transferred</param>
         public unsafe void OnNetworkReceive(int bytesTransferred)
         {
-            // Wait for SslStream sync processing task to complete, if any
-            if (sslStream != null)
-                while (readerStatus == TlsReaderStatus.Active) Thread.Yield();
-
             // Increment network bytes read
             networkBytesRead += bytesTransferred;
 
-            // Double network buffer if out of space
-            // Okay to do since we have control over network buffer here
-            if (networkBytesRead == networkReceiveBuffer.Length)
-                DoubleNetworkReceiveBuffer();
-
-            if (readerStatus == TlsReaderStatus.Rest)
+            switch (readerStatus)
             {
-                // Synchronously try to process the received data
-                BeginTransformNetworkToTransport();
+                case TlsReaderStatus.Rest:
+                    // Synchronously try to process the received data
+                    if (sslStream == null)
+                    {
+                        transportReceiveBuffer = networkReceiveBuffer;
+                        transportReceiveBufferPtr = networkReceiveBufferPtr;
+                        transportBytesRead = networkBytesRead;
 
-                // If ReadAsync is active, we are done here, the ReadAsync task will continue the processing
-                if (readerStatus == TlsReaderStatus.Active) return;
+                        // We do not have an active read task, so we will process on the network thread
+                        Process();
+                    }
+                    else
+                    {
+                        readerStatus = TlsReaderStatus.Active;
+                        Read();
+                        while (readerStatus == TlsReaderStatus.Active) Thread.Yield();
+                    }
+                    break;
+                case TlsReaderStatus.Waiting:
+                    // We have a ReadAsync task waiting for new data, set it to active status
+                    readerStatus = TlsReaderStatus.Active;
+
+                    // Unblock the asynchronous ReadAsync task
+                    _ = receivedData.Release();
+
+                    while (readerStatus == TlsReaderStatus.Active) Thread.Yield();
+                    break;
+                default:
+                    ThrowInvalidOperationException($"Unexpected reader status {readerStatus}");
+                    break;
             }
-            else
-            {
-                Debug.Assert(readerStatus == TlsReaderStatus.Waiting);
 
-                // ReadAsync task is waiting on semaphore, safe to shift network buffer
-                // We do this here because the ReadAsync task cannot safely modify network buffer
-                // as we will be performing a Socket.ReadAsync on it.
-                if (networkReadHead > 0)
-                    ShiftNetworkReceiveBuffer();
-
-                // We have a ReadAsync task waiting for new data, set it to active status
-                readerStatus = TlsReaderStatus.Active;
-
-                // Unblock the asynchronous ReadAsync task
-                receivedData.Release();
-
-                // Release this task - ReadAsync task will continue the processing
-                return;
-            }
-
-            // We do not have an active read task, so we will process on the network thread
             Debug.Assert(readerStatus != TlsReaderStatus.Active);
-            Process();
 
             EndTransformNetworkToTransport();
 
             // Shift network buffer after processing is done
             if (networkReadHead > 0)
                 ShiftNetworkReceiveBuffer();
+
+            // Double network buffer if out of space after processing is complete
+            if (networkBytesRead == networkReceiveBuffer.Length)
+                DoubleNetworkReceiveBuffer();
         }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void ThrowInvalidOperationException(string message)
+            => throw new InvalidOperationException(message);
 
         unsafe void Process()
         {
@@ -330,21 +334,6 @@ namespace Garnet.networking
         /// </summary>
         public INetworkSender GetNetworkSender() => sslStream == null ? networkSender : this;
 
-        unsafe void BeginTransformNetworkToTransport()
-        {
-            if (sslStream == null)
-            {
-                transportReceiveBuffer = networkReceiveBuffer;
-                transportReceiveBufferPtr = networkReceiveBufferPtr;
-                transportBytesRead = networkBytesRead;
-            }
-            else
-            {
-                readerStatus = TlsReaderStatus.Active;
-                Read();
-            }
-        }
-
         void Read()
         {
             bool retry = false;
@@ -355,6 +344,9 @@ namespace Garnet.networking
                 if (result.IsCompletedSuccessfully)
                 {
                     transportBytesRead += result.Result;
+
+                    // Read task has control, process the decrypted transport bytes
+                    Process();
 
                     // Shift bytes in transport buffer
                     if (transportReadHead > 0)
