@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Threading;
-using Garnet.common;
 using Garnet.server;
 
 namespace Garnet.cluster
@@ -129,62 +128,6 @@ namespace Garnet.cluster
             }
         }
 
-        ClusterSlotVerificationResult KeyArraySlotVerify(ClusterConfig config, int keyCount, ref byte* ptr, byte* endPtr, bool readOnly, bool interleavedKeys, byte SessionAsking, out bool retVal)
-        {
-            var vres = ArrayCrosslotVerify(keyCount, ref ptr, endPtr, interleavedKeys, out retVal, out byte* keyPtr, out int ksize);
-            if (!retVal) return new(SlotVerifiedState.OK, 0);
-
-            if (vres.state == SlotVerifiedState.CROSSSLOT)
-                return vres;
-            else
-            {
-                return readOnly
-                    ? SingleKeyReadSlotVerify(config, new ArgSlice(keyPtr, ksize), SessionAsking, vres.slot)
-                    : SingleKeyReadWriteSlotVerify(config, new ArgSlice(keyPtr, ksize), SessionAsking, vres.slot);
-            }
-
-            static ClusterSlotVerificationResult ArrayCrosslotVerify(int keyCount, ref byte* ptr, byte* endPtr, bool interleavedKeys, out bool retVal, out byte* keyPtr, out int ksize)
-            {
-                retVal = false;
-                var crossSlot = false;
-                keyPtr = null;
-                ksize = 0;
-
-                byte* valPtr = null;
-                var vsize = 0;
-
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, endPtr))
-                    return new(SlotVerifiedState.OK, 0);
-
-                // Skip value if key values are interleaved
-                if (interleavedKeys)
-                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, endPtr))
-                        return new(SlotVerifiedState.OK, 0);
-
-                var slot = HashSlotUtils.HashSlot(keyPtr, ksize);
-
-                for (var c = 1; c < keyCount; c++)
-                {
-                    keyPtr = null;
-                    ksize = 0;
-
-                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, endPtr))
-                        return new(SlotVerifiedState.OK, slot);
-
-                    // Skip value if key values are interleaved
-                    if (interleavedKeys)
-                        if (!RespReadUtils.ReadPtrWithLengthHeader(ref valPtr, ref vsize, ref ptr, endPtr))
-                            return new(SlotVerifiedState.OK, 0);
-
-                    var _slot = HashSlotUtils.HashSlot(keyPtr, ksize);
-                    crossSlot |= (_slot != slot);
-                }
-
-                retVal = true;
-                return crossSlot ? new(SlotVerifiedState.CROSSSLOT, slot) : new(SlotVerifiedState.OK, slot);
-            }
-        }
-
         ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref ArgSlice[] keys, bool readOnly, byte sessionAsking, int count)
         {
             var _end = count < 0 ? keys.Length : count;
@@ -195,6 +138,31 @@ namespace Garnet.cluster
             {
                 var _slot = ArgSliceUtils.HashSlot(keys[i]);
                 var _verifyResult = SingleKeySlotVerify(config, keys[i], readOnly, sessionAsking);
+
+                // Check if slot changes between keys
+                if (_slot != slot)
+                    return new(SlotVerifiedState.CROSSSLOT, slot);
+
+                // Check if state of key changes
+                if (_verifyResult.state != verifyResult.state)
+                    return new(SlotVerifiedState.TRYAGAIN, slot);
+            }
+
+            return verifyResult;
+        }
+
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, SessionParseState parser, bool interleaved, bool readOnly, byte sessionAsking)
+        {
+            var key = parser.GetArgSliceByRef(0);
+            var slot = ArgSliceUtils.HashSlot(key);
+            var verifyResult = SingleKeySlotVerify(config, key, readOnly, sessionAsking);
+            var stride = interleaved ? 2 : 1;
+
+            for (var i = stride; i < parser.count; i += stride)
+            {
+                key = parser.GetArgSliceByRef(i);
+                var _slot = ArgSliceUtils.HashSlot(key);
+                var _verifyResult = SingleKeySlotVerify(config, key, readOnly, sessionAsking);
 
                 // Check if slot changes between keys
                 if (_slot != slot)

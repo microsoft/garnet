@@ -12,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Wrapper to hold parse state for a RESP session.
     /// </summary>
-    unsafe struct SessionParseState
+    public unsafe struct SessionParseState
     {
         /// <summary>
         /// Initial number of arguments parsed for a command

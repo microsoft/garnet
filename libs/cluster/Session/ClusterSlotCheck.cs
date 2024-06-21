@@ -105,37 +105,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Check if write is permitted on an array of RESP formatted keys starting at ptr, in sequence/interleaved with values and generate appropriate resp response.
-        /// </summary>
-        /// <param name="keyCount"></param>
-        /// <param name="ptr"></param>
-        /// <param name="endPtr"></param>        
-        /// <param name="interleavedKeys"></param>
-        /// <param name="readOnly"></param>
-        /// <param name="SessionAsking"></param>
-        /// <param name="dcurr"></param>
-        /// <param name="dend"></param>
-        /// <param name="retVal"></param>
-        /// <returns>True if redirect, False if can serve</returns>
-        public bool NetworkArraySlotVerify(int keyCount, ref byte* ptr, byte* endPtr, bool interleavedKeys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, out bool retVal)
-        {
-            retVal = false;
-            // If cluster is not enabled or a transaction is running skip slot check
-            if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
-
-            var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = KeyArraySlotVerify(config, keyCount, ref ptr, endPtr, readOnly: readOnly, interleavedKeys: interleavedKeys, SessionAsking, out retVal);
-
-            if (vres.state == SlotVerifiedState.OK)
-                return false;
-            else
-            {
-                WriteClusterSlotVerificationMessage(config, vres, ref dcurr, ref dend);
-            }
-            return true;
-        }
-
-        /// <summary>
         /// Check if read/write is permitted on an array of keys and generate appropriate resp response.
         /// </summary>
         /// <param name="keys"></param>
@@ -152,6 +121,21 @@ namespace Garnet.cluster
 
             var config = clusterProvider.clusterManager.CurrentConfig;
             var vres = MultiKeySlotVerify(config, ref keys, readOnly, sessionAsking, count);
+
+            if (vres.state == SlotVerifiedState.OK)
+                return false;
+            else
+                WriteClusterSlotVerificationMessage(config, vres, ref dcurr, ref dend);
+            return true;
+        }
+
+        public unsafe bool NetworkMultiKeySlotVerify(SessionParseState parser, bool interleaved, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend)
+        {
+            // If cluster is not enabled or a transaction is running skip slot check
+            if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
+
+            var config = clusterProvider.clusterManager.CurrentConfig;
+            var vres = MultiKeySlotVerify(config, parser, interleaved, readOnly, sessionAsking);
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;
