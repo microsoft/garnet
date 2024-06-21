@@ -299,10 +299,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
+        public GarnetStatus HashGetMultiple(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashGet(key, fields, out values);
+            return garnetApi.HashGetMultiple(key, fields, out values);
         }
 
         /// <inheritdoc />

@@ -4,6 +4,8 @@
 using System;
 using System.Linq;
 using System.Text;
+using Garnet.client;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -148,19 +150,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Returns all fields and values of the hash key.
-        /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key"></param>
-        /// <param name="values"></param>
-        /// <param name="objectStoreContext"></param>
-        /// <returns></returns>
-        public GarnetStatus HashGetAll<TObjectContext>(ArgSlice key, out ArgSlice[] values, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => HashGetAll(key, out values, ref objectStoreContext);
-
-        /// <summary>
-        /// Returns the value associated with field in the hash key.
+        /// Returns the value associated with the field in the hash key.
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
@@ -168,11 +158,34 @@ namespace Garnet.server
         /// <param name="value"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashGet<TObjectContext>(ArgSlice key, ArgSlice field, out ArgSlice value, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+        public unsafe GarnetStatus HashGet<TObjectContext>(ArgSlice key, ArgSlice field, out ArgSlice value, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
-            var status = HashGet(key, new ArgSlice[] { field }, out var values, ref objectStoreContext);
-            value = values.FirstOrDefault();
+            value = default;
+
+            if (key.Length == 0)
+                return GarnetStatus.OK;
+
+            // Prepare header in input buffer
+            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
+            rmwInput->header.type = GarnetObjectType.Hash;
+            rmwInput->header.flags = 0;
+            rmwInput->header.HashOp = HashOperation.HGET;
+
+            // Iterate through all inputs and add them to the scratch buffer in RESP format
+            var inputLength = sizeof(ObjectInputHeader);
+
+            var tmp = scratchBufferManager.FormatScratchAsResp(0, field);
+            inputLength += tmp.Length;
+
+            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
+
+            value = default;
+            if (status == GarnetStatus.OK)
+                value = ProcessRespSingleTokenOutput(outputFooter);
 
             return status;
         }
@@ -186,7 +199,7 @@ namespace Garnet.server
         /// <param name="values"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus HashGet<TObjectContext>(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values, ref TObjectContext objectStoreContext)
+        public unsafe GarnetStatus HashGetMultiple<TObjectContext>(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values, ref TObjectContext objectStoreContext)
            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             values = default;
@@ -198,20 +211,54 @@ namespace Garnet.server
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
-            rmwInput->header.HashOp = fields == default ? HashOperation.HGETALL : HashOperation.HGET;
-            rmwInput->arg1 = fields == default ? 0 : fields.Length;
+            rmwInput->header.HashOp = HashOperation.HMGET;
+            rmwInput->arg1 = fields.Length;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
-            int inputLength = sizeof(ObjectInputHeader);
+            var inputLength = sizeof(ObjectInputHeader);
 
-            if (rmwInput->header.HashOp != HashOperation.HGETALL)
+            foreach (var field in fields)
             {
-                foreach (var field in fields)
-                {
-                    var tmp = scratchBufferManager.FormatScratchAsResp(0, field);
-                    inputLength += tmp.Length;
-                }
+                var tmp = scratchBufferManager.FormatScratchAsResp(0, field);
+                inputLength += tmp.Length;
             }
+
+            var input = scratchBufferManager.GetSliceFromTail(inputLength);
+            var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
+
+            var status = ReadObjectStoreOperationWithOutput(key.ToArray(), input, ref objectStoreContext, ref outputFooter);
+
+            values = default;
+            if (status == GarnetStatus.OK)
+                values = ProcessRespArrayOutput(outputFooter, out _);
+
+            return status;
+        }
+
+        /// <summary>
+        /// Returns all fields and values of the hash key.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="values"></param>
+        /// <param name="objectStoreContext"></param>
+        /// <returns></returns>
+        public unsafe GarnetStatus HashGetAll<TObjectContext>(ArgSlice key, out ArgSlice[] values, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+        {
+            values = default;
+
+            if (key.Length == 0)
+                return GarnetStatus.OK;
+
+            // Prepare header in input buffer
+            var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
+            rmwInput->header.type = GarnetObjectType.Hash;
+            rmwInput->header.flags = 0;
+            rmwInput->header.HashOp = HashOperation.HGETALL;
+
+            // Iterate through all inputs and add them to the scratch buffer in RESP format
+            var inputLength = sizeof(ObjectInputHeader);
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(null) };
@@ -306,14 +353,18 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            // Create a random seed
+            var seed = RandomGen.Next();
+
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HRANDFIELD;
-            rmwInput->arg1 = 2;
+            rmwInput->arg1 = 1 << 2;
+            rmwInput->arg2 = seed;
 
-            int inputLength = sizeof(ObjectInputHeader);
+            var inputLength = sizeof(ObjectInputHeader);
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 
@@ -323,7 +374,7 @@ namespace Garnet.server
 
             //process output
             if (status == GarnetStatus.OK)
-                field = ProcessRespArrayOutput(outputFooter, out _).FirstOrDefault();
+                field = ProcessRespSingleTokenOutput(outputFooter);
 
             return status;
         }
@@ -336,11 +387,11 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="count"></param>
-        /// <param name="withvalues"></param>
+        /// <param name="withValues"></param>
         /// <param name="fields"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus HashRandomField<TObjectContext>(ArgSlice key, int count, bool withvalues, out ArgSlice[] fields, ref TObjectContext objectStoreContext)
+        public unsafe GarnetStatus HashRandomField<TObjectContext>(ArgSlice key, int count, bool withValues, out ArgSlice[] fields, ref TObjectContext objectStoreContext)
            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
             fields = default;
@@ -348,36 +399,19 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            // Create a random seed
+            var seed = RandomGen.Next();
+
             // Prepare header in input buffer
             var rmwInput = (ObjectInputHeader*)scratchBufferManager.CreateArgSlice(ObjectInputHeader.Size).ptr;
             rmwInput->header.type = GarnetObjectType.Hash;
             rmwInput->header.flags = 0;
             rmwInput->header.HashOp = HashOperation.HRANDFIELD;
-            rmwInput->arg1 = 4;
+            rmwInput->arg1 = (((count << 1) | 1) << 1) | (withValues ? 1 : 0);
+            rmwInput->arg2 = seed;
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
-            int inputLength = sizeof(ObjectInputHeader);
-
-            ArgSlice countArgSlice;
-            ArgSlice withValuesArgSlice;
-
-            // write count
-            var countBytes = Encoding.ASCII.GetBytes(count.ToString());
-            fixed (byte* countPtr = countBytes)
-            {
-                countArgSlice = new ArgSlice(countPtr, countBytes.Length);
-            }
-            var tmp = scratchBufferManager.FormatScratchAsResp(0, countArgSlice);
-            inputLength += tmp.Length;
-
-            //write withvalues
-            ReadOnlySpan<byte> withValuesBytes = "WITHVALUES"u8;
-            fixed (byte* withValuesPtr = withValuesBytes)
-            {
-                withValuesArgSlice = new ArgSlice(withValuesPtr, withValuesBytes.Length);
-            }
-            tmp = scratchBufferManager.FormatScratchAsResp(0, withValuesArgSlice);
-            inputLength += tmp.Length;
+            var inputLength = sizeof(ObjectInputHeader);
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
 

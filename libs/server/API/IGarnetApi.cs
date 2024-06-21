@@ -1323,7 +1323,7 @@ namespace Garnet.server
         /// <param name="fields"></param>
         /// <param name="values"></param>
         /// <returns></returns>
-        GarnetStatus HashGet(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values);
+        GarnetStatus HashGetMultiple(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values);
 
         /// <summary>
         /// Returns the value associated with field in the hash stored at key.

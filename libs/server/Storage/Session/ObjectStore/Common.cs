@@ -178,6 +178,40 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Converts a single token in RESP format to ArgSlice type
+        /// </summary>
+        /// <param name="outputFooter">The RESP format output object</param>
+        /// <returns></returns>
+        unsafe ArgSlice ProcessRespSingleTokenOutput(GarnetObjectStoreOutput outputFooter)
+        {
+            byte* element = null;
+            var len = 0;
+            ArgSlice result;
+            
+            var outputSpan = outputFooter.spanByteAndMemory.IsSpanByte ?
+                             outputFooter.spanByteAndMemory.SpanByte.AsReadOnlySpan() : outputFooter.spanByteAndMemory.AsMemoryReadOnlySpan();
+            try
+            {
+                fixed (byte* outputPtr = outputSpan)
+                {
+                    var refPtr = outputPtr;
+
+                    if (!RespReadUtils.ReadPtrWithLengthHeader(ref element, ref len, ref refPtr,
+                            outputPtr + outputSpan.Length))
+                        return default;
+                    result = new ArgSlice(element, len);
+                }
+            }
+            finally
+            {
+                if (!outputFooter.spanByteAndMemory.IsSpanByte)
+                    outputFooter.spanByteAndMemory.Memory.Dispose();
+            }
+
+            return result;
+        }
+
+        /// <summary>
         /// Gets the value of the key store in the Object Store
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>

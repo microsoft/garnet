@@ -372,10 +372,6 @@ namespace Garnet.server
          => storageSession.HashGet(key, field, out value, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashGet(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
-        => storageSession.HashGet(key, fields, out values, ref objectContext);
-
-        /// <inheritdoc />
         public GarnetStatus HashGetAll(ArgSlice key, out ArgSlice[] values)
         => storageSession.HashGetAll(key, out values, ref objectContext);
 
@@ -390,6 +386,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus HashGetMultiple(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter)
             => storageSession.HashGetMultiple(key, input, ref outputFooter, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus HashGetMultiple(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values)
+            => storageSession.HashGetMultiple(key, fields, out values, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashLength(ArgSlice key, out int count)
