@@ -2802,7 +2802,22 @@
     "AclCategories": "Admin, Dangerous, Slow",
     "Tips": null,
     "KeySpecifications": null,
-    "SubCommands": null
+    "SubCommands": [
+      {
+        "Command": "MODULE",
+        "Name": "MODULE|LOADCS",
+        "IsInternal": false,
+        "Arity": -3,
+        "Flags": "Admin, NoAsyncLoading, NoScript",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow",
+        "Tips": null,
+        "KeySpecifications": null,
+        "SubCommands": null
+      }
+    ]
   },
   {
     "Command": "MONITOR",

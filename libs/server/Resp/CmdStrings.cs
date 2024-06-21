@@ -81,6 +81,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> off => "off"u8;
         public static ReadOnlySpan<byte> BARRIER => "BARRIER"u8;
         public static ReadOnlySpan<byte> barrier => "barrier"u8;
+        public static ReadOnlySpan<byte> MODULE => "MODULE"u8;
+
         public static ReadOnlySpan<byte> WITHSCORES => "WITHSCORES"u8;
         public static ReadOnlySpan<byte> WITHVALUES => "WITHVALUES"u8;
         
@@ -150,7 +152,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
-
+        public static ReadOnlySpan<byte> RESP_ERR_MODULE_NO_INTERFACE => "ERR Module does not implement the required interface"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_MODULE_MULTIPLE_INTERFACES => "ERR Multiple modules present"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_MODULE_ONLOAD => "ERR Error during module OnLoad"u8;
 
         /// <summary>
         /// Response string templates
@@ -203,6 +207,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> CAT => "CAT"u8;
         public static ReadOnlySpan<byte> DELUSER => "DELUSER"u8;
         public static ReadOnlySpan<byte> LOAD => "LOAD"u8;
+        public static ReadOnlySpan<byte> LOADCS => "LOADCS"u8;
         public static ReadOnlySpan<byte> SETUSER => "SETUSER"u8;
         public static ReadOnlySpan<byte> USERS => "USERS"u8;
         public static ReadOnlySpan<byte> WHOAMI => "WHOAMI"u8;

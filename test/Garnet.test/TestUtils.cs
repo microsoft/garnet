@@ -792,7 +792,7 @@ namespace Garnet.test
             try
             {
                 var result = compilation.Emit(dstFilePath);
-                Assert.IsTrue(result.Success);
+                Assert.IsTrue(result.Success, string.Join(Environment.NewLine, result.Diagnostics.Select(d => d.ToString())));
             }
             catch (Exception ex)
             {
