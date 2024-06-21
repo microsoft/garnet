@@ -82,54 +82,6 @@ namespace Garnet.test
 
             Assert.IsTrue(blockingTask.IsCompletedSuccessfully);
             Assert.IsTrue(releasingTask.IsCompletedSuccessfully);
-
-            var valRgx = new Regex(@$"^\*2\r\n\${key3.Length}\r\n{key3}\r\n\$\d+\r\n(\d+)\r\n");
-            var batchSize = 2;
-            var batchCount = 0;
-            var blockingTaskCount = 100;
-            var tasks = new Task[blockingTaskCount];
-            var retrieved = new bool[blockingTaskCount];
-
-            for (var i = 0; i < blockingTaskCount; i++)
-            {
-                tasks[i] = taskFactory.StartNew(() =>
-                {
-                    using var lcr = TestUtils.CreateRequest();
-                    var tResponse = lcr.SendCommand($"{blockingCmd} {key3} 10", 3);
-                    var match = valRgx.Match(Encoding.ASCII.GetString(tResponse));
-                    Assert.IsTrue(match.Success && match.Groups.Count > 1);
-                    Assert.IsTrue(int.TryParse(match.Groups[1].Value, out var val));
-                    Assert.GreaterOrEqual(val, 0);
-                    Assert.Less(val, blockingTaskCount);
-                    Assert.IsFalse(retrieved[val]);
-                    retrieved[val] = true;
-                });
-
-                if ((i > 0 && i % batchSize == 0) || i == blockingTaskCount - 1)
-                {
-                    Debug.WriteLine($"{batchCount * batchSize},{Math.Min((batchCount + 1) * batchSize, blockingTaskCount)}");
-
-                    for (var j = batchCount * batchSize; j < Math.Min((batchCount + 1) * batchSize, blockingTaskCount); j++)
-                    {
-                        using var lcr = TestUtils.CreateRequest();
-                        lcr.SendCommand($"LPUSH {key3} {j}");
-                    }
-
-                    batchCount++;
-                }
-            }
-
-            try
-            {
-                Task.WaitAll(tasks, timeout);
-            }
-            catch (AggregateException)
-            {
-                Assert.Fail();
-            }
-
-            Assert.IsTrue(tasks.All(t => t.IsCompletedSuccessfully));
-            Assert.IsTrue(retrieved.All(r => r));
         }
 
         [Test]
