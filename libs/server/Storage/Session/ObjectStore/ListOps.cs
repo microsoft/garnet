@@ -46,9 +46,11 @@ namespace Garnet.server
             }
 
             var input = scratchBufferManager.GetSliceFromTail(inputLength);
-            var status = RMWObjectStoreOperation(key.ToArray(), input, out var output, ref objectStoreContext);
+            var arrKey = key.ToArray();
+            var status = RMWObjectStoreOperation(arrKey, input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.result1;
+            itemBroker.HandleCollectionUpdate(arrKey);
             return status;
         }
 
@@ -82,6 +84,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ToArray(), element, out var output, ref objectStoreContext);
             itemsDoneCount = output.result1;
 
+            itemBroker.HandleCollectionUpdate(key.Span.ToArray());
             return status;
         }
 
@@ -291,6 +294,7 @@ namespace Garnet.server
                     txnManager.Commit(true);
             }
 
+            itemBroker.HandleCollectionUpdate(destinationKey.Span.ToArray());
             return GarnetStatus.OK;
         }
 
@@ -332,7 +336,11 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus ListPush<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        {
+            var status = RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            itemBroker.HandleCollectionUpdate(key);
+            return status;
+        }
 
         /// <summary>
         /// Trim an existing list so it only contains the specified range of elements.
@@ -370,7 +378,11 @@ namespace Garnet.server
         /// <returns></returns>
         public GarnetStatus ListInsert<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
-            => RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+        {
+            var status = RMWObjectStoreOperation(key, input, out output, ref objectStoreContext);
+            itemBroker.HandleCollectionUpdate(key);
+            return status;
+        }
 
         /// <summary>
         /// Returns the element at index.

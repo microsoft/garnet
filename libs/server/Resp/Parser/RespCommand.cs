@@ -102,6 +102,9 @@ namespace Garnet.server
         LREM,
         LSET,
         LTRIM,
+        BLPOP,
+        BRPOP,
+        BLMOVE,
         MIGRATE,
         MSET,
         MSETNX,
@@ -740,6 +743,14 @@ namespace Garnet.server
                                                 return RespCommand.NONE;
                                             }
                                         }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBRPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BRPOP;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nBLPOP\r\n"u8))
+                                        {
+                                            return RespCommand.BLPOP;
+                                        }
                                         break;
 
                                     case 'H':
@@ -866,6 +877,12 @@ namespace Garnet.server
                             case 6:
                                 switch ((ushort)ptr[4])
                                 {
+                                    case 'B':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("BLMOVE\r\n"u8))
+                                        {
+                                            return RespCommand.BLMOVE;
+                                        }
+                                        break;
                                     case 'D':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("DBSIZE\r\n"u8))
                                         {

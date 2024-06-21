@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -175,6 +176,130 @@ namespace Garnet.server
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
                     break;
+            }
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        private bool ListBlockingPop<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count < 2)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+            }
+
+            var keys = new ArgSlice[count - 1];
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                keys[i] = default;
+                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
+                    return false;
+            }
+
+            if (NetworkKeyArraySlotVerify(ref keys, false))
+            {
+                return true;
+            }
+
+            if (!RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
+                recvBufferPtr + bytesRead) || !parsed)
+                return false;
+
+            var arrKeys = keys.Select(k => k.ToArray()).ToArray();
+            var result = itemBroker.GetCollectionItemAsync(command, arrKeys, this, timeout).Result;
+
+            if (!result.Found)
+            {
+                while (!RespWriteUtils.WriteNullArray(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteArrayLength(2, ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Key), ref dcurr, dend))
+                    SendAndReset();
+
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            // Move input head
+            readHead = (int)(ptr - recvBufferPtr);
+            return true;
+        }
+
+        private unsafe bool ListBlockingMove<TGarnetApi>(RespCommand command, int count, byte* ptr, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count != 5)
+            {
+                return AbortWithWrongNumberOfArguments(command.ToString(), count);
+            }
+
+            ArgSlice srcKey = default;
+            var cmdArgs = new ArgSlice[] { default, default, default };
+
+            // Read source key
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref srcKey.ptr, ref srcKey.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(srcKey.ReadOnlySpan, false))
+            {
+                return true;
+            }
+
+            // Read destination key
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref cmdArgs[0].ptr, ref cmdArgs[0].length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (NetworkSingleKeySlotVerify(cmdArgs[0].ReadOnlySpan, false))
+            {
+                return true;
+            }
+
+            ArgSlice srcDir = default, dstDir = default;
+
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref srcDir.ptr, ref srcDir.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            if (!RespReadUtils.ReadPtrWithLengthHeader(ref dstDir.ptr, ref dstDir.length, ref ptr, recvBufferPtr + bytesRead))
+                return false;
+
+            var sourceDirection = GetOperationDirection(srcDir);
+            var destinationDirection = GetOperationDirection(dstDir);
+
+            if (sourceDirection == OperationDirection.Unknown || destinationDirection == OperationDirection.Unknown)
+            {
+                return AbortWithErrorMessage(count, CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            var pSrcDir = (byte*)&sourceDirection;
+            var pDstDir = (byte*)&destinationDirection;
+            cmdArgs[1] = new ArgSlice(pSrcDir, 1);
+            cmdArgs[2] = new ArgSlice(pDstDir, 1);
+
+            if (!RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
+                    recvBufferPtr + bytesRead) || !parsed)
+                return false;
+
+            var result = itemBroker.MoveCollectionItemAsync(command, srcKey.ToArray(), this, timeout,
+                cmdArgs).Result;
+
+            if (!result.Found)
+            {
+                while (!RespWriteUtils.WriteNull(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteBulkString(new Span<byte>(result.Item), ref dcurr, dend))
+                    SendAndReset();
             }
 
             // Move input head
