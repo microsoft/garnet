@@ -712,6 +712,7 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <returns></returns>
         GarnetStatus ListRightPop(ArgSlice key, int count, out ArgSlice[] elements);
+
         #endregion
 
         /// <summary>

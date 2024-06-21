@@ -57,8 +57,8 @@ namespace CommandInfoUpdater
                 return false;
             }
 
-            IDictionary<string, RespCommandsInfo> queriedCommandsInfo = default;
-            var commandsToQuery = commandsToAdd.Select(c => c.Key.Command).Except(garnetCommandsInfo.Keys).ToArray();
+            IDictionary<string, RespCommandsInfo> queriedCommandsInfo = new Dictionary<string, RespCommandsInfo>();
+            var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command).ToArray();
             if (commandsToQuery.Length > 0 && !TryGetCommandsInfo(commandsToQuery, respServerPort, respServerHost,
                     logger, out queriedCommandsInfo))
             {
@@ -66,10 +66,32 @@ namespace CommandInfoUpdater
                 return false;
             }
 
-            IDictionary<string, RespCommandsInfo> additionalCommandsInfo = (queriedCommandsInfo == null
-                    ? garnetCommandsInfo
-                    : queriedCommandsInfo.UnionBy(garnetCommandsInfo, kvp => kvp.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            var additionalCommandsInfo = new Dictionary<string, RespCommandsInfo>();
+            foreach (var cmd in garnetCommandsInfo.Keys.Union(queriedCommandsInfo.Keys))
+            {
+                if (!additionalCommandsInfo.ContainsKey(cmd))
+                {
+                    var baseCommandInfo = queriedCommandsInfo.ContainsKey(cmd)
+                        ? queriedCommandsInfo[cmd]
+                        : garnetCommandsInfo[cmd];
+                    additionalCommandsInfo.Add(cmd, new RespCommandsInfo()
+                    {
+                        Command = baseCommandInfo.Command,
+                        Name = baseCommandInfo.Name,
+                        Arity = baseCommandInfo.Arity,
+                        Flags = baseCommandInfo.Flags,
+                        FirstKey = baseCommandInfo.FirstKey,
+                        LastKey = baseCommandInfo.LastKey,
+                        Step = baseCommandInfo.Step,
+                        AclCategories = baseCommandInfo.AclCategories,
+                        Tips = baseCommandInfo.Tips,
+                        KeySpecifications = baseCommandInfo.KeySpecifications,
+                        SubCommands = queriedCommandsInfo.ContainsKey(cmd) && garnetCommandsInfo.ContainsKey(cmd) ?
+                            queriedCommandsInfo[cmd].SubCommands.Union(garnetCommandsInfo[cmd].SubCommands).ToArray() :
+                            baseCommandInfo.SubCommands
+                    });
+                }
+            }
 
             var updatedCommandsInfo = GetUpdatedCommandsInfo(existingCommandsInfo, commandsToAdd, commandsToRemove,
                 additionalCommandsInfo);
