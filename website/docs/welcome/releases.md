@@ -61,8 +61,8 @@ OK
 ```
 Dockerfile links:
 * [Dockerfile](https://github.com/microsoft/garnet/blob/main/Dockerfile)
-* [Dockerfile.ubuntu-x64](https://github.com/microsoft/garnet/blob/main/Dockerfile.ubuntu-x64)
-* [Dockerfile.nanoserver-x64](https://github.com/microsoft/garnet/blob/main/Dockerfile.nanoserver-x64)
+* [Dockerfile.ubuntu](https://github.com/microsoft/garnet/blob/main/Dockerfile.ubuntu)
+* [Dockerfile.nanoserver](https://github.com/microsoft/garnet/blob/main/Dockerfile.nanoserver)
 
 ## Docker Compose
 
