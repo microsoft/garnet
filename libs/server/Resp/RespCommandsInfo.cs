@@ -212,10 +212,11 @@ namespace Garnet.server
                 }
             }
 
-            AllRespCommandsInfo = tmpAllRespCommandsInfo;
+            AllRespCommandsInfo =
+                new Dictionary<string, RespCommandsInfo>(tmpAllRespCommandsInfo, StringComparer.OrdinalIgnoreCase);
             ExternalRespCommandsInfo = new ReadOnlyDictionary<string, RespCommandsInfo>(tmpAllRespCommandsInfo
                 .Where(ci => !ci.Value.IsInternal)
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value));
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase));
             AllRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, AllRespCommandsInfo.Keys.ToArray());
             ExternalRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, ExternalRespCommandsInfo.Keys.ToArray());
             BasicRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpBasicRespCommandsInfo);

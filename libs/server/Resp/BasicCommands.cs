@@ -1083,21 +1083,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Processes COMMAND DOCS subcommand.
-        /// </summary>
-        /// <param name="ptr">Pointer to start of arguments in command buffer</param>
-        /// <param name="count">The number of arguments remaining in command buffer</param>
-        /// <returns>true if parsing succeeded correctly, false if not all tokens could be consumed and further processing is necessary.</returns>
-        private bool NetworkCOMMAND_DOCS(byte* ptr, int count)
-        {
-            // Placeholder for handling DOCS sub-command - returning Nil in the meantime.
-            while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
-                SendAndReset();
-
-            return true;
-        }
-
-        /// <summary>
         /// Processes COMMAND INFO subcommand.
         /// </summary>
         /// <param name="ptr">Pointer to start of arguments in command buffer</param>
