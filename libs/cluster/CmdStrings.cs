@@ -63,7 +63,6 @@ namespace Garnet.cluster
         /// </summary>
         public static ReadOnlySpan<byte> RESP_ERR_CROSSSLOT => "CROSSSLOT Keys in request do not hash to the same slot"u8;
         public static ReadOnlySpan<byte> RESP_ERR_CLUSTERDOWN => "CLUSTERDOWN Hash slot not served"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_MIGRATING => "MIGRATING"u8;
         public static ReadOnlySpan<byte> RESP_ERR_TRYAGAIN => "TRYAGAIN Multiple keys request during rehashing of slot"u8;
         public static ReadOnlySpan<byte> RESP_ERR_CREATE_SYNC_SESSION_ERROR => "PRIMARY-ERR Failed creating replica sync session task"u8;
         public static ReadOnlySpan<byte> RESP_ERR_RETRIEVE_SYNC_SESSION_ERROR => "PRIMARY-ERR Failed retrieving replica sync session"u8;

@@ -29,10 +29,6 @@ namespace Garnet.cluster
         /// </summary>
         CROSSSLOT,
         /// <summary>
-        /// Migrating cannot write
-        /// </summary>
-        MIGRATING,
-        /// <summary>
         /// Used for multi-key operations referring to a collection of keys some of which have migrated
         /// </summary>
         TRYAGAIN

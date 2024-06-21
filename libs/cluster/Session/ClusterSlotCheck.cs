@@ -45,9 +45,6 @@ namespace Garnet.cluster
                     (address, port) = config.GetEndpointFromSlot(slot);
                     errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {address}:{port}");
                     break;
-                case SlotVerifiedState.MIGRATING:
-                    errorMessage = CmdStrings.RESP_ERR_MIGRATING;
-                    break;
                 case SlotVerifiedState.CLUSTERDOWN:
                     errorMessage = CmdStrings.RESP_ERR_CLUSTERDOWN;
                     break;
