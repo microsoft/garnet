@@ -171,7 +171,6 @@ namespace Garnet.server
         private bool NetworkPSUBSCRIBE(int count, byte* ptr, byte* dend)
         {
             // PSUBSCRIBE channel1 channel2.. ==> [$10\r\nPSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => PSubscribe to channel1 and channel2
-            Debug.Assert(subscribeBroker != null);
 
             bool disabledBroker = subscribeBroker == null;
             for (int c = 0; c < count; c++)
