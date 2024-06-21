@@ -3289,6 +3289,51 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public void BLMoveACLs()
+        {
+            CheckCommands(
+                    "BLMOVE",
+                [DoBLMove]
+                );
+
+            static void DoBLMove(IServer server)
+            {
+                RedisResult val = server.Execute("BLMOVE", "foo", "bar", "RIGHT", "LEFT", "1");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void BLPopACLs()
+        {
+            CheckCommands(
+                    "BLPOP",
+                [DoBLPop]
+                );
+
+            static void DoBLPop(IServer server)
+            {
+                RedisResult val = server.Execute("BLPOP", "foo", "1");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
+        public void BRPopACLs()
+        {
+            CheckCommands(
+                    "BRPOP",
+                [DoBRPop]
+                );
+
+            static void DoBRPop(IServer server)
+            {
+                RedisResult val = server.Execute("BRPOP", "foo", "1");
+                Assert.IsTrue(val.IsNull);
+            }
+        }
+
+        [Test]
         public void LPopACLs()
         {
             CheckCommands(

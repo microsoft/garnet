@@ -27,6 +27,7 @@ const sidebars = {
 		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking"]},
 		  "dev/transactions",
 		  "dev/custom-commands",
+		  "dev/collection-broker",
 		  {type: 'category', label: 'Cluster', collapsed: true, items: ["dev/cluster/overview","dev/cluster/sharding", "dev/cluster/slot-migration"]},
 		  "dev/contributing"]},
 		/*
