@@ -290,6 +290,7 @@ namespace Garnet.server
 
             for (int i = 0; i < commandArguments.Count; i++)
             {
+                /* Commenting due to excessive verbosity
                 logger?.LogInformation($"BITFIELD > " +
                     $"[" + $"SECONDARY-OP: {(RespCommand)commandArguments[i].secondaryOpCode}, " +
                     $"SIGN: {((commandArguments[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? BitFieldSign.SIGNED : BitFieldSign.UNSIGNED)}, " +
@@ -297,7 +298,7 @@ namespace Garnet.server
                     $"OFFSET: {commandArguments[i].offset}, " +
                     $"VALUE: {commandArguments[i].value}, " +
                     $"OVERFLOW: {(BitFieldOverflow)commandArguments[i].overflowType}]");
-
+                */
                 pcurr = input + sizeof(int) + RespInputHeader.Size;
                 *pcurr = commandArguments[i].secondaryOpCode; pcurr++;
                 *pcurr = commandArguments[i].typeInfo; pcurr++;
