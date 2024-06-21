@@ -8,70 +8,72 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
+        private bool CheckIfKeyExists(byte[] key)
+        {
+            fixed (byte* keyPtr = key)
+                return CheckIfKeyExists(new ArgSlice(keyPtr, key.Length));
+        }
+
+        private bool CheckIfKeyExists(ArgSlice keySlice)
+            => basicGarnetApi.EXISTS(keySlice, StoreType.All) == GarnetStatus.OK;
+
         /// <summary>
-        /// Returns true if key maps to slot not owned by current node otherwise false.
+        /// Checks if the given key maps to a slot owned by this node.
         /// </summary>
+        /// <param name="keySlice"></param>
+        /// <param name="readOnly"></param>
+        /// <param name="SessionAsking"></param>
+        /// <returns>True if key maps to slot not owned by current node otherwise false.</returns>
         public bool CheckSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking)
             => SingleKeySlotVerify(keySlice, readOnly, SessionAsking).state == SlotVerifiedState.OK;
 
-        ClusterSlotVerificationResult SingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking)
         {
             var config = clusterProvider.clusterManager.CurrentConfig;
             return readOnly ? SingleKeyReadSlotVerify(config, keySlice, SessionAsking) : SingleKeyReadWriteSlotVerify(config, keySlice, SessionAsking);
         }
 
-        ClusterSlotVerificationResult SingleKeyReadSlotVerify(ClusterConfig config, ArgSlice keySlice, byte SessionAsking, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeyReadSlotVerify(ClusterConfig config, ArgSlice keySlice, byte SessionAsking, int slot = -1)
         {
             var _slot = slot == -1 ? ArgSliceUtils.HashSlot(keySlice) : (ushort)slot;
             var IsLocal = config.IsLocal(_slot);
             var state = config.GetState(_slot);
 
-            // If local, then slot in not stable state
+            // If local check we can serve request or redirect with ask
             if (IsLocal)
             {
-                // TODO: make sure other Read locations add this new logic
+                // Only if a node IsLocal we might be able to serve a request.
+                // So we check here if the node is recovering
                 if (clusterProvider.replicationManager.Recovering)
                 {
-                    // If we are a replica, let primary handle the request
-                    if (config.LocalNodeRole == NodeRole.REPLICA)
-                        return new(SlotVerifiedState.MOVED, _slot);
-                    else // Else report cluster down
-                        return new(SlotVerifiedState.CLUSTERDOWN, _slot);
+                    return config.LocalNodeRole switch
+                    {
+                        NodeRole.REPLICA => new(SlotVerifiedState.MOVED, _slot), // If replica is recovering redirect request to primary.
+                        NodeRole.PRIMARY => new(SlotVerifiedState.CLUSTERDOWN, _slot), // If primary is recovering slots unavailable, respond with CLUSTERDOWN.
+                        NodeRole.UNASSIGNED => new(SlotVerifiedState.CLUSTERDOWN, _slot), // This should never happen, adding only for completeness.
+                        _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // This should never happen, adding only for completeness.
+                    };
                 }
 
-                if (state == SlotState.STABLE)
-                    return new(SlotVerifiedState.OK, _slot);
-
-                // If key migrating and it exists serve read request
-                if (state == SlotState.MIGRATING)
-                    if (CheckIfKeyExists(keySlice))
-                        return new(SlotVerifiedState.OK, _slot);
-                    else
-                        return new(SlotVerifiedState.ASK, _slot);
-                else
-                    return new(SlotVerifiedState.CLUSTERDOWN, _slot);
+                return state switch
+                {
+                    SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
+                    SlotState.MIGRATING => CheckIfKeyExists(keySlice) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                    _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
+                };
             }
             else
             {
-                // If stable state and not local redirect to PRIMARY node
-                if (state == SlotState.STABLE)
-                    return new(SlotVerifiedState.MOVED, _slot);
-                else if (state == SlotState.IMPORTING)
+                return state switch
                 {
-                    // If importing state respond to query only if preceded by asking
-                    if (SessionAsking > 0)
-                        return new(SlotVerifiedState.OK, _slot);
-                    // If importing state and not asking redirect to source node
-                    else
-                        return new(SlotVerifiedState.MOVED, _slot);
-                }
-                // If offline respond with clusterdown
-                else
-                    return new(SlotVerifiedState.CLUSTERDOWN, _slot);
+                    SlotState.STABLE => new(SlotVerifiedState.MOVED, _slot), // If local slot in stable state and not local redirect to primary
+                    SlotState.IMPORTING => SessionAsking > 0 ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.MOVED, _slot), // If it is in importing state serve request only if asking flag is set else redirect
+                    _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // If not local and any other state respond with CLUSTERDOWN
+                };
             }
         }
 
-        ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ClusterConfig config, ArgSlice keySlice, byte SessionAsking, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ClusterConfig config, ArgSlice keySlice, byte SessionAsking, int slot = -1)
         {
             var _slot = slot == -1 ? ArgSliceUtils.HashSlot(keySlice) : (ushort)slot;
             var IsLocal = config.IsLocal(_slot, readCommand: readWriteSession);
@@ -81,37 +83,34 @@ namespace Garnet.cluster
             if (config.LocalNodeRole == NodeRole.REPLICA)
                 return new(SlotVerifiedState.MOVED, _slot);
 
-            if (IsLocal && state == SlotState.STABLE) return new(SlotVerifiedState.OK, _slot);
-
             if (IsLocal)
             {
-                if (state == SlotState.MIGRATING)
-                    // If key migrating and it exists cannot server write request
-                    if (CheckIfKeyExists(keySlice))
-                        return new(SlotVerifiedState.MIGRATING, _slot);
-                    // If key migrating can redirect with ask to target node
-                    else
-                        return new(SlotVerifiedState.ASK, _slot);
-                else
-                    return new(SlotVerifiedState.CLUSTERDOWN, _slot);
+                if (clusterProvider.replicationManager.Recovering)
+                {
+                    return config.LocalNodeRole switch
+                    {
+                        NodeRole.REPLICA => new(SlotVerifiedState.MOVED, _slot), // Never happens because replica does not serve writes and for this reason IsLocal will always be false
+                        NodeRole.PRIMARY => new(SlotVerifiedState.CLUSTERDOWN, _slot), // If primary is recovering slots unavailable, respond with CLUSTERDOWN.
+                        NodeRole.UNASSIGNED => new(SlotVerifiedState.CLUSTERDOWN, _slot), // This should never happen, adding only for completeness.
+                        _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // This should never happen, adding only for completeness.
+                    };
+                }
+
+                return state switch
+                {
+                    SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
+                    SlotState.MIGRATING => CheckIfKeyExists(keySlice) ? new(SlotVerifiedState.MIGRATING, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                    _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
+                };
             }
             else
             {
-                // If stable state and not local redirect to PRIMARY node
-                if (state == SlotState.STABLE)
-                    return new(SlotVerifiedState.MOVED, _slot);
-                else if (state == SlotState.IMPORTING)
+                return state switch
                 {
-                    // If importing state respond to query only if preceeded by asking
-                    if (SessionAsking > 0)
-                        return new(SlotVerifiedState.OK, _slot);
-                    // If importing state and not asking redirect to source node
-                    else
-                        return new(SlotVerifiedState.MOVED, _slot);
-                }
-                // If offline respond with clusterdown
-                else
-                    return new(SlotVerifiedState.CLUSTERDOWN, _slot);
+                    SlotState.STABLE => new(SlotVerifiedState.MOVED, _slot), // If local slot in stable state and not local redirect to primary
+                    SlotState.IMPORTING => SessionAsking > 0 ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.MOVED, _slot), // If it is in importing state serve request only if asking flag is set else redirect
+                    _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // If not local and any other state respond with CLUSTERDOWN
+                };
             }
         }
 
