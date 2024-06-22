@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -75,10 +76,10 @@ namespace Garnet.server
             }
         }
 
-        public void Start()
+        public void Start(CancellationToken token)
         {
-            mainLogTracker.Start();
-            readCacheTracker?.Start();
+            mainLogTracker.Start(token);
+            readCacheTracker?.Start(token);
         }
 
         /// <summary>

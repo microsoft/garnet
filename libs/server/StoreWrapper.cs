@@ -491,7 +491,7 @@ namespace Garnet.server
                 Task.Run(() => IndexAutoGrowTask(ctsCommit.Token));
             }
 
-            objectStoreSizeTracker?.Start();
+            objectStoreSizeTracker?.Start(ctsCommit.Token);
         }
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
