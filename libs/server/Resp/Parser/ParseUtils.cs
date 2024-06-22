@@ -50,7 +50,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Read a UTF-8 string from a given ArgSlice.
+        /// Read an ASCII string from a given ArgSlice.
         /// </summary>
         /// <returns>
         /// Parsed string
@@ -58,7 +58,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static string ReadString(ref ArgSlice slice)
         {
-            return Encoding.UTF8.GetString(slice.ReadOnlySpan);
+            return Encoding.ASCII.GetString(slice.ReadOnlySpan);
         }
     }
 }

@@ -1054,5 +1054,172 @@ namespace Garnet.server
 
             return true;
         }
+
+        private bool NetworkECHO(int count)
+        {
+            if (count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ECHO), count);
+            }
+
+            WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
+            return true;
+        }
+
+        // HELLO [protover [AUTH username password] [SETNAME clientname]]
+        private bool NetworkHELLO(int count)
+        {
+            byte? tmpRespProtocolVersion = null;
+            ReadOnlySpan<byte> authUsername = default, authPassword = default;
+            string tmpClientName = null;
+            string errorMsg = default;
+
+            if (count > 0)
+            {
+                var tokenIdx = 0;
+                var protocolVersionSpan = parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan;
+                if (!NumUtils.TryParse(protocolVersionSpan, out int localRespProtocolVersion))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+
+                    return true;
+                }
+
+                tmpRespProtocolVersion = (byte)localRespProtocolVersion;
+                tokenIdx++;
+
+                while (tokenIdx < count)
+                {
+                    var param = parseState.GetArgSliceByRef(tokenIdx).Span;
+                    tokenIdx++;
+
+                    if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AUTH))
+                    {
+                        if (count - tokenIdx < 2)
+                        {
+                            errorMsg = string.Format(CmdStrings.GenericSyntaxErrorOption, nameof(RespCommand.HELLO),
+                                nameof(CmdStrings.AUTH));
+                            break;
+                        }
+                        authUsername = parseState.GetArgSliceByRef(tokenIdx).Span;
+                        tokenIdx++;
+
+                        authPassword = parseState.GetArgSliceByRef(tokenIdx).Span;
+                        tokenIdx++;
+                    }
+                    else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETNAME))
+                    {
+                        if (count - tokenIdx < 1)
+                        {
+                            errorMsg = string.Format(CmdStrings.GenericSyntaxErrorOption, nameof(RespCommand.HELLO),
+                                nameof(CmdStrings.SETNAME));
+                            break;
+                        }
+
+                        tmpClientName = parseState.GetString(tokenIdx);
+                        tokenIdx++;
+                    }
+                    else
+                    {
+                        errorMsg = string.Format(CmdStrings.GenericSyntaxErrorOption, nameof(RespCommand.HELLO),
+                            Encoding.ASCII.GetString(param));
+                        break;
+                    }
+                }
+            }
+
+            if (errorMsg != default)
+            {
+                while (!RespWriteUtils.WriteError(errorMsg, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            ProcessHelloCommand(tmpRespProtocolVersion, authUsername, authPassword, tmpClientName);
+            return true;
+        }
+
+        /// <summary>
+        /// Process the HELLO command
+        /// </summary>
+        void ProcessHelloCommand(byte? respProtocolVersion, ReadOnlySpan<byte> username, ReadOnlySpan<byte> password, string clientName)
+        {
+            if (respProtocolVersion != null)
+            {
+                if (respProtocolVersion.Value is < 2 or > 3)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_UNSUPPORTED_PROTOCOL_VERSION, ref dcurr, dend))
+                        SendAndReset();
+                    return;
+                }
+
+                if (respProtocolVersion.Value != this.respProtocolVersion && asyncCompleted < asyncStarted)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_ASYNC_PROTOCOL_CHANGE, ref dcurr, dend))
+                        SendAndReset();
+                    return;
+                }
+
+                this.respProtocolVersion = respProtocolVersion.Value;
+            }
+
+            if (username != default)
+            {
+                if (!this.AuthenticateUser(username, password))
+                {
+                    if (username.IsEmpty)
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    return;
+                }
+            }
+
+            if (clientName != null)
+            {
+                this.clientName = clientName;
+            }
+
+            (string, string)[] helloResult =
+                [
+                    ("server", "redis"),
+                    ("version", storeWrapper.redisProtocolVersion),
+                    ("garnet_version", storeWrapper.version),
+                    ("proto", $"{this.respProtocolVersion}"),
+                    ("id", "63"),
+                    ("mode", storeWrapper.serverOptions.EnableCluster ? "cluster" : "standalone"),
+                    ("role", storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() ? "replica" : "master"),
+                ];
+
+            if (this.respProtocolVersion == 2)
+            {
+                while (!RespWriteUtils.WriteArrayLength(helloResult.Length * 2 + 2, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteMapLength(helloResult.Length + 1, ref dcurr, dend))
+                    SendAndReset();
+            }
+            for (int i = 0; i < helloResult.Length; i++)
+            {
+                while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item1, ref dcurr, dend))
+                    SendAndReset();
+                while (!RespWriteUtils.WriteAsciiBulkString(helloResult[i].Item2, ref dcurr, dend))
+                    SendAndReset();
+            }
+            while (!RespWriteUtils.WriteAsciiBulkString("modules", ref dcurr, dend))
+                SendAndReset();
+            while (!RespWriteUtils.WriteArrayLength(0, ref dcurr, dend))
+                SendAndReset();
+        }
     }
 }

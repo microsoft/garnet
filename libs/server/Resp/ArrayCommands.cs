@@ -497,5 +497,21 @@ namespace Garnet.server
                     SendAndReset();
             }
         }
+
+        private bool NetworkArrayPING(int count)
+        {
+            if (count > 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PING), count);
+            }
+
+            if (count == 0)
+            {
+                return NetworkPING();
+            }
+
+            WriteDirectLarge(new ReadOnlySpan<byte>(recvBufferPtr + readHead, endReadHead - readHead));
+            return true;
+        }
     }
 }

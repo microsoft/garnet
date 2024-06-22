@@ -452,6 +452,9 @@ namespace Garnet.server
                 RespCommand.COMMAND => NetworkCOMMAND(parseState.count),
                 RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(parseState.count),
                 RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(parseState.count),
+                RespCommand.ECHO => NetworkECHO(parseState.count),
+                RespCommand.INFO => NetworkINFO(parseState.count),
+                RespCommand.HELLO => NetworkHELLO(parseState.count),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
@@ -478,6 +481,7 @@ namespace Garnet.server
                 RespCommand.WATCH_MS => NetworkWATCH_MS(count),
                 RespCommand.WATCH_OS => NetworkWATCH_OS(count),
                 RespCommand.STRLEN => NetworkSTRLEN(ref storageApi),
+                RespCommand.PING => NetworkArrayPING(count),
                 //General key commands
                 RespCommand.DBSIZE => NetworkDBSIZE(ptr, ref storageApi),
                 RespCommand.KEYS => NetworkKEYS(ptr, ref storageApi),
@@ -661,7 +665,6 @@ namespace Garnet.server
 
                 currentCustomObjectCommand = null;
             }
-
             else
             {
                 return ProcessAdminCommands(command, count, ref storageApi);

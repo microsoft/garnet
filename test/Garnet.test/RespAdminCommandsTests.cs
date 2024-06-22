@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -57,7 +58,7 @@ namespace Garnet.test
         public void PingErrorMessageTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "-ERR wrong number of arguments for 'ping' command\r\n";
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.PING)}")}\r\n";
             var response = lightClientRequest.SendCommand("PING HELLO WORLD", 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -67,7 +68,7 @@ namespace Garnet.test
         public void EchoWithNoMessageReturnErrorTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "-ERR wrong number of arguments for 'echo' command\r\n";
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}")}\r\n";
             var response = lightClientRequest.SendCommand("ECHO", 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -78,7 +79,7 @@ namespace Garnet.test
         public void EchoWithMessagesReturnErrorTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "-ERR wrong number of arguments for 'echo' command\r\n";
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}")}\r\n";
             var response = lightClientRequest.SendCommand("ECHO HELLO WORLD", 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -101,7 +102,8 @@ namespace Garnet.test
         public void EchoTwoCommandsTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "-ERR wrong number of arguments for 'echo' command\r\n$5\r\nHELLO\r\n";
+            var wrongNumMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, $"{nameof(RespCommand.ECHO)}");
+            var expectedResponse = $"-{wrongNumMessage}\r\n$5\r\nHELLO\r\n";
             var response = lightClientRequest.SendCommands("ECHO HELLO WORLD WORLD2", "ECHO HELLO", 1, 1);
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
@@ -518,7 +520,9 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("ERR wrong number of arguments for 'config' command", ex.Message);
+                var expectedMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                    $"{nameof(RespCommand.CONFIG)}"));
+                Assert.AreEqual(expectedMessage, ex.Message);
             }
         }
 
@@ -534,7 +538,9 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                Assert.AreEqual("ERR wrong number of arguments for 'config|get' command", ex.Message);
+                var expectedMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                    $"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.GET)}"));
+                Assert.AreEqual(expectedMessage, ex.Message);
             }
         }
         #endregion
