@@ -91,7 +91,7 @@ namespace Garnet.cluster
             }
             else
             {
-                if (!clusterProvider.replicationManager.TryBeginReplicate(this, nodeid, background, false, out var errorMessage))
+                if (!clusterProvider.replicationManager.TryBeginReplicate(this, nodeid, background: background, force: false, out var errorMessage))
                 {
                     while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                         SendAndReset();

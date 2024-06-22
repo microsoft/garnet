@@ -569,13 +569,13 @@ namespace Garnet.server
         /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpoint tasks
         /// </summary>
         /// <returns></returns>
-        bool StartCheckpoint()
+        public bool TryPauseCheckpoints()
             => _checkpointTaskLock.TryWriteLock();
 
         /// <summary>
         /// Release checkpoint task lock
         /// </summary>
-        void CompleteCheckpoint()
+        public void ResumeCheckpoints()
             => _checkpointTaskLock.WriteUnlock();
 
         /// <summary>
@@ -586,13 +586,13 @@ namespace Garnet.server
         public async Task TakeOnDemandCheckpoint(DateTimeOffset entryTime)
         {
             // Take lock to ensure no other task will be taking a checkpoint
-            while (!StartCheckpoint())
+            while (!TryPauseCheckpoints())
                 await Task.Yield();
 
             // If an external task has taken a checkpoint beyond the provided entryTime return
             if (this.lastSaveTime > entryTime)
             {
-                CompleteCheckpoint();
+                ResumeCheckpoints();
                 return;
             }
 
@@ -609,7 +609,8 @@ namespace Garnet.server
         /// <returns></returns>
         public bool TakeCheckpoint(bool background, StoreType storeType = StoreType.All, ILogger logger = null)
         {
-            if (!StartCheckpoint()) return false;
+            // Prevent parallel checkpoint
+            if (!TryPauseCheckpoints()) return false;
             if (background)
                 Task.Run(async () => await CheckpointTask(storeType, logger));
             else
@@ -654,7 +655,7 @@ namespace Garnet.server
             }
             finally
             {
-                CompleteCheckpoint();
+                ResumeCheckpoints();
             }
         }
 
