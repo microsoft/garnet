@@ -44,7 +44,7 @@ namespace Garnet.cluster
 
             //This purge does not check for active readers
             //1. If primary is initializing then we will not have any active readers since not connections are established at recovery
-            //2. If replica is initializing during failover we dot this before allowing other replicas to attach.
+            //2. If replica is initializing during failover we do this before allowing other replicas to attach.
             if (safelyRemoveOutdated)
                 PurgeAllCheckpointsExceptEntry(tail);
         }
