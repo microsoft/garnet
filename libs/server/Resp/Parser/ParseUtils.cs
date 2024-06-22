@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
 
@@ -34,7 +35,7 @@ namespace Garnet.server
         /// Read a signed 64-bit long from a given ArgSlice.
         /// </summary>
         /// <returns>
-        /// Parsed integer
+        /// Parsed long
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long ReadLong(ref ArgSlice slice)
@@ -49,20 +50,15 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Read an ASCII string from a given ArgSlice.
+        /// Read a UTF-8 string from a given ArgSlice.
         /// </summary>
         /// <returns>
-        /// Parsed integer
+        /// Parsed string
         /// </returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static string ReadString(ref ArgSlice slice)
         {
-            var ptr = slice.ptr;
-            if (!RespReadUtils.ReadString(out var result, ref ptr, slice.ptr + slice.length))
-            {
-                RespParsingException.ThrowNonTerminatingString(slice.ptr, slice.length);
-            }
-            return result;
+            return Encoding.UTF8.GetString(slice.ReadOnlySpan);
         }
     }
 }
