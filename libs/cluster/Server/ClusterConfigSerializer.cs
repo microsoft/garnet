@@ -42,8 +42,6 @@ namespace Garnet.cluster
                     //40 bytes
                     writer.Write(worker.ReplicaOfNodeId);
 
-                //4 bytes
-                writer.Write(worker.ReplicationOffset);
                 //1 byte
                 writer.Write(worker.hostname == null ? (byte)0 : (byte)1);
                 if (worker.hostname != null)
@@ -123,8 +121,6 @@ namespace Garnet.cluster
                 byte isNull = reader.ReadByte();
                 if (isNull > 0)
                     newWorkers[i].ReplicaOfNodeId = reader.ReadString();
-
-                newWorkers[i].ReplicationOffset = reader.ReadInt64();
 
                 isNull = reader.ReadByte();
                 if (isNull > 0)

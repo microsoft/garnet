@@ -58,11 +58,6 @@ namespace Garnet.cluster
         public string ReplicaOfNodeId;
 
         /// <summary>
-        /// Replication offset (readonly value for information only)
-        /// </summary>
-        public long ReplicationOffset;
-
-        /// <summary>
         /// Hostname of this instance
         /// </summary>
         public string hostname;

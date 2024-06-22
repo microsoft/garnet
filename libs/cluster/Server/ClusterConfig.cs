@@ -58,7 +58,6 @@ namespace Garnet.cluster
             workers[0].ConfigEpoch = 0;
             workers[0].Role = NodeRole.UNASSIGNED;
             workers[0].ReplicaOfNodeId = null;
-            workers[0].ReplicationOffset = 0;
             workers[0].hostname = null;
         }
 
@@ -110,7 +109,6 @@ namespace Garnet.cluster
             newWorkers[1].ConfigEpoch = configEpoch;
             newWorkers[1].Role = role;
             newWorkers[1].ReplicaOfNodeId = replicaOfNodeId;
-            newWorkers[1].ReplicationOffset = 0;
             newWorkers[1].hostname = hostname;
             return new ClusterConfig(slotMap, newWorkers);
         }
@@ -586,8 +584,6 @@ namespace Garnet.cluster
             nodeInfo += $"${workers[workerId].Address.Length}\r\n{workers[workerId].Address}\r\n";
             nodeInfo += "$4\r\nrole\r\n";
             nodeInfo += $"${workers[workerId].Role.ToString().Length}\r\n{workers[workerId].Role}\r\n";
-            nodeInfo += "$18\r\nreplication-offset\r\n";
-            nodeInfo += $":{workers[workerId].ReplicationOffset}\r\n";
             nodeInfo += "$6\r\nhealth\r\n";
             nodeInfo += $"$6\r\nonline\r\n";
             return nodeInfo;
@@ -849,13 +845,6 @@ namespace Garnet.cluster
             }
             return null;
         }
-
-        /// <summary>
-        /// Update replication offset lazily.
-        /// </summary>
-        /// <param name="newReplicationOffset">Long of new replication offset.</param>
-        public void LazyUpdateLocalReplicationOffset(long newReplicationOffset)
-            => workers[1].ReplicationOffset = newReplicationOffset;
 
         /// <summary>
         /// Merging incoming configuration from gossip with local configuration copy.

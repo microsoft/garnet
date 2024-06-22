@@ -137,7 +137,6 @@ namespace GarnetClusterManagement
             workers[0].ConfigEpoch = 0;
             workers[0].Role = NodeRole.UNASSIGNED;
             workers[0].ReplicaOfNodeId = string.Empty;
-            workers[0].ReplicationOffset = 0;
             workers[0].hostname = null;
         }
 
