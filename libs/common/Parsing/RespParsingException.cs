@@ -66,17 +66,6 @@ namespace Garnet.common.Parsing
         }
 
         /// <summary>
-        /// Throw non-terminating string.
-        /// </summary>
-        /// <param name="buffer">Pointer to an ASCII-encoded byte buffer containing the string that could not be converted.</param>
-        /// <param name="length">Length of the buffer.</param>
-        [DoesNotReturn]
-        public static unsafe void ThrowNonTerminatingString(byte* buffer, int length)
-        {
-            Throw($"Unable to parse string. String did not terminate in the specified buffer: {Encoding.ASCII.GetString(buffer, length)}");
-        }
-
-        /// <summary>
         /// Throw a exception indicating that an integer overflow has occurred.
         /// </summary>
         /// <param name="buffer">Pointer to an ASCII-encoded byte buffer containing the string that caused the overflow.</param>
