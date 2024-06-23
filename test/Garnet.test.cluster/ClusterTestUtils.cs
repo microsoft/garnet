@@ -75,7 +75,6 @@ namespace Garnet.test.cluster
         public string address;
         public int port;
         public Role role;
-        public long replicationOffset;
     }
 
     public struct ShardInfo
@@ -370,8 +369,7 @@ namespace Garnet.test.cluster
                                     nodeid = GetNodeIdFromNode(i, logger),
                                     address = endpoint.Address.ToString(),
                                     port = endpoint.Port,
-                                    role = Role.PRIMARY,
-                                    replicationOffset = 0
+                                    role = Role.PRIMARY
                                 }
                             }
                     };
@@ -434,8 +432,7 @@ namespace Garnet.test.cluster
                             nodeid = GetNodeIdFromNode(i, logger),
                             address = GetAddressFromNodeIndex(i),
                             port = GetPortFromNodeIndex(i),
-                            role = Role.REPLICA,
-                            replicationOffset = 0
+                            role = Role.REPLICA
                         }
                     );
                     j = (j + 1) % primary_count;
@@ -2008,15 +2005,14 @@ namespace Garnet.test.cluster
                     shardInfo.nodes = [];
                     foreach (var node in nodes.Select(v => (RedisResult[])v))
                     {
-                        Assert.AreEqual(12, node.Length);
+                        Assert.AreEqual(10, node.Length);
                         NodeInfo nodeInfo = new()
                         {
                             nodeIndex = GetNodeIndexFromPort((int)node[3]),
                             nodeid = (string)node[1],
                             port = (int)node[3],
                             address = (string)node[5],
-                            role = Enum.Parse<Role>((string)node[7]),
-                            replicationOffset = (long)node[9]
+                            role = Enum.Parse<Role>((string)node[7])
                         };
                         shardInfo.nodes.Add(nodeInfo);
                     }
