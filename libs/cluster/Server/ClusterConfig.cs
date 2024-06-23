@@ -575,7 +575,7 @@ namespace Garnet.cluster
 
         private string CreateFormattedNodeInfo(int workerId)
         {
-            var nodeInfo = "*12\r\n";
+            var nodeInfo = "*10\r\n";
             nodeInfo += "$2\r\nid\r\n";
             nodeInfo += $"$40\r\n{workers[workerId].Nodeid}\r\n";
             nodeInfo += "$4\r\nport\r\n";
