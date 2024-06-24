@@ -130,10 +130,10 @@ namespace Garnet.cluster
         private async Task<string> InitiateReplicaSync()
         {
             // Send request to primary
-            //      primary will initiate background task and start sending checkpoint data
+            //      Primary will initiate background task and start sending checkpoint data
             //
             // Replica waits for retrieval to complete before moving forward to recovery
-            //      retrieval completion coordinated by remoteCheckpointRetrievalCompleted
+            //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
             var current = clusterProvider.clusterManager.CurrentConfig;
             var (address, port) = current.GetLocalNodePrimaryAddress();
             GarnetClientSession gcs = null;
