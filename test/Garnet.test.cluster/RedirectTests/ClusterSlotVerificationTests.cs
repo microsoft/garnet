@@ -116,7 +116,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message);
+                    Assert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.ToString);
                 }
             }
 
@@ -129,7 +129,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message);
+                    Assert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.ToString);
                 }
             }
         }
@@ -157,7 +157,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.Fail(ex.Message);
+                    Assert.Fail(ex.Message, command.ToString);
                 }
             }
 
@@ -173,7 +173,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.Fail(command.ToString, ex);
+                    Assert.Fail(command.ToString, ex, command.ToString);
                 }
             }
         }
@@ -202,7 +202,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message);
+                    Assert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.ToString);
                 }
             }
 
@@ -216,7 +216,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message);
+                    Assert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.ToString);
                 }
             }
         }
@@ -247,16 +247,16 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.IsTrue(ex.Message.StartsWith("Key has MOVED"));
+                    Assert.IsTrue(ex.Message.StartsWith("Key has MOVED"), command.ToString);
                     var tokens = ex.Message.Split(' ');
-                    Assert.IsTrue(tokens.Length > 10 && tokens[2].Equals("MOVED"));
+                    Assert.IsTrue(tokens.Length > 10 && tokens[2].Equals("MOVED"), command.ToString);
 
                     var _address = tokens[5].Split(':')[0];
                     var _port = int.Parse(tokens[5].Split(':')[1]);
                     var _slot = int.Parse(tokens[8]);
-                    Assert.AreEqual(address, _address);
-                    Assert.AreEqual(port, _port);
-                    Assert.AreEqual(command.GetSlot, _slot);
+                    Assert.AreEqual(address, _address, command.ToString);
+                    Assert.AreEqual(port, _port, command.ToString);
+                    Assert.AreEqual(command.GetSlot, _slot, command.ToString);
                 }
             }
 
@@ -269,7 +269,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual($"MOVED {command.GetSlot} {address}:{port}", ex.Message);
+                    Assert.AreEqual($"MOVED {command.GetSlot} {address}:{port}", ex.Message, command.ToString);
                 }
             }
         }
@@ -303,14 +303,14 @@ namespace Garnet.test.cluster
                 catch (Exception ex)
                 {
                     var tokens = ex.Message.Split(' ');
-                    Assert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"));
+                    Assert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.ToString);
 
                     var _address = tokens[1].Split(':')[0];
                     var _port = int.Parse(tokens[1].Split(':')[1]);
                     var _slot = int.Parse(tokens[4]);
-                    Assert.AreEqual(address, _address);
-                    Assert.AreEqual(port, _port);
-                    Assert.AreEqual(command.GetSlot, _slot);
+                    Assert.AreEqual(address, _address, command.ToString);
+                    Assert.AreEqual(port, _port, command.ToString);
+                    Assert.AreEqual(command.GetSlot, _slot, command.ToString);
                 }
             }
 
@@ -323,7 +323,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual($"ASK {command.GetSlot} {address}:{port}", ex.Message);
+                    Assert.AreEqual($"ASK {command.GetSlot} {address}:{port}", ex.Message, command.ToString);
                 }
             }
         }
@@ -351,7 +351,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    context.logger?.LogError(ex, "Failed executing setup");
+                    context.logger?.LogError(ex, "Failed executing setup {command}", command.ToString);
                 }
 
                 ConfigureSlotForMigration();
@@ -361,7 +361,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("TRYAGAIN Multiple keys request during rehashing of slot", ex.Message);
+                    Assert.AreEqual("TRYAGAIN Multiple keys request during rehashing of slot", ex.Message, command.ToString);
                 }
                 finally
                 {
@@ -372,7 +372,7 @@ namespace Garnet.test.cluster
                     }
                     catch (Exception ex)
                     {
-                        context.logger?.LogError(ex, "Failed executing cleanup");
+                        context.logger?.LogError(ex, "Failed executing cleanup {command}", command.ToString);
                     }
                 }
             }

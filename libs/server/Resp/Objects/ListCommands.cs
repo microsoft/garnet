@@ -200,7 +200,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: parseState.count - 1))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -2))
                 return true;
 
             if (!RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
