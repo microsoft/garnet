@@ -113,7 +113,7 @@ namespace Tsavorite.core
 
         public void Start(CancellationToken token)
         {
-            Task.Run(() => ResizerTask(token), token);
+            Task.Run(() => ResizerTask(token));
         }
 
         public bool IsSizeBeyondLimit => TotalSizeBytes > highTargetSize;
@@ -161,7 +161,7 @@ namespace Tsavorite.core
                     await Task.Delay(TimeSpan.FromSeconds(resizeTaskDelaySeconds), token);
                     ResizeIfNeeded(token);
                 }
-                catch (Exception e)
+                catch (Exception e) when (e is not OperationCanceledException)
                 {
                     logger?.LogWarning(e, "Exception when attempting to perform memory resizing.");
                 }
