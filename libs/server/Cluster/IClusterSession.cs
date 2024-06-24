@@ -69,11 +69,12 @@ namespace Garnet.server
         /// <summary>
         /// Array slot verify (write result to network)
         /// </summary>
-        /// <param name="parser"></param>
+        /// <param name="parseState"></param>
+        /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
         /// <returns></returns>
-        unsafe bool NetworkMultiKeySlotVerify(SessionParseState parser, ref byte* dcurr, ref byte* dend);
+        unsafe bool NetworkMultiKeySlotVerify(SessionParseState parseState, ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
         /// Sets the user currently authenticated in this session (used for permission checks)

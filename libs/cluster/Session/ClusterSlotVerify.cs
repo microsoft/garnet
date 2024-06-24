@@ -152,18 +152,18 @@ namespace Garnet.cluster
             return verifyResult;
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, SessionParseState parser)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, SessionParseState parseState, ClusterSlotVerificationInput csvi)
         {
-            var key = parser.GetArgSliceByRef(parser.firstKeyOffset);
+            var key = parseState.GetArgSliceByRef(csvi.firstKey);
             var slot = ArgSliceUtils.HashSlot(key);
-            var verifyResult = SingleKeySlotVerify(config, key, parser.readOnly, parser.sessionAsking);
-            var stride = parser.firstKeyOffset + (parser.interleavedKeys ? 2 : 1);
+            var verifyResult = SingleKeySlotVerify(config, key, csvi.readOnly, csvi.sessionAsking);
+            var stride = csvi.firstKey + csvi.step;
 
-            for (var i = stride; i < parser.lastKeyOffset; i += stride)
+            for (var i = stride; i < csvi.lastKey; i += stride)
             {
-                key = parser.GetArgSliceByRef(i);
+                key = parseState.GetArgSliceByRef(i);
                 var _slot = ArgSliceUtils.HashSlot(key);
-                var _verifyResult = SingleKeySlotVerify(config, key, parser.readOnly, parser.sessionAsking);
+                var _verifyResult = SingleKeySlotVerify(config, key, csvi.readOnly, csvi.sessionAsking);
 
                 // Check if slot changes between keys
                 if (_slot != slot)

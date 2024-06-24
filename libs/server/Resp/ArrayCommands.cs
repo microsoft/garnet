@@ -27,7 +27,7 @@ namespace Garnet.server
 
             SpanByte input = default;
 
-            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: true))
+            if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
 
             while (!RespWriteUtils.WriteArrayLength(parseState.count, ref dcurr, dend))
@@ -66,7 +66,7 @@ namespace Garnet.server
             SpanByte input = default;
             long ctx = default;
 
-            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: true))
+            if (NetworkMultiKeySlotVerify(readOnly: true))
             {
                 return true;
             }
@@ -170,7 +170,7 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.count % 2 == 0);
 
-            if (NetworkMultiKeySlotVerify(interleavedKeys: true, readOnly: false))
+            if (NetworkMultiKeySlotVerify(readOnly: false, step: 2))
             {
                 return true;
             }
@@ -192,7 +192,7 @@ namespace Garnet.server
         private bool NetworkMSETNX<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (NetworkMultiKeySlotVerify(interleavedKeys: true, readOnly: false))
+            if (NetworkMultiKeySlotVerify(readOnly: false))
             {
                 return true;
             }
@@ -245,7 +245,7 @@ namespace Garnet.server
         private bool NetworkDEL<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: false))
+            if (NetworkMultiKeySlotVerify(readOnly: false))
             {
                 return true;
             }

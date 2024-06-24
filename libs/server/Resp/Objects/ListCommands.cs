@@ -200,7 +200,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: false, firstKeyOffset: 0, lastKeyOffset: parseState.count - 1))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: parseState.count - 1))
                 return true;
 
             if (!RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
@@ -903,7 +903,7 @@ namespace Garnet.server
             garnetStatus = GarnetStatus.OK;
             node = null;
 
-            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: true, firstKeyOffset: 0, lastKeyOffset: 2))
+            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 2))
                 return true;
 
             garnetStatus =

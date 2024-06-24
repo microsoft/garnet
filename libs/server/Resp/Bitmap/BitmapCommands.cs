@@ -455,7 +455,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: false))
+            if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
 
             _ = storageApi.StringBitOperation(parseState.Parameters, bitop, out var result);

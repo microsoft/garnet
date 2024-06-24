@@ -143,7 +143,7 @@ namespace Garnet.server
         {
             int exists = 0;
 
-            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: true))
+            if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
 
             for (int i = 0; i < count; i++)

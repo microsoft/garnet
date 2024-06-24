@@ -104,7 +104,7 @@ namespace Garnet.server
         private bool HyperLogLogLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: true))
+            if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
 
             // 4 byte length of input
@@ -144,7 +144,7 @@ namespace Garnet.server
         private bool HyperLogLogMerge<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (NetworkMultiKeySlotVerify(interleavedKeys: false, readOnly: false))
+            if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
 
             var status = storageApi.HyperLogLogMerge(parseState.Parameters, out bool error);
