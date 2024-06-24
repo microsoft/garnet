@@ -92,7 +92,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="key"></param>
         /// <returns></returns>
-        public static unsafe ushort HashSlot(byte[] key)
+        public static unsafe ushort HashSlot(Span<byte> key)
         {
             fixed (byte* keyPtr = key)
                 return HashSlot(keyPtr, key.Length);

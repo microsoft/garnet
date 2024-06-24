@@ -542,6 +542,7 @@ namespace Garnet.test.cluster
         static readonly byte[] ascii_chars = Encoding.ASCII.GetBytes("abcdefghijklmnopqrstvuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
         public Random r;
         ConnectionMultiplexer redis = null;
+        GarnetClientSession[] gcsConnections = null;
         readonly EndPointCollection endpoints;
         string[] nodeIds;
 
@@ -661,6 +662,19 @@ namespace Garnet.test.cluster
 
         public IDatabase GetDatabase() => redis.GetDatabase(0);
 
+        public GarnetClientSession GetGarnetClientSession(int nodeIndex)
+        {
+            gcsConnections ??= new GarnetClientSession[endpoints.Count];
+
+            if (gcsConnections[nodeIndex] == null)
+            {
+                var endpoint = GetEndPoint(nodeIndex).ToIPEndPoint();
+                gcsConnections[nodeIndex] = new GarnetClientSession(endpoint.Address.ToString(), endpoint.Port);
+                gcsConnections[nodeIndex].Connect();
+            }
+            return gcsConnections[nodeIndex];
+        }
+
         public IServer GetServer(int nodeIndex) => redis.GetServer(GetEndPoint(nodeIndex));
 
         public IServer GetServer(IPEndPoint endPoint) => redis.GetServer(endPoint);
@@ -736,13 +750,6 @@ namespace Garnet.test.cluster
             byte[] data = new byte[length];
             RandomBytes(ref data, startOffset, endOffset);
             return Encoding.ASCII.GetString(data);
-        }
-
-        public byte[] RandomBytes(int length, int startOffset = -1, int endOffset = -1)
-        {
-            byte[] data = new byte[length];
-            RandomBytes(ref data, startOffset, endOffset);
-            return data;
         }
 
         public static ushort HashSlot(byte[] key)
