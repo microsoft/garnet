@@ -149,10 +149,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [KEYS](generic-commands.md#keys) | ➕ |  |
 |  | [MIGRATE](generic-commands.md#migrate) | ➕ |  |
 |  | MOVE | ➖ |  |
-| <span id="list">**LIST**</span> | BLMOVE | ➖ |  |
+| <span id="list">**LIST**</span> | [BLMOVE](data-structures.md#blmove) | ➕ |  |
 |  | BLMPOP | ➖ |  |
-|  | BLPOP | ➖ |  |
-|  | BRPOP | ➖ |  |
+|  | [BLPOP](data-structures.md#blpop) | ➕ |  |
+|  | [BRPOP](data-structures.md#brpop) | ➕ |  |
 |  | BRPOPLPUSH | ➖ |  |
 |  | [LINDEX](data-structures.md#lindex) | ➕ |  |
 |  | [LINSERT](data-structures.md#linsert) | ➕ |  |

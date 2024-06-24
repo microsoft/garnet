@@ -12,15 +12,6 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        private bool CheckIfKeyExists(byte[] key)
-        {
-            fixed (byte* keyPtr = key)
-                return CheckIfKeyExists(new ArgSlice(keyPtr, key.Length));
-        }
-
-        private bool CheckIfKeyExists(ArgSlice keySlice)
-            => basicGarnetApi.EXISTS(keySlice, StoreType.All) == GarnetStatus.OK;
-
         /// <summary>
         /// Redirect message for readonly operation COUNTKEYS GETKEYSINSLOT
         /// </summary>

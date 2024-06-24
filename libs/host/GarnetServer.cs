@@ -28,6 +28,7 @@ namespace Garnet
         private IDevice aofDevice;
         private TsavoriteLog appendOnlyFile;
         private SubscribeBroker<SpanByte, SpanByte, IKeySerializer<SpanByte>> broker;
+        private CollectionItemBroker itemBroker;
         private LogSettings logSettings, objLogSettings;
         private INamedDeviceFactory logFactory;
         private MemoryLogger initLogger;
@@ -234,6 +235,8 @@ namespace Garnet
                         revivificationSettings: objRevivSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteKV  [obj]"));
                 if (objTotalMemorySize > 0)
                     objectStoreSizeTracker = new CacheSizeTracker(objectStore, objLogSettings, objTotalMemorySize, this.loggerFactory);
+
+                itemBroker = new CollectionItemBroker();
             }
 
             if (!opts.DisablePubSub)
@@ -279,7 +282,7 @@ namespace Garnet
             storeWrapper = new StoreWrapper(version, redisProtocolVersion, server, store, objectStore, objectStoreSizeTracker, customCommandManager, appendOnlyFile, opts, clusterFactory: clusterFactory, loggerFactory: loggerFactory);
 
             // Create session provider for Garnet
-            Provider = new GarnetProvider(storeWrapper, broker);
+            Provider = new GarnetProvider(storeWrapper, broker, itemBroker);
 
             // Create user facing API endpoints
             Metrics = new MetricsApi(Provider);
