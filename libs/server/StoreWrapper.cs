@@ -472,8 +472,10 @@ namespace Garnet.server
 
         void CompactionCommitAof()
         {
-            // If we are the primary, we commit the AOF
-            // If we are the replica, we commit the AOF if fast commit is disabled
+            // If we are the primary, we commit the AOF.
+            // If we are the replica, we commit the AOF only if fast commit is disabled
+            // because we do not want to clobber AOF addresses.
+            // TODO: replica should instead wait until the next AOF commit is done via primary
             if (serverOptions.EnableAOF)
             {
                 if (serverOptions.EnableCluster && clusterProvider.IsReplica())
