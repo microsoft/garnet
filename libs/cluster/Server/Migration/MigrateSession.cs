@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -43,7 +44,7 @@ namespace Garnet.cluster
         readonly bool _replaceOption;
         readonly TimeSpan _timeout;
         readonly List<(int, int)> _slotRanges;
-        readonly Dictionary<ArgSlice, KeyMigrationStatus> _keys;
+        readonly ConcurrentDictionary<ArgSlice, KeyMigrationStatus> _keys;
 
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
@@ -67,7 +68,7 @@ namespace Garnet.cluster
         /// Add key to the migrate dictionary for tracking progress during migration
         /// </summary>
         /// <param name="key"></param>
-        public void AddKey(ArgSlice key) => _keys.Add(key, KeyMigrationStatus.QUEUED);
+        public void AddKey(ArgSlice key) => _keys.TryAdd(key, KeyMigrationStatus.QUEUED);
 
         /// <summary>
         /// Check if it is safe to operate on the provided key when a slot state is set to MIGRATING
@@ -144,7 +145,7 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            Dictionary<ArgSlice, KeyMigrationStatus> keys,
+            ConcurrentDictionary<ArgSlice, KeyMigrationStatus> keys,
             TransferOption transferOption,
             ILogger logger = null)
         {
@@ -162,7 +163,7 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keys = keys == null ? new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance) : keys;
+            this._keys = keys == null ? new ConcurrentDictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance) : keys;
             this.transferOption = transferOption;
 
             if (clusterProvider != null)
