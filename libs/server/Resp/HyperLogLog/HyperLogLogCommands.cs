@@ -33,7 +33,7 @@ namespace Garnet.server
             }
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkSingleKeySlotVerify(argSlices[0].ptr, argSlices[0].Length, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
 
             //4 byte length of input

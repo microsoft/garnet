@@ -18,19 +18,26 @@ namespace Garnet.test.cluster
         readonly int targetIndex = 1;
         readonly int otherIndex = 2;
 
+        readonly int iterations = 10;
+
         private void InitializeCommands()
         {
-            commands =
-            [
-
-            ];
-
             commands =
             [
                 new GET(),
                 new SET(),
                 new MGET(),
-                new MSET()
+                new MSET(),
+                new PFADD(),
+                new PFCOUNT(),
+                new PFMERGE(),
+                new SETBIT(),
+                new GETBIT(),
+                new BITCOUNT(),
+                new BITPOS(),
+                new BITOP(),
+                new BITFIELD(),
+                new BITFIELD_RO(),
             ];
         }
 
@@ -100,24 +107,28 @@ namespace Garnet.test.cluster
             var requestNodeIndex = otherIndex;
             foreach (var command in commands)
             {
-                SERedisClusterDown(command);
+                for (var i = 0; i < iterations; i++)
+                    SERedisClusterDown(command);
             }
 
             foreach (var command in commands)
             {
-                GarnetClientSessionClusterDown(command);
+                for (var i = 0; i < iterations; i++)
+                    GarnetClientSessionClusterDown(command);
             }
 
             void SERedisClusterDown(BaseCommand command)
             {
                 try
                 {
-                    context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.ToString, command.GetSingleSlotRequest());
+                    context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.ToString);
+                    Assert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
+                    return;
                 }
+                Assert.Fail("Should not reach here", command.Command);
             }
 
             void GarnetClientSessionClusterDown(BaseCommand command)
@@ -129,8 +140,10 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.ToString);
+                    Assert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
+                    return;
                 }
+                Assert.Fail("Should not reach here", command.Command);
             }
         }
 
@@ -141,23 +154,25 @@ namespace Garnet.test.cluster
             var requestNodeIndex = sourceIndex;
             foreach (var command in commands)
             {
-                SERedisOKTest(command);
+                for (var i = 0; i < iterations; i++)
+                    SERedisOKTest(command);
             }
 
             foreach (var command in commands)
             {
-                GarnetClientSessionOK(command);
+                for (var i = 0; i < iterations; i++)
+                    GarnetClientSessionOK(command);
             }
 
             void SERedisOKTest(BaseCommand command)
             {
                 try
                 {
-                    _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.ToString, command.GetSingleSlotRequest());
+                    _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest());
                 }
                 catch (Exception ex)
                 {
-                    Assert.Fail(ex.Message, command.ToString);
+                    Assert.Fail(ex.Message, command.Command);
                 }
             }
 
@@ -173,7 +188,7 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.Fail(command.ToString, ex, command.ToString);
+                    Assert.Fail(command.Command, ex, command.Command);
                 }
             }
         }
@@ -185,39 +200,47 @@ namespace Garnet.test.cluster
             var requestNodeIndex = sourceIndex;
             foreach (var command in commands)
             {
-                SERedisCrossslotTest(command);
+                for (var i = 0; i < iterations; i++)
+                    SERedisCrossslotTest(command);
             }
 
             foreach (var command in commands)
             {
-                GarnetClientSessionCrossslotTest(command);
+                for (var i = 0; i < iterations; i++)
+                    GarnetClientSessionCrossslotTest(command);
             }
 
             void SERedisCrossslotTest(BaseCommand command)
             {
+                if (!command.IsArrayCommand)
+                    return;
                 try
                 {
-                    if (command.IsArrayCommand)
-                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.ToString, command.GetCrossSlotRequest());
+                    _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetCrossSlotRequest());
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.ToString);
+                    Assert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
+                    return;
                 }
+                Assert.Fail("Should not reach here", command.Command);
             }
 
             void GarnetClientSessionCrossslotTest(BaseCommand command)
             {
+                if (!command.IsArrayCommand)
+                    return;
                 var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
                 try
                 {
-                    if (command.IsArrayCommand)
-                        client.ExecuteAsync(command.GetCrossslotRequestWithCommand).GetAwaiter().GetResult();
+                    client.ExecuteAsync(command.GetCrossslotRequestWithCommand).GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.ToString);
+                    Assert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
+                    return;
                 }
+                Assert.Fail("Should not reach here", command.Command);
             }
         }
 
@@ -231,33 +254,37 @@ namespace Garnet.test.cluster
 
             foreach (var command in commands)
             {
-                SERedisMOVEDTest(command);
+                for (var i = 0; i < iterations; i++)
+                    SERedisMOVEDTest(command);
             }
 
             foreach (var command in commands)
             {
-                GarnetClientSessionMOVEDTest(command);
+                for (var i = 0; i < iterations; i++)
+                    GarnetClientSessionMOVEDTest(command);
             }
 
             void SERedisMOVEDTest(BaseCommand command)
             {
                 try
                 {
-                    context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.ToString, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
+                    context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
                 }
                 catch (Exception ex)
                 {
-                    Assert.IsTrue(ex.Message.StartsWith("Key has MOVED"), command.ToString);
+                    Assert.IsTrue(ex.Message.StartsWith("Key has MOVED"), command.Command);
                     var tokens = ex.Message.Split(' ');
-                    Assert.IsTrue(tokens.Length > 10 && tokens[2].Equals("MOVED"), command.ToString);
+                    Assert.IsTrue(tokens.Length > 10 && tokens[2].Equals("MOVED"), command.Command);
 
                     var _address = tokens[5].Split(':')[0];
                     var _port = int.Parse(tokens[5].Split(':')[1]);
                     var _slot = int.Parse(tokens[8]);
-                    Assert.AreEqual(address, _address, command.ToString);
-                    Assert.AreEqual(port, _port, command.ToString);
-                    Assert.AreEqual(command.GetSlot, _slot, command.ToString);
+                    Assert.AreEqual(address, _address, command.Command);
+                    Assert.AreEqual(port, _port, command.Command);
+                    Assert.AreEqual(command.GetSlot, _slot, command.Command);
+                    return;
                 }
+                Assert.Fail("Should not reach here", command.Command);
             }
 
             void GarnetClientSessionMOVEDTest(BaseCommand command)
@@ -269,8 +296,10 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual($"MOVED {command.GetSlot} {address}:{port}", ex.Message, command.ToString);
+                    Assert.AreEqual($"MOVED {command.GetSlot} {address}:{port}", ex.Message, command.Command);
+                    return;
                 }
+                Assert.Fail("Should not reach here", command.Command);
             }
         }
 
@@ -285,12 +314,14 @@ namespace Garnet.test.cluster
 
             foreach (var command in commands)
             {
-                SERedisASKTest(command);
+                for (var i = 0; i < iterations; i++)
+                    SERedisASKTest(command);
             }
 
             foreach (var command in commands)
             {
-                GarnetClientSessionASKTest(command);
+                for (var i = 0; i < iterations; i++)
+                    GarnetClientSessionASKTest(command);
             }
 
             void SERedisASKTest(BaseCommand command)
@@ -298,20 +329,22 @@ namespace Garnet.test.cluster
                 RedisResult result = default;
                 try
                 {
-                    result = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.ToString, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
+                    result = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
                 }
                 catch (Exception ex)
                 {
                     var tokens = ex.Message.Split(' ');
-                    Assert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.ToString);
+                    Assert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command);
 
                     var _address = tokens[1].Split(':')[0];
                     var _port = int.Parse(tokens[1].Split(':')[1]);
                     var _slot = int.Parse(tokens[4]);
-                    Assert.AreEqual(address, _address, command.ToString);
-                    Assert.AreEqual(port, _port, command.ToString);
-                    Assert.AreEqual(command.GetSlot, _slot, command.ToString);
+                    Assert.AreEqual(address, _address, command.Command);
+                    Assert.AreEqual(port, _port, command.Command);
+                    Assert.AreEqual(command.GetSlot, _slot, command.Command);
+                    return;
                 }
+                Assert.Fail("Should not reach here", command.Command);
             }
 
             void GarnetClientSessionASKTest(BaseCommand command)
@@ -323,8 +356,10 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual($"ASK {command.GetSlot} {address}:{port}", ex.Message, command.ToString);
+                    Assert.AreEqual($"ASK {command.GetSlot} {address}:{port}", ex.Message, command.Command);
+                    return;
                 }
+                Assert.Fail("Should not reach here", command.Command);
             }
         }
 
@@ -335,7 +370,8 @@ namespace Garnet.test.cluster
             var requestNodeIndex = sourceIndex;
             foreach (var command in commands)
             {
-                SERedisTRYAGAINTest(command);
+                for (var i = 0; i < iterations; i++)
+                    SERedisTRYAGAINTest(command);
             }
 
             void SERedisTRYAGAINTest(BaseCommand command)
@@ -343,25 +379,28 @@ namespace Garnet.test.cluster
                 if (!command.IsArrayCommand)
                     return;
 
-                var setup = command.SetupSingleSlotRequest();
-                var setupParameters = setup.Slice(1).ToArray();
-                try
+                foreach (var setup in command.SetupSingleSlotRequest())
                 {
-                    _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(setup[0], setupParameters, CommandFlags.NoRedirect);
-                }
-                catch (Exception ex)
-                {
-                    context.logger?.LogError(ex, "Failed executing setup {command}", command.ToString);
+                    var setupParameters = setup.Slice(1).ToArray();
+                    try
+                    {
+                        _ = context.clusterTestUtils.GetServer(requestNodeIndex).Execute(setup[0], setupParameters, CommandFlags.NoRedirect);
+                    }
+                    catch (Exception ex)
+                    {
+                        context.logger?.LogError(ex, "Failed executing setup {command}", command.Command);
+                    }
                 }
 
                 ConfigureSlotForMigration();
                 try
                 {
-                    context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.ToString, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
+                    context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect);
                 }
                 catch (Exception ex)
                 {
-                    Assert.AreEqual("TRYAGAIN Multiple keys request during rehashing of slot", ex.Message, command.ToString);
+                    Assert.AreEqual("TRYAGAIN Multiple keys request during rehashing of slot", ex.Message, command.Command);
+                    return;
                 }
                 finally
                 {
@@ -372,9 +411,11 @@ namespace Garnet.test.cluster
                     }
                     catch (Exception ex)
                     {
-                        context.logger?.LogError(ex, "Failed executing cleanup {command}", command.ToString);
+                        context.logger?.LogError(ex, "Failed executing cleanup {command}", command.Command);
                     }
                 }
+
+                Assert.Fail("Should not reach here", command.Command);
             }
         }
     }
