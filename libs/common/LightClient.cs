@@ -110,7 +110,7 @@ namespace Garnet.common
         {
             socket = GetSendSocket(address, port);
             networkHandler = new LightClientTcpNetworkHandler(this, socket, networkPool, sslOptions != null, this);
-            networkHandler.StartAsync(sslOptions, $"{address}:{port}").GetAwaiter().GetResult();
+            networkHandler.StartAsync(sslOptions, $"{address}:{port}").ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
         }
