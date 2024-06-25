@@ -131,6 +131,8 @@ namespace Garnet.server
         /// </summary>
         string clientName = null;
 
+        private static readonly Random RandomGen = new();
+
         public RespServerSession(
             INetworkSender networkSender,
             StoreWrapper storeWrapper,
@@ -415,23 +417,23 @@ namespace Garnet.server
                 RespCommand.SET => NetworkSET(ref storageApi),
                 RespCommand.SETEX => NetworkSETEX(false, ref storageApi),
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
-                RespCommand.SETEXNX => NetworkSETEXNX(parseState.count, ptr, ref storageApi),
+                RespCommand.SETEXNX => NetworkSETEXNX(parseState.count, ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
                 RespCommand.RENAME => NetworkRENAME(ptr, ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(parseState.count, ptr, ref storageApi),
                 RespCommand.EXPIRE => NetworkEXPIRE(parseState.count, ptr, RespCommand.EXPIRE, ref storageApi),
                 RespCommand.PEXPIRE => NetworkEXPIRE(parseState.count, ptr, RespCommand.PEXPIRE, ref storageApi),
                 RespCommand.PERSIST => NetworkPERSIST(ptr, ref storageApi),
-                RespCommand.GETRANGE => NetworkGetRange(ptr, ref storageApi),
+                RespCommand.GETRANGE => NetworkGetRange(ref storageApi),
                 RespCommand.TTL => NetworkTTL(ptr, RespCommand.TTL, ref storageApi),
                 RespCommand.PTTL => NetworkTTL(ptr, RespCommand.PTTL, ref storageApi),
-                RespCommand.SETRANGE => NetworkSetRange(ptr, ref storageApi),
+                RespCommand.SETRANGE => NetworkSetRange(ref storageApi),
                 RespCommand.GETDEL => NetworkGETDEL(ptr, ref storageApi),
-                RespCommand.APPEND => NetworkAppend(ptr, ref storageApi),
-                RespCommand.INCR => NetworkIncrement(ptr, RespCommand.INCR, ref storageApi),
-                RespCommand.INCRBY => NetworkIncrement(ptr, RespCommand.INCRBY, ref storageApi),
-                RespCommand.DECR => NetworkIncrement(ptr, RespCommand.DECR, ref storageApi),
-                RespCommand.DECRBY => NetworkIncrement(ptr, RespCommand.DECRBY, ref storageApi),
+                RespCommand.APPEND => NetworkAppend(ref storageApi),
+                RespCommand.INCR => NetworkIncrement(RespCommand.INCR, ref storageApi),
+                RespCommand.INCRBY => NetworkIncrement(RespCommand.INCRBY, ref storageApi),
+                RespCommand.DECR => NetworkIncrement(RespCommand.DECR, ref storageApi),
+                RespCommand.DECRBY => NetworkIncrement(RespCommand.DECRBY, ref storageApi),
                 RespCommand.SETBIT => NetworkStringSetBit(ptr, ref storageApi),
                 RespCommand.GETBIT => NetworkStringGetBit(ptr, ref storageApi),
                 RespCommand.BITCOUNT => NetworkStringBitCount(ptr, parseState.count, ref storageApi),
@@ -447,9 +449,12 @@ namespace Garnet.server
                 RespCommand.RUNTXP => NetworkRUNTXP(parseState.count, ptr),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
-                RespCommand.COMMAND => NetworkCOMMAND(ptr, parseState.count),
-                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(ptr, parseState.count),
-                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(ptr, parseState.count),
+                RespCommand.COMMAND => NetworkCOMMAND(parseState.count),
+                RespCommand.COMMAND_COUNT => NetworkCOMMAND_COUNT(parseState.count),
+                RespCommand.COMMAND_INFO => NetworkCOMMAND_INFO(parseState.count),
+                RespCommand.ECHO => NetworkECHO(parseState.count),
+                RespCommand.INFO => NetworkINFO(parseState.count),
+                RespCommand.HELLO => NetworkHELLO(parseState.count),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
@@ -475,7 +480,8 @@ namespace Garnet.server
                 RespCommand.WATCH => NetworkWATCH(count),
                 RespCommand.WATCH_MS => NetworkWATCH_MS(count),
                 RespCommand.WATCH_OS => NetworkWATCH_OS(count),
-                RespCommand.STRLEN => NetworkSTRLEN(ptr, ref storageApi),
+                RespCommand.STRLEN => NetworkSTRLEN(ref storageApi),
+                RespCommand.PING => NetworkArrayPING(count),
                 //General key commands
                 RespCommand.DBSIZE => NetworkDBSIZE(ptr, ref storageApi),
                 RespCommand.KEYS => NetworkKEYS(ptr, ref storageApi),
@@ -550,8 +556,8 @@ namespace Garnet.server
                 RespCommand.HSET => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HGET => HashGet(cmd, count, ptr, ref storageApi),
-                RespCommand.HMGET => HashGet(cmd, count, ptr, ref storageApi),
-                RespCommand.HGETALL => HashGet(cmd, count, ptr, ref storageApi),
+                RespCommand.HMGET => HashGetMultiple(cmd, count, ptr, ref storageApi),
+                RespCommand.HGETALL => HashGetAll(cmd, count, ptr, ref storageApi),
                 RespCommand.HDEL => HashDelete(count, ptr, ref storageApi),
                 RespCommand.HLEN => HashLength(count, ptr, ref storageApi),
                 RespCommand.HSTRLEN => HashStrLength(count, ptr, ref storageApi),
@@ -561,7 +567,7 @@ namespace Garnet.server
                 RespCommand.HINCRBY => HashIncrement(cmd, count, ptr, ref storageApi),
                 RespCommand.HINCRBYFLOAT => HashIncrement(cmd, count, ptr, ref storageApi),
                 RespCommand.HSETNX => HashSet(cmd, count, ptr, ref storageApi),
-                RespCommand.HRANDFIELD => HashGet(cmd, count, ptr, ref storageApi),
+                RespCommand.HRANDFIELD => HashRandomField(cmd, count, ptr, ref storageApi),
                 RespCommand.HSCAN => ObjectScan(count, ptr, GarnetObjectType.Hash, ref storageApi),
                 // Set Commands
                 RespCommand.SADD => SetAdd(count, ptr, ref storageApi),
@@ -659,7 +665,6 @@ namespace Garnet.server
 
                 currentCustomObjectCommand = null;
             }
-
             else
             {
                 return ProcessAdminCommands(command, count, ref storageApi);

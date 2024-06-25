@@ -137,10 +137,10 @@ namespace Garnet.server
                         HashGet(_input, input.Length, ref output);
                         break;
                     case HashOperation.HMGET:
-                        HashGet(_input, input.Length, ref output);
+                        HashMultipleGet(_input, input.Length, ref output);
                         break;
                     case HashOperation.HGETALL:
-                        HashGet(_input, input.Length, ref output);
+                        HashGetAll(ref output);
                         break;
                     case HashOperation.HDEL:
                         HashDelete(_input, input.Length, _output);
@@ -170,7 +170,7 @@ namespace Garnet.server
                         HashSetWhenNotExists(_input, input.Length, _output);
                         break;
                     case HashOperation.HRANDFIELD:
-                        HashRandomField(_input, input.Length, ref output);
+                        HashRandomField(_input, ref output);
                         break;
                     case HashOperation.HSCAN:
                         if (ObjectUtils.ReadScanInput(_input, input.Length, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))

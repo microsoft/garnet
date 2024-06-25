@@ -3,11 +3,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
+using NUnit.Framework.Interfaces;
 using StackExchange.Redis;
 using SetOperation = StackExchange.Redis.SetOperation;
 
@@ -665,6 +667,62 @@ namespace Garnet.test
             expectedResult = ["three", "two", "one"];
             Assert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
         }
+
+        [Test]
+        public void CanDoSRANDMEMBERWithCountCommandSE()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = new RedisKey("myset");
+            var values = new HashSet<RedisValue> { new("one"), new("two"), new("three"), new("four"), new("five") };
+
+            // Check SRANDMEMBER with non-existing key
+            var member = db.SetRandomMember(key);
+            Assert.IsTrue(member.IsNull);
+
+            // Check SRANDMEMBER with non-existing key and count
+            var members = db.SetRandomMembers(key, 3);
+            Assert.IsEmpty(members);
+
+            // Check ZRANDMEMBER with wrong number of arguments
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("SRANDMEMBER", key, 3, "bla"));
+            var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.SRANDMEMBER));
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
+            // Check SRANDMEMBER with non-numeric count
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("SRANDMEMBER", key, "bla"));
+            expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
+            // Add items to set
+            var added = db.SetAdd(key, values.ToArray());
+            Assert.AreEqual(values.Count, added);
+
+            // Check SRANDMEMBER without count
+            member = db.SetRandomMember(key);
+            Assert.IsTrue(values.Contains(member));
+
+            // Check SRANDMEMBER with positive count (distinct)
+            members = db.SetRandomMembers(key, 3);
+            Assert.AreEqual(3, members.Length);
+            Assert.AreEqual(3, members.Distinct().Count());
+            Assert.IsTrue(members.All(values.Contains));
+
+            // Check SRANDMEMBER with positive count (distinct) larger than set cardinality
+            members = db.SetRandomMembers(key, 6);
+            Assert.AreEqual(values.Count, members.Length);
+            Assert.AreEqual(values.Count, members.Distinct().Count());
+            Assert.IsTrue(members.All(values.Contains));
+
+            // Check SRANDMEMBER with negative count (non-distinct)
+            members = db.SetRandomMembers(key, -6);
+            Assert.AreEqual(6, members.Length);
+            Assert.GreaterOrEqual(values.Count, members.Distinct().Count());
+            Assert.IsTrue(members.All(values.Contains));
+        }
+
         #endregion
 
 

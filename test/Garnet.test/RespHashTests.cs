@@ -159,11 +159,14 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            db.HashSet("user:user1", [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")]);
-            HashEntry[] result = db.HashGetAll("user:user1");
-            Assert.AreEqual(3, result.Length);
+            HashEntry[] hashEntries =
+                [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")];
+            db.HashSet("user:user1", hashEntries);
+            var result = db.HashGetAll("user:user1");
+            Assert.AreEqual(hashEntries.Length, result.Length);
+            Assert.AreEqual(hashEntries.Length, result.Select(r => r.Name).Distinct().Count());
+            Assert.IsTrue(hashEntries.OrderBy(e => e.Name).SequenceEqual(result.OrderBy(r => r.Name)));
         }
-
 
         [Test]
         public void CanDoHExists()
@@ -282,6 +285,72 @@ namespace Garnet.test
             db.HashSet(new RedisKey("user:user1"), new RedisValue("Field"), new RedisValue("World"), When.NotExists);
             result = db.HashGet("user:user1", "Field");
             Assert.AreEqual("Hello", result);
+        }
+
+        [Test]
+        public void CanDoRandomField()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var hashKey = new RedisKey("user:user1");
+            HashEntry[] hashEntries =
+                [new HashEntry("Title", "Tsavorite"), new HashEntry("Year", "2021"), new HashEntry("Company", "Acme")];
+            var hashDict = hashEntries.ToDictionary(e => e.Name, e => e.Value);
+            db.HashSet(hashKey, hashEntries);
+
+            // Check HRANDFIELD with wrong number of arguments
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("HRANDFIELD", hashKey, 3, "WITHVALUES", "bla"));
+            var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.HRANDFIELD));
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
+            // Check HRANDFIELD with non-numeric count
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("HRANDFIELD", hashKey, "bla"));
+            expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
+            // Check HRANDFIELD with syntax error
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("HRANDFIELD", hashKey, 3, "withvalue"));
+            expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_SYNTAX_ERROR);
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
+            // HRANDFIELD without count
+            var field = db.HashRandomField(hashKey);
+            Assert.IsFalse(field.IsNull);
+            Assert.Contains(field, hashDict.Keys);
+
+            // HRANDFIELD with positive count (distinct)
+            var fields = db.HashRandomFields(hashKey, 2);
+            Assert.AreEqual(2, fields.Length);
+            Assert.AreEqual(2, fields.Distinct().Count());
+            Assert.IsTrue(fields.All(hashDict.ContainsKey));
+
+            // HRANDFIELD with positive count (distinct) with values
+            var fieldsWithValues = db.HashRandomFieldsWithValues(hashKey, 2);
+            Assert.AreEqual(2, fieldsWithValues.Length);
+            Assert.AreEqual(2, fieldsWithValues.Distinct().Count());
+            Assert.IsTrue(fieldsWithValues.All(e => hashDict.ContainsKey(e.Name) && hashDict[e.Name] == e.Value));
+
+            // HRANDFIELD with positive count (distinct) greater than hash cardinality
+            fields = db.HashRandomFields(hashKey, 5);
+            Assert.AreEqual(fields.Length, fields.Length);
+            Assert.AreEqual(fields.Length, fields.Distinct().Count());
+            Assert.IsTrue(fields.All(hashDict.ContainsKey));
+
+            // HRANDFIELD with negative count (non-distinct)
+            fields = db.HashRandomFields(hashKey, -8);
+            Assert.AreEqual(8, fields.Length);
+            Assert.GreaterOrEqual(3, fields.Distinct().Count());
+            Assert.IsTrue(fields.All(hashDict.ContainsKey));
+
+            // HRANDFIELD with negative count (non-distinct) with values
+            fieldsWithValues = db.HashRandomFieldsWithValues(hashKey, -8);
+            Assert.AreEqual(8, fieldsWithValues.Length);
+            Assert.GreaterOrEqual(3, fieldsWithValues.Select(e => e.Name).Distinct().Count());
+            Assert.IsTrue(fieldsWithValues.All(e => hashDict.ContainsKey(e.Name) && hashDict[e.Name] == e.Value));
         }
 
         [Test]

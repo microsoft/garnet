@@ -73,7 +73,7 @@ namespace Garnet
                             api.HashGetAll(myHash, out var values);
                             if (!values[3].ReadOnlySpan.SequenceEqual(pairs[1].value.ReadOnlySpan))
                                 result = false;
-                            api.HashGet(myHash, fields[0..2], out values);
+                            api.HashGetMultiple(myHash, fields[0..2], out values);
                             if (values.Length != 2)
                                 result = false;
                             api.HashLength(myHash, out count);
@@ -88,8 +88,8 @@ namespace Garnet
                             api.HashRandomField(myHash, 2, true, out var randFields);
                             if (randFields.Length != 4)
                                 result = false;
-                            ArgSlice elementremove = GetNextArg(input, ref offset);
-                            api.HashDelete(myHash, elementremove, out count);
+                            var elementRemove = GetNextArg(input, ref offset);
+                            api.HashDelete(myHash, elementRemove, out count);
                             if (count != 1)
                                 result = false;
                             api.HashScan(myHash, 0, "age", 5, out var items);

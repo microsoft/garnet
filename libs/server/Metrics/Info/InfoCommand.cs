@@ -10,7 +10,7 @@ namespace Garnet.server
 {
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool ProcessInfoCommand(int count)
+        private bool NetworkINFO(int count)
         {
             HashSet<InfoMetricsType> sections = null;
             bool invalid = false;
