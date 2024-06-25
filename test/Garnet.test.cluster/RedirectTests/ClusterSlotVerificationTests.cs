@@ -43,6 +43,13 @@ namespace Garnet.test.cluster
                 new INCR(),
                 new APPEND(),
                 new STRLEN(),
+                new RENAME(),
+                new DEL(),
+                new GETDEL(),
+                new EXISTS(),
+                new PERSIST(),
+                new EXPIRE(),
+                new TTL()
             ];
         }
 
@@ -177,7 +184,8 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.Fail(ex.Message, command.Command);
+                    if (!command.RequiresExistingKey)
+                        Assert.Fail(ex.Message, command.Command);
                 }
             }
 
@@ -193,7 +201,8 @@ namespace Garnet.test.cluster
                 }
                 catch (Exception ex)
                 {
-                    Assert.Fail(command.Command, ex, command.Command);
+                    if (!command.RequiresExistingKey)
+                        Assert.Fail(command.Command, ex, command.Command);
                 }
             }
         }

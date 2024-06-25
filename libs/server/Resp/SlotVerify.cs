@@ -21,16 +21,6 @@ namespace Garnet.server
             => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(key, readOnly, SessionAsking, ref dcurr, ref dend);
 
         /// <summary>
-        /// This method is used to verify slot ownership for provided key sequence.
-        /// On error this method writes to response buffer but does not drain recv buffer (caller is responsible for draining).
-        /// </summary>
-        /// <param name="keyPtr">Pointer to key bytes</param>
-        /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
-        /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkSingleKeySlotVerify(byte* keyPtr, int ksize, bool readOnly)
-            => clusterSession != null && clusterSession.NetworkSingleKeySlotVerify(new ArgSlice(keyPtr, ksize), readOnly, SessionAsking, ref dcurr, ref dend);
-
-        /// <summary>
         /// This method is used to verify slot ownership for provided array of key argslices.
         /// </summary>
         /// <param name="keys">Array of key ArgSlice</param>

@@ -29,6 +29,7 @@ namespace Garnet.test.cluster
         public abstract bool IsReadOnly { get; }
         public abstract bool IsArrayCommand { get; }
         public abstract bool ArrayResponse { get; }
+        public virtual bool RequiresExistingKey => false;
         public abstract string Command { get; }
 
         public BaseCommand()
@@ -271,6 +272,160 @@ namespace Garnet.test.cluster
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(STRLEN);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class RENAME : BaseCommand
+    {
+        public override bool IsReadOnly => false;
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override bool RequiresExistingKey => true;
+        public override string Command => nameof(RENAME);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new(["MSET", ssk[1], "value1", ssk[2], "value", ssk[3], "value2"]) };
+            return setup;
+        }
+    }
+
+    internal class DEL : BaseCommand
+    {
+        public override bool IsReadOnly => false;
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(DEL);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], csk[2]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new(["MSET", ssk[1], "value1", ssk[2], "value", ssk[3], "value2"]) };
+            return setup;
+        }
+    }
+
+    internal class GETDEL : BaseCommand
+    {
+        public override bool IsReadOnly => false;
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(GETDEL);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class EXISTS : BaseCommand
+    {
+        public override bool IsReadOnly => true;
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(EXISTS);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1], ssk[2]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1], csk[2]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new ArraySegment<string>(["MSET", ssk[1], "value1", ssk[2], "value", ssk[3], "value2"]) };
+            return setup;
+        }
+    }
+
+    internal class PERSIST : BaseCommand
+    {
+        public override bool IsReadOnly => false;
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(PERSIST);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0]];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class EXPIRE : BaseCommand
+    {
+        public override bool IsReadOnly => false;
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(EXPIRE);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], "10"];
+        }
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
+    internal class TTL : BaseCommand
+    {
+        public override bool IsReadOnly => false;
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => nameof(TTL);
 
         public override string[] GetSingleSlotRequest()
         {
