@@ -47,7 +47,7 @@ namespace Garnet.server
             csvi.firstKey = firstKey;
             csvi.lastKey = lastKey < 0 ? parseState.count + 1 + lastKey : lastKey;
             csvi.step = step;
-            return clusterSession.NetworkMultiKeySlotVerify(parseState, csvi, ref dcurr, ref dend);
+            return clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }
 }

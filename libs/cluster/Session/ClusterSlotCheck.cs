@@ -126,13 +126,13 @@ namespace Garnet.cluster
             return true;
         }
 
-        public unsafe bool NetworkMultiKeySlotVerify(SessionParseState parseState, ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend)
+        public unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, parseState, csvi);
+            var vres = MultiKeySlotVerify(config, ref parseState, ref csvi);
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;

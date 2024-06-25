@@ -74,7 +74,7 @@ namespace Garnet.server
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
         /// <returns></returns>
-        unsafe bool NetworkMultiKeySlotVerify(SessionParseState parseState, ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend);
+        unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
         /// Sets the user currently authenticated in this session (used for permission checks)

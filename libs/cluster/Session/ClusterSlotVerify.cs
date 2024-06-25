@@ -152,7 +152,7 @@ namespace Garnet.cluster
             return verifyResult;
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, SessionParseState parseState, ClusterSlotVerificationInput csvi)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi)
         {
             var key = parseState.GetArgSliceByRef(csvi.firstKey);
             var slot = ArgSliceUtils.HashSlot(key);
