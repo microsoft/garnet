@@ -12,13 +12,6 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal enum TransferOption : byte
-    {
-        NONE,
-        KEYS,
-        SLOTS,
-    }
-
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
         public static bool Expired(ref SpanByte value) => value.MetadataSize > 0 && value.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;

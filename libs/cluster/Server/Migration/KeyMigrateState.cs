@@ -9,22 +9,29 @@ namespace Garnet.cluster
     public enum KeyMigrationStatus : byte
     {
         /// <summary>
-        /// Key queued for migration, can serve both read and write requests
+        /// Key owned by a specific MigrateSession but is not actively being migrated.
+        /// Reads and writes can be served if the keys exist
         /// </summary>
         QUEUED,
 
         /// <summary>
-        /// Key is migrating, can serve only read requests. Write requests are delayed (i.e spin-wait)
+        /// Key is actively being migrated by a specific MigrateSession.
+        /// Writes will be delayed until status goes back to QUEUED or MIGRATED
+        /// Reads can be served without any restriction.
         /// </summary>
         MIGRATING,
 
         /// <summary>
-        /// Key is being deleted, reads and writes requests are delayed (i.e. spin-wait)
+        /// Key is being deleted after it was sent to the target node.
+        /// Reads and writes will be delayed.
+        /// We need to delay reads to avoid the scenario where a key exists during validation but was deleted before read executes.
         /// </summary>
         DELETING,
 
         /// <summary>
-        /// If Key existed it has been migrated to target node
+        /// Key owned by a specific MigrateSession and has completed all the steps to be MIGRATED to target node.
+        /// This does not mean that key existed or has not expired, just that all the steps associated with MIGRATED have completed.
+        /// This can happen for a key that was provided as an argument in MIGRATE command but did not exist or expired for both main and object stores.
         /// </summary>
         MIGRATED,
     }
