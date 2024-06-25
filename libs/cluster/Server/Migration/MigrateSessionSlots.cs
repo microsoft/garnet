@@ -38,7 +38,7 @@ namespace Garnet.cluster
                     }
 
                     mainStoreGetKeysInSlots.AdvanceIterator();
-                    _keys.Clear();
+                    ClearKeys();
                 }
             }
 
@@ -66,7 +66,7 @@ namespace Garnet.cluster
                     }
 
                     objectStoreGetKeysInSlots.AdvanceIterator();
-                    _keys.Clear();
+                    ClearKeys();
                 }
             }
 

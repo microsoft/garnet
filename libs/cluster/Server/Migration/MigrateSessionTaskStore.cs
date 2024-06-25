@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Garnet.common;
 using Garnet.server;
@@ -77,7 +76,7 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            ConcurrentDictionary<ArgSlice, KeyMigrationStatus> keysWithSize,
+            Dictionary<ArgSlice, KeyMigrationStatus> keysWithSize,
             TransferOption transferOption,
             out MigrateSession mSession)
         {

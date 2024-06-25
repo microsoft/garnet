@@ -244,7 +244,6 @@ namespace Garnet.server
             outputArr[c - firstPending] = (status, output);
         }
 
-
         static long NextPowerOf2(long v)
         {
             v--;

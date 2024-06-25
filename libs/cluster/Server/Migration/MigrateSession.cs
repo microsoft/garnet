@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -44,7 +43,8 @@ namespace Garnet.cluster
         readonly bool _replaceOption;
         readonly TimeSpan _timeout;
         readonly List<(int, int)> _slotRanges;
-        readonly ConcurrentDictionary<ArgSlice, KeyMigrationStatus> _keys;
+        readonly Dictionary<ArgSlice, KeyMigrationStatus> _keys;
+        SingleWriterMultiReaderLock _keyDictLock;
 
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
@@ -68,7 +68,18 @@ namespace Garnet.cluster
         /// Add key to the migrate dictionary for tracking progress during migration
         /// </summary>
         /// <param name="key"></param>
-        public void AddKey(ArgSlice key) => _keys.TryAdd(key, KeyMigrationStatus.QUEUED);
+        public void AddKey(ArgSlice key)
+        {
+            try
+            {
+                _keyDictLock.WriteLock();
+                _keys.TryAdd(key, KeyMigrationStatus.QUEUED);
+            }
+            finally
+            {
+                _keyDictLock.WriteUnlock();
+            }
+        }
 
         /// <summary>
         /// Check if it is safe to operate on the provided key when a slot state is set to MIGRATING
@@ -80,24 +91,48 @@ namespace Garnet.cluster
         /// <exception cref="GarnetException"></exception>
         public bool CanOperateOnKey(int slot, ArgSlice key, bool readOnly)
         {
-            // Skip operation check since this session is not responsible for migrating the associated slot
-            if (!_sslots.Contains(slot))
-                return true;
-
-            // If key is not queued for migration then
-            if (!_keys.TryGetValue(key, out var state))
-                return true;
-
-            // NOTE:
-            // Caller responsible for spin-wait
-            // Check definition of KeyMigrationStatus for more info
-            return state switch
+            try
             {
-                KeyMigrationStatus.QUEUED or KeyMigrationStatus.MIGRATED => true,
-                KeyMigrationStatus.MIGRATING => readOnly,
-                KeyMigrationStatus.DELETING => true,
-                _ => throw new GarnetException($"Invalid KeyMigrationStatus: {state}")
-            };
+                _keyDictLock.ReadLock();
+                // Skip operation check since this session is not responsible for migrating the associated slot
+                if (!_sslots.Contains(slot))
+                    return true;
+
+                // If key is not queued for migration then
+                if (!_keys.TryGetValue(key, out var state))
+                    return true;
+
+                // NOTE:
+                // Caller responsible for spin-wait
+                // Check definition of KeyMigrationStatus for more info
+                return state switch
+                {
+                    KeyMigrationStatus.QUEUED or KeyMigrationStatus.MIGRATED => true,
+                    KeyMigrationStatus.MIGRATING => readOnly,
+                    KeyMigrationStatus.DELETING => true,
+                    _ => throw new GarnetException($"Invalid KeyMigrationStatus: {state}")
+                };
+            }
+            finally
+            {
+                _keyDictLock.ReadUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Clear keys from dictionary
+        /// </summary>
+        public void ClearKeys()
+        {
+            try
+            {
+                _keyDictLock.WriteLock();
+                _keys.Clear();
+            }
+            finally
+            {
+                _keyDictLock.WriteUnlock();
+            }
         }
 
         readonly GarnetClientSession _gcs;
@@ -145,7 +180,7 @@ namespace Garnet.cluster
             bool _replaceOption,
             int _timeout,
             HashSet<int> _slots,
-            ConcurrentDictionary<ArgSlice, KeyMigrationStatus> keys,
+            Dictionary<ArgSlice, KeyMigrationStatus> keys,
             TransferOption transferOption,
             ILogger logger = null)
         {
@@ -163,7 +198,7 @@ namespace Garnet.cluster
             this._timeout = TimeSpan.FromMilliseconds(_timeout);
             this._sslots = _slots;
             this._slotRanges = GetRanges();
-            this._keys = keys == null ? new ConcurrentDictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance) : keys;
+            this._keys = keys == null ? new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance) : keys;
             this.transferOption = transferOption;
 
             if (clusterProvider != null)

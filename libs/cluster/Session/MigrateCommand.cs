@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
 using Garnet.common;
@@ -88,7 +87,7 @@ namespace Garnet.cluster
             var replaceOption = false;
             string username = null;
             string passwd = null;
-            ConcurrentDictionary<ArgSlice, KeyMigrationStatus> keys = null;
+            Dictionary<ArgSlice, KeyMigrationStatus> keys = null;
             HashSet<int> slots = null;
 
             ClusterConfig current = null;
@@ -110,7 +109,7 @@ namespace Garnet.cluster
             if (sksize > 0)
             {
                 transferOption = TransferOption.KEYS;
-                keys = new ConcurrentDictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance);
+                keys = new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance);
                 keys.TryAdd(new(singleKeyPtr, sksize), KeyMigrationStatus.QUEUED);
             }
 
@@ -145,7 +144,7 @@ namespace Garnet.cluster
                         pstate = MigrateCmdParseState.MULTI_TRANSFER_OPTION;
 
                     transferOption = TransferOption.KEYS;
-                    keys = new ConcurrentDictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance);
+                    keys = new Dictionary<ArgSlice, KeyMigrationStatus>(ArgSliceComparer.Instance);
                     while (args > 0)
                     {
                         byte* keyPtr = null;

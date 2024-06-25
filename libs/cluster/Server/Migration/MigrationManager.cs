@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -57,7 +56,7 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            ConcurrentDictionary<ArgSlice, KeyMigrationStatus> keys,
+            Dictionary<ArgSlice, KeyMigrationStatus> keys,
             TransferOption transferOption,
             out MigrateSession mSession) => migrationTaskStore.TryAddMigrateSession(
                 clusterSession,
