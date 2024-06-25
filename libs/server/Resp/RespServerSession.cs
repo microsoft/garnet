@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
@@ -131,7 +132,10 @@ namespace Garnet.server
         /// </summary>
         string clientName = null;
 
-        private static readonly Random RandomGen = new();
+        /// <summary>
+        /// Random number generator for operations, using a cryptographic generator as the base seed
+        /// </summary>
+        private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
 
         public RespServerSession(
             INetworkSender networkSender,
