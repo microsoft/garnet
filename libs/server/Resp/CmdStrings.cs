@@ -83,6 +83,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> barrier => "barrier"u8;
         public static ReadOnlySpan<byte> MODULE => "MODULE"u8;
 
+        public static ReadOnlySpan<byte> WITHSCORES => "WITHSCORES"u8;
+        public static ReadOnlySpan<byte> WITHVALUES => "WITHVALUES"u8;
+
         /// <summary>
         /// Response strings
         /// </summary>
