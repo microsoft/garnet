@@ -38,6 +38,11 @@ namespace Garnet.test.cluster
                 new BITOP(),
                 new BITFIELD(),
                 new BITFIELD_RO(),
+                new SETRANGE(),
+                new GETRANGE(),
+                new INCR(),
+                new APPEND(),
+                new STRLEN(),
             ];
         }
 
