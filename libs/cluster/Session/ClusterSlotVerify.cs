@@ -42,103 +42,105 @@ namespace Garnet.cluster
         public bool CheckSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking)
         {
             var config = clusterProvider.clusterManager.CurrentConfig;
-            return SingleKeySlotVerify(config, keySlice, readOnly, SessionAsking).state == SlotVerifiedState.OK;
+            return SingleKeySlotVerify(config, ref keySlice, readOnly, SessionAsking).state == SlotVerifiedState.OK;
         }
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ClusterConfig config, ArgSlice keySlice, bool readOnly, byte SessionAsking)
-            => readOnly ? SingleKeyReadSlotVerify(config, keySlice, SessionAsking) : SingleKeyReadWriteSlotVerify(config, keySlice, SessionAsking);
-
-        private ClusterSlotVerificationResult SingleKeyReadSlotVerify(ClusterConfig config, ArgSlice keySlice, byte SessionAsking, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ClusterConfig config, ref ArgSlice keySlice, bool readOnly, byte SessionAsking, int slot = -1)
         {
-            var _slot = slot == -1 ? ArgSliceUtils.HashSlot(keySlice) : (ushort)slot;
-            var IsLocal = config.IsLocal(_slot);
-            var state = config.GetState(_slot);
+            return readOnly ? SingleKeyReadSlotVerify(config, ref keySlice, SessionAsking, slot) : SingleKeyReadWriteSlotVerify(config, ref keySlice, SessionAsking, slot);
 
-            // If local check we can serve request or redirect with ask
-            if (IsLocal)
+            ClusterSlotVerificationResult SingleKeyReadSlotVerify(ClusterConfig config, ref ArgSlice keySlice, byte SessionAsking, int slot = -1)
             {
-                // Only if a node IsLocal we might be able to serve a request.
-                // So we check here if the node is recovering
-                if (clusterProvider.replicationManager.Recovering)
+                var _slot = slot == -1 ? ArgSliceUtils.HashSlot(ref keySlice) : (ushort)slot;
+                var IsLocal = config.IsLocal(_slot);
+                var state = config.GetState(_slot);
+
+                // If local check we can serve request or redirect with ask
+                if (IsLocal)
                 {
-                    return config.LocalNodeRole switch
+                    // Only if a node IsLocal we might be able to serve a request.
+                    // So we check here if the node is recovering
+                    if (clusterProvider.replicationManager.Recovering)
                     {
-                        NodeRole.REPLICA => new(SlotVerifiedState.MOVED, _slot), // If replica is recovering redirect request to primary.
-                        NodeRole.PRIMARY => new(SlotVerifiedState.CLUSTERDOWN, _slot), // If primary is recovering slots unavailable, respond with CLUSTERDOWN.
-                        NodeRole.UNASSIGNED => new(SlotVerifiedState.CLUSTERDOWN, _slot), // This should never happen, adding only for completeness.
-                        _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // This should never happen, adding only for completeness.
+                        return config.LocalNodeRole switch
+                        {
+                            NodeRole.REPLICA => new(SlotVerifiedState.MOVED, _slot), // If replica is recovering redirect request to primary.
+                            NodeRole.PRIMARY => new(SlotVerifiedState.CLUSTERDOWN, _slot), // If primary is recovering slots unavailable, respond with CLUSTERDOWN.
+                            NodeRole.UNASSIGNED => new(SlotVerifiedState.CLUSTERDOWN, _slot), // This should never happen, adding only for completeness.
+                            _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // This should never happen, adding only for completeness.
+                        };
+                    }
+
+                    return state switch
+                    {
+                        SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
+                        SlotState.MIGRATING => CanOperateOnKey(slot, keySlice, readOnly: true) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                        _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                     };
                 }
-
-                return state switch
+                else
                 {
-                    SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                    SlotState.MIGRATING => CanOperateOnKey(slot, keySlice, readOnly: true) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
-                    _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
-                };
-            }
-            else
-            {
-                return state switch
-                {
-                    SlotState.STABLE => new(SlotVerifiedState.MOVED, _slot), // If local slot in stable state and not local redirect to primary
-                    SlotState.IMPORTING => SessionAsking > 0 ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.MOVED, _slot), // If it is in importing state serve request only if asking flag is set else redirect
-                    _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // If not local and any other state respond with CLUSTERDOWN
-                };
-            }
-        }
-
-        private ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ClusterConfig config, ArgSlice keySlice, byte SessionAsking, int slot = -1)
-        {
-            var _slot = slot == -1 ? ArgSliceUtils.HashSlot(keySlice) : (ushort)slot;
-            var IsLocal = config.IsLocal(_slot, readCommand: readWriteSession);
-            var state = config.GetState(_slot);
-
-            // Redirect r/w requests towards primary
-            if (config.LocalNodeRole == NodeRole.REPLICA)
-                return new(SlotVerifiedState.MOVED, _slot);
-
-            if (IsLocal)
-            {
-                if (clusterProvider.replicationManager.Recovering)
-                {
-                    return config.LocalNodeRole switch
+                    return state switch
                     {
-                        NodeRole.REPLICA => new(SlotVerifiedState.MOVED, _slot), // Never happens because replica does not serve writes and for this reason IsLocal will always be false
-                        NodeRole.PRIMARY => new(SlotVerifiedState.CLUSTERDOWN, _slot), // If primary is recovering slots unavailable, respond with CLUSTERDOWN.
-                        NodeRole.UNASSIGNED => new(SlotVerifiedState.CLUSTERDOWN, _slot), // This should never happen, adding only for completeness.
-                        _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // This should never happen, adding only for completeness.
+                        SlotState.STABLE => new(SlotVerifiedState.MOVED, _slot), // If local slot in stable state and not local redirect to primary
+                        SlotState.IMPORTING => SessionAsking > 0 ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.MOVED, _slot), // If it is in importing state serve request only if asking flag is set else redirect
+                        _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // If not local and any other state respond with CLUSTERDOWN
                     };
                 }
-
-                return state switch
-                {
-                    SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                    SlotState.MIGRATING => CanOperateOnKey(slot, keySlice, readOnly: false) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
-                    _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
-                };
             }
-            else
+
+            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ClusterConfig config, ref ArgSlice keySlice, byte SessionAsking, int slot = -1)
             {
-                return state switch
+                var _slot = slot == -1 ? ArgSliceUtils.HashSlot(ref keySlice) : (ushort)slot;
+                var IsLocal = config.IsLocal(_slot, readCommand: readWriteSession);
+                var state = config.GetState(_slot);
+
+                // Redirect r/w requests towards primary
+                if (config.LocalNodeRole == NodeRole.REPLICA)
+                    return new(SlotVerifiedState.MOVED, _slot);
+
+                if (IsLocal)
                 {
-                    SlotState.STABLE => new(SlotVerifiedState.MOVED, _slot), // If local slot in stable state and not local redirect to primary
-                    SlotState.IMPORTING => SessionAsking > 0 ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.MOVED, _slot), // If it is in importing state serve request only if asking flag is set else redirect
-                    _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // If not local and any other state respond with CLUSTERDOWN
-                };
+                    if (clusterProvider.replicationManager.Recovering)
+                    {
+                        return config.LocalNodeRole switch
+                        {
+                            NodeRole.REPLICA => new(SlotVerifiedState.MOVED, _slot), // Never happens because replica does not serve writes and for this reason IsLocal will always be false
+                            NodeRole.PRIMARY => new(SlotVerifiedState.CLUSTERDOWN, _slot), // If primary is recovering slots unavailable, respond with CLUSTERDOWN.
+                            NodeRole.UNASSIGNED => new(SlotVerifiedState.CLUSTERDOWN, _slot), // This should never happen, adding only for completeness.
+                            _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // This should never happen, adding only for completeness.
+                        };
+                    }
+
+                    return state switch
+                    {
+                        SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
+                        SlotState.MIGRATING => CanOperateOnKey(slot, keySlice, readOnly: false) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                        _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
+                    };
+                }
+                else
+                {
+                    return state switch
+                    {
+                        SlotState.STABLE => new(SlotVerifiedState.MOVED, _slot), // If local slot in stable state and not local redirect to primary
+                        SlotState.IMPORTING => SessionAsking > 0 ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.MOVED, _slot), // If it is in importing state serve request only if asking flag is set else redirect
+                        _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // If not local and any other state respond with CLUSTERDOWN
+                    };
+                }
             }
         }
 
         ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<ArgSlice> keys, bool readOnly, byte sessionAsking, int count)
         {
             var _end = count < 0 ? keys.Length : count;
-            var slot = ArgSliceUtils.HashSlot(keys[0]);
-            var verifyResult = SingleKeySlotVerify(config, keys[0], readOnly, sessionAsking);
+            var slot = ArgSliceUtils.HashSlot(ref keys[0]);
+            var verifyResult = SingleKeySlotVerify(config, ref keys[0], readOnly, sessionAsking);
 
             for (var i = 1; i < _end; i++)
             {
-                var _slot = ArgSliceUtils.HashSlot(keys[i]);
-                var _verifyResult = SingleKeySlotVerify(config, keys[i], readOnly, sessionAsking);
+                var _slot = ArgSliceUtils.HashSlot(ref keys[i]);
+                var _verifyResult = SingleKeySlotVerify(config, ref keys[i], readOnly, sessionAsking);
 
                 // Check if slot changes between keys
                 if (_slot != slot)
@@ -154,16 +156,16 @@ namespace Garnet.cluster
 
         ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi)
         {
-            var key = parseState.GetArgSliceByRef(csvi.firstKey);
-            var slot = ArgSliceUtils.HashSlot(key);
-            var verifyResult = SingleKeySlotVerify(config, key, csvi.readOnly, csvi.sessionAsking);
+            ref var key = ref parseState.GetArgSliceByRef(csvi.firstKey);
+            var slot = ArgSliceUtils.HashSlot(ref key);
+            var verifyResult = SingleKeySlotVerify(config, ref key, csvi.readOnly, csvi.sessionAsking, slot);
             var stride = csvi.firstKey + csvi.step;
 
             for (var i = stride; i < csvi.lastKey; i += stride)
             {
-                key = parseState.GetArgSliceByRef(i);
-                var _slot = ArgSliceUtils.HashSlot(key);
-                var _verifyResult = SingleKeySlotVerify(config, key, csvi.readOnly, csvi.sessionAsking);
+                key = ref parseState.GetArgSliceByRef(i);
+                var _slot = ArgSliceUtils.HashSlot(ref key);
+                var _verifyResult = SingleKeySlotVerify(config, ref key, csvi.readOnly, csvi.sessionAsking, slot);
 
                 // Check if slot changes between keys
                 if (_slot != slot)

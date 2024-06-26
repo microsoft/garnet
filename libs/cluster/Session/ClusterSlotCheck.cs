@@ -92,7 +92,7 @@ namespace Garnet.cluster
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = readOnly ? SingleKeyReadSlotVerify(config, keySlice, SessionAsking) : SingleKeyReadWriteSlotVerify(config, keySlice, SessionAsking);
+            var vres = SingleKeySlotVerify(config, ref keySlice, readOnly, SessionAsking);
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;
