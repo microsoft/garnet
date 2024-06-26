@@ -138,22 +138,22 @@ namespace Garnet.cluster
         /// 3. Local slots for a replica are those slots served by its primary only for read operations
         /// </summary>
         /// <param name="slot">Slot to check</param>
-        /// <param name="readCommand">If we are checking as a read command. Used to override check if READWRITE is specified</param>
+        /// <param name="readWriteSession">Used to override write restrictions for non-local slots that are replicas of the slot owner</param>
         /// <returns>True if slot is owned by this node, false otherwise</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsLocal(ushort slot, bool readCommand = true)
-            => slotMap[slot].workerId == 1 || IsLocalExpensive(slot, readCommand);
+        public bool IsLocal(ushort slot, bool readWriteSession = true)
+            => slotMap[slot].workerId == 1 || IsLocalExpensive(slot, readWriteSession);
 
         /// <summary>
         /// If slot in MIGRATE state then it must have been set by original owner, so we keep treating it like a local slot and serve requests if the key has not yet migrated.
         /// If it is a read command and this is a replica the associated slot should be assigned to this node's primary in order for the read request to be served.
         /// </summary>
         /// <param name="slot"></param>
-        /// <param name="readCommand"></param>
+        /// <param name="readWriteSession"></param>
         /// <returns></returns>
-        private bool IsLocalExpensive(ushort slot, bool readCommand)
+        private bool IsLocalExpensive(ushort slot, bool readWriteSession)
             => slotMap[slot]._state == SlotState.MIGRATING ||
-            (readCommand &&
+            (readWriteSession &&
             workers[1].Role == NodeRole.REPLICA &&
             slotMap[slot]._workerId > 1 &&
             LocalNodePrimaryId != null &&

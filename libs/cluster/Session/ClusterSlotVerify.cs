@@ -85,7 +85,7 @@ namespace Garnet.cluster
             ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ref ClusterConfig config, ref ArgSlice keySlice)
             {
                 var _slot = slot == -1 ? ArgSliceUtils.HashSlot(ref keySlice) : (ushort)slot;
-                var IsLocal = config.IsLocal(_slot, readCommand: readWriteSession);
+                var IsLocal = config.IsLocal(_slot, readWriteSession: readWriteSession);
                 var state = config.GetState(_slot);
 
                 // Redirect r/w requests towards primary

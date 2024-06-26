@@ -159,7 +159,7 @@ namespace Garnet.cluster
 
                         // Check if all keys are local R/W because we migrate keys and need to be able to delete them
                         var slot = HashSlotUtils.HashSlot(keyPtr, ksize);
-                        if (!current.IsLocal(slot, readCommand: false))
+                        if (!current.IsLocal(slot, readWriteSession: false))
                         {
                             pstate = MigrateCmdParseState.SLOTNOTLOCAL;
                             continue;
@@ -208,7 +208,7 @@ namespace Garnet.cluster
                         }
 
                         // Check if slot is local and can be migrated
-                        if (!current.IsLocal((ushort)slot, readCommand: false))
+                        if (!current.IsLocal((ushort)slot, readWriteSession: false))
                         {
                             pstate = MigrateCmdParseState.SLOTNOTLOCAL;
                             slotParseError = slot;
@@ -262,7 +262,7 @@ namespace Garnet.cluster
                                 }
 
                                 // Check if slot is not owned by current node or cluster mode is not enabled
-                                if (!current.IsLocal((ushort)slot, readCommand: false))
+                                if (!current.IsLocal((ushort)slot, readWriteSession: false))
                                 {
                                     pstate = MigrateCmdParseState.SLOTNOTLOCAL;
                                     slotParseError = slot;
