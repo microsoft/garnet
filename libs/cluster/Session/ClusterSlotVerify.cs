@@ -165,7 +165,7 @@ namespace Garnet.cluster
             {
                 key = ref parseState.GetArgSliceByRef(i);
                 var _slot = ArgSliceUtils.HashSlot(ref key);
-                var _verifyResult = SingleKeySlotVerify(config, ref key, csvi.readOnly, csvi.sessionAsking, slot);
+                var _verifyResult = SingleKeySlotVerify(config, ref key, csvi.readOnly, csvi.sessionAsking, _slot);
 
                 // Check if slot changes between keys
                 if (_slot != slot)
