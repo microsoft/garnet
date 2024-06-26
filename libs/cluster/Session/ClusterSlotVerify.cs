@@ -14,20 +14,6 @@ namespace Garnet.cluster
         private bool Exists(ref ArgSlice keySlice)
             => basicGarnetApi.EXISTS(keySlice, StoreType.All) == GarnetStatus.OK;
 
-        private bool CanOperateOnKey(ref ArgSlice key, int slot, bool readOnly)
-        {
-            // For both read and read/write ops we need to ensure that key will not be removed
-            // while we try to operate on it so we will delay the corresponding operation
-            // as long as the key is being actively migrated
-            while (!clusterProvider.migrationManager.CanModifyKey(ref key, slot, readOnly))
-            {
-                ReleaseCurrentEpoch();
-                Thread.Yield();
-                AcquireCurrentEpoch();
-            }
-            return Exists(ref key);
-        }
-
         private bool CheckIfKeyExists(byte[] key)
         {
             fixed (byte* keyPtr = key)
@@ -135,6 +121,20 @@ namespace Garnet.cluster
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot) // If not local and any other state respond with CLUSTERDOWN
                     };
                 }
+            }
+
+            bool CanOperateOnKey(ref ArgSlice key, int slot, bool readOnly)
+            {
+                // For both read and read/write ops we need to ensure that key will not be removed
+                // while we try to operate on it so we will delay the corresponding operation
+                // as long as the key is being actively migrated
+                while (!clusterProvider.migrationManager.CanModifyKey(ref key, slot, readOnly))
+                {
+                    ReleaseCurrentEpoch();
+                    Thread.Yield();
+                    AcquireCurrentEpoch();
+                }
+                return Exists(ref key);
             }
         }
 
