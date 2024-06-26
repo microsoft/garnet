@@ -198,8 +198,12 @@ namespace Garnet
         [Option("compaction-freq", Required = false, HelpText = "Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead)")]
         public int CompactionFrequencySecs { get; set; }
 
-        [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - No compaction, Shift - shift begin address without compaction (data loss), ShiftForced - shift begin address without compaction (data loss). Immediately deletes files - do not use if you plan to recover after failure, Scan - scan old pages and move live records to tail (no data loss - take a checkpoint to actually delete the older data files from disk), Lookup - Lookup each record in compaction range, for record liveness checking using hash chain (no data loss - take a checkpoint to actually delete the older data files from disk)")]
+        [Option("compaction-type", Required = false, HelpText = "Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Scan - scan old pages and move live records to tail (no data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss)")]
         public LogCompactionType CompactionType { get; set; }
+
+        [OptionValidation]
+        [Option("compaction-force-delete", Required = false, HelpText = "Forcefully delete the inactive segments immediately after the compaction strategy (type) is applied. If false, take a checkpoint to actually delete the older data files from disk.")]
+        public bool? CompactionForceDelete { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-max-segments", Required = false, HelpText = "Number of log segments created on disk before compaction triggers.")]
@@ -529,6 +533,14 @@ namespace Garnet
                     throw new Exception("Revivification cannot specify RevivifiableFraction without specifying bins.");
             }
 
+            // For backwards compatibility
+            if (CompactionType == LogCompactionType.ShiftForced)
+            {
+                logger?.LogWarning("Compaction type ShiftForced is deprecated. Use Shift instead along with CompactionForceDelete.");
+                CompactionType = LogCompactionType.Shift;
+                CompactionForceDelete = true;
+            }
+
             return new GarnetServerOptions(logger)
             {
                 Port = Port,
@@ -567,6 +579,7 @@ namespace Garnet
                 AofSizeLimit = AofSizeLimit,
                 CompactionFrequencySecs = CompactionFrequencySecs,
                 CompactionType = CompactionType,
+                CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,
                 ObjectStoreCompactionMaxSegments = ObjectStoreCompactionMaxSegments,
                 GossipSamplePercent = GossipSamplePercent,

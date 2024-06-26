@@ -13,25 +13,6 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// Reads the n tokens from the current buffer, and returns
-        /// total tokens read
-        /// </summary>
-        /// <param name="count"></param>
-        /// <param name="ptr"></param>
-        private int ReadLeftToken(int count, ref byte* ptr)
-        {
-            int totalTokens = 0;
-            while (totalTokens < count)
-            {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out _, ref ptr, recvBufferPtr + bytesRead))
-                    break;
-                totalTokens++;
-            }
-
-            return totalTokens;
-        }
-
-        /// <summary>
         /// Aborts the execution of the current object store command and outputs
         /// an error message to indicate a wrong number of arguments for the given command.
         /// </summary>
