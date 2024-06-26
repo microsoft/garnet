@@ -3,20 +3,27 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal sealed class MigrateSessionTaskStore(ILogger logger = null)
+    internal sealed class MigrateSessionTaskStore
     {
         MigrateSession[] sessions = new MigrateSession[1];
+        ushort[] slotToSessionsMap;
         int numSessions = 0;
         SingleWriterMultiReaderLock _lock;
-        readonly ILogger logger = logger;
-
+        readonly ILogger logger;
         private bool _disposed;
+
+        public MigrateSessionTaskStore(ILogger logger = null)
+        {
+            this.slotToSessionsMap = new ushort[ClusterConfig.MAX_HASH_SLOT_VALUE];
+            this.logger = logger;
+        }
 
         public void Dispose()
         {
@@ -115,7 +122,12 @@ namespace Garnet.cluster
                 }
 
                 GrowSessionArray();
+
                 sessions[numSessions++] = mSession;
+
+                // Add offset of MigrateSession that owns slot to slotMap
+                foreach (var slot in mSession.GetSlots)
+                    slotToSessionsMap[slot] = (ushort)(numSessions);
             }
             catch (Exception ex)
             {
@@ -146,6 +158,10 @@ namespace Garnet.cluster
 
                     if (s == mSession)
                     {
+                        // Remove ownership of slots from migrate session
+                        foreach (var slot in s.GetSlots)
+                            slotToSessionsMap[slot] = 0;
+
                         sessions[i] = null;
                         if (i < numSessions - 1)
                         {
@@ -179,12 +195,19 @@ namespace Garnet.cluster
             {
                 _lock.ReadLock();
                 if (_disposed) return true;
-                for (var i = 0; i < numSessions; i++)
-                {
-                    var s = sessions[i];
-                    if (!s.CanOperateOnKey(ref key, slot, readOnly))
-                        return false;
-                }
+
+                // Search slotMap
+                var offset = slotToSessionsMap[slot];
+                // Slot is not managed by any session so can safely operate on it
+                if (offset <= 0)
+                    return true;
+
+                Debug.Assert(offset - 1 < numSessions);
+
+                // Check owner of slot if can operate on key                
+                var s = sessions[offset - 1];
+                if (!s.CanOperateOnKey(ref key, slot, readOnly))
+                    return false;
             }
             finally
             {
