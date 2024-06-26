@@ -26,6 +26,8 @@ namespace Garnet.server
 
         internal long IndexSizeBytes => store.IndexSize * 64 + store.OverflowBucketCount * 64;
 
+        internal bool Stopped => mainLogTracker.Stopped && (readCacheTracker == null || readCacheTracker.Stopped);
+
         /// <summary>Helps calculate size of a record including heap memory in Object store.</summary>
         internal struct LogSizeCalculator : ILogSizeCalculator<byte[], IGarnetObject>
         {

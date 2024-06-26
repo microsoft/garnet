@@ -586,6 +586,10 @@ namespace Garnet.server
 
             monitor?.Dispose();
             ctsCommit?.Cancel();
+
+            while (objectStoreSizeTracker != null && !objectStoreSizeTracker.Stopped)
+                Thread.Yield();
+
             ctsCommit?.Dispose();
             clusterProvider?.Dispose();
         }
