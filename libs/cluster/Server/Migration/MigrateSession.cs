@@ -84,12 +84,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Check if it is safe to operate on the provided key when a slot state is set to MIGRATING
         /// </summary>
-        /// <param name="slot"></param>
         /// <param name="key"></param>
+        /// <param name="slot"></param>
         /// <param name="readOnly"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        public bool CanOperateOnKey(int slot, ArgSlice key, bool readOnly)
+        public bool CanOperateOnKey(ref ArgSlice key, int slot, bool readOnly)
         {
             try
             {

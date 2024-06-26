@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 
@@ -89,7 +90,8 @@ namespace Garnet.cluster
         /// <param name="slot"></param>
         /// <param name="key"></param>
         /// <param name="readOnly"></param>
-        public bool CanModifyKey(int slot, ArgSlice key, bool readOnly)
-            => migrationTaskStore.CanModifyKey(slot, key, readOnly);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool CanModifyKey(ref ArgSlice key, int slot, bool readOnly)
+            => migrationTaskStore.CanModifyKey(ref key, slot, readOnly);
     }
 }

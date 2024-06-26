@@ -169,11 +169,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Check if provided key can be operated on.
         /// </summary>
-        /// <param name="slot"></param>
         /// <param name="key"></param>
+        /// <param name="slot"></param>
         /// <param name="readOnly"></param>
         /// <returns>True if we can operate on the key, otherwise false (i.e. key is being migrated)</returns>
-        public bool CanModifyKey(int slot, ArgSlice key, bool readOnly)
+        public bool CanModifyKey(ref ArgSlice key, int slot, bool readOnly)
         {
             try
             {
@@ -182,7 +182,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
-                    if (!s.CanOperateOnKey(slot, key, readOnly))
+                    if (!s.CanOperateOnKey(ref key, slot, readOnly))
                         return false;
                 }
             }

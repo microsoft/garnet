@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Garnet.server;
 
@@ -9,28 +10,32 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        private bool CanOperateOnKey(int slot, ArgSlice key, bool readOnly)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool Exists(ref ArgSlice keySlice)
+            => basicGarnetApi.EXISTS(keySlice, StoreType.All) == GarnetStatus.OK;
+
+        private bool CanOperateOnKey(ref ArgSlice key, int slot, bool readOnly)
         {
             // For both read and read/write ops we need to ensure that key will not be removed
             // while we try to operate on it so we will delay the corresponding operation
             // as long as the key is being actively migrated
-            while (!clusterProvider.migrationManager.CanModifyKey(slot, key, readOnly))
+            while (!clusterProvider.migrationManager.CanModifyKey(ref key, slot, readOnly))
             {
                 ReleaseCurrentEpoch();
                 Thread.Yield();
                 AcquireCurrentEpoch();
             }
-            return CheckIfKeyExists(key);
+            return Exists(ref key);
         }
 
         private bool CheckIfKeyExists(byte[] key)
         {
             fixed (byte* keyPtr = key)
-                return CheckIfKeyExists(new ArgSlice(keyPtr, key.Length));
+            {
+                var keySlice = new ArgSlice(keyPtr, key.Length);
+                return Exists(ref keySlice);
+            }
         }
-
-        private bool CheckIfKeyExists(ArgSlice keySlice)
-            => basicGarnetApi.EXISTS(keySlice, StoreType.All) == GarnetStatus.OK;
 
         /// <summary>
         /// Checks if the given key maps to a slot owned by this node.
@@ -42,14 +47,15 @@ namespace Garnet.cluster
         public bool CheckSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking)
         {
             var config = clusterProvider.clusterManager.CurrentConfig;
-            return SingleKeySlotVerify(config, ref keySlice, readOnly, SessionAsking).state == SlotVerifiedState.OK;
+            return SingleKeySlotVerify(ref config, ref keySlice, readOnly, SessionAsking).state == SlotVerifiedState.OK;
         }
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ClusterConfig config, ref ArgSlice keySlice, bool readOnly, byte SessionAsking, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref ArgSlice keySlice, bool readOnly, byte SessionAsking, int slot = -1)
         {
-            return readOnly ? SingleKeyReadSlotVerify(config, ref keySlice, SessionAsking, slot) : SingleKeyReadWriteSlotVerify(config, ref keySlice, SessionAsking, slot);
+            return readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(ref config, ref keySlice);
 
-            ClusterSlotVerificationResult SingleKeyReadSlotVerify(ClusterConfig config, ref ArgSlice keySlice, byte SessionAsking, int slot = -1)
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            ClusterSlotVerificationResult SingleKeyReadSlotVerify(ref ClusterConfig config, ref ArgSlice keySlice)
             {
                 var _slot = slot == -1 ? ArgSliceUtils.HashSlot(ref keySlice) : (ushort)slot;
                 var IsLocal = config.IsLocal(_slot);
@@ -74,7 +80,7 @@ namespace Garnet.cluster
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                        SlotState.MIGRATING => CanOperateOnKey(slot, keySlice, readOnly: true) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                        SlotState.MIGRATING => CanOperateOnKey(ref keySlice, _slot, readOnly: true) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                     };
                 }
@@ -89,7 +95,8 @@ namespace Garnet.cluster
                 }
             }
 
-            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ClusterConfig config, ref ArgSlice keySlice, byte SessionAsking, int slot = -1)
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ref ClusterConfig config, ref ArgSlice keySlice)
             {
                 var _slot = slot == -1 ? ArgSliceUtils.HashSlot(ref keySlice) : (ushort)slot;
                 var IsLocal = config.IsLocal(_slot, readCommand: readWriteSession);
@@ -115,7 +122,7 @@ namespace Garnet.cluster
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                        SlotState.MIGRATING => CanOperateOnKey(slot, keySlice, readOnly: false) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                        SlotState.MIGRATING => CanOperateOnKey(ref keySlice, _slot, readOnly: false) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                     };
                 }
@@ -135,12 +142,12 @@ namespace Garnet.cluster
         {
             var _end = count < 0 ? keys.Length : count;
             var slot = ArgSliceUtils.HashSlot(ref keys[0]);
-            var verifyResult = SingleKeySlotVerify(config, ref keys[0], readOnly, sessionAsking);
+            var verifyResult = SingleKeySlotVerify(ref config, ref keys[0], readOnly, sessionAsking, slot);
 
             for (var i = 1; i < _end; i++)
             {
                 var _slot = ArgSliceUtils.HashSlot(ref keys[i]);
-                var _verifyResult = SingleKeySlotVerify(config, ref keys[i], readOnly, sessionAsking);
+                var _verifyResult = SingleKeySlotVerify(ref config, ref keys[i], readOnly, sessionAsking, _slot);
 
                 // Check if slot changes between keys
                 if (_slot != slot)
@@ -158,14 +165,14 @@ namespace Garnet.cluster
         {
             ref var key = ref parseState.GetArgSliceByRef(csvi.firstKey);
             var slot = ArgSliceUtils.HashSlot(ref key);
-            var verifyResult = SingleKeySlotVerify(config, ref key, csvi.readOnly, csvi.sessionAsking, slot);
+            var verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, slot);
             var stride = csvi.firstKey + csvi.step;
 
             for (var i = stride; i < csvi.lastKey; i += stride)
             {
                 key = ref parseState.GetArgSliceByRef(i);
                 var _slot = ArgSliceUtils.HashSlot(ref key);
-                var _verifyResult = SingleKeySlotVerify(config, ref key, csvi.readOnly, csvi.sessionAsking, _slot);
+                var _verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, _slot);
 
                 // Check if slot changes between keys
                 if (_slot != slot)
