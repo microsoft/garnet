@@ -1739,7 +1739,6 @@ namespace Garnet.server
         {
             // We might have received an inline command package.Try to find the end of the line.
             logger?.LogWarning("Received malformed input message. Trying to skip line.");
-            logger?.LogWarning(PrettyPrint(new Span<byte>(recvBufferPtr, bytesRead)));
 
             for (int stringEnd = readHead; stringEnd < bytesRead - 1; stringEnd++)
             {
@@ -1753,26 +1752,6 @@ namespace Garnet.server
 
             // We received an incomplete string and require more input.
             return false;
-        }
-
-        static string PrettyPrint(Span<byte> buffer)
-        {
-            // Create a copy of the buffer to avoid modifying the original
-            var bufferCopy = new byte[buffer.Length];
-            buffer.CopyTo(bufferCopy);
-            for (int i = 0; i < bufferCopy.Length; i++)
-            {
-                if (i < bufferCopy.Length - 1 && bufferCopy[i] == '\r' && bufferCopy[i + 1] == '\n')
-                {
-                    bufferCopy[i] = (byte)'|';
-                    bufferCopy[i + 1] = (byte)'|';
-                }
-                if (bufferCopy[i] < 32 || bufferCopy[i] > 126)
-                {
-                    bufferCopy[i] = (byte)'.';
-                }
-            }
-            return Encoding.UTF8.GetString(bufferCopy);
         }
 
         /// <summary>
