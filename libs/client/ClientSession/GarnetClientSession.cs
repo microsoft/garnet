@@ -108,7 +108,7 @@ namespace Garnet.client
         {
             socket = GetSendSocket(address, port, timeoutMs);
             networkHandler = new GarnetClientSessionTcpNetworkHandler(this, socket, networkPool, sslOptions != null, this, networkSendThrottleMax, logger);
-            networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).GetAwaiter().GetResult();
+            networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
             offset = networkSender.GetResponseObjectHead();
@@ -119,11 +119,11 @@ namespace Garnet.client
             {
                 if (authUsername != null)
                 {
-                    ExecuteAsync("AUTH", authUsername, authPassword == null ? "" : authPassword).GetAwaiter().GetResult();
+                    ExecuteAsync("AUTH", authUsername, authPassword == null ? "" : authPassword).ConfigureAwait(false).GetAwaiter().GetResult();
                 }
                 else if (authPassword != null)
                 {
-                    ExecuteAsync("AUTH", authPassword).GetAwaiter().GetResult();
+                    ExecuteAsync("AUTH", authPassword).ConfigureAwait(false).GetAwaiter().GetResult();
                 }
             }
             catch (Exception e)
