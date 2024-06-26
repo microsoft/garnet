@@ -95,7 +95,7 @@ namespace BDN.benchmark.Cluster
             singleGetSet = [getReq, setReq];
         }
 
-        public void CreateMGetMSet(int keySize = 8, int valueSize = 32, int batchSize = 32)
+        public void CreateMGetMSet(int keySize = 8, int valueSize = 32, int batchSize = 2)
         {
             var pairs = new (byte[], byte[])[batchSize];
             for (var i = 0; i < batchSize; i++)
@@ -104,7 +104,7 @@ namespace BDN.benchmark.Cluster
 
                 keyTag.CopyTo(pairs[i].Item1.AsSpan());
                 benchUtils.RandomBytes(ref pairs[i].Item1, startOffset: keyTag.Length);
-                benchUtils.RandomBytes(ref pairs[i].Item2, startOffset: keyTag.Length);
+                benchUtils.RandomBytes(ref pairs[i].Item2);
             }
 
             var mGetHeaderSize = 1 + NumUtils.NumDigits(1 + batchSize) + 2 + "$4\r\nMGET\r\n"u8.Length;
@@ -119,14 +119,14 @@ namespace BDN.benchmark.Cluster
             for (var i = 0; i < batchSize; i++)
                 _ = RespWriteUtils.WriteBulkString(pairs[i].Item1, ref curr, end);
 
-            var mSetHeaderSize = 1 + NumUtils.NumDigits(1 + batchSize) + 2 + "$4\r\nMSET\r\n"u8.Length;
+            var mSetHeaderSize = 1 + NumUtils.NumDigits(1 + batchSize * 2) + 2 + "$4\r\nMSET\r\n"u8.Length;
             var setRespSize = 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2 + 1 + NumUtils.NumDigits(valueSize) + 2 + valueSize + 2;
             var mSetByteCount = mSetHeaderSize + (batchSize * setRespSize);
             var mSetReq = new Request(mSetByteCount);
 
             curr = mSetReq.ptr;
             end = curr + mSetReq.buffer.Length;
-            _ = RespWriteUtils.WriteArrayLength(1 + batchSize, ref curr, end);
+            _ = RespWriteUtils.WriteArrayLength(1 + batchSize * 2, ref curr, end);
             _ = RespWriteUtils.WriteBulkString("MSET"u8, ref curr, end);
             for (var i = 0; i < batchSize; i++)
             {
