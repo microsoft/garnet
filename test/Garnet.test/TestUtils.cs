@@ -269,7 +269,7 @@ namespace Garnet.test
             {
                 var loggerFactory = LoggerFactory.Create(builder =>
                 {
-                    builder.AddProvider(new NUnitLoggerProvider(TestContext.Progress, "GarnetServer", null, false, false, LogLevel.Trace));
+                    builder.AddProvider(new NUnitLoggerProvider(TestContext.Progress, TestContext.CurrentContext.Test.MethodName, null, false, false, LogLevel.Trace));
                     builder.SetMinimumLevel(LogLevel.Trace);
                 });
 
@@ -565,6 +565,7 @@ namespace Garnet.test
                 AbortOnConnectFail = true,
                 Password = authPassword,
                 User = authUsername,
+                ClientName = TestContext.CurrentContext.Test.MethodName,
             };
 
             if (Debugger.IsAttached)

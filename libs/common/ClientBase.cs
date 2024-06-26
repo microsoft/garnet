@@ -98,6 +98,7 @@ namespace Garnet.common
             while (numPendingRequests > 0 && DateTime.Now.Ticks < deadline)
             {
                 if (token.IsCancellationRequested) return false;
+                if (!connected_) throw new GarnetException("Disconnected");
                 Thread.Yield();
             }
 

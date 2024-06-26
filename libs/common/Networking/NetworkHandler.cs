@@ -195,6 +195,7 @@ namespace Garnet.networking
             {
                 logger?.LogWarning(ex, "An error has occurred");
                 readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
                 throw;
             }
@@ -256,6 +257,7 @@ namespace Garnet.networking
             {
                 logger?.LogWarning(ex, "An error has occurred");
                 readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
                 throw;
             }
@@ -374,6 +376,7 @@ namespace Garnet.networking
                 }
             }
             readerStatus = TlsReaderStatus.Rest;
+            // We do not release expectingData here because it is the synchronous code path (i.e., there is no waiter)
         }
 
         async Task SslReaderAsync(Task<int> readTask, CancellationToken token = default)
@@ -414,6 +417,7 @@ namespace Garnet.networking
             {
                 logger?.LogWarning(ex, "An exception has occurred during NetworkHandler.SslReaderAsync(Task)");
                 readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
             }
         }
