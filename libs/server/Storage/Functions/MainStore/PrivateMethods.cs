@@ -222,28 +222,28 @@ namespace Garnet.server
                 switch (optionType)
                 {
                     case ExpireOption.NX:
-                        o->countDone = 0;
+                        o->result1 = 0;
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.None:
                         value.ExtraMetadata = input.ExtraMetadata;
-                        o->countDone = 1;
+                        o->result1 = 1;
                         break;
                     case ExpireOption.GT:
                         bool replace = input.ExtraMetadata < value.ExtraMetadata;
                         value.ExtraMetadata = replace ? value.ExtraMetadata : input.ExtraMetadata;
                         if (replace)
-                            o->countDone = 0;
+                            o->result1 = 0;
                         else
-                            o->countDone = 1;
+                            o->result1 = 1;
                         break;
                     case ExpireOption.LT:
                         replace = input.ExtraMetadata > value.ExtraMetadata;
                         value.ExtraMetadata = replace ? value.ExtraMetadata : input.ExtraMetadata;
                         if (replace)
-                            o->countDone = 0;
+                            o->result1 = 0;
                         else
-                            o->countDone = 1;
+                            o->result1 = 1;
                         break;
                     default:
                         throw new GarnetException($"EvaluateExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
@@ -260,7 +260,7 @@ namespace Garnet.server
                     case ExpireOption.XX:
                     case ExpireOption.GT:
                     case ExpireOption.LT:
-                        o->countDone = 0;
+                        o->result1 = 0;
                         return true;
                     default:
                         throw new GarnetException($"EvaluateExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
@@ -282,25 +282,25 @@ namespace Garnet.server
                     case ExpireOption.None:
                         newValue.ExtraMetadata = input.ExtraMetadata;
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        o->countDone = 1;
+                        o->result1 = 1;
                         break;
                     case ExpireOption.GT:
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         bool replace = input.ExtraMetadata < oldValue.ExtraMetadata;
                         newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : input.ExtraMetadata;
                         if (replace)
-                            o->countDone = 0;
+                            o->result1 = 0;
                         else
-                            o->countDone = 1;
+                            o->result1 = 1;
                         break;
                     case ExpireOption.LT:
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
                         replace = input.ExtraMetadata > oldValue.ExtraMetadata;
                         newValue.ExtraMetadata = replace ? oldValue.ExtraMetadata : input.ExtraMetadata;
                         if (replace)
-                            o->countDone = 0;
+                            o->result1 = 0;
                         else
-                            o->countDone = 1;
+                            o->result1 = 1;
                         break;
                 }
             }
@@ -312,13 +312,13 @@ namespace Garnet.server
                     case ExpireOption.None:
                         newValue.ExtraMetadata = input.ExtraMetadata;
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        o->countDone = 1;
+                        o->result1 = 1;
                         break;
                     case ExpireOption.XX:
                     case ExpireOption.GT:
                     case ExpireOption.LT:
                         oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                        o->countDone = 0;
+                        o->result1 = 0;
                         break;
                 }
             }

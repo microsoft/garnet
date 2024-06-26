@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Garnet.common.Parsing;
@@ -130,6 +131,11 @@ namespace Garnet.server
         /// Client name for the session
         /// </summary>
         string clientName = null;
+
+        /// <summary>
+        /// Random number generator for operations, using a cryptographic generator as the base seed
+        /// </summary>
+        private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
 
         public RespServerSession(
             INetworkSender networkSender,
@@ -550,8 +556,8 @@ namespace Garnet.server
                 RespCommand.HSET => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HMSET => HashSet(cmd, count, ptr, ref storageApi),
                 RespCommand.HGET => HashGet(cmd, count, ptr, ref storageApi),
-                RespCommand.HMGET => HashGet(cmd, count, ptr, ref storageApi),
-                RespCommand.HGETALL => HashGet(cmd, count, ptr, ref storageApi),
+                RespCommand.HMGET => HashGetMultiple(cmd, count, ptr, ref storageApi),
+                RespCommand.HGETALL => HashGetAll(cmd, count, ptr, ref storageApi),
                 RespCommand.HDEL => HashDelete(count, ptr, ref storageApi),
                 RespCommand.HLEN => HashLength(count, ptr, ref storageApi),
                 RespCommand.HSTRLEN => HashStrLength(count, ptr, ref storageApi),
@@ -561,7 +567,7 @@ namespace Garnet.server
                 RespCommand.HINCRBY => HashIncrement(cmd, count, ptr, ref storageApi),
                 RespCommand.HINCRBYFLOAT => HashIncrement(cmd, count, ptr, ref storageApi),
                 RespCommand.HSETNX => HashSet(cmd, count, ptr, ref storageApi),
-                RespCommand.HRANDFIELD => HashGet(cmd, count, ptr, ref storageApi),
+                RespCommand.HRANDFIELD => HashRandomField(cmd, count, ptr, ref storageApi),
                 RespCommand.HSCAN => ObjectScan(count, ptr, GarnetObjectType.Hash, ref storageApi),
                 // Set Commands
                 RespCommand.SADD => SetAdd(count, ptr, ref storageApi),
