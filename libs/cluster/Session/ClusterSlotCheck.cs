@@ -76,29 +76,20 @@ namespace Garnet.cluster
         public bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend)
         {
             fixed (byte* keyPtr = key)
-                return NetworkSingleKeySlotVerify(new ArgSlice(keyPtr, key.Length), readOnly, SessionAsking, ref dcurr, ref dend);
-        }
+            {
+                var keySlice = new ArgSlice(keyPtr, key.Length);
+                // If cluster is not enabled or a transaction is running skip slot check
+                if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
-        /// <summary>
-        /// Check if read or read/write is permitted on a single key and generate the appropriate response
-        ///         LOCAL   |   ~LOCAL  | MIGRATING EXISTS  |   MIGRATING ~EXISTS   |   IMPORTING ASKING    |   IMPORTING ~ASKING
-        /// R       OK      |   -MOVED  |   OK              |   -ASK                |   OK                  |   -MOVED
-        /// R/W     OK      |   -MOVED  |   -MIGRATING      |   -ASK                |   OK                  |   -MOVED
-        /// </summary>
-        /// <returns>True if redirect, False if can serve</returns>
-        public bool NetworkSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend)
-        {
-            // If cluster is not enabled or a transaction is running skip slot check
-            if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
+                var config = clusterProvider.clusterManager.CurrentConfig;
+                var vres = SingleKeySlotVerify(config, ref keySlice, readOnly, SessionAsking);
 
-            var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = SingleKeySlotVerify(config, ref keySlice, readOnly, SessionAsking);
-
-            if (vres.state == SlotVerifiedState.OK)
-                return false;
-            else
-                WriteClusterSlotVerificationMessage(config, vres, ref dcurr, ref dend);
-            return true;
+                if (vres.state == SlotVerifiedState.OK)
+                    return false;
+                else
+                    WriteClusterSlotVerificationMessage(config, vres, ref dcurr, ref dend);
+                return true;
+            }
         }
 
         /// <summary>

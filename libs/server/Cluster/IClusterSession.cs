@@ -57,11 +57,6 @@ namespace Garnet.server
         unsafe bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
-        /// Single key slot verify (write result to network)
-        /// </summary>
-        unsafe bool NetworkSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
-
-        /// <summary>
         /// Key array slot verify (write result to network)
         /// </summary>
         unsafe bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
