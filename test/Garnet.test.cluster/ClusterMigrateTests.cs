@@ -1174,7 +1174,7 @@ namespace Garnet.test.cluster
                             Assert.AreNotEqual(srcNodeIndex, -1);
                             getValue = context.clusterTestUtils.GetKey(srcNodeIndex, key, out _, out var redirectAddressB, out var redirectPortB, out status, logger: context.logger);
                             if (status == ResponseState.OK)
-                                Assert.AreEqual(value, getValue);
+                                Assert.AreEqual(value, getValue, $"{redirectPortA} => {redirectPortB}");
                             else if (status == ResponseState.MOVED)// can redirect again if source has made target the owner
                             {
                                 //Assert.AreEqual(connections[targetNodeIndex].Port, redirectPortB,
