@@ -520,15 +520,21 @@ namespace Garnet.cluster
             var specialStates = "";
             for (var slot = 0; slot < slotMap.Length; slot++)
             {
-                if (slotMap[slot]._state == SlotState.MIGRATING)
+                var _workerId = slotMap[slot]._workerId;
+                var _state = slotMap[slot]._state;
+
+                if (_state == SlotState.STABLE) continue;
+                if (_workerId > NumWorkers) continue;
+
+                var _nodeId = workers[_workerId].Nodeid;
+                if (_nodeId == null) continue;
+
+                specialStates += _state switch
                 {
-                    // Get node-id of node that we are migrating to by using "transient" _workerId
-                    specialStates += $" [{slot}->-{workers[slotMap[slot]._workerId].Nodeid}]";
-                }
-                else if (slotMap[slot]._state == SlotState.IMPORTING)
-                {
-                    specialStates += $" [{slot}-<-{GetNodeIdFromSlot((ushort)slot)}]";
-                }
+                    SlotState.MIGRATING => $" [{slot}->-{_nodeId}]",
+                    SlotState.IMPORTING => $" [{slot}-<-{_nodeId}]",
+                    _ => ""
+                };
             }
             return specialStates;
         }

@@ -645,7 +645,7 @@ namespace Garnet.cluster
             invalidParameters = false;
 
             // Expecting exactly 0 arguments
-            if (count != 0)
+            if (count != 1)
             {
                 invalidParameters = true;
                 return true;
