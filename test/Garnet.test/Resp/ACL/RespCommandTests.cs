@@ -3852,7 +3852,7 @@ namespace Garnet.test.Resp.ACL
         {
             // Todo: MULTI test should only assert that you can't start a transaction if it is forbidden
             //       Permissive checks are really sketchy due to the QUEUED reply
-            
+
             //CheckCommands(
             //    "MULTI",
             //    [DoMulti],
