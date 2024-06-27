@@ -255,7 +255,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogInformation(ex, "Error during reset of store");
+                logger?.LogError(ex, "Error during reset of store");
             }
         }
 
@@ -280,7 +280,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogInformation(ex, "Error during recovery of AofProcessor");
+                logger?.LogError(ex, "Error during recovery of AofProcessor");
             }
             return replicationOffset;
         }
@@ -330,7 +330,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogInformation(ex, "CommitTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
+                logger?.LogError(ex, "CommitTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
             }
         }
 
@@ -353,7 +353,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogInformation(ex, "CompactionTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
+                logger?.LogError(ex, "CompactionTask exception received, AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ", appendOnlyFile.TailAddress, appendOnlyFile.CommittedUntilAddress);
             }
         }
 
