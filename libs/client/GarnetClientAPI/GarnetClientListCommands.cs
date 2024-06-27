@@ -66,7 +66,7 @@ namespace Garnet.client
                 throw new ArgumentException("Elements collection cannot be empty.", nameof(elements));
             }
 
-            return await ExecuteForLongResultAsync(nameof(LPUSH), [key, .. elements]);
+            return await ExecuteForLongResultAsync(nameof(LPUSH), [key, .. elements]).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -120,7 +120,7 @@ namespace Garnet.client
                 throw new ArgumentException("Elements collection cannot be empty.", nameof(elements));
             }
 
-            return await ExecuteForLongResultAsync(nameof(RPUSH), [key, .. elements]);
+            return await ExecuteForLongResultAsync(nameof(RPUSH), [key, .. elements]).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -133,7 +133,7 @@ namespace Garnet.client
         {
             ArgumentNullException.ThrowIfNull(key);
 
-            return await ExecuteForStringArrayResultAsync(nameof(LRANGE), [key, start.ToString(), stop.ToString()]);
+            return await ExecuteForStringArrayResultAsync(nameof(LRANGE), [key, start.ToString(), stop.ToString()]).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -144,7 +144,7 @@ namespace Garnet.client
         {
             ArgumentNullException.ThrowIfNull(key);
 
-            return await ExecuteForLongResultAsync(nameof(LLEN), [key]);
+            return await ExecuteForLongResultAsync(nameof(LLEN), [key]).ConfigureAwait(false);
         }
     }
 }
