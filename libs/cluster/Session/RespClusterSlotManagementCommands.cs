@@ -645,7 +645,7 @@ namespace Garnet.cluster
             invalidParameters = false;
 
             // Expecting exactly 0 arguments
-            if (count != 0)
+            if (count != 1)
             {
                 invalidParameters = true;
                 return true;
@@ -657,15 +657,15 @@ namespace Garnet.cluster
             readHead = (int)(ptr - recvBufferPtr);
 
             var current = clusterProvider.clusterManager.CurrentConfig;
-            var nodeId = current.GetNodeIdFromSlot((ushort)slot);
+            var nodeId = current.GetOwnerIdFromSlot((ushort)slot);
             var state = current.GetState((ushort)slot);
             var stateStr = state switch
             {
                 SlotState.STABLE => "=",
                 SlotState.IMPORTING => "<",
                 SlotState.MIGRATING => ">",
-                SlotState.OFFLINE => "-",
-                SlotState.FAIL => "-",
+                SlotState.OFFLINE => "x",
+                SlotState.FAIL => "*",
                 _ => throw new Exception($"Invalid SlotState filetype {state}"),
             };
             while (!RespWriteUtils.WriteAsciiDirect($"+{slot} {stateStr} {nodeId}\r\n", ref dcurr, dend))

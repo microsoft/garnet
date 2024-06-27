@@ -129,19 +129,23 @@ namespace Garnet.cluster
             return success;
         }
 
-        public bool TryRemove(MigrateSession mSession)
+        public bool TryRemove(string targetNodeId)
         {
             try
             {
                 _lock.WriteLock();
                 if (_disposed) return false;
+                MigrateSession mSession = null;
                 for (var i = 0; i < sessions.Length; i++)
                 {
                     var s = sessions[i];
-                    if (s != null && s == mSession)
+                    if (s != null && s.GetTargetNodeId.Equals(targetNodeId, StringComparison.Ordinal))
+                    {
                         sessions[i] = null;
+                        mSession = s;
+                    }
                 }
-                mSession.Dispose();
+                mSession?.Dispose();
                 return true;
             }
             catch (Exception ex)

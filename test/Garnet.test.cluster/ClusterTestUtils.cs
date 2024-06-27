@@ -1618,6 +1618,25 @@ namespace Garnet.test.cluster
             }
         }
 
+        public string[] SlotState(int nodeIndex, int slot, ILogger logger = null)
+            => SlotState(GetEndPoint(nodeIndex), slot, logger);
+
+        public string[] SlotState(IPEndPoint endpoint, int slot, ILogger logger = null)
+        {
+            try
+            {
+                var server = GetServer(endpoint);
+                var resp = (string)server.Execute("cluster", "slotstate", $"{slot}");
+                return resp.Split(" ");
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "SlotState");
+                Assert.Fail(ex.Message);
+            }
+            return null;
+        }
+
         public void MigrateSlots(int sourcePort, int targetPort, List<int> slots, bool range = false, string authPassword = null, ILogger logger = null)
         {
             var sourceEndPoint = GetEndPointFromPort(sourcePort);

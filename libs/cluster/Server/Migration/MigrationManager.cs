@@ -82,7 +82,15 @@ namespace Garnet.cluster
         /// <param name="mSession"></param>
         /// <returns></returns>
         public bool TryRemoveMigrationTask(MigrateSession mSession)
-            => migrationTaskStore.TryRemove(mSession);
+            => migrationTaskStore.TryRemove(mSession.GetTargetNodeId);
+
+        /// <summary>
+        /// Remove migration task associated with provided target nodeId 
+        /// </summary>
+        /// <param name="targetNodeId"></param>
+        /// <returns></returns>
+        public bool TryRemoveMigrationTask(string targetNodeId)
+            => migrationTaskStore.TryRemove(targetNodeId);
 
         /// <summary>
         /// Check if provided key can be operated on.

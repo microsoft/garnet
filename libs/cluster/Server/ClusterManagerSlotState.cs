@@ -431,7 +431,7 @@ namespace Garnet.cluster
                 {
                     current = currentConfig;
                     slotState = current.GetState((ushort)slot);
-                    var workerId = slotState == SlotState.MIGRATING ? 1 : currentConfig.GetWorkerIdFromSlot((ushort)slot);
+                    var workerId = slotState == SlotState.MIGRATING ? 1 : current.GetWorkerIdFromSlot((ushort)slot);
                     var newConfig = currentConfig.UpdateSlotState(slot, workerId, SlotState.STABLE);
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
