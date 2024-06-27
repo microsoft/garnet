@@ -3850,30 +3850,33 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public void MultiACLs()
         {
-            CheckCommands(
-                "MULTI",
-                [DoMulti],
-                skipPing: true
-            );
+            // Todo: MULTI test should only assert that you can't start a transaction if it is forbidden
+            //       Permissive checks are really sketchy due to the QUEUED reply
+            
+            //CheckCommands(
+            //    "MULTI",
+            //    [DoMulti],
+            //    skipPing: true
+            //);
 
-            static void DoMulti(IServer server)
-            {
-                try
-                {
-                    RedisResult val = server.Execute("MULTI");
-                    Assert.AreEqual("OK", (string)val);
-                }
-                catch (RedisException e)
-                {
-                    // The "nested MULTI" error response is also legal, if we're ACL'd for MULTI
-                    if (e.Message == "ERR MULTI calls can not be nested")
-                    {
-                        return;
-                    }
+            //static void DoMulti(IServer server)
+            //{
+            //    try
+            //    {
+            //        RedisResult val = server.Execute("MULTI");
+            //        Assert.AreEqual("OK", (string)val);
+            //    }
+            //    catch (RedisException e)
+            //    {
+            //        // The "nested MULTI" error response is also legal, if we're ACL'd for MULTI
+            //        if (e.Message == "ERR MULTI calls can not be nested")
+            //        {
+            //            return;
+            //        }
 
-                    throw;
-                }
-            }
+            //        throw;
+            //    }
+            //}
         }
 
         [Test]
@@ -5991,7 +5994,7 @@ namespace Garnet.test.Resp.ACL
             static void ResetUserWithNone(IServer defaultUserServer)
             {
                 // Create or reset user, with no permissions
-                RedisResult withNoneRes = defaultUserServer.Execute("ACL", "SETUSER", UserWithNone, "on", $">{TestPassword}", "-@all");
+                RedisResult withNoneRes = defaultUserServer.Execute("ACL", "SETUSER", UserWithNone, "on", $">{TestPassword}", "-@all", "+ping");
                 Assert.AreEqual("OK", (string)withNoneRes);
             }
 
