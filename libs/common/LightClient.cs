@@ -110,7 +110,7 @@ namespace Garnet.common
         {
             socket = GetSendSocket(address, port);
             networkHandler = new LightClientTcpNetworkHandler(this, socket, networkPool, sslOptions != null, this);
-            networkHandler.StartAsync(sslOptions, $"{address}:{port}").GetAwaiter().GetResult();
+            networkHandler.StartAsync(sslOptions, $"{address}:{port}").ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
             networkSender.GetResponseObject();
         }
@@ -187,6 +187,22 @@ namespace Garnet.common
             }
 
             return socket;
+        }
+
+        public override bool CompletePendingRequests(int timeout = -1, CancellationToken token = default)
+        {
+            var deadline = timeout == -1 ? DateTime.MaxValue.Ticks : DateTime.Now.AddMilliseconds(timeout).Ticks;
+            while (numPendingRequests > 0 && DateTime.Now.Ticks < deadline)
+            {
+                if (token.IsCancellationRequested) return false;
+                if (!socket.Connected) throw new GarnetException("Disconnected");
+                Thread.Yield();
+            }
+
+            // TODO: Re-enable to catch token counting errors.
+            // Debug.Assert(numPendingRequests == 0, $"numPendingRequests cannot be nonzero, numPendingRequests = {numPendingRequests} | " +
+            //    $"timeout = {timeout}, deadline: {deadline} > now: {DateTime.Now.Ticks}");
+            return numPendingRequests == 0;
         }
 
         private static (int, int) DefaultLightReceiveUnsafe(byte* buf, int bytesRead, int opType) => (bytesRead, 1);
