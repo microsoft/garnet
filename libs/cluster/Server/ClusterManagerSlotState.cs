@@ -237,7 +237,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                if (current.IsLocal((ushort)slot, readCommand: false))
+                if (current.IsLocal((ushort)slot, readWriteSession: false))
                 {
                     errorMessage = Encoding.ASCII.GetBytes($"ERR This is a local hash slot {slot} and is already imported");
                     return false;
@@ -298,7 +298,7 @@ namespace Garnet.cluster
                 foreach (var slot in slots)
                 {
                     // Can only import remote slots
-                    if (current.IsLocal((ushort)slot, readCommand: false))
+                    if (current.IsLocal((ushort)slot, readWriteSession: false))
                     {
                         errorMessage = Encoding.ASCII.GetBytes($"ERR This is a local hash slot {slot} and is already imported");
                         return false;

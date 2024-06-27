@@ -36,7 +36,7 @@ namespace Garnet.cluster
                     }
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
-                    UnsafeWaitForConfigTransition();
+                    UnsafeBumpAndWaitForEpochTransition();
                 }
                 finally
                 {
