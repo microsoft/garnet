@@ -1571,5 +1571,37 @@ namespace Garnet.test.cluster
                 }
             }
         }
+
+        public void ClusterMigrateForgetTest()
+        {
+            context.logger.LogDebug($"0. ClusterSimpleMigrateSlotsRanges started");
+            var Shards = defaultShards;
+            context.CreateInstances(Shards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+            var (_, _) = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var sourceNodeIndex = 0;
+            var targetNodeIndex = 1;
+            var sourceNodeId = context.clusterTestUtils.ClusterMyId(sourceNodeIndex, context.logger);
+            var targetNodeId = context.clusterTestUtils.ClusterMyId(targetNodeIndex, context.logger);
+
+            var resp = context.clusterTestUtils.SetSlot(sourceNodeIndex, 0, "MIGRATING", targetNodeId, context.logger);
+            Assert.AreEqual("OK", resp);
+
+            var slotState = context.clusterTestUtils.SlotState(sourceNodeIndex, 0, context.logger);
+            Assert.AreEqual(3, slotState.Length);
+            Assert.AreEqual("0", slotState[0]);
+            Assert.AreEqual(">", slotState[1]);
+            Assert.AreEqual(targetNodeId, slotState[2]);
+
+            resp = context.clusterTestUtils.ClusterForget(sourceNodeIndex, targetNodeId, 100, context.logger);
+            Assert.AreEqual("OK", resp);
+
+            slotState = context.clusterTestUtils.SlotState(sourceNodeIndex, 0, context.logger);
+            Assert.AreEqual(3, slotState.Length);
+            Assert.AreEqual("0", slotState[0]);
+            Assert.AreEqual("=", slotState[1]);
+            Assert.AreEqual(sourceNodeId, slotState[2]);
+        }
     }
 }

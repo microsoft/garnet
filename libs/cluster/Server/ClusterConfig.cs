@@ -376,22 +376,6 @@ namespace Garnet.cluster
             int BIT = pos & 7;
             bitmap[BYTE] |= (byte)(1 << BIT);
         }
-
-        /// <summary>
-        /// Returns compressed representation of slots claimed by given node.
-        /// </summary>
-        /// <param name="nodeId"></param>
-        /// <returns>Byte array representing bitmap of claimed slots.</returns>
-        public byte[] GetClaimedSlotsFromNodeId(string nodeId)
-        {
-            byte[] claimedSlots = new byte[slotMap.Length / 8];
-            for (int i = 0; i < slotMap.Length; i++)
-            {
-                if (workers[slotMap[i].workerId].Nodeid.Equals(nodeId, StringComparison.OrdinalIgnoreCase))
-                    slotBitmapSetBit(ref claimedSlots, i);
-            }
-            return claimedSlots;
-        }
         #endregion
 
         #region GetFromSlot
@@ -435,6 +419,14 @@ namespace Garnet.cluster
         /// <returns>String node-id</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public string GetNodeIdFromSlot(ushort slot) => workers[GetWorkerIdFromSlot(slot)].Nodeid;
+
+        /// <summary>
+        /// Get node-id of slot owner.
+        /// </summary>
+        /// <param name="slot">Slot number.</param>
+        /// <returns>String node-id</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public string GetOwnerIdFromSlot(ushort slot) => workers[slotMap[slot]._workerId].Nodeid;
 
         /// <summary>
         /// Get endpoint of slot owner.
