@@ -459,7 +459,7 @@ namespace Garnet.server
         #region HLL Methods
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(ArgSlice[] keys, ref SpanByte input, out long count, out bool error)
+        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error)
         {
             foreach (var key in keys)
             {
@@ -469,7 +469,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogLength(ArgSlice[] keys, out long count)
+        public GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, out long count)
         {
             foreach (var key in keys)
             {

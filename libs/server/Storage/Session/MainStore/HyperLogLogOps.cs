@@ -83,7 +83,7 @@ namespace Garnet.server
         /// <param name="error"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus HyperLogLogLength<TContext>(ArgSlice[] keys, ref SpanByte input, out long count, out bool error, ref TContext context)
+        public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
         {
             count = 0;
@@ -97,7 +97,7 @@ namespace Garnet.server
 
             for (int i = 0; i < keys.Length; i++)
             {
-                SpanByte srcKey = keys[i].SpanByte;
+                var srcKey = keys[i].SpanByte;
                 var status = GET(ref srcKey, ref input, ref o, ref context);
                 //Invalid HLL Type
                 if (*(long*)(o.SpanByte.ToPointer()) == -1)
@@ -113,7 +113,7 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public unsafe GarnetStatus HyperLogLogLength<TContext>(ArgSlice[] keys, out long count, ref TContext context)
+        public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<ArgSlice> keys, out long count, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long, MainStoreFunctions>
         {
             //4 byte length of input
@@ -138,7 +138,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus HyperLogLogMerge(ArgSlice[] keys, out bool error)
+        public unsafe GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error)
         {
             error = false;
 

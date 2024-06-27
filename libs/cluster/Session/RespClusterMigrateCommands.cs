@@ -89,7 +89,8 @@ namespace Garnet.cluster
                     migrateSetCount++;
 
                     // Set if key replace flag is set or key does not exist
-                    if (replaceOption || !CheckIfKeyExists(new ArgSlice(key.ToPointer(), key.Length)))
+                    var keySlice = new ArgSlice(key.ToPointer(), key.Length);
+                    if (replaceOption || !Exists(ref keySlice))
                         _ = basicGarnetApi.SET(ref key, ref value);
                     i++;
                 }

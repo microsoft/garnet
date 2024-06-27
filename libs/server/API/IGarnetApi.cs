@@ -897,7 +897,7 @@ namespace Garnet.server
         /// <param name="bitop"></param>
         /// <param name="result"></param>
         /// <returns></returns>
-        GarnetStatus StringBitOperation(ArgSlice[] keys, BitmapOperation bitop, out long result);
+        GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result);
 
         /// <summary>
         /// Perform a bitwise operation between multiple keys
@@ -953,7 +953,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogMerge(ArgSlice[] keys, out bool error);
+        GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error);
 
         #endregion
     }
@@ -1537,7 +1537,7 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogLength(ArgSlice[] keys, ref SpanByte input, out long count, out bool error);
+        GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error);
 
         /// <summary>
         ///
@@ -1545,7 +1545,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogLength(ArgSlice[] keys, out long count);
+        GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, out long count);
         #endregion
 
         #region Server Methods

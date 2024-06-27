@@ -60,7 +60,7 @@ namespace Garnet.server
                 endReadHead = txnManager.txnStartHead;
 
                 txnManager.GetKeysForValidation(recvBufferPtr, out var keys, out int keyCount, out bool readOnly);
-                if (NetworkKeyArraySlotVerify(ref keys, readOnly, keyCount))
+                if (NetworkKeyArraySlotVerify(keys, readOnly, keyCount))
                 {
                     logger?.LogWarning("Failed CheckClusterTxnKeys");
                     txnManager.Reset(false);
