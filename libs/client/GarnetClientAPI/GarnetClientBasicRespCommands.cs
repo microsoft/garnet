@@ -189,7 +189,7 @@ namespace Garnet.client
         /// <param name="value">Value</param>
         /// <returns></returns>
         public async Task<bool> StringSetAsync(string key, string value)
-            => await ExecuteForStringResultAsync(SET, key, value) == "OK";
+            => await ExecuteForStringResultAsync(SET, key, value).ConfigureAwait(false) == "OK";
 
         /// <summary>
         /// Set given value, for given key
@@ -199,7 +199,7 @@ namespace Garnet.client
         /// <param name="token"></param>
         /// <returns></returns>
         public async Task<bool> StringSetAsync(string key, string value, CancellationToken token)
-            => await ExecuteForStringResultWithCancellationAsync(SET, key, value, token) == "OK";
+            => await ExecuteForStringResultWithCancellationAsync(SET, key, value, token).ConfigureAwait(false) == "OK";
 
         /// <summary>
         /// Set given value, for given key
@@ -208,7 +208,7 @@ namespace Garnet.client
         /// <param name="value">Value</param>
         /// <returns></returns>
         public async Task<bool> StringSetAsync(Memory<byte> key, Memory<byte> value)
-            => await ExecuteForStringResultAsync(SET, key, value) == "OK";
+            => await ExecuteForStringResultAsync(SET, key, value).ConfigureAwait(false) == "OK";
 
         /// <summary>
         /// Set given value, for given key
@@ -218,7 +218,7 @@ namespace Garnet.client
         /// <param name="token">Value</param>
         /// <returns></returns>
         public async Task<bool> StringSetAsync(Memory<byte> key, Memory<byte> value, CancellationToken token)
-            => await ExecuteForStringResultWithCancellationAsync(SET, key, value, token) == "OK";
+            => await ExecuteForStringResultWithCancellationAsync(SET, key, value, token).ConfigureAwait(false) == "OK";
 
         /// <summary>
         /// Set given value, for given key
@@ -250,7 +250,7 @@ namespace Garnet.client
         /// <param name="key">Key</param>
         /// <returns></returns>
         public async Task<bool> KeyDeleteAsync(string key)
-            => await ExecuteForStringResultAsync(DEL, key) == "1";
+            => await ExecuteForStringResultAsync(DEL, key).ConfigureAwait(false) == "1";
 
         /// <summary>
         /// Delete given key
@@ -259,7 +259,7 @@ namespace Garnet.client
         /// <param name="token">Key</param>
         /// <returns></returns>
         public async Task<bool> KeyDeleteAsync(string key, CancellationToken token)
-            => await ExecuteForStringResultWithCancellationAsync(DEL, key, null, token) == "1";
+            => await ExecuteForStringResultWithCancellationAsync(DEL, key, null, token).ConfigureAwait(false) == "1";
 
         /// <summary>
         /// Delete given key
@@ -267,7 +267,7 @@ namespace Garnet.client
         /// <param name="key">Key</param>
         /// <returns></returns>
         public async Task<bool> KeyDeleteAsync(Memory<byte> key)
-            => await ExecuteForStringResultAsync(DEL, key) == "1";
+            => await ExecuteForStringResultAsync(DEL, key).ConfigureAwait(false) == "1";
 
         /// <summary>
         /// Delete given key
@@ -276,7 +276,7 @@ namespace Garnet.client
         /// <param name="token">Cancellation token</param>
         /// <returns></returns>
         public async Task<bool> KeyDeleteAsync(Memory<byte> key, CancellationToken token)
-            => await ExecuteForStringResultWithCancellationAsync(DEL, key, null, token) == "1";
+            => await ExecuteForStringResultWithCancellationAsync(DEL, key, null, token).ConfigureAwait(false) == "1";
 
         /// <summary>
         /// Delete given key
@@ -306,7 +306,7 @@ namespace Garnet.client
         /// <param name="keys">Keys for delete</param>
         /// <returns>The number of keys deleted, or -1 if there was an error</returns>
         public async Task<long> KeyDeleteAsync(string[] keys)
-            => await ExecuteForLongResultAsync("DEL", keys);
+            => await ExecuteForLongResultAsync("DEL", keys).ConfigureAwait(false);
 
 
         /// <summary>
@@ -316,7 +316,7 @@ namespace Garnet.client
         /// <param name="token">Cancellation token</param>
         /// <returns></returns>
         public async Task<long> KeyDeleteAsync(Memory<byte>[] keys, CancellationToken token)
-            => await ExecuteForLongResultWithCancellationAsync(DEL, keys, token);
+            => await ExecuteForLongResultWithCancellationAsync(DEL, keys, token).ConfigureAwait(false);
 
 
 
@@ -327,7 +327,7 @@ namespace Garnet.client
         /// <param name="token">Cancellation token</param>
         /// <returns></returns>
         public async Task<long> KeyDeleteAsync(string[] keys, CancellationToken token)
-            => await ExecuteForLongResultWithCancellationAsync("DEL", keys, token);
+            => await ExecuteForLongResultWithCancellationAsync("DEL", keys, token).ConfigureAwait(false);
 
         /// <summary>
         /// Delete the given keys
@@ -335,7 +335,7 @@ namespace Garnet.client
         /// <param name="keys">Keys</param>
         /// <returns></returns>
         public async Task<long> KeyDeleteAsync(Memory<byte>[] keys)
-            => await ExecuteForLongResultAsync(DEL, keys);
+            => await ExecuteForLongResultAsync(DEL, keys).ConfigureAwait(false);
 
         /// <summary>
         /// Delete the given keys with a callback fuction
@@ -368,7 +368,7 @@ namespace Garnet.client
         /// <param name="key">Key</param>
         /// <returns></returns>
         public async Task<long> StringIncrement(string key)
-            => long.Parse(await ExecuteForStringResultAsync(INCR, key));
+            => long.Parse(await ExecuteForStringResultAsync(INCR, key).ConfigureAwait(false));
 
         /// <summary>
         /// Increment number stored at key by 1.
@@ -377,7 +377,7 @@ namespace Garnet.client
         /// <param name="token">Value</param>
         /// <returns></returns>
         public async Task<long> StringIncrement(string key, CancellationToken token)
-            => long.Parse(await ExecuteForStringResultWithCancellationAsync(INCR, key, null, token));
+            => long.Parse(await ExecuteForStringResultWithCancellationAsync(INCR, key, null, token).ConfigureAwait(false));
 
         /// <summary>
         /// Increment number stored at key by 1.
@@ -385,7 +385,7 @@ namespace Garnet.client
         /// <param name="key">Key</param>
         /// <returns></returns>
         public async Task<long> StringIncrement(Memory<byte> key)
-            => long.Parse(await ExecuteForStringResultAsync(INCR, key));
+            => long.Parse(await ExecuteForStringResultAsync(INCR, key).ConfigureAwait(false));
 
         /// <summary>
         /// Increment number stored at key by 1.
@@ -394,7 +394,7 @@ namespace Garnet.client
         /// <param name="token">Key</param>
         /// <returns></returns>
         public async Task<long> StringIncrement(Memory<byte> key, CancellationToken token)
-            => long.Parse(await ExecuteForStringResultWithCancellationAsync(INCR, key, null, token));
+            => long.Parse(await ExecuteForStringResultWithCancellationAsync(INCR, key, null, token).ConfigureAwait(false));
 
         /// <summary>
         /// Increment number stored at key by 1.
@@ -425,7 +425,7 @@ namespace Garnet.client
         /// <param name="value">Value</param>
         /// <returns></returns>
         public async Task<long> StringIncrement(string key, long value)
-            => long.Parse(await ExecuteForStringResultAsync(INCRBY, key, value.ToString()));
+            => long.Parse(await ExecuteForStringResultAsync(INCRBY, key, value.ToString()).ConfigureAwait(false));
 
         /// <summary>
         /// Increment number stored at key by value.
@@ -435,7 +435,7 @@ namespace Garnet.client
         /// <param name="token">Value</param>
         /// <returns></returns>
         public async Task<long> StringIncrement(string key, long value, CancellationToken token)
-            => long.Parse(await ExecuteForStringResultWithCancellationAsync(INCRBY, key, value.ToString(), token));
+            => long.Parse(await ExecuteForStringResultWithCancellationAsync(INCRBY, key, value.ToString(), token).ConfigureAwait(false));
 
         /// <summary>
         /// Increment number stored at key by value.
@@ -444,7 +444,7 @@ namespace Garnet.client
         /// <param name="value">Value</param>
         /// <returns></returns>
         public async Task<long> StringIncrement(Memory<byte> key, long value)
-            => long.Parse(await ExecuteForStringResultAsync(INCRBY, key, Encoding.ASCII.GetBytes(value.ToString())));
+            => long.Parse(await ExecuteForStringResultAsync(INCRBY, key, Encoding.ASCII.GetBytes(value.ToString())).ConfigureAwait(false));
 
         /// <summary>
         /// Increment number stored at key by value.
@@ -454,7 +454,7 @@ namespace Garnet.client
         /// <param name="token">Value</param>
         /// <returns></returns>
         public async Task<long> StringIncrement(Memory<byte> key, long value, CancellationToken token)
-            => long.Parse(await ExecuteForStringResultWithCancellationAsync(INCRBY, key, Encoding.ASCII.GetBytes(value.ToString()), token));
+            => long.Parse(await ExecuteForStringResultWithCancellationAsync(INCRBY, key, Encoding.ASCII.GetBytes(value.ToString()), token).ConfigureAwait(false));
 
         /// <summary>
         /// Increment number stored at key by value.
@@ -486,7 +486,7 @@ namespace Garnet.client
         /// <param name="key">Key</param>
         /// <returns></returns>
         public async Task<long> StringDecrement(string key)
-            => long.Parse(await ExecuteForStringResultAsync(DECR, key));
+            => long.Parse(await ExecuteForStringResultAsync(DECR, key).ConfigureAwait(false));
 
         /// <summary>
         /// Decrement number stored at key by 1.
@@ -495,7 +495,7 @@ namespace Garnet.client
         /// <param name="token">Value</param>
         /// <returns></returns>
         public async Task<long> StringDecrement(string key, CancellationToken token)
-            => long.Parse(await ExecuteForStringResultWithCancellationAsync(DECR, key, null, token));
+            => long.Parse(await ExecuteForStringResultWithCancellationAsync(DECR, key, null, token).ConfigureAwait(false));
 
         /// <summary>
         /// Decrement number stored at key by 1.
@@ -503,7 +503,7 @@ namespace Garnet.client
         /// <param name="key">Key</param>
         /// <returns></returns>
         public async Task<long> StringDecrement(Memory<byte> key)
-            => long.Parse(await ExecuteForStringResultAsync(DECR, key));
+            => long.Parse(await ExecuteForStringResultAsync(DECR, key).ConfigureAwait(false));
 
         /// <summary>
         /// Decrement number stored at key by 1.
@@ -512,7 +512,7 @@ namespace Garnet.client
         /// <param name="token">Key</param>
         /// <returns></returns>
         public async Task<long> StringDecrement(Memory<byte> key, CancellationToken token)
-            => long.Parse(await ExecuteForStringResultWithCancellationAsync(DECR, key, null, token));
+            => long.Parse(await ExecuteForStringResultWithCancellationAsync(DECR, key, null, token).ConfigureAwait(false));
 
         /// <summary>
         /// Decrement number stored at key by 1.
@@ -543,7 +543,7 @@ namespace Garnet.client
         /// <param name="value">Value</param>
         /// <returns></returns>
         public async Task<long> StringDecrement(string key, long value)
-            => long.Parse(await ExecuteForStringResultAsync(DECRBY, key, value.ToString()));
+            => long.Parse(await ExecuteForStringResultAsync(DECRBY, key, value.ToString()).ConfigureAwait(false));
 
         /// <summary>
         /// Decrement number stored at key by value.
@@ -553,7 +553,7 @@ namespace Garnet.client
         /// <param name="token">Value</param>
         /// <returns></returns>
         public async Task<long> StringDecrement(string key, long value, CancellationToken token)
-            => long.Parse(await ExecuteForStringResultWithCancellationAsync(DECRBY, key, value.ToString(), token));
+            => long.Parse(await ExecuteForStringResultWithCancellationAsync(DECRBY, key, value.ToString(), token).ConfigureAwait(false));
 
         /// <summary>
         /// Increment number stored at key by value.
@@ -562,7 +562,7 @@ namespace Garnet.client
         /// <param name="value">Value</param>
         /// <returns></returns>
         public async Task<long> StringDecrement(Memory<byte> key, long value)
-            => long.Parse(await ExecuteForStringResultAsync(DECRBY, key, Encoding.ASCII.GetBytes(value.ToString())));
+            => long.Parse(await ExecuteForStringResultAsync(DECRBY, key, Encoding.ASCII.GetBytes(value.ToString())).ConfigureAwait(false));
 
         /// <summary>
         /// Decrement number stored at key by value.

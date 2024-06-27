@@ -265,7 +265,7 @@ namespace Garnet.server
                         SortedSetPopMin(_input, ref output);
                         break;
                     case SortedSetOperation.ZRANDMEMBER:
-                        SortedSetRandomMember(_input, input.Length, ref output);
+                        SortedSetRandomMember(_input, ref output);
                         break;
                     case SortedSetOperation.ZSCAN:
                         if (ObjectUtils.ReadScanInput(_input, input.Length, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))

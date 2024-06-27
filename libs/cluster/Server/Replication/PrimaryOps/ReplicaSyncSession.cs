@@ -356,6 +356,7 @@ namespace Garnet.cluster
 
         private async Task SendCheckpointMetadata(GarnetClientSession gcs, ReplicationLogCheckpointManager ckptManager, CheckpointFileType fileType, Guid fileToken)
         {
+            logger?.LogInformation("<Begin sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
             var checkpointMetadata = Array.Empty<byte>();
             if (fileToken != default)
             {
@@ -393,6 +394,8 @@ namespace Garnet.cluster
                 logger?.LogError("Primary error at SendCheckpointMetadata {resp}", resp);
                 throw new Exception($"Primary error at SendCheckpointMetadata {resp}");
             }
+
+            logger?.LogInformation("<Complete sending checkpoint metadata {fileToken} {fileType}", fileToken, fileType);
         }
 
         private async Task SendFileSegments(GarnetClientSession gcs, Guid token, CheckpointFileType type, long startAddress, long endAddress, int batchSize = 1 << 17)
@@ -440,6 +443,7 @@ namespace Garnet.cluster
             {
                 device.Dispose();
             }
+            logger?.LogInformation("<Complete sending checkpoint file segments {guid} {type} {startAddress} {endAddress}", token, type, startAddress, endAddress);
         }
 
         private async Task SendObjectFiles(GarnetClientSession gcs, Guid token, CheckpointFileType type, int segmentCount, int batchSize = 1 << 17)

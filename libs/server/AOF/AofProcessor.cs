@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -117,12 +118,10 @@ namespace Garnet.server
                 if (untilAddress == -1) untilAddress = storeWrapper.appendOnlyFile.TailAddress;
                 using var scan = storeWrapper.appendOnlyFile.Scan(storeWrapper.appendOnlyFile.BeginAddress, untilAddress);
 
-                while (scan.GetNext(out byte[] entry, out int _, out _, out long nextAofAddress))
+                while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
                 {
                     count++;
-
-                    ProcessAofRecord(entry);
-
+                    ProcessAofRecord(entry, length);
                     if (count % 100_000 == 0)
                         logger?.LogInformation("Completed AOF replay of {count} records, until AOF address {nextAofAddress}", count, nextAofAddress);
                 }
@@ -143,18 +142,19 @@ namespace Garnet.server
             }
         }
 
-        internal unsafe void ProcessAofRecord(byte[] record, bool asReplica = false)
+        internal unsafe void ProcessAofRecord(IMemoryOwner<byte> entry, int length, bool asReplica = false)
         {
-            fixed (byte* ptr = record)
+            fixed (byte* ptr = entry.Memory.Span)
             {
-                ProcessAofRecordInternal(record, ptr, record.Length, asReplica);
+                ProcessAofRecordInternal(ptr, length, asReplica);
             }
+            entry.Dispose();
         }
 
         /// <summary>
         /// Process AOF record
         /// </summary>
-        public unsafe void ProcessAofRecordInternal(byte[] record, byte* ptr, int length, bool asReplica = false)
+        public unsafe void ProcessAofRecordInternal(byte* ptr, int length, bool asReplica = false)
         {
             AofHeader header = *(AofHeader*)ptr;
 
@@ -174,7 +174,7 @@ namespace Garnet.server
                     case AofEntryType.StoredProcedure:
                         throw new GarnetException($"Unexpected AOF header operation type {header.opType} within transaction");
                     default:
-                        inflightTxns[header.sessionID].Add(record ?? new ReadOnlySpan<byte>(ptr, length).ToArray());
+                        inflightTxns[header.sessionID].Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
                         break;
                 }
                 return;

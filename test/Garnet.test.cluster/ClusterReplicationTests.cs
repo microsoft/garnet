@@ -143,7 +143,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -209,7 +209,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -401,7 +401,7 @@ namespace Garnet.test.cluster
             var kvpairCount = keyCount;
             var addCount = 5;
             context.kvPairs = [];
-            context.kvPairsObj = new Dictionary<string, List<int>>();
+            context.kvPairsObj = [];
 
             // Populate Primary
             if (disableObjects)
@@ -437,7 +437,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -503,7 +503,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -567,7 +567,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -636,7 +636,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 2; // Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -749,7 +749,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 2; // Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: true, OnDemandCheckpoint: true, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -793,7 +793,7 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: true, MainMemoryReplication: MainMemoryReplication, OnDemandCheckpoint: onDemandCheckpoint, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -892,7 +892,7 @@ namespace Garnet.test.cluster
             var set = false;
             var replica_count = 2;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = primary_count + (primary_count * replica_count);
             Assert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, MainMemoryReplication: mainMemoryReplication, CommitFrequencyMs: mainMemoryReplication ? -1 : 0, OnDemandCheckpoint: mainMemoryReplication, FastCommit: fastCommit, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);

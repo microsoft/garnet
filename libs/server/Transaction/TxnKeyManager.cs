@@ -159,6 +159,7 @@ namespace Garnet.server
                 RespCommand.SECONDARYOF => 1,
                 RespCommand.CONFIG => 1,
                 RespCommand.CLIENT => 1,
+                RespCommand.PING => 1,
                 _ => -1
             };
         }
