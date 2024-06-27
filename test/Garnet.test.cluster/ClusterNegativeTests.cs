@@ -61,7 +61,7 @@ namespace Garnet.test.cluster
         [TestCase("setslot", new int[] { 0, 1, 4, 5 })]
         [TestCase("setslotsrange", new int[] { 0, 1, 2 })]
         [TestCase("slots", new int[] { 1, 2, 3 })]
-        [TestCase("slotstate", new int[] { 1, 2, 3 })]
+        [TestCase("slotstate", new int[] { 0, 2, 3 })]
         [TestCase("MIGRATE", new int[] { 0, 1, 2, 4, 5 })]
         [TestCase("mtasks", new int[] { 1, 2, 3, 4 })]
         [TestCase("replicas", new int[] { 1, 2, 3, 4 })]
