@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Buffers;
+using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -10,10 +12,30 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct ObjectStoreFunctions : ISessionFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private CustomObjectFunctions GetCustomObjectCommand(SpanByte input, GarnetObjectType type)
+        {
+            var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
+            var cmdId = ((RespInputHeader*)input.ToPointer())->SubId;
+            var customObjectCommand = functionsState.customObjectCommands[objectId].commandMap[cmdId].functions;
+            return customObjectCommand;
+        }
+
         /// <inheritdoc />
         public bool NeedInitialUpdate(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
-            return GarnetObject.NeedToCreate(*(RespInputHeader*)input.ToPointer());
+            var type = ((RespInputHeader*)input.ToPointer())->type;
+            if ((byte)type < CustomCommandManager.StartOffset)
+                return GarnetObject.NeedToCreate(*(RespInputHeader*)input.ToPointer());
+            else
+            {
+                var customObjectCommand = GetCustomObjectCommand(input, type);
+                (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                var ret = customObjectCommand.NeedInitialUpdate(key, input.AsReadOnlySpan()[RespInputHeader.Size..], ref outp);
+                output.spanByteAndMemory.Memory = outp.Memory;
+                output.spanByteAndMemory.Length = outp.Length;
+                return ret;
+            }
         }
 
         /// <inheritdoc />
@@ -21,14 +43,23 @@ namespace Garnet.server
         {
             var type = ((RespInputHeader*)input.ToPointer())->type;
             if ((byte)type < CustomCommandManager.StartOffset)
+            {
                 value = GarnetObject.Create(type);
+                value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
+                return true;
+            }
             else
             {
-                byte objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
+                var customObjectCommand = GetCustomObjectCommand(input, type);
+                var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
                 value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
+
+                (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                var ret = customObjectCommand.InitialUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
+                output.spanByteAndMemory.Memory = outp.Memory;
+                output.spanByteAndMemory.Length = outp.Length;
+                return ret;
             }
-            value.Operate(ref input, ref output.spanByteAndMemory, out _, out _);
-            return true;
         }
 
         /// <inheritdoc />
@@ -87,15 +118,28 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     return true;
                 default:
-                    var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
-                        out var removeKey);
-                    if (removeKey)
+                    var type = ((RespInputHeader*)input.ToPointer())->type;
+                    if ((byte)type < CustomCommandManager.StartOffset)
                     {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        return false;
-                    }
+                        var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
+                        out var removeKey);
+                        if (removeKey)
+                        {
+                            rmwInfo.Action = RMWAction.ExpireAndStop;
+                            return false;
+                        }
 
-                    return operateSuccessful;
+                        return operateSuccessful;
+                    }
+                    else
+                    {
+                        var customObjectCommand = GetCustomObjectCommand(input, type);
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        var ret = customObjectCommand.InPlaceUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
+                        output.spanByteAndMemory.Memory = outp.Memory;
+                        output.spanByteAndMemory.Length = outp.Length;
+                        return ret;
+                    }
             }
         }
 
@@ -144,13 +188,26 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     break;
                 default:
-                    value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
-                    if (removeKey)
+                    var type = ((RespInputHeader*)input.ToPointer())->type;
+                    if ((byte)type < CustomCommandManager.StartOffset)
                     {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        return false;
+                        value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
+                        if (removeKey)
+                        {
+                            rmwInfo.Action = RMWAction.ExpireAndStop;
+                            return false;
+                        }
+                        break;
                     }
-                    break;
+                    else
+                    {
+                        var customObjectCommand = GetCustomObjectCommand(input, type);
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        var ret = customObjectCommand.CopyUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], oldValue, value, ref outp, ref rmwInfo);
+                        output.spanByteAndMemory.Memory = outp.Memory;
+                        output.spanByteAndMemory.Length = outp.Length;
+                        return ret;
+                    }
             }
 
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));

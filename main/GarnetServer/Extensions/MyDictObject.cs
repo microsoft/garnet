@@ -73,25 +73,25 @@ namespace Garnet
                 case 0: // MYDICTSET
                     {
                         int offset = 0;
-                        var key = GetNextArg(input, ref offset).ToArray();
-                        var value = GetNextArg(input, ref offset).ToArray();
+                        var key = CustomCommandUtils.GetNextArg(input, ref offset).ToArray();
+                        var value = CustomCommandUtils.GetNextArg(input, ref offset).ToArray();
 
                         dict[key] = value;
                         UpdateSize(key, value);
-                        WriteSimpleString(ref output, "OK");
+                        CustomCommandUtils.WriteSimpleString(ref output, "OK");
                         break;
                     }
                 case 1: // MYDICTGET
                     {
-                        var key = GetFirstArg(input);
+                        var key = CustomCommandUtils.GetFirstArg(input);
                         if (dict.TryGetValue(key.ToArray(), out var result))
-                            WriteBulkString(ref output, result);
+                            CustomCommandUtils.WriteBulkString(ref output, result);
                         else
-                            WriteNullBulkString(ref output);
+                            CustomCommandUtils.WriteNullBulkString(ref output);
                         break;
                     }
                 default:
-                    WriteError(ref output, "Unexpected command");
+                    CustomCommandUtils.WriteError(ref output, "Unexpected command");
                     break;
             }
 
@@ -99,7 +99,6 @@ namespace Garnet
         }
 
         public override void Dispose() { }
-
 
         /// <summary>
         /// Returns the items from this object using a cursor to indicate the start of the scan,
@@ -165,12 +164,28 @@ namespace Garnet
                 cursor = 0;
         }
 
+        public bool TryAdd(byte[] key, byte[] value)
+        {
+            if (dict.TryAdd(key, value))
+            {
+                UpdateSize(key, value);
+                return true;
+            }
+
+            return false;
+        }
+
         private void UpdateSize(byte[] key, byte[] value, bool add = true)
         {
             var size = Utility.RoundUp(key.Length, IntPtr.Size) + Utility.RoundUp(value.Length, IntPtr.Size)
                 + (2 * MemoryUtils.ByteArrayOverhead) + MemoryUtils.DictionaryEntryOverhead;
             this.Size += add ? size : -size;
             Debug.Assert(this.Size >= MemoryUtils.DictionaryOverhead);
+        }
+
+        public bool TryGetValue(byte[] key, out byte[] value)
+        {
+            return dict.TryGetValue(key, out value);
         }
     }
 }
