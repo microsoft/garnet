@@ -107,9 +107,9 @@ namespace Garnet.cluster
                 // Check definition of KeyMigrationStatus for more info
                 return state switch
                 {
-                    KeyMigrationStatus.QUEUED or KeyMigrationStatus.MIGRATED => true,
-                    KeyMigrationStatus.MIGRATING => readOnly,
-                    KeyMigrationStatus.DELETING => true,
+                    KeyMigrationStatus.QUEUED or KeyMigrationStatus.MIGRATED => true,// Both reads and write commands can access key if it exists
+                    KeyMigrationStatus.MIGRATING => readOnly, // If key exists read commands can access key but write commands will be delayed
+                    KeyMigrationStatus.DELETING => false, // Neither read or write commands can access key
                     _ => throw new GarnetException($"Invalid KeyMigrationStatus: {state}")
                 };
             }
