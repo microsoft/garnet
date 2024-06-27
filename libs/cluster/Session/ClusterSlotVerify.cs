@@ -128,7 +128,7 @@ namespace Garnet.cluster
                 // For both read and read/write ops we need to ensure that key will not be removed
                 // while we try to operate on it so we will delay the corresponding operation
                 // as long as the key is being actively migrated
-                while (!clusterProvider.migrationManager.CanModifyKey(ref key, slot, readOnly))
+                while (!clusterProvider.migrationManager.CanAccessKey(ref key, slot, readOnly))
                 {
                     ReleaseCurrentEpoch();
                     Thread.Yield();

@@ -89,7 +89,7 @@ namespace Garnet.cluster
         /// <param name="readOnly"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        public bool CanOperateOnKey(ref ArgSlice key, int slot, bool readOnly)
+        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
         {
             try
             {

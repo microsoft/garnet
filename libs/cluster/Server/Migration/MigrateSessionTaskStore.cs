@@ -12,8 +12,7 @@ namespace Garnet.cluster
 {
     internal sealed class MigrateSessionTaskStore
     {
-        MigrateSession[] sessions;
-        int numSessions = 0;
+        readonly MigrateSession[] sessions;
         SingleWriterMultiReaderLock _lock;
         readonly ILogger logger;
         private bool _disposed;
@@ -31,10 +30,7 @@ namespace Garnet.cluster
                 _lock.WriteLock();
                 _disposed = true;
                 for (var i = 0; i < sessions.Length; i++)
-                {
                     sessions[i]?.Dispose();
-                }
-                numSessions = 0;
                 Array.Clear(sessions);
             }
             finally
@@ -166,7 +162,7 @@ namespace Garnet.cluster
         /// <param name="slot"></param>
         /// <param name="readOnly"></param>
         /// <returns>True if we can operate on the key, otherwise false (i.e. key is being migrated)</returns>
-        public bool CanModifyKey(ref ArgSlice key, int slot, bool readOnly)
+        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
         {
             try
             {
@@ -180,7 +176,7 @@ namespace Garnet.cluster
 
                 Debug.Assert(s != null);
                 // Check owner of slot if can operate on key
-                if (!s.CanOperateOnKey(ref key, slot, readOnly))
+                if (!s.CanAccessKey(ref key, slot, readOnly))
                     return false;
             }
             finally

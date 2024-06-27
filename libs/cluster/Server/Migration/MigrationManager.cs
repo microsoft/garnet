@@ -91,7 +91,7 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         /// <param name="readOnly"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CanModifyKey(ref ArgSlice key, int slot, bool readOnly)
-            => migrationTaskStore.CanModifyKey(ref key, slot, readOnly);
+        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
+            => migrationTaskStore.CanAccessKey(ref key, slot, readOnly);
     }
 }
