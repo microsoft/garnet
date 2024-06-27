@@ -25,7 +25,7 @@ namespace Garnet.cluster
         }
 
         public int GetMigrationTaskCount()
-            => migrationTaskStore.GetNumSession();
+            => migrationTaskStore.GetNumSessions();
 
         /// <summary>
         ///  Add a new migration task in response to an associated request.

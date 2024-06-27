@@ -12,8 +12,7 @@ namespace Garnet.cluster
 {
     internal sealed class MigrateSessionTaskStore
     {
-        MigrateSession[] sessions = new MigrateSession[1];
-        ushort[] slotToSessionsMap;
+        MigrateSession[] sessions;
         int numSessions = 0;
         SingleWriterMultiReaderLock _lock;
         readonly ILogger logger;
@@ -21,7 +20,7 @@ namespace Garnet.cluster
 
         public MigrateSessionTaskStore(ILogger logger = null)
         {
-            this.slotToSessionsMap = new ushort[ClusterConfig.MAX_HASH_SLOT_VALUE];
+            this.sessions = new MigrateSession[ClusterConfig.MAX_HASH_SLOT_VALUE];
             this.logger = logger;
         }
 
@@ -31,10 +30,9 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 _disposed = true;
-                for (var i = 0; i < numSessions; i++)
+                for (var i = 0; i < sessions.Length; i++)
                 {
-                    var s = sessions[i];
-                    s.Dispose();
+                    sessions[i]?.Dispose();
                 }
                 numSessions = 0;
                 Array.Clear(sessions);
@@ -45,29 +43,26 @@ namespace Garnet.cluster
             }
         }
 
-        public int GetNumSession() => numSessions;
-
-        private void GrowSessionArray()
+        /// <summary>
+        /// Count active MigrateSessions
+        /// </summary>
+        /// <returns></returns>
+        public int GetNumSessions()
         {
-            if (numSessions == sessions.Length)
+            var count = 0;
+            try
             {
-                var _sessions = new MigrateSession[sessions.Length << 1];
-                Array.Copy(sessions, _sessions, sessions.Length);
-                sessions = _sessions;
-            }
-        }
+                _lock.ReadLock();
+                if (_disposed) return 0;
 
-        private void ShrinkSessionArray()
-        {
-            // Shrink the array if it got too big but avoid often shrinking/growing
-            if (numSessions > 0 && (numSessions << 2) < sessions.Length)
-            {
-                var oldSessions = sessions;
-                var _sessions = new MigrateSession[sessions.Length >> 1];
-                Array.Copy(sessions, _sessions, sessions.Length >> 2);
-                sessions = _sessions;
-                Array.Clear(oldSessions);
+                for (var i = 0; i < sessions.Length; i++)
+                    count += sessions[i] != null ? 1 : 0;
             }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+            return count;
         }
 
         public bool TryAddMigrateSession(
@@ -110,24 +105,16 @@ namespace Garnet.cluster
                 _lock.WriteLock();
                 if (_disposed) return false;
 
-                // Check if an existing migration session is migrating slots that are already scheduled for migration from another task
-                for (var i = 0; i < numSessions; i++)
+                foreach (var slot in mSession.GetSlots)
                 {
-                    if (sessions[i].Overlap(mSession))
+                    if (sessions[slot] != null)
                     {
-                        logger?.LogError("Migrate slot range overlaps with range of ongoing task");
+                        logger?.LogError("Failed to add new session due to an existing MigrateSession operating on overlapping slots");
                         success = false;
                         return false;
                     }
+                    sessions[slot] = mSession;
                 }
-
-                GrowSessionArray();
-
-                sessions[numSessions++] = mSession;
-
-                // Add offset of MigrateSession that owns slot to slotMap
-                foreach (var slot in mSession.GetSlots)
-                    slotToSessionsMap[slot] = (ushort)(numSessions);
             }
             catch (Exception ex)
             {
@@ -152,29 +139,19 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 if (_disposed) return false;
-                for (var i = 0; i < numSessions; i++)
+                for (var i = 0; i < sessions.Length; i++)
                 {
                     var s = sessions[i];
-
-                    if (s == mSession)
-                    {
-                        // Remove ownership of slots from migrate session
-                        foreach (var slot in s.GetSlots)
-                            slotToSessionsMap[slot] = 0;
-
+                    if (s != null && s == mSession)
                         sessions[i] = null;
-                        if (i < numSessions - 1)
-                        {
-                            sessions[i] = sessions[numSessions - 1];
-                            sessions[numSessions - 1] = null;
-                        }
-                        numSessions--;
-                        s.Dispose();
-
-                        ShrinkSessionArray();
-                    }
                 }
+                mSession.Dispose();
                 return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error at TryRemove");
+                return false;
             }
             finally
             {
@@ -197,15 +174,12 @@ namespace Garnet.cluster
                 if (_disposed) return true;
 
                 // Search slotMap
-                var offset = slotToSessionsMap[slot];
-                // Slot is not managed by any session so can safely operate on it
-                if (offset <= 0)
+                var s = sessions[slot];
+                if (s == null) // Slot is not managed by any session so can safely operate on it
                     return true;
 
-                Debug.Assert(offset - 1 < numSessions);
-
-                // Check owner of slot if can operate on key                
-                var s = sessions[offset - 1];
+                Debug.Assert(s != null);
+                // Check owner of slot if can operate on key
                 if (!s.CanOperateOnKey(ref key, slot, readOnly))
                     return false;
             }
