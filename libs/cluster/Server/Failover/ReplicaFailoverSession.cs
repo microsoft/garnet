@@ -166,8 +166,7 @@ namespace Garnet.cluster
                 logger?.LogWarning($"{nameof(TakeOverAsPrimary)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                 return false;
             }
-            // Wait for all threads to observe recovery state
-            _ = clusterProvider.WaitForConfigTransition();
+            _ = clusterProvider.BumpAndWaitForEpochTransition();
 
             try
             {
@@ -183,9 +182,7 @@ namespace Garnet.cluster
 
                 // Initialize checkpoint history
                 clusterProvider.replicationManager.InitializeCheckpointStore();
-
-                // Wait for all threads to observe configuration transition to primary
-                _ = clusterProvider.WaitForConfigTransition();
+                _ = clusterProvider.BumpAndWaitForEpochTransition();
             }
             finally
             {

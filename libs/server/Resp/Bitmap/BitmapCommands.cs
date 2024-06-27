@@ -141,7 +141,7 @@ namespace Garnet.server
             Debug.Assert(*(ptr - 1) == '\n');
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
 
             keyPtr -= sizeof(int);
@@ -201,7 +201,7 @@ namespace Garnet.server
                 return false;
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
+            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
                 return true;
 
             keyPtr -= sizeof(int);
@@ -279,7 +279,7 @@ namespace Garnet.server
             }
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
 
             keyPtr -= sizeof(int);
@@ -380,7 +380,7 @@ namespace Garnet.server
             }
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
+            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
                 return true;
             keyPtr -= sizeof(int);
             *(int*)keyPtr = ksize; //b[ksize <key>]
@@ -440,7 +440,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             // Too few keys
-            if (count < 2)
+            if (parseState.count < 2)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS, ref dcurr, dend))
                     SendAndReset();
@@ -448,28 +448,17 @@ namespace Garnet.server
                 return true;
             }
 
-            var keyCount = count;
-            var keys = new ArgSlice[keyCount];
-            // Read keys
-            for (var i = 0; i < keys.Length; i++)
-            {
-                keys[i] = new();
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
-            }
-
-            readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkKeyArraySlotVerify(ref keys, false))
-                return true;
-
-            if (keyCount > 64)
+            if (parseState.count > 64)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_BITOP_KEY_LIMIT, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            _ = storageApi.StringBitOperation(keys, bitop, out var result);
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -1))
+                return true;
+
+            _ = storageApi.StringBitOperation(parseState.Parameters, bitop, out var result);
             while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
                 SendAndReset();
 
@@ -581,7 +570,7 @@ namespace Garnet.server
                 secondaryCmdCount++;
             }
 
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
             {
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;
@@ -615,7 +604,7 @@ namespace Garnet.server
             (*(RespInputHeader*)(pcurr)).flags = 0;
             pcurr += RespInputHeader.Size;
 
-            for (int i = 0; i < secondaryCmdCount; i++)
+            for (var i = 0; i < secondaryCmdCount; i++)
             {
                 /* Commenting due to excessive verbosity
                 logger?.LogInformation($"BITFIELD > " +
@@ -774,7 +763,7 @@ namespace Garnet.server
             }
 
             //Verify cluster slot readonly for Bitfield_RO variant
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
+            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
             {
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;

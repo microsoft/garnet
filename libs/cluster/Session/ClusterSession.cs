@@ -60,9 +60,6 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
-        public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
-        public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
-
         public bool ProcessClusterCommands(RespCommand command, int count, byte* recvBufferPtr, int bytesRead, ref int readHead, ref byte* dcurr, ref byte* dend, out bool result)
         {
             this.recvBufferPtr = recvBufferPtr;
@@ -190,6 +187,19 @@ namespace Garnet.cluster
             readHead += length + 2;
 
             return true;
+        }
+
+        public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
+        public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
+
+        /// <summary>
+        /// Release epoch, wait for config transition and re-acquire the epoch
+        /// </summary>
+        public void UnsafeBumpAndWaitForEpochTransition()
+        {
+            ReleaseCurrentEpoch();
+            _ = clusterProvider.BumpAndWaitForEpochTransition();
+            AcquireCurrentEpoch();
         }
     }
 }

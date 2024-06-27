@@ -50,8 +50,8 @@ namespace Garnet.cluster
                 if (!clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, out errorMessage, logger: logger))
                     return false;
 
-                // Ensure configuration change is visible before proceeding
-                session.UnsafeWaitForConfigTransition();
+                // Wait for threads to agree
+                session.UnsafeBumpAndWaitForEpochTransition();
 
                 // Resetting here to decide later when to sync from
                 clusterProvider.replicationManager.ReplicationOffset = 0;
