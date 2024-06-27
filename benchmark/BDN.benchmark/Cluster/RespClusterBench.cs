@@ -65,37 +65,44 @@ namespace BDN.benchmark.Cluster
             }
         }
 
-        public void CreateGetSet(int keySize = 8, int valueSize = 32)
+        public void CreateGetSet(int keySize = 8, int valueSize = 32, int batchSize = 128)
         {
-            var key = new byte[keySize];
-            var value = new byte[valueSize];
+            var pairs = new (byte[], byte[])[batchSize];
+            for (var i = 0; i < batchSize; i++)
+            {
+                pairs[i] = (new byte[keySize], new byte[valueSize]);
 
-            keyTag.CopyTo(key.AsSpan());
-            benchUtils.RandomBytes(ref key, startOffset: keyTag.Length);
-            benchUtils.RandomBytes(ref value);
+                keyTag.CopyTo(pairs[i].Item1.AsSpan());
+                benchUtils.RandomBytes(ref pairs[i].Item1, startOffset: keyTag.Length);
+                benchUtils.RandomBytes(ref pairs[i].Item2);
+            }
 
-            var getByteCount = "*2\r\n$3\r\nGET\r\n"u8.Length + 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2;
-            var getReq = new Request(getByteCount);
-            var curr = getReq.ptr;
-            var end = curr + getReq.buffer.Length;
-            _ = RespWriteUtils.WriteArrayLength(2, ref curr, end);
-            _ = RespWriteUtils.WriteBulkString("GET"u8, ref curr, end);
-            _ = RespWriteUtils.WriteBulkString(key, ref curr, end);
-
-            var setByteCount = "*2\r\n$3\r\nSET\r\n"u8.Length;
-            setByteCount += 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2;
-            setByteCount += 1 + NumUtils.NumDigits(valueSize) + 2 + valueSize + 2;
+            var setByteCount = batchSize * ("*2\r\n$3\r\nSET\r\n"u8.Length + (1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2) + (1 + NumUtils.NumDigits(valueSize) + 2 + valueSize + 2));
             var setReq = new Request(setByteCount);
-            curr = setReq.ptr;
-            end = curr + setReq.buffer.Length;
-            _ = RespWriteUtils.WriteArrayLength(3, ref curr, end);
-            _ = RespWriteUtils.WriteBulkString("SET"u8, ref curr, end);
-            _ = RespWriteUtils.WriteBulkString(key, ref curr, end);
-            _ = RespWriteUtils.WriteBulkString(value, ref curr, end);
+            var curr = setReq.ptr;
+            var end = curr + setReq.buffer.Length;
+            for (var i = 0; i < batchSize; i++)
+            {
+                _ = RespWriteUtils.WriteArrayLength(3, ref curr, end);
+                _ = RespWriteUtils.WriteBulkString("SET"u8, ref curr, end);
+                _ = RespWriteUtils.WriteBulkString(pairs[i].Item1, ref curr, end);
+                _ = RespWriteUtils.WriteBulkString(pairs[i].Item2, ref curr, end);
+            }
+
+            var getByteCount = batchSize * ("*2\r\n$3\r\nGET\r\n"u8.Length + 1 + NumUtils.NumDigits(keySize) + 2 + keySize + 2);
+            var getReq = new Request(getByteCount);
+            curr = getReq.ptr;
+            end = curr + getReq.buffer.Length;
+            for (var i = 0; i < batchSize; i++)
+            {
+                _ = RespWriteUtils.WriteArrayLength(2, ref curr, end);
+                _ = RespWriteUtils.WriteBulkString("GET"u8, ref curr, end);
+                _ = RespWriteUtils.WriteBulkString(pairs[i].Item1, ref curr, end);
+            }
             singleGetSet = [getReq, setReq];
         }
 
-        public void CreateMGetMSet(int keySize = 8, int valueSize = 32, int batchSize = 2)
+        public void CreateMGetMSet(int keySize = 8, int valueSize = 32, int batchSize = 128)
         {
             var pairs = new (byte[], byte[])[batchSize];
             for (var i = 0; i < batchSize; i++)
