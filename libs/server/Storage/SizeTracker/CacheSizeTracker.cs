@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -24,6 +25,8 @@ namespace Garnet.server
         private TsavoriteKV<byte[], IGarnetObject> store;
 
         internal long IndexSizeBytes => store.IndexSize * 64 + store.OverflowBucketCount * 64;
+
+        internal bool Stopped => mainLogTracker.Stopped && (readCacheTracker == null || readCacheTracker.Stopped);
 
         /// <summary>Helps calculate size of a record including heap memory in Object store.</summary>
         internal struct LogSizeCalculator : ILogSizeCalculator<byte[], IGarnetObject>
@@ -75,10 +78,10 @@ namespace Garnet.server
             }
         }
 
-        public void Start()
+        public void Start(CancellationToken token)
         {
-            mainLogTracker.Start();
-            readCacheTracker?.Start();
+            mainLogTracker.Start(token);
+            readCacheTracker?.Start(token);
         }
 
         /// <summary>

@@ -617,6 +617,7 @@ namespace Garnet.server
 
             for (int i = 0; i < secondaryCmdCount; i++)
             {
+                /* Commenting due to excessive verbosity
                 logger?.LogInformation($"BITFIELD > " +
                     $"[" + $"SECONDARY-OP: {(RespCommand)bitfieldArgs[i].secondaryOpCode}, " +
                     $"SIGN: {((bitfieldArgs[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? BitFieldSign.SIGNED : BitFieldSign.UNSIGNED)}, " +
@@ -624,7 +625,7 @@ namespace Garnet.server
                     $"OFFSET: {bitfieldArgs[i].offset}, " +
                     $"VALUE: {bitfieldArgs[i].value}, " +
                     $"OVERFLOW: {(BitFieldOverflow)bitfieldArgs[i].overflowType}]");
-
+                */
                 pcurr = pbCmdInput + sizeof(int) + RespInputHeader.Size;
                 *pcurr = bitfieldArgs[i].secondaryOpCode; pcurr++;
                 *pcurr = bitfieldArgs[i].typeInfo; pcurr++;
@@ -809,6 +810,7 @@ namespace Garnet.server
 
             for (int i = 0; i < secondaryCmdCount; i++)
             {
+                /* Commenting due to excessive verbosity
                 logger?.LogInformation($"BITFIELD > " +
                     $"[" + $"SECONDARY-OP: {(RespCommand)bitfieldArgs[i].secondaryOpCode}, " +
                     $"SIGN: {((bitfieldArgs[i].typeInfo & (byte)BitFieldSign.SIGNED) > 0 ? BitFieldSign.SIGNED : BitFieldSign.UNSIGNED)}, " +
@@ -816,7 +818,7 @@ namespace Garnet.server
                     $"OFFSET: {bitfieldArgs[i].offset}, " +
                     $"VALUE: {bitfieldArgs[i].value}, " +
                     $"OVERFLOW: {(BitFieldOverflow)bitfieldArgs[i].overflowType}]");
-
+                */
                 pcurr = pbCmdInput + sizeof(int) + RespInputHeader.Size;
                 *pcurr = bitfieldArgs[i].secondaryOpCode; pcurr++;
                 *pcurr = bitfieldArgs[i].typeInfo; pcurr++;
