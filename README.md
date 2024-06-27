@@ -31,11 +31,11 @@ Finally, Garnet supports a cluster mode of operation with support for sharding, 
 
 ## Performance Preview
 
-We illustrate a few key results on our [website](https://microsoft.github.io/garnet/docs/benchmarking/overview) comparing Garnet to leading open-source cache-stores.
+We illustrate a few key results on our [website](https://microsoft.github.io/garnet/docs/benchmarking/overview) comparing Garnet to leading open-source cache stores.
 
 ## Design Highlights
 
-Garnet’s design re-thinks the entire cache-store stack – from receiving packets on the network, to parsing and processing database operations, to performing storage interactions. We build on 
+Garnet’s design re-thinks the entire cache-store stack – from receiving packets on the network to parsing and processing database operations, to performing storage interactions. We build on 
 top of years of our [prior research](https://microsoft.github.io/FASTER/docs/td-research-papers/). Below is Garnet’s overall architecture.
 
 <p align="center">
@@ -52,13 +52,13 @@ leverage the .NET library ecosystem for their current implementations. They are 
 unified index and log to ease maintenance.
 
 A distinguishing feature of Garnet’s design is its narrow-waist Tsavorite storage API, which is used to implement the large, rich, and extensible RESP API surface on top. This API consists of read, upsert, delete, and atomic
-read-modify-write operations, implemented with asynchronous callbacks for Garnet to interject logic at various points during each operation. Our storage API model allows us to cleanly separate Garnet’s parsing and query
+read-modify-write operations, implemented with asynchronous callbacks for Garnet to interject logic at various points during each operation. Our storage API model lets us cleanly separate Garnet’s parsing and query
 processing concerns from storage details such as concurrency, storage tiering, and checkpointing. Garnet uses two-phase locking for multi-key transactions.
 
 ### Cluster Mode
 
-In addition to single-node execution, Garnet supports a cluster mode, which allows users to create and manage a sharded and replicated deployment. Garnet also supports an efficient and dynamic key migration scheme 
-to rebalance shards. Users can use standard Redis cluster commands to create and manage Garnet clusters, and nodes perform gossip to share and evolve cluster state. Cluster is still work in progress.
+In addition to single-node execution, Garnet supports a cluster mode, which allows users to create and manage a shared and replicated deployment. Garnet also supports an efficient and dynamic key migration scheme 
+to rebalance shards. Users can use standard Redis cluster commands to create and manage Garnet clusters, and nodes perform gossip to share and evolve cluster state. The cluster is still a work in progress.
 
 ## Next Steps
 
@@ -92,7 +92,7 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
 trademarks or logos is subject to and must follow 
 [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
+Use of Microsoft trademarks or logos in modified versions of this project must not confuse or imply Microsoft sponsorship.
 Any use of third-party trademarks or logos are subject to those third-party's policies.
 
 Redis is a registered trademark of Redis Ltd. Any rights therein are reserved to Redis Ltd. Any use by Microsoft is for referential 
