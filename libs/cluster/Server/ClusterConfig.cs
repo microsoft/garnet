@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 #pragma warning restore IDE0005
 using System.Runtime.CompilerServices;
+using System.Diagnostics;
 
 namespace Garnet.cluster
 {
@@ -968,11 +969,27 @@ namespace Garnet.cluster
             Array.Copy(slotMap, newSlotMap, slotMap.Length);
             for (var i = 0; i < newSlotMap.Length; i++)
             {
-                if (newSlotMap[i].workerId == workerId)
+                // Node being removed is owner of slot
+                if (newSlotMap[i]._state == SlotState.STABLE && newSlotMap[i].workerId == workerId)
+                {
+                    Debug.Assert(newSlotMap[i]._workerId != 1);
+                    newSlotMap[i]._workerId = 0;
+                    newSlotMap[i]._state = SlotState.OFFLINE;
+                }
+                // Node being removed is target node for migration and this is the source node
+                else if (newSlotMap[i]._state == SlotState.MIGRATING && newSlotMap[i]._workerId == workerId)
+                {
+                    Debug.Assert(newSlotMap[i].workerId == 1);
+                    newSlotMap[i]._workerId = 1;
+                    newSlotMap[i]._state = SlotState.STABLE;
+                }
+                // Node being remove is source node for migration and this is the target node
+                else if (newSlotMap[i]._state == SlotState.IMPORTING && workers[newSlotMap[i]._workerId].Nodeid.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     newSlotMap[i]._workerId = 0;
                     newSlotMap[i]._state = SlotState.OFFLINE;
                 }
+                // Every other node with greater workerId need to decrement its offset
                 else if (newSlotMap[i].workerId > workerId)
                 {
                     newSlotMap[i]._workerId--;
