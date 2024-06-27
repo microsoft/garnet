@@ -84,6 +84,8 @@ namespace Garnet.cluster
             }
             else
             {
+                // Terminate any outstanding migration tasks
+                _ = clusterProvider.migrationManager.TryRemoveMigrationTask(nodeid);
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                     SendAndReset();
             }
