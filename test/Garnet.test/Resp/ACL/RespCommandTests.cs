@@ -3292,9 +3292,9 @@ namespace Garnet.test.Resp.ACL
         public void BLMoveACLs()
         {
             CheckCommands(
-                    "BLMOVE",
+                "BLMOVE",
                 [DoBLMove]
-                );
+            );
 
             static void DoBLMove(IServer server)
             {
@@ -3307,9 +3307,9 @@ namespace Garnet.test.Resp.ACL
         public void BLPopACLs()
         {
             CheckCommands(
-                    "BLPOP",
+                "BLPOP",
                 [DoBLPop]
-                );
+            );
 
             static void DoBLPop(IServer server)
             {
@@ -3322,9 +3322,9 @@ namespace Garnet.test.Resp.ACL
         public void BRPopACLs()
         {
             CheckCommands(
-                    "BRPOP",
+                "BRPOP",
                 [DoBRPop]
-                );
+            );
 
             static void DoBRPop(IServer server)
             {
@@ -4006,7 +4006,8 @@ namespace Garnet.test.Resp.ACL
         {
             CheckCommands(
                 "PING",
-                [DoPing, DoPingMessage]
+                [DoPing, DoPingMessage],
+                skipDeny: true
             );
 
             static void DoPing(IServer server)
@@ -5806,7 +5807,8 @@ namespace Garnet.test.Resp.ACL
             string command,
             Action<IServer>[] commands,
             List<string> knownCategories = null,
-            bool skipPing = false
+            bool skipPing = false,
+            bool skipDeny = false
         )
         {
             const string UserWithAll = "temp-all";
@@ -5876,16 +5878,22 @@ namespace Garnet.test.Resp.ACL
 
                             SetUser(defaultUserServer, UserWithAll, [$"-@{category}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -@{category})", skipPing);
+                            if (!skipDeny)
+                            {
+                                AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -@{category})", skipPing);
+                            }
                         }
 
                         // Check adding category works
                         {
                             ResetUserWithNone(defaultUserServer);
 
-                            AssertAllDenied(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -@all)", skipPing);
+                            if (!skipDeny)
+                            {
+                                AssertAllDenied(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -@all)", skipPing);
+                            }
 
-                            SetACLOnUser(defaultUserServer, UserWithNone, [$"+@{category}"]);
+                            SetUser(defaultUserServer, UserWithNone, [$"+@{category}"]);
 
                             AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +@{category})", skipPing);
                         }
@@ -5903,16 +5911,19 @@ namespace Garnet.test.Resp.ACL
                         {
                             ResetUserWithAll(defaultUserServer);
 
-                            SetACLOnUser(defaultUserServer, UserWithAll, [$"-{commandAcl}"]);
+                            SetUser(defaultUserServer, UserWithAll, [$"-{commandAcl}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -{commandAcl})", skipPing);
+                            if (!skipDeny)
+                            {
+                                AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -{commandAcl})", skipPing);
+                            }
                         }
 
                         // Check adding command works
                         {
                             ResetUserWithNone(defaultUserServer);
 
-                            SetACLOnUser(defaultUserServer, UserWithNone, [$"+{commandAcl}"]);
+                            SetUser(defaultUserServer, UserWithNone, [$"+{commandAcl}"]);
 
                             AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +{commandAcl})", skipPing);
                         }
@@ -5928,16 +5939,19 @@ namespace Garnet.test.Resp.ACL
                         {
                             ResetUserWithAll(defaultUserServer);
 
-                            SetACLOnUser(defaultUserServer, UserWithAll, [$"-{subCommandAcl}"]);
+                            SetUser(defaultUserServer, UserWithAll, [$"-{subCommandAcl}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -{subCommandAcl})", skipPing);
+                            if (!skipDeny)
+                            {
+                                AssertAllDenied(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Permitted when should have been denied (user had -{subCommandAcl})", skipPing);
+                            }
                         }
 
                         // Check adding subcommand works
                         {
                             ResetUserWithNone(defaultUserServer);
 
-                            SetACLOnUser(defaultUserServer, UserWithNone, [$"+{subCommandAcl}"]);
+                            SetUser(defaultUserServer, UserWithNone, [$"+{subCommandAcl}"]);
 
                             AssertAllPermitted(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Denied when should have been permitted (user had +{subCommandAcl})", skipPing);
                         }
@@ -5946,29 +5960,24 @@ namespace Garnet.test.Resp.ACL
                         {
                             ResetUserWithNone(defaultUserServer);
 
-                            SetACLOnUser(defaultUserServer, UserWithNone, [$"+{commandAcl}", $"-{subCommandAcl}"]);
+                            SetUser(defaultUserServer, UserWithNone, [$"+{commandAcl}", $"-{subCommandAcl}"]);
 
-                            AssertAllDenied(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Permitted when should have been denied (user had +{commandAcl} -{subCommandAcl})", skipPing);
+                            if (!skipDeny)
+                            {
+                                AssertAllDenied(defaultUserServer, UserWithNone, nonUserServer, commands, $"[{command}]: Permitted when should have been denied (user had +{commandAcl} -{subCommandAcl})", skipPing);
+                            }
                         }
 
                         // Checking removing command but adding subcommand works
                         {
                             ResetUserWithAll(defaultUserServer);
 
-                            SetACLOnUser(defaultUserServer, UserWithAll, [$"-{commandAcl}", $"+{subCommandAcl}"]);
+                            SetUser(defaultUserServer, UserWithAll, [$"-{commandAcl}", $"+{subCommandAcl}"]);
 
                             AssertAllPermitted(defaultUserServer, UserWithAll, allUserServer, commands, $"[{command}]: Denied when should have been permitted (user had -{commandAcl} +{subCommandAcl})", skipPing);
                         }
                     }
                 }
-            }
-
-            // Use default user to update ACL on given user
-            static void SetACLOnUser(IServer defaultUserServer, string user, string[] aclPatterns)
-            {
-                RedisResult res = defaultUserServer.Execute("ACL", ["SETUSER", user, .. aclPatterns]);
-
-                Assert.AreEqual("OK", (string)res, $"Updating user ({user}) failed");
             }
 
             static void ResetUserWithAll(IServer defaultUserServer)
@@ -6047,12 +6056,15 @@ namespace Garnet.test.Resp.ACL
         {
             string aclLinePreSet = GetUser(server, user);
 
-            RedisResult setRes = server.Execute("ACL", ["SETUSER", user, .. aclPatterns]);
+            // we always all PING because we use it to confirm connection health
+            string[] effectiveAclPatterns = [.. aclPatterns, "+ping"];
+
+            RedisResult setRes = server.Execute("ACL", ["SETUSER", user, .. effectiveAclPatterns]);
             Assert.AreEqual("OK", (string)setRes, $"Updating user ({user}) failed");
 
             string aclLinePostSet = GetUser(server, user);
 
-            string expectedAclLine = $"{aclLinePreSet} {string.Join(" ", aclPatterns)}";
+            string expectedAclLine = $"{aclLinePreSet} {string.Join(" ", effectiveAclPatterns)}";
 
             CommandPermissionSet actualUserPerms = ACLParser.ParseACLRule(aclLinePostSet).CopyCommandPermissionSet();
             CommandPermissionSet expectedUserPerms = ACLParser.ParseACLRule(expectedAclLine).CopyCommandPermissionSet();
