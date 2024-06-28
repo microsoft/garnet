@@ -6,14 +6,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
-using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
 using Garnet.server.ACL;
 using Microsoft.CodeAnalysis;
 using NUnit.Framework;
-using StackExchange.Redis;
 
 namespace Garnet.test.Resp.ACL
 {
@@ -3577,15 +3575,6 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task LSetACLsAsync()
         {
-            // TODO: LSET with an empty key appears broken; clean up when fixed
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IServer server = redis.GetServers().Single();
-            IDatabase db = redis.GetDatabase();
-
-            db.ListLeftPush("foo", "fizz");
-
             await CheckCommandsAsync(
                 "LSET",
                 [DoLMoveAsync]
@@ -3593,8 +3582,18 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoLMoveAsync(GarnetClient client)
             {
-                string val = await client.ExecuteForStringResultAsync("LSET", ["foo", "0", "bar"]);
-                Assert.AreEqual("OK", val);
+                try
+                {
+                    await client.ExecuteForStringResultAsync("LSET", ["foo", "0", "bar"]);
+                    Assert.Fail("Should not be reachable, key does not exist");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message != "ERR no such key")
+                    {
+                        throw;
+                    }
+                }
             }
         }
 
@@ -4857,13 +4856,11 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task GeoHashACLsAsync()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IDatabase db = redis.GetDatabase();
-
-            // TODO: GEOHASH doesn't deal with empty keys appropriately - correct when that's fixed
-            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "10", "10", "bar"));
-            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "20", "20", "fizz"));
+            // TODO: GEOHASH responses do not match Redis when keys are missing.
+            // So create some keys to make testing ACLs easier.
+            using var outerClient = await CreateGarnetClientAsync(DefaultUser, DefaultPassword);
+            Assert.AreEqual(1, await outerClient.ExecuteForLongResultAsync("GEOADD", ["foo", "10", "10", "bar"]));
+            Assert.AreEqual(1, await outerClient.ExecuteForLongResultAsync("GEOADD", ["foo", "20", "20", "fizz"]));
 
             await CheckCommandsAsync(
                 "GEOHASH",
@@ -4895,14 +4892,6 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task GeoDistACLsAsync()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IDatabase db = redis.GetDatabase();
-
-            // TODO: GEODIST fails on missing keys, which is incorrect, so putting values in to get ACL test passing
-            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "10", "10", "bar"));
-            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "20", "20", "fizz"));
-
             await CheckCommandsAsync(
                 "GEODIST",
                 [DoGetDistAsync, DoGetDistMAsync]
@@ -4911,27 +4900,19 @@ namespace Garnet.test.Resp.ACL
             static async Task DoGetDistAsync(GarnetClient client)
             {
                 string val = await client.ExecuteForStringResultAsync("GEODIST", ["foo", "bar", "fizz"]);
-                Assert.IsTrue(double.Parse(val) > 0);
+                Assert.IsNull(val);
             }
 
             static async Task DoGetDistMAsync(GarnetClient client)
             {
                 string val = await client.ExecuteForStringResultAsync("GEODIST", ["foo", "bar", "fizz", "M"]);
-                Assert.IsTrue(double.Parse(val) > 0);
+                Assert.IsNull(val);
             }
         }
 
         [Test]
         public async Task GeoPosACLsAsync()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IDatabase db = redis.GetDatabase();
-
-            // TODO: GEOPOS gets desynced if key doesn't exist, remove after that's fixed
-            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "10", "10", "bar"));
-            Assert.AreEqual(1, (int)db.Execute("GEOADD", "foo", "20", "20", "fizz"));
-
             await CheckCommandsAsync(
                 "GEOPOS",
                 [DoGeoPosAsync, DoGeoPosMultiAsync],
@@ -5102,15 +5083,6 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task ZRankACLsAsync()
         {
-            // TODO: ZRANK doesn't implement WITHSCORE (removed code that half did) - come back and add when fixed
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IDatabase db = redis.GetDatabase();
-
-            // TODO: ZRANK errors if key does not exist, which is incorrect - creating key for this test
-            Assert.AreEqual(1, (int)db.Execute("ZADD", "foo", "10", "bar"));
-
             await CheckCommandsAsync(
                 "ZRANK",
                 [DoZRankAsync]
@@ -5118,8 +5090,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoZRankAsync(GarnetClient client)
             {
-                long val = await client.ExecuteForLongResultAsync("ZRANK", ["foo", "bar"]);
-                Assert.AreEqual(0, val);
+                string val = await client.ExecuteForStringResultAsync("ZRANK", ["foo", "bar"]);
+                Assert.IsNull(val);
             }
         }
 
@@ -5197,15 +5169,6 @@ namespace Garnet.test.Resp.ACL
         [Test]
         public async Task ZRevRankACLsAsync()
         {
-            // TODO: ZREVRANK doesn't implement WITHSCORE (removed code that half did) - come back and add when fixed
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-            IDatabase db = redis.GetDatabase();
-
-            // TODO: ZREVRANK errors if key does not exist, which is incorrect - creating key for this test
-            Assert.AreEqual(1, (int)db.Execute("ZADD", "foo", "10", "bar"));
-
             await CheckCommandsAsync(
                 "ZREVRANK",
                 [DoZRevRankAsync]
@@ -5213,8 +5176,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoZRevRankAsync(GarnetClient client)
             {
-                long val = await client.ExecuteForLongResultAsync("ZREVRANK", ["foo", "bar"]);
-                Assert.AreEqual(0, val);
+                string val = await client.ExecuteForStringResultAsync("ZREVRANK", ["foo", "bar"]);
+                Assert.IsNull(val);
             }
         }
 
@@ -5759,18 +5722,6 @@ namespace Garnet.test.Resp.ACL
                 }
             }
 
-            // create a GarnetClient authed as the given user
-            static async Task<GarnetClient> CreateGarnetClientAsync(string username, string password)
-            {
-                GarnetClient ret = TestUtils.GetGarnetClient();
-                await ret.ConnectAsync();
-
-                string authRes = await ret.ExecuteForStringResultAsync("AUTH", [username, password]);
-                Assert.AreEqual("OK", authRes);
-
-                return ret;
-            }
-
             // Use default user to update ACL on given user
             static async Task SetACLOnUserAsync(GarnetClient defaultUserClient, string user, string[] aclPatterns)
             {
@@ -5836,6 +5787,20 @@ namespace Garnet.test.Resp.ACL
                 string pingRes = await currentUserClient.ExecuteForStringResultAsync("PING");
                 Assert.AreEqual("PONG", pingRes);
             }
+        }
+
+        /// <summary>
+        /// Create a GarnetClient authed as the given user.
+        /// </summary>
+        private static async Task<GarnetClient> CreateGarnetClientAsync(string username, string password)
+        {
+            GarnetClient ret = TestUtils.GetGarnetClient();
+            await ret.ConnectAsync();
+
+            string authRes = await ret.ExecuteForStringResultAsync("AUTH", [username, password]);
+            Assert.AreEqual("OK", authRes);
+
+            return ret;
         }
 
         /// <summary>
