@@ -2050,21 +2050,21 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: restore
-        //[Test]
-        //public async Task CommandACLsAsync()
-        //{
-        //    await CheckCommandsAsync(
-        //        "COMMAND",
-        //        [DoCommandAsync]
-        //    );
+        [Test]
+        public async Task CommandACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "COMMAND",
+                [DoCommandAsync],
+                skipPermitted: true
+            );
 
-        //    static async Task DoCommandAsync(GarnetClient client)
-        //    {
-        //        string[] val = await client.ExecuteForStringArrayResultAsync("COMMAND");
-        //        Assert.IsNotNull(val);
-        //    }
-        //}
+            static async Task DoCommandAsync(GarnetClient client)
+            {
+                // COMMAND returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND");
+            }
+        }
 
         [Test]
         public async Task CommandCountACLsAsync()
@@ -2081,33 +2081,33 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: restore
-        //[Test]
-        //public async Task CommandInfoACLsAsync()
-        //{
-        //    await CheckCommandsAsync(
-        //        "COMMAND INFO",
-        //        [DoCommandInfoAsync, DoCommandInfoOneAsync, DoCommandInfoMultiAsync]
-        //    );
+        [Test]
+        public async Task CommandInfoACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "COMMAND INFO",
+                [DoCommandInfoAsync, DoCommandInfoOneAsync, DoCommandInfoMultiAsync],
+                skipPermitted: true
+            );
 
-        //    static async Task DoCommandInfoAsync(GarnetClient client)
-        //    {
-        //        string[] val = await client.ExecuteForStringArrayResultAsync("COMMAND", ["INFO"]);
-        //        Assert.IsNotNull(val);
-        //    }
+            static async Task DoCommandInfoAsync(GarnetClient client)
+            {
+                // COMMAND|INFO returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["INFO"]);
+            }
 
-        //    static async Task DoCommandInfoOneAsync(GarnetClient client)
-        //    {
-        //        string[] val = await client.ExecuteForStringArrayResultAsync("COMMAND", ["INFO", "GET"]);
-        //        Assert.IsNotNull(val);
-        //    }
+            static async Task DoCommandInfoOneAsync(GarnetClient client)
+            {
+                // COMMAND|INFO returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["INFO", "GET"]);
+            }
 
-        //    static async Task DoCommandInfoMultiAsync(GarnetClient client)
-        //    {
-        //        string[] val = await client.ExecuteForStringArrayResultAsync("COMMAND", ["INFO", "GET", "SET", "APPEND"]);
-        //        Assert.IsNotNull(val);
-        //    }
-        //}
+            static async Task DoCommandInfoMultiAsync(GarnetClient client)
+            {
+                // COMMAND|INFO returns an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("COMMAND", ["INFO", "GET", "SET", "APPEND"]);
+            }
+        }
 
         [Test]
         public async Task CommitAOFACLsAsync()
@@ -2489,191 +2489,152 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: restore
-        //[Test]
-        //public async Task FailoverACLsAsync()
-        //{
-        //    const string TestUser = "failover-user";
-        //    const string TestPassword = "foo";
+        [Test]
+        public async Task FailoverACLsAsync()
+        {
+            // FAILOVER is sufficiently weird that we don't want to test "success"
+            //
+            // Instead, we only test that we can successful forbid it
+            await CheckCommandsAsync(
+                "FAILOVER",
+                [
+                    DoFailoverAsync,
+                    DoFailoverToAsync,
+                    DoFailoverAbortAsync,
+                    DoFailoverToForceAsync,
+                    DoFailoverToAbortAsync,
+                    DoFailoverToForceAbortAsync,
+                    DoFailoverToForceAbortTimeoutAsync,
+                ],
+                skipPermitted: true
+            );
 
-        //    // Failover is strange, so this more complicated that typical
+            static async Task DoFailoverAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("FAILOVER");
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
 
-        //    Func<GarnetClient, Task>[] cmds = [
-        //        DoFailoverAsync,
-        //        DoFailoverToAsync,
-        //        DoFailoverAbortAsync,
-        //        DoFailoverToForceAsync,
-        //        DoFailoverToAbortAsync,
-        //        DoFailoverToForceAbortAsync,
-        //        DoFailoverToForceAbortTimeoutAsync,
-        //    ];
+                    throw;
+                }
+            }
 
-        //    // Check denied with -failover
-        //    foreach (Action<IServer> cmd in cmds)
-        //    {
-        //        Run(false, (defaultServer, testServer) => SetUser(defaultServer, TestUser, $"-failover"), cmd);
-        //    }
+            static async Task DoFailoverToAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999"]);
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
 
-        //    string[] acls = ["admin", "slow", "dangerous"];
+                    throw;
+                }
+            }
 
-        //    foreach (Action<IServer> cmd in cmds)
-        //    {
-        //        // Check works with +@all
-        //        Run(true, (defaultServer, testServer) => { }, cmd);
+            static async Task DoFailoverAbortAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["ABORT"]);
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
 
-        //        // Check denied with -@whatever
-        //        foreach (string acl in acls)
-        //        {
-        //            Run(false, (defaultServer, testServer) => SetUser(defaultServer, TestUser, $"-@{acl}"), cmd);
-        //        }
-        //    }
+                    throw;
+                }
+            }
 
-        //    void Run(bool expectSuccess, Action<IServer, IServer> before, Action<IServer> cmd)
-        //    {
-        //        // Refresh Garnet instance
-        //        TearDown();
-        //        Setup();
+            static async Task DoFailoverToForceAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "FORCE"]);
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
 
-        //        using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: DefaultUser, authPassword: DefaultPassword));
-        //        IServer defaultServer = defaultRedis.GetServers().Single();
+                    throw;
+                }
+            }
 
-        //        InitUser(defaultServer, "failover-user", "foo");
+            static async Task DoFailoverToAbortAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "ABORT"]);
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
 
-        //        using ConnectionMultiplexer failoverRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
+                    throw;
+                }
+            }
 
-        //        IServer failoverServer = failoverRedis.GetServers().Single();
+            static async Task DoFailoverToForceAbortAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "FORCE", "ABORT"]);
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
 
-        //        before(defaultServer, failoverServer);
+                    throw;
+                }
+            }
 
-        //        Assert.AreEqual(expectSuccess, CheckAuthFailure(() => cmd(failoverServer)));
-        //    }
+            static async Task DoFailoverToForceAbortTimeoutAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "FORCE", "ABORT", "TIMEOUT", "1"]);
+                    Assert.Fail("Shouldn't be reachable, cluster not enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
 
-        //    static async Task DoFailoverAsync(GarnetClient client)
-        //    {
-        //        try
-        //        {
-        //            await client.ExecuteForStringResultAsync("FAILOVER");
-        //            Assert.Fail("Shouldn't be reachable, cluster not enabled");
-        //        }
-        //        catch (Exception e)
-        //        {
-        //            if (e.Message == "ERR This instance has cluster support disabled")
-        //            {
-        //                return;
-        //            }
-
-        //            throw;
-        //        }
-        //    }
-
-        //    static async Task DoFailoverToAsync(GarnetClient client)
-        //    {
-        //        try
-        //        {
-        //            await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999"]);
-        //            Assert.Fail("Shouldn't be reachable, cluster not enabled");
-        //        }
-        //        catch (Exception e)
-        //        {
-        //            if (e.Message == "ERR This instance has cluster support disabled")
-        //            {
-        //                return;
-        //            }
-
-        //            throw;
-        //        }
-        //    }
-
-        //    static async Task DoFailoverAbortAsync(GarnetClient client)
-        //    {
-        //        try
-        //        {
-        //            await client.ExecuteForStringResultAsync("FAILOVER", ["ABORT"]);
-        //            Assert.Fail("Shouldn't be reachable, cluster not enabled");
-        //        }
-        //        catch (Exception e)
-        //        {
-        //            if (e.Message == "ERR This instance has cluster support disabled")
-        //            {
-        //                return;
-        //            }
-
-        //            throw;
-        //        }
-        //    }
-
-        //    static async Task DoFailoverToForceAsync(GarnetClient client)
-        //    {
-        //        try
-        //        {
-        //            await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "FORCE"]);
-        //            Assert.Fail("Shouldn't be reachable, cluster not enabled");
-        //        }
-        //        catch (Exception e)
-        //        {
-        //            if (e.Message == "ERR This instance has cluster support disabled")
-        //            {
-        //                return;
-        //            }
-
-        //            throw;
-        //        }
-        //    }
-
-        //    static async Task DoFailoverToAbortAsync(GarnetClient client)
-        //    {
-        //        try
-        //        {
-        //            await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "ABORT"]);
-        //            Assert.Fail("Shouldn't be reachable, cluster not enabled");
-        //        }
-        //        catch (Exception e)
-        //        {
-        //            if (e.Message == "ERR This instance has cluster support disabled")
-        //            {
-        //                return;
-        //            }
-
-        //            throw;
-        //        }
-        //    }
-
-        //    static async Task DoFailoverToForceAbortAsync(GarnetClient client)
-        //    {
-        //        try
-        //        {
-        //            await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "FORCE", "ABORT"]);
-        //            Assert.Fail("Shouldn't be reachable, cluster not enabled");
-        //        }
-        //        catch (Exception e)
-        //        {
-        //            if (e.Message == "ERR This instance has cluster support disabled")
-        //            {
-        //                return;
-        //            }
-
-        //            throw;
-        //        }
-        //    }
-
-        //    static async Task DoFailoverToForceAbortTimeoutAsync(GarnetClient client)
-        //    {
-        //        try
-        //        {
-        //            await client.ExecuteForStringResultAsync("FAILOVER", ["TO", "127.0.0.1", "9999", "FORCE", "ABORT", "TIMEOUT", "1"]);
-        //            Assert.Fail("Shouldn't be reachable, cluster not enabled");
-        //        }
-        //        catch (Exception e)
-        //        {
-        //            if (e.Message == "ERR This instance has cluster support disabled")
-        //            {
-        //                return;
-        //            }
-
-        //            throw;
-        //        }
-        //    }
-        //}
+                    throw;
+                }
+            }
+        }
 
         [Test]
         public async Task FlushDBACLsAsync()
@@ -3740,52 +3701,22 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: restore
-        //[Test]
-        //public async Task MonitorACLsAsync()
-        //{
-        //    const string TestUser = "monitor-user";
-        //    const string TestPassword = "fizz";
+        [Test]
+        public async Task MonitorACLsAsync()
+        {
+            // MONITOR is weird, so just check that we can forbid it
+            await CheckCommandsAsync(
+                "MONITOR",
+                [DoMonitorAsync],
+                skipPermitted: true
+            );
 
-        //    // MONITOR isn't actually implemented, and doesn't fit nicely into SE.Redis anyway, so we only check the DENY cases here
-
-        //    // test just the command
-        //    {
-        //        using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-        //        IServer defaultServer = defaultRedis.GetServers().Single();
-
-        //        InitUser(defaultServer, TestUser, TestPassword);
-        //        SetUser(defaultServer, TestUser, [$"-monitor"]);
-
-        //        using ConnectionMultiplexer testRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
-        //        IServer testServer = testRedis.GetServers().Single();
-
-        //        Assert.False(CheckAuthFailure(() => DoMonitor(testServer)), "Permitted when should have been denied");
-        //    }
-
-        //    // test is a bit more involved since @admin is present
-        //    string[] categories = ["admin", "slow", "dangerous"];
-
-        //    foreach (string category in categories)
-        //    {
-        //        using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-        //        IServer defaultServer = defaultRedis.GetServers().Single();
-
-        //        InitUser(defaultServer, TestUser, TestPassword);
-        //        SetUser(defaultServer, TestUser, [$"-@{category}"]);
-
-        //        using ConnectionMultiplexer testRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
-        //        IServer testServer = testRedis.GetServers().Single();
-
-        //        Assert.False(CheckAuthFailure(() => DoMonitor(testServer)), "Permitted when should have been denied");
-        //    }
-
-        //    static async Task DoMonitorAsync(GarnetClient client)
-        //    {
-        //        server.Execute("MONITOR");
-        //        Assert.Fail("Should never reach this point");
-        //    }
-        //}
+            static async Task DoMonitorAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("MONITOR");
+                Assert.Fail("Should never reach this point");
+            }
+        }
 
         [Test]
         public async Task MSetACLsAsync()
@@ -4025,28 +3956,22 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: restore
-        //[Test]
-        //public async Task PSubscribeACLsAsync()
-        //{
-        //    // TODO: not testing the multiple pattern version
+        [Test]
+        public async Task PSubscribeACLsAsync()
+        {
+            // PSUBSCRIBE is sufficient weird that all we care to test is forbidding it
+            await CheckCommandsAsync(
+                "PSUBSCRIBE",
+                [DoPSubscribePatternAsync],
+                skipPermitted: true
+            );
 
-        //    int count = 0;
-
-        //    await CheckCommandsAsync(
-        //        "PSUBSCRIBE",
-        //        [DoPSubscribePatternAsync]
-        //    );
-
-        //    async Task DoPSubscribePatternAsync(GarnetClient client)
-        //    {
-        //        ISubscriber sub = server.Multiplexer.GetSubscriber();
-
-        //        // have to do the (bad) async version to make sure we actually get the error
-        //        sub.SubscribeAsync(new RedisChannel($"channel-{count}", RedisChannel.PatternMode.Pattern)).GetAwaiter().GetResult();
-        //        count++;
-        //    }
-        //}
+            static async Task DoPSubscribePatternAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("PSUBSCRIBE", ["channel"]);
+                Assert.Fail("Should not reach this point");
+            }
+        }
 
         [Test]
         public async Task PUnsubscribeACLsAsync()
@@ -4078,23 +4003,20 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: restore
-        //[Test]
-        //public async Task PublishACLsAsync()
-        //{
-        //    await CheckCommandsAsync(
-        //        "PUBLISH",
-        //        [DoPublishAsync]
-        //    );
+        [Test]
+        public async Task PublishACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "PUBLISH",
+                [DoPublishAsync]
+            );
 
-        //    static async Task DoPublishAsync(GarnetClient client)
-        //    {
-        //        ISubscriber sub = server.Multiplexer.GetSubscriber();
-
-        //        long count = sub.Publish(new RedisChannel("foo", RedisChannel.PatternMode.Literal), "bar");
-        //        Assert.AreEqual(0, count);
-        //    }
-        //}
+            static async Task DoPublishAsync(GarnetClient client)
+            {
+                long count = await client.ExecuteForLongResultAsync("PUBLISH", ["foo", "bar"]);
+                Assert.AreEqual(0, count);
+            }
+        }
 
         [Test]
         public async Task ReadOnlyACLsAsync()
@@ -4229,84 +4151,36 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: restore
-        //[Test]
-        //public async Task RunTxpACLsAsync()
-        //{
-        //    // TODO: RUNTXP semantics are a bit unclear... expand test later
+        [Test]
+        public async Task RunTxpACLsAsync()
+        {
+            // TODO: RUNTXP semantics are a bit unclear... expand test later
 
-        //    // TODO: RUNTXP breaks the stream when command is malformed, rework this when that is fixed
+            // TODO: RUNTXP appears to break the command stream when malformed, so only test that we can forbid it
+            await CheckCommandsAsync(
+                "RUNTXP",
+                [DoRunTxpAsync],
+                skipPermitted: true
+            );
 
-        //    // Test denying just the command
-        //    {
-        //        {
-        //            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
+            static async Task DoRunTxpAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("RUNTXP", ["4"]);
+                    Assert.Fail("Should be reachable, command is malformed");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR Could not get transaction procedure")
+                    {
+                        return;
+                    }
 
-        //            IServer server = redis.GetServers().Single();
-        //            IDatabase db = redis.GetDatabase();
-
-        //            SetUser(server, "default", ["-runtxp"]);
-        //            Assert.False(CheckAuthFailure(() => DoRunTxp(db)), "Permitted when should have been denied");
-        //        }
-        //    }
-
-        //    string[] categories = ["transaction", "garnet"];
-
-        //    foreach (string cat in categories)
-        //    {
-        //        // Spin up a temp admin
-        //        {
-        //            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-        //            IServer server = redis.GetServers().Single();
-        //            IDatabase db = redis.GetDatabase();
-
-        //            RedisResult setupAdmin = db.Execute("ACL", "SETUSER", "temp-admin", "on", ">foo", "+@all");
-        //            Assert.AreEqual("OK", (string)setupAdmin);
-        //        }
-
-        //        // Permitted
-        //        {
-        //            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
-
-        //            IServer server = redis.GetServers().Single();
-        //            IDatabase db = redis.GetDatabase();
-
-        //            Assert.True(CheckAuthFailure(() => DoRunTxp(db)), "Denied when should have been permitted");
-        //        }
-
-        //        // Denied
-        //        {
-        //            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "temp-admin", authPassword: "foo"));
-
-        //            IServer server = redis.GetServers().Single();
-        //            IDatabase db = redis.GetDatabase();
-
-        //            SetUser(server, "temp-admin", $"-@{cat}");
-
-        //            Assert.False(CheckAuthFailure(() => DoRunTxp(db)), "Permitted when should have been denied");
-        //        }
-        //    }
-
-        //    static async Task DoRunTxp(IDatabase db)
-        //    {
-        //        try
-        //        {
-        //            db.Execute("RUNTXP", "4");
-
-        //            Assert.Fail("Should be reachable, command is malformed");
-        //        }
-        //        catch (Exception e)
-        //        {
-        //            if (e.Message == "ERR Could not get transaction procedure")
-        //            {
-        //                return;
-        //            }
-
-        //            throw;
-        //        }
-        //    }
-        //}
+                    throw;
+                }
+            }
+        }
 
         [Test]
         public async Task SaveACLsAsync()
@@ -4778,28 +4652,22 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: restore
-        //[Test]
-        //public void SubscribeACLsAsync()
-        //{
-        //    // TODO: not testing the multiple channel version
+        [Test]
+        public async Task SubscribeACLsAsync()
+        {
+            // SUBSCRIBE is sufficient weird that all we care to test is forbidding it
+            await CheckCommandsAsync(
+                "SUBSCRIBE",
+                [DoSubscribeAsync],
+                skipPermitted: true
+            );
 
-        //    int count = 0;
-
-        //    await CheckCommandsAsync(
-        //        "SUBSCRIBE",
-        //        [DoSubscribeAsync]
-        //    );
-
-        //    async Task DoSubscribeAsync(GarnetClient client)
-        //    {
-        //        ISubscriber sub = server.Multiplexer.GetSubscriber();
-
-        //        // have to do the (bad) async version to make sure we actually get the error
-        //        sub.SubscribeAsync(new RedisChannel($"channel-{count}", RedisChannel.PatternMode.Literal)).GetAwaiter().GetResult();
-        //        count++;
-        //    }
-        //}
+            static async Task DoSubscribeAsync(GarnetClient client)
+            {
+                await client.ExecuteForStringResultAsync("SUBSCRIBE", ["channel"]);
+                Assert.Fail("Shouldn't reach this point");
+            }
+        }
 
         [Test]
         public async Task SUnionACLsAsync()
@@ -5083,59 +4951,21 @@ namespace Garnet.test.Resp.ACL
             }
         }
 
-        // todo: restore
-        //[Test]
-        //public async Task GeoSearchACLsAsync()
-        //{
-        //    const string TestUser = "geosearch-user";
-        //    const string TestPassword = "bar";
+        [Test]
+        public async Task GeoSearchACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GEOSEARCH",
+                [DoGeoSearchAsync],
+                skipPermitted: true
+            );
 
-        //    // TODO: there are a LOT of GeoSearch variants (not all of them implemented), come back and cover all the lengths appropriately
-
-        //    // TODO: GEOSEARCH appears to be very broken, so this structured oddly - can be simplified once fixed
-
-        //    string[] categories = ["geo", "read", "slow"];
-
-        //    foreach (string category in categories)
-        //    {
-        //        // fresh Garnet for the allow version
-        //        TearDown();
-        //        Setup();
-
-        //        {
-        //            // fresh connection, as GEOSEARCH seems to break connections pretty easily
-        //            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-
-        //            IServer server = redis.GetServers().Single();
-
-        //            Assert.True(CheckAuthFailure(() => DoGeoSearchAsync(server)), "Denied when should have been permitted");
-        //        }
-
-        //        // fresh Garnet for the reject version
-        //        TearDown();
-        //        Setup();
-
-        //        {
-        //            // fresh connection, as GEOSEARCH seems to break connections pretty easily
-        //            using ConnectionMultiplexer defaultRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: "default", authPassword: DefaultPassword));
-        //            IServer defaultServer = defaultRedis.GetServers().Single();
-
-        //            InitUser(defaultServer, TestUser, TestPassword);
-        //            SetUser(defaultServer, TestUser, $"-@{category}");
-
-        //            using ConnectionMultiplexer testRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, authUsername: TestUser, authPassword: TestPassword));
-        //            IServer testServer = testRedis.GetServers().Single();
-
-        //            Assert.False(CheckAuthFailure(() => DoGeoSearchAsync(testServer)), "Permitted when should have been denied");
-        //        }
-
-        //        static async Task DoGeoSearchAsync(GarnetClient client)
-        //        {
-        //            string[] val = await client.ExecuteForStringArrayResultAsync("GEOSEARCH", ["foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M"]);
-        //            Assert.IsNotNull(val);
-        //        }
-        //    }
-        //}
+            static async Task DoGeoSearchAsync(GarnetClient client)
+            {
+                // GEOSEARCH replies with an array of arrays, which GarnetClient doesn't deal with
+                await client.ExecuteForStringResultAsync("GEOSEARCH", ["foo", "FROMMEMBER", "bar", "BYBOX", "2", "2", "M"]);
+            }
+        }
 
         [Test]
         public async Task ZAddACLsAsync()
