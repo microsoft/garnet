@@ -16,6 +16,9 @@ namespace Garnet.server
         unsafe GarnetStatus RMWObjectStoreOperation<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
             var _input = input.SpanByte;
 
             output = new();
@@ -48,6 +51,9 @@ namespace Garnet.server
         GarnetStatus RMWObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ArgSlice input, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
             var _input = input.SpanByte;
 
             // Perform RMW on object store
@@ -75,6 +81,9 @@ namespace Garnet.server
         GarnetStatus ReadObjectStoreOperationWithOutput<TObjectContext>(byte[] key, ArgSlice input, ref TObjectContext objectStoreContext, ref GarnetObjectStoreOutput outputFooter)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
             var _input = input.SpanByte;
 
             // Perform read on object store
@@ -221,8 +230,11 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         unsafe GarnetStatus ReadObjectStoreOperation<TObjectContext>(byte[] key, ArgSlice input, out ObjectOutputHeader output, ref TObjectContext objectStoreContext)
-        where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
         {
+            if (objectStoreContext.Session is null)
+                StorageSession.ThrowObjectStoreUninitializedException();
+
             var _input = input.SpanByte;
 
             output = new();
@@ -255,6 +267,10 @@ namespace Garnet.server
         public GarnetStatus ObjectScan<TObjectContext>(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter, ref TObjectContext objectStoreContext)
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long, ObjectStoreFunctions>
           => ReadObjectStoreOperationWithOutput(key, input, ref objectStoreContext, ref outputFooter);
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void ThrowObjectStoreUninitializedException()
+            => throw new GarnetException("Object store is disabled");
 
         #endregion
     }

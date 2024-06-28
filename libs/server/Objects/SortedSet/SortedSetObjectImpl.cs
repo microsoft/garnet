@@ -6,7 +6,6 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -323,6 +322,7 @@ namespace Garnet.server
             //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
             var _input = (ObjectInputHeader*)input;
             int count = _input->arg1;
+            int respProtocolVersion = _input->arg2;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
@@ -410,23 +410,9 @@ namespace Garnet.server
 
                     if (options.ByScore)
                     {
-
                         var scoredElements = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, options.WithScores, options.Reverse, options.ValidLimit, false, options.Limit);
 
-                        // write the size of the array reply
-                        while (!RespWriteUtils.WriteArrayLength(options.WithScores ? scoredElements.Count * 2 : scoredElements.Count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                        foreach (var (score, element) in scoredElements)
-                        {
-                            while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            if (options.WithScores)
-                            {
-                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
-                        }
+                        WriteSortedSetResult(options.WithScores, scoredElements.Count, respProtocolVersion, scoredElements, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone = _input->arg1;
                     }
                     else
@@ -469,20 +455,7 @@ namespace Garnet.server
                             var iterator = options.Reverse ? sortedSet.Reverse() : sortedSet;
                             iterator = iterator.Skip(minIndex).Take(n);
 
-                            // write the size of the array reply
-                            while (!RespWriteUtils.WriteArrayLength(options.WithScores ? n * 2 : n, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                            foreach (var (score, element) in iterator)
-                            {
-                                while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                if (options.WithScores)
-                                {
-                                    while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
-                            }
+                            WriteSortedSetResult(options.WithScores, n, respProtocolVersion, iterator, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                             countDone = _input->arg1;
                         }
                     }
@@ -502,20 +475,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        //write the size of the array reply
-                        while (!RespWriteUtils.WriteArrayLength(options.WithScores ? elementsInLex.Count * 2 : elementsInLex.Count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                        foreach (var (score, element) in elementsInLex)
-                        {
-                            while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            if (options.WithScores)
-                            {
-                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
-                        }
+                        WriteSortedSetResult(options.WithScores, elementsInLex.Count, respProtocolVersion, elementsInLex, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                         countDone = _input->arg1;
                     }
                 }
@@ -528,6 +488,44 @@ namespace Garnet.server
 
                 if (isMemory) ptrHandle.Dispose();
                 output.Length = (int)(curr - ptr);
+            }
+        }
+
+        void WriteSortedSetResult(bool withScores, int count, int respProtocolVersion, IEnumerable<(double, byte[])> iterator, ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle, ref byte* curr, ref byte* end)
+        {
+            if (withScores && respProtocolVersion >= 3)
+            {
+                // write the size of the array reply
+                while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var (score, element) in iterator)
+                {
+                    while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                    while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    while (!RespWriteUtils.TryWriteDoubleNumeric(score, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+            }
+            else
+            {
+                // write the size of the array reply
+                while (!RespWriteUtils.WriteArrayLength(withScores ? count * 2 : count, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var (score, element) in iterator)
+                {
+                    while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    if (withScores)
+                    {
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
+                }
             }
         }
 

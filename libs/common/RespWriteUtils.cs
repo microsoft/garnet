@@ -488,6 +488,37 @@ namespace Garnet.common
             return true;
         }
 
+        /// <summary>
+        /// Try to write a double-precision floating-point <paramref name="value"/> as bulk string.
+        /// </summary>
+        /// <returns><see langword="true"/> if the <paramref name="value"/> could be written to <paramref name="curr"/>; <see langword="false"/> otherwise.</returns>
+        [SkipLocalsInit]
+        public static bool TryWriteDoubleNumeric(double value, ref byte* curr, byte* end)
+        {
+            if (double.IsNaN(value))
+            {
+                return TryWriteNaN_Numeric(value, ref curr, end);
+            }
+            else if (double.IsInfinity(value))
+            {
+                return TryWriteInfinity_Numeric(value, ref curr, end);
+            }
+
+            Span<byte> buffer = stackalloc byte[32];
+            if (!Utf8Formatter.TryFormat(value, buffer, out var bytesWritten, format: default))
+                return false;
+
+            var itemDigits = NumUtils.NumDigits(bytesWritten);
+            int totalLen = 1 + bytesWritten + 2;
+            if (totalLen > (int)(end - curr))
+                return false;
+
+            *curr++ = (byte)',';
+            buffer.Slice(0, bytesWritten).CopyTo(new Span<byte>(curr, bytesWritten));
+            curr += bytesWritten;
+            WriteNewline(ref curr);
+            return true;
+        }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static bool TryWriteInfinity(double value, ref byte* curr, byte* end)
@@ -509,12 +540,40 @@ namespace Garnet.common
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TryWriteInfinity_Numeric(double value, ref byte* curr, byte* end)
+        {
+            var buffer = new Span<byte>(curr, (int)(end - curr));
+            if (double.IsPositiveInfinity(value))
+            {
+                if (!",+inf\r\n"u8.TryCopyTo(buffer))
+                    return false;
+            }
+            else
+            {
+                if (!",-inf\r\n"u8.TryCopyTo(buffer))
+                    return false;
+            }
+
+            curr += 7;
+            return true;
+        }
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private static bool TryWriteNaN(double value, ref byte* curr, byte* end)
         {
             var buffer = new Span<byte>(curr, (int)(end - curr));
             if (!"$3\r\nnan\r\n"u8.TryCopyTo(buffer))
                 return false;
             curr += 9;
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TryWriteNaN_Numeric(double value, ref byte* curr, byte* end)
+        {
+            var buffer = new Span<byte>(curr, (int)(end - curr));
+            if (!",nan\r\n"u8.TryCopyTo(buffer))
+                return false;
+            curr += 6;
             return true;
         }
 
