@@ -65,7 +65,9 @@ const config = {
     ],
   ],
 
-  plugins: ["docusaurus-plugin-clarity"],
+  plugins: [
+    "docusaurus-plugin-clarity",
+  ],
 
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
@@ -168,7 +170,24 @@ const config = {
             runmeLinkLabel: 'Checkout via Runme'
       },
     }),
-  themes: ['@docusaurus/theme-mermaid', 'docusaurus-theme-github-codeblock'],
+  themes: [
+    [
+      require.resolve("@easyops-cn/docusaurus-search-local"),
+      {
+        // ... Your options.
+        // `hashed` is recommended as long-term-cache of index file is possible.
+        hashed: true,
+        blogDir: "./blog/",
+        // For Docs using Chinese, The `language` is recommended to set to:
+        // ```
+        // language: ["en", "zh"],
+        // ```
+        // When applying `zh` in language, please install `nodejieba` in your project.
+      },
+    ],
+    '@docusaurus/theme-mermaid',
+    'docusaurus-theme-github-codeblock',
+  ],
 };
 
 export default config;
