@@ -557,6 +557,7 @@ namespace Garnet.common
             curr += 7;
             return true;
         }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static bool TryWriteNaN(double value, ref byte* curr, byte* end)
         {
