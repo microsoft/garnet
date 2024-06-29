@@ -1572,6 +1572,8 @@ namespace Garnet.test.cluster
             }
         }
 
+        [Test, Order(16)]
+        [Category("CLUSTER")]
         public void ClusterMigrateForgetTest()
         {
             context.logger.LogDebug($"0. ClusterSimpleMigrateSlotsRanges started");
