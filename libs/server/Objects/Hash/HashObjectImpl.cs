@@ -7,7 +7,6 @@ using System.Buffers.Text;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -123,7 +122,7 @@ namespace Garnet.server
             }
         }
 
-        private void HashGetAll(ref SpanByteAndMemory output)
+        private void HashGetAll(int respProtocolVersion, ref SpanByteAndMemory output)
         {
             var isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -135,8 +134,16 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
-                while (!RespWriteUtils.WriteArrayLength(hash.Count * 2, ref curr, end))
-                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                if (respProtocolVersion < 3)
+                {
+                    while (!RespWriteUtils.WriteArrayLength(hash.Count * 2, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteMapLength(hash.Count, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
 
                 foreach (var item in hash)
                 {
