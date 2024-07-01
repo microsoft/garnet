@@ -267,6 +267,7 @@ namespace Garnet.server
             inputPtr->header.flags = 0;
             inputPtr->header.SortedSetOp = op;
             inputPtr->arg1 = count - 1;
+            inputPtr->arg2 = respProtocolVersion;
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 

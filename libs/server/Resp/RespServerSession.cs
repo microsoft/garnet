@@ -270,14 +270,25 @@ namespace Garnet.server
                 // Send message and dispose the network sender to end the session
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
-                networkSender.Dispose();
+
+                // The session is no longer usable, dispose it
+                networkSender.DisposeNetworkSender(true);
             }
             catch (GarnetException ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
                 logger?.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
+
+                // Forward Garnet error as RESP error
+                while (!RespWriteUtils.WriteError($"ERR Garnet Exception: {ex.Message}", ref dcurr, dend))
+                    SendAndReset();
+
+                // Send message and dispose the network sender to end the session
+                if (dcurr > networkSender.GetResponseObjectHead())
+                    Send(networkSender.GetResponseObjectHead());
+
                 // The session is no longer usable, dispose it
-                networkSender.Dispose();
+                networkSender.DisposeNetworkSender(true);
             }
             catch (Exception ex)
             {
