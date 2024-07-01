@@ -1009,7 +1009,6 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
-
                 return true;
             }
 
