@@ -28,8 +28,6 @@ namespace Garnet.server
                 return NetworkGETAsync(ref storageApi);
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             SpanByte input = default;
             var status = storageApi.GET(ref key, ref input, ref o);
@@ -59,9 +57,6 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             // Optimistically ask storage to write output to network buffer
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
@@ -113,10 +108,6 @@ namespace Garnet.server
             {
                 if (c > 0 && !ParseGETAndKey(ref key))
                     break;
-
-                // Cluster verification
-                if (NetworkMultiKeySlotVerify(readOnly: true))
-                    continue;
 
                 // Store index in context, since completions are not in order
                 ctx = firstPending == -1 ? 0 : c - firstPending;
@@ -266,9 +257,6 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -2))
-                return true;
-
             var status = storageApi.SET(ref key, ref value);
 
             while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -301,9 +289,6 @@ namespace Garnet.server
                 return false;
 
             readHead = (int)(ptr - recvBufferPtr);
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
 
             int offset = NumUtils.BytesToInt(offsetSize, offsetPtr);
             if (offset < 0)
@@ -348,8 +333,6 @@ namespace Garnet.server
 
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
-                return true;
             keyPtr -= sizeof(int); // length header
             *(int*)keyPtr = ksize;
 
@@ -389,9 +372,6 @@ namespace Garnet.server
             // TODO: return error for 0 expiry time
             var expiry = parseState.GetInt(1);
             var val = parseState.GetArgSliceByRef(2).SpanByte;
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 1))
-                return true;
 
             var valPtr = val.ToPointer() - (sizeof(int) + sizeof(long));
             var vsize = val.Length;
@@ -579,11 +559,6 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteError(errorMessage, ref dcurr, dend))
                     SendAndReset();
-                return true;
-            }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-            {
                 return true;
             }
 
@@ -822,9 +797,6 @@ namespace Garnet.server
 
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
-
             var key = new ArgSlice(keyPtr, ksize);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
@@ -869,9 +841,6 @@ namespace Garnet.server
                 return false;
 
             readHead = (int)(ptr - recvBufferPtr);
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
 
             keyPtr -= sizeof(int);
             valPtr -= sizeof(int);
@@ -974,9 +943,6 @@ namespace Garnet.server
             //STRLEN key
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
                 return false;
-
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
-                return true;
 
             var keyArgSlice = new ArgSlice(keyPtr, ksize);
 

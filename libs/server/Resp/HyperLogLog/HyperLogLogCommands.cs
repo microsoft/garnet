@@ -33,8 +33,6 @@ namespace Garnet.server
             }
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
 
             //4 byte length of input
             //1 byte RespCommand
@@ -104,9 +102,6 @@ namespace Garnet.server
         private bool HyperLogLogLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             // 4 byte length of input
             // 1 byte RespCommand
             // 1 byte RespInputFlags
@@ -144,9 +139,6 @@ namespace Garnet.server
         private bool HyperLogLogMerge<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             var status = storageApi.HyperLogLogMerge(parseState.Parameters, out bool error);
             // Invalid Type
             if (error)
