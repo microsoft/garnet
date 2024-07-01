@@ -103,6 +103,26 @@ namespace Garnet.test.cluster
         }
     }
 
+    public class DummyCommand : BaseCommand
+    {
+        public override bool IsReadOnly => true;
+        public override bool IsArrayCommand => false;
+        public override bool ArrayResponse => false;
+        public override string Command => commandName;
+
+        readonly string commandName;
+        public DummyCommand(string commandName)
+        {
+            this.commandName = commandName;
+        }
+
+        public override string[] GetSingleSlotRequest() => throw new NotImplementedException();
+
+        public override string[] GetCrossSlotRequest() => throw new NotImplementedException();
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest() => throw new NotImplementedException();
+    }
+
     #region BasicCommands
     internal class GET : BaseCommand
     {
