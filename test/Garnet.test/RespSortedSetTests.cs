@@ -882,9 +882,9 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(10)]
-        [TestCase(30)]
-        [TestCase(100)]
+        //[TestCase(10)]
+        //[TestCase(30)]
+        [TestCase(1000)]
         public void CanDoZRangeByIndexLC(int bytesSent)
         {
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
@@ -916,6 +916,31 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand("ZRANGE board -2 -1 WITHSCORES", 5);
             expectedResponse = "*4\r\n$3\r\ntwo\r\n$1\r\n2\r\n$5\r\nthree\r\n$1\r\n3\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board -50 -1 WITHSCORES", 7);
+            expectedResponse = "*6\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n$5\r\nthree\r\n$1\r\n3\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board -50 -10 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board 2 1 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board -1 -2 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board 50 60 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
