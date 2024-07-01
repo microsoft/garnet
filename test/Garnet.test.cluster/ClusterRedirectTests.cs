@@ -504,9 +504,9 @@ ClusterRedirectTests.TestFlags testFlags)
             var result = connections[otherNodeIndex].SendCommand(cmd);
             var status = ClusterTestUtils.ParseResponseState(result, out var _slot, out var _address, out var _port, out var _value, out var _values);
             Assert.AreEqual(status, ResponseState.MOVED, cmd);
-            Assert.AreEqual(_slot, slot);
-            Assert.AreEqual(_address, connections[nodeIndex].Address);
-            Assert.AreEqual(_port, connections[nodeIndex].Port);
+            Assert.AreEqual(_slot, slot, cmd);
+            Assert.AreEqual(_address, connections[nodeIndex].Address, cmd);
+            Assert.AreEqual(_port, connections[nodeIndex].Port, cmd);
 
             result = connections[nodeIndex].SendCommand(cmd);
             status = ClusterTestUtils.ParseResponseState(result, out _, out _, out _, out _value, out _values);
