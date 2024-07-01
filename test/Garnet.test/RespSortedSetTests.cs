@@ -882,9 +882,9 @@ namespace Garnet.test
         }
 
         [Test]
-        //[TestCase(10)]
-        //[TestCase(30)]
-        [TestCase(1000)]
+        [TestCase(10)]
+        [TestCase(30)]
+        [TestCase(100)]
         public void CanDoZRangeByIndexLC(int bytesSent)
         {
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
