@@ -366,7 +366,7 @@ namespace Garnet.server
                 }
 
                 // Check ACL permissions for the command
-                if (cmd != RespCommand.INVALID && CheckACLPermissions(cmd))
+                if (cmd != RespCommand.INVALID && CanServeSlot(cmd) && CheckACLPermissions(cmd))
                 {
                     if (txnManager.state != TxnState.None)
                     {
