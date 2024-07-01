@@ -8,7 +8,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
-using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -135,9 +134,6 @@ namespace Garnet.server
             var bSetVal = (byte)(bSetValSlice.ReadOnlySpan[0] - '0');
             Debug.Assert(bSetVal == 0 || bSetVal == 1);
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
-
             #region SetBitCmdInput
             //4 byte length of input
             //1 byte RespCommand
@@ -193,9 +189,6 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
-                return true;
 
             #region GetBitCmdInput
             //4 byte length of input
@@ -265,9 +258,6 @@ namespace Garnet.server
                 var sbOffsetType = parseState.GetArgSliceByRef(3).ReadOnlySpan;
                 bitOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
 
             #region BitCountCmdInput
             //4 byte length of input
@@ -354,9 +344,6 @@ namespace Garnet.server
                 bitOffsetType = sbOffsetType.EqualsUpperCaseSpanIgnoringCase("BIT"u8) ? (byte)0x1 : (byte)0x0;
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
-                return true;
-
             #region BitPosCmdIO
             //4 byte length of input
             //1 byte RespCommand
@@ -426,9 +413,6 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -1))
-                return true;
 
             _ = storageApi.StringBitOperation(parseState.Parameters, bitop, out var result);
             while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
@@ -537,9 +521,6 @@ namespace Garnet.server
                 bitfieldArgs.Add(new(secondaryOPcode, encodingInfo, offset, value, overFlowType));
                 secondaryCmdCount++;
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
 
             while (!RespWriteUtils.WriteArrayLength(secondaryCmdCount, ref dcurr, dend))
                 SendAndReset();
@@ -701,10 +682,6 @@ namespace Garnet.server
 
                 return true;
             }
-
-            //Verify cluster slot readonly for Bitfield_RO variant
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
-                return true;
 
             while (!RespWriteUtils.WriteArrayLength(secondaryCmdCount, ref dcurr, dend))
                 SendAndReset();

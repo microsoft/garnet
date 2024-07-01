@@ -26,9 +26,6 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD), count);
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
-
             //4 byte length of input
             //1 byte RespCommand
             //1 byte RespInputFlags
@@ -102,9 +99,6 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT), count);
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             // 4 byte length of input
             // 1 byte RespCommand
             // 1 byte RespInputFlags
@@ -146,9 +140,6 @@ namespace Garnet.server
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE), count);
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
 
             var status = storageApi.HyperLogLogMerge(parseState.Parameters, out bool error);
             // Invalid Type

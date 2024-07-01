@@ -3,8 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -24,12 +22,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME), parseState.count);
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
-
             var status = storageApi.RENAME(oldKeySlice, newKeySlice);
 
             switch (status)
@@ -61,10 +55,6 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = garnetApi.GETDEL(ref sbKey, ref o);
 
@@ -101,9 +91,6 @@ namespace Garnet.server
             }
 
             int exists = 0;
-
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
 
             for (int i = 0; i < count; i++)
             {
@@ -168,9 +155,6 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
-
             var status = command == RespCommand.EXPIRE ?
                         storageApi.EXPIRE(key, expiryMs, out var timeoutSet, StoreType.All, expireOption) :
                         storageApi.PEXPIRE(key, expiryMs, out timeoutSet, StoreType.All, expireOption);
@@ -204,10 +188,6 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             var status = storageApi.PERSIST(key);
 
             if (status == GarnetStatus.OK)
@@ -239,10 +219,6 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = command == RespCommand.TTL ?
                         storageApi.TTL(ref sbKey, StoreType.All, ref o) :
