@@ -449,14 +449,27 @@ namespace Garnet.server
                                 maxIndex = sortedSetDict.Count - 1;
                             }
 
-                            // calculate number of elements
-                            int n = maxIndex - minIndex + 1;
+                            // No elements to return if both indexes fall outside the range or min is higher than max
+                            if ((minIndex < 0 && maxIndex < 0) || (minIndex > maxIndex))
+                            {
+                                while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
+                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                countDone = _input->arg1;
+                                count = 0;
+                            }
+                            else
+                            {
+                                // Clamp minIndex to 0, if it is beyond the number of elements
+                                minIndex = Math.Max(0, minIndex);
 
-                            var iterator = options.Reverse ? sortedSet.Reverse() : sortedSet;
-                            iterator = iterator.Skip(minIndex).Take(n);
+                                // calculate number of elements
+                                int n = maxIndex - minIndex + 1;
+                                var iterator = options.Reverse ? sortedSet.Reverse() : sortedSet;
+                                iterator = iterator.Skip(minIndex).Take(n);
 
-                            WriteSortedSetResult(options.WithScores, n, respProtocolVersion, iterator, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            countDone = _input->arg1;
+                                WriteSortedSetResult(options.WithScores, n, respProtocolVersion, iterator, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                countDone = _input->arg1;
+                            }
                         }
                     }
                 }
