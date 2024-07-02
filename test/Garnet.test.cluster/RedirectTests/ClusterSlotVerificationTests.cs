@@ -50,7 +50,15 @@ namespace Garnet.test.cluster
                 new EXISTS(),
                 new PERSIST(),
                 new EXPIRE(),
-                new TTL()
+                new TTL(),
+                new SDIFFSTORE(),
+                new SDIFF(),
+                new SMOVE(),
+                new SUNIONSTORE(),
+                new SUNION(),
+                new SINTERSTORE(),
+                new SINTER(),
+                new LMOVE(),
             };
 
 
@@ -146,6 +154,14 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
         public void ClusterCLUSTERDOWNTest(string commandName)
         {
             var requestNodeIndex = otherIndex;
@@ -216,6 +232,14 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
         public void ClusterOKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -297,6 +321,14 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
         public void ClusterCROSSSLOTTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -371,6 +403,14 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
         public void ClusterMOVEDTest(string commandName)
         {
             var requestNodeIndex = targetIndex;
@@ -452,6 +492,14 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
         public void ClusterASKTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;
@@ -550,6 +598,14 @@ namespace Garnet.test.cluster
         [TestCase("PERSIST")]
         [TestCase("EXPIRE")]
         [TestCase("TTL")]
+        [TestCase("SDIFFSTORE")]
+        [TestCase("SDIFF")]
+        [TestCase("SMOVE")]
+        [TestCase("SUNIONSTORE")]
+        [TestCase("SUNION")]
+        [TestCase("SINTERSTORE")]
+        [TestCase("SINTER")]
+        [TestCase("LMOVE")]
         public void ClusterTRYAGAINTest(string commandName)
         {
             var requestNodeIndex = sourceIndex;

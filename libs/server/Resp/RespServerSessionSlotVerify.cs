@@ -30,26 +30,6 @@ namespace Garnet.server
         bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, int count = -1)
             => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
 
-        /// <summary>
-        /// Verify if the corresponding command can be served given the status of the slot associated with the parsed keys.
-        /// </summary>
-        /// <param name="readOnly"></param>
-        /// <param name="firstKey"></param>
-        /// <param name="lastKey"></param>
-        /// <param name="step"></param>
-        /// <returns></returns>
-        bool NetworkMultiKeySlotVerify(bool readOnly = false, int firstKey = 0, int lastKey = -1, int step = 1)
-        {
-            if (clusterSession == null)
-                return false;
-            csvi.readOnly = readOnly;
-            csvi.sessionAsking = SessionAsking;
-            csvi.firstKey = firstKey;
-            csvi.lastKey = lastKey < 0 ? parseState.count + 1 + lastKey : lastKey;
-            csvi.step = step;
-            return clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
-        }
-
         bool CanServeSlot(RespCommand cmd)
         {
             // If cluster is disable all commands
