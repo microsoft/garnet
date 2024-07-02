@@ -1101,9 +1101,6 @@ namespace Garnet.server
                             withscoresInclude = true;
                     }
 
-                    if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 1, lastKey: 1 + parseState.GetInt(0)))
-                        return true;
-
                     var status = storageApi.SortedSetDifference(keys, out var result);
 
                     switch (status)

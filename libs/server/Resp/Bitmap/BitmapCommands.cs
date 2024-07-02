@@ -8,7 +8,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
-using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -141,8 +140,6 @@ namespace Garnet.server
             Debug.Assert(*(ptr - 1) == '\n');
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
 
             keyPtr -= sizeof(int);
             *(int*)keyPtr = ksize; //b[ksize <key>]
@@ -201,9 +198,6 @@ namespace Garnet.server
                 return false;
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
-                return true;
-
             keyPtr -= sizeof(int);
             *(int*)keyPtr = ksize; //b[ksize <key>]
 
@@ -279,8 +273,6 @@ namespace Garnet.server
             }
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
 
             keyPtr -= sizeof(int);
             *(int*)keyPtr = ksize; //b[ksize <key>]
@@ -380,8 +372,6 @@ namespace Garnet.server
             }
 
             readHead = (int)(ptr - recvBufferPtr);
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
-                return true;
             keyPtr -= sizeof(int);
             *(int*)keyPtr = ksize; //b[ksize <key>]
 
@@ -454,9 +444,6 @@ namespace Garnet.server
                     SendAndReset();
                 return true;
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -1))
-                return true;
 
             _ = storageApi.StringBitOperation(parseState.Parameters, bitop, out var result);
             while (!RespWriteUtils.WriteInteger(result, ref dcurr, dend))
@@ -568,12 +555,6 @@ namespace Garnet.server
 
                 bitfieldArgs.Add(new(secondaryOPcode, encodingInfo, offset, value, overFlowType));
                 secondaryCmdCount++;
-            }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-            {
-                readHead = (int)(ptr - recvBufferPtr);
-                return true;
             }
 
             keyPtr -= sizeof(int);
@@ -758,13 +739,6 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.WriteError("ERR BITFIELD_RO only supports the GET subcommand."u8, ref dcurr, dend))
                     SendAndReset();
-                readHead = (int)(ptr - recvBufferPtr);
-                return true;
-            }
-
-            //Verify cluster slot readonly for Bitfield_RO variant
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
-            {
                 readHead = (int)(ptr - recvBufferPtr);
                 return true;
             }

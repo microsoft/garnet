@@ -28,9 +28,6 @@ namespace Garnet.server
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             ArgSlice oldKeySlice = new(key1Ptr, ksize1);
             ArgSlice newKeySlice = new(key2Ptr, ksize2);
 
@@ -62,9 +59,6 @@ namespace Garnet.server
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
-
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
 
             var key = new Span<byte>(keyPtr, ksize);
             keyPtr -= sizeof(int);
@@ -104,9 +98,6 @@ namespace Garnet.server
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             keyPtr -= sizeof(int);
             *(int*)keyPtr = ksize;
 
@@ -142,9 +133,6 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             int exists = 0;
-
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
 
             for (int i = 0; i < count; i++)
             {
@@ -213,9 +201,6 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
-                return true;
-
             var key = new ArgSlice(keyPtr, ksize);
             var status = command == RespCommand.EXPIRE ?
                         storageApi.EXPIRE(key, expiryMs, out bool timeoutSet, StoreType.All, expireOption) :
@@ -252,9 +237,6 @@ namespace Garnet.server
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             var key = new ArgSlice(keyPtr, ksize);
             var status = storageApi.PERSIST(key);
 
@@ -288,9 +270,6 @@ namespace Garnet.server
             if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
-
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
 
             keyPtr -= sizeof(int);
             *(int*)keyPtr = ksize;
