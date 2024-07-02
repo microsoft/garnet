@@ -415,7 +415,8 @@ namespace Garnet.server
                         }
                         else
                         {
-                            _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                            if (CanServeSlot(cmd))
+                                _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
                         }
                     }
                     else

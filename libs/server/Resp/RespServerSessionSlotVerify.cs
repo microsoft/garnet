@@ -36,13 +36,8 @@ namespace Garnet.server
             if (clusterSession == null)
                 return true;
 
-            // If this is a UNKNOWN command let process message generate the appropriate response
-            if (cmd == RespCommand.NONE)
-                return true;
-
             // Verify slot for command if it falls into data command category
-            // TODO: Skip validation of MIGRATE until refactoring of parsing is complete.
-            if (!cmd.IsDataCommand() || cmd == RespCommand.MIGRATE)
+            if (!cmd.IsDataCommand())
                 return true;
 
             cmd = cmd.NormalizeForACLs();

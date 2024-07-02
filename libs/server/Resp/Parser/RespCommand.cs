@@ -417,7 +417,17 @@ namespace Garnet.server
             => cmd <= LastReadCommand();
 
         public static bool IsDataCommand(this RespCommand cmd)
-            => cmd >= FirstReadCommand() && cmd <= LastWriteCommand();
+        {
+            return cmd switch
+            {
+                // TODO: validate if these cases need to be excluded
+                RespCommand.MIGRATE => false,
+                RespCommand.DBSIZE => false,
+                RespCommand.MEMORY_USAGE => false,
+                RespCommand.FLUSHDB => false,
+                _ => cmd >= FirstReadCommand() && cmd <= LastWriteCommand()
+            };
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsWriteOnly(this RespCommand cmd)
