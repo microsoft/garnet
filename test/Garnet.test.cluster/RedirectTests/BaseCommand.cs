@@ -26,7 +26,6 @@ namespace Garnet.test.cluster
     {
         public static ReadOnlySpan<byte> HashTag => "{1234}"u8;
 
-        public abstract bool IsReadOnly { get; }
         public abstract bool IsArrayCommand { get; }
         public abstract bool ArrayResponse { get; }
         public virtual bool RequiresExistingKey => false;
@@ -105,7 +104,6 @@ namespace Garnet.test.cluster
 
     public class DummyCommand : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => commandName;
@@ -126,7 +124,6 @@ namespace Garnet.test.cluster
     #region BasicCommands
     internal class GET : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(GET);
@@ -144,7 +141,6 @@ namespace Garnet.test.cluster
 
     internal class SET : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(SET);
@@ -162,7 +158,6 @@ namespace Garnet.test.cluster
 
     internal class MGET : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => true;
         public override string Command => nameof(MGET);
@@ -189,7 +184,6 @@ namespace Garnet.test.cluster
 
     internal class MSET : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(MSET);
@@ -216,7 +210,6 @@ namespace Garnet.test.cluster
 
     internal class SETRANGE : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(SETRANGE);
@@ -234,7 +227,6 @@ namespace Garnet.test.cluster
 
     internal class GETRANGE : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(GETRANGE);
@@ -252,7 +244,6 @@ namespace Garnet.test.cluster
 
     internal class INCR : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(INCR);
@@ -270,7 +261,6 @@ namespace Garnet.test.cluster
 
     internal class APPEND : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(APPEND);
@@ -288,7 +278,6 @@ namespace Garnet.test.cluster
 
     internal class STRLEN : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(STRLEN);
@@ -306,7 +295,6 @@ namespace Garnet.test.cluster
 
     internal class RENAME : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override bool RequiresExistingKey => true;
@@ -334,7 +322,6 @@ namespace Garnet.test.cluster
 
     internal class DEL : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(DEL);
@@ -361,7 +348,6 @@ namespace Garnet.test.cluster
 
     internal class GETDEL : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(GETDEL);
@@ -379,7 +365,6 @@ namespace Garnet.test.cluster
 
     internal class EXISTS : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(EXISTS);
@@ -406,7 +391,6 @@ namespace Garnet.test.cluster
 
     internal class PERSIST : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(PERSIST);
@@ -424,7 +408,6 @@ namespace Garnet.test.cluster
 
     internal class EXPIRE : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(EXPIRE);
@@ -442,7 +425,6 @@ namespace Garnet.test.cluster
 
     internal class TTL : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(TTL);
@@ -462,7 +444,6 @@ namespace Garnet.test.cluster
     #region BitmapCommands
     internal class GETBIT : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(GETBIT);
@@ -480,7 +461,6 @@ namespace Garnet.test.cluster
 
     internal class SETBIT : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(SETBIT);
@@ -498,7 +478,6 @@ namespace Garnet.test.cluster
 
     internal class BITCOUNT : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(BITCOUNT);
@@ -516,7 +495,6 @@ namespace Garnet.test.cluster
 
     internal class BITPOS : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(BITPOS);
@@ -534,7 +512,6 @@ namespace Garnet.test.cluster
 
     internal class BITOP : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(BITOP);
@@ -564,7 +541,6 @@ namespace Garnet.test.cluster
 
     internal class BITFIELD : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => true;
         public override string Command => nameof(BITFIELD);
@@ -582,7 +558,6 @@ namespace Garnet.test.cluster
 
     internal class BITFIELD_RO : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => true;
         public override string Command => nameof(BITFIELD_RO);
@@ -604,7 +579,6 @@ namespace Garnet.test.cluster
 
     internal class PFADD : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => false;
         public override bool ArrayResponse => false;
         public override string Command => nameof(PFADD);
@@ -622,7 +596,6 @@ namespace Garnet.test.cluster
 
     internal class PFCOUNT : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(PFCOUNT);
@@ -652,7 +625,6 @@ namespace Garnet.test.cluster
 
     internal class PFMERGE : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(PFMERGE);
@@ -685,7 +657,6 @@ namespace Garnet.test.cluster
     #region SetCommands
     internal class SDIFFSTORE : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(SDIFFSTORE);
@@ -715,7 +686,6 @@ namespace Garnet.test.cluster
 
     internal class SDIFF : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => true;
         public override string Command => nameof(SDIFF);
@@ -745,7 +715,6 @@ namespace Garnet.test.cluster
 
     internal class SMOVE : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(SMOVE);
@@ -775,7 +744,6 @@ namespace Garnet.test.cluster
 
     internal class SUNIONSTORE : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(SUNIONSTORE);
@@ -805,7 +773,6 @@ namespace Garnet.test.cluster
 
     internal class SUNION : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => true;
         public override string Command => nameof(SUNION);
@@ -835,7 +802,6 @@ namespace Garnet.test.cluster
 
     internal class SINTERSTORE : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(SINTERSTORE);
@@ -865,7 +831,6 @@ namespace Garnet.test.cluster
 
     internal class SINTER : BaseCommand
     {
-        public override bool IsReadOnly => true;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => true;
         public override string Command => nameof(SINTER);
@@ -897,7 +862,6 @@ namespace Garnet.test.cluster
     #region ListCommands
     internal class LMOVE : BaseCommand
     {
-        public override bool IsReadOnly => false;
         public override bool IsArrayCommand => true;
         public override bool ArrayResponse => false;
         public override string Command => nameof(LMOVE);
