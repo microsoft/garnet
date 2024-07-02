@@ -99,5 +99,7 @@ namespace Garnet.server
         public (int, int) NewCommand(string name, int numParams, CommandType commandType, CustomObjectFactory factory, RespCommandsInfo commandInfo = null)
             => provider.StoreWrapper.customCommandManager.Register(name, numParams, commandType, factory, commandInfo);
 
+        public (int objectTypeId, int subCommandId) NewCommand(string name, int numParams, CommandType type, CustomObjectFactory factory, CustomObjectFunctions customObjectFunctions, RespCommandsInfo commandInfo = null)
+            => provider.StoreWrapper.customCommandManager.Register(name, numParams, type, factory, customObjectFunctions, commandInfo);
     }
 }

@@ -13,5 +13,8 @@
   <ItemGroup>
     <Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="SetIfPM.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\ReadWriteTxn.cs" Link="ReadWriteTxn.cs" />
-  </ItemGroup>
+		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="MyDictObject.cs" />
+		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="MyDictGet.cs" />
+		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="MyDictSet.cs" />
+	</ItemGroup>
 </Project>

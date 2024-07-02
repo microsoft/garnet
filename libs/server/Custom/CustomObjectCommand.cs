@@ -13,8 +13,9 @@ namespace Garnet.server
         public readonly byte subid;
         public readonly CommandType type;
         public readonly CustomObjectFactory factory;
+        public readonly CustomObjectFunctions functions;
 
-        internal CustomObjectCommand(string name, byte id, byte subid, int numKeys, int numParams, CommandType type, CustomObjectFactory factory)
+        internal CustomObjectCommand(string name, byte id, byte subid, int numKeys, int numParams, CommandType type, CustomObjectFactory factory, CustomObjectFunctions functions = null)
         {
             nameStr = name.ToUpperInvariant();
             this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);
@@ -24,6 +25,7 @@ namespace Garnet.server
             NumParams = numParams;
             this.type = type;
             this.factory = factory;
+            this.functions = functions;
         }
 
         internal RespCommand GetRespCommand() => (RespCommand)(id + CustomCommandManager.StartOffset);

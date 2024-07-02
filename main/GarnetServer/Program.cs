@@ -61,8 +61,9 @@ namespace Garnet
 
             // Register custom commands on objects
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
+            server.Register.NewType(factory);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
 
             // Register stored procedure to run a transactional command
             // Add RESP command info to registration for command to appear when client runs COMMAND / COMMAND INFO
