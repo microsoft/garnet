@@ -201,6 +201,8 @@ namespace Garnet.server
                     }
                     else
                     {
+                        // TODO: Update to invoke CopyUpdater of custom object command without creating a new object
+                        // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
                         var customObjectCommand = GetCustomObjectCommand(input, type);
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
                         var ret = customObjectCommand.CopyUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], oldValue, value, ref outp, ref rmwInfo);

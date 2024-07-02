@@ -41,6 +41,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Update to new value in new location, given key, input, and old value. Optionally generate output for command.
+        /// TODO: Update to invoke Clone and InPlaceUpdater as default implementation. Currently, expire and persist 
+        /// commands are performed on the new copy of the object.
         /// </summary>
         /// <param name="key">Key</param>
         /// <param name="input">Input</param>
