@@ -40,8 +40,10 @@ namespace Garnet.server
             if (cmd == RespCommand.NONE)
                 return true;
 
-            //if (RespCommand.ZDIFF == cmd)
-            //    return true;
+            // Verify slot for command if it falls into data command category
+            // TODO: Skip validation of MIGRATE until refactoring of parsing is complete.
+            if (!cmd.IsDataCommand() || cmd == RespCommand.MIGRATE)
+                return true;
 
             cmd = cmd.NormalizeForACLs();
             if (!RespCommandsInfo.TryFastGetRespCommandInfo(cmd, out var commandInfo))

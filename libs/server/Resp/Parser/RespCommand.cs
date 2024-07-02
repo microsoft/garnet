@@ -416,6 +416,9 @@ namespace Garnet.server
         public static bool IsReadOnly(this RespCommand cmd)
             => cmd <= LastReadCommand();
 
+        public static bool IsDataCommand(this RespCommand cmd)
+            => cmd >= FirstReadCommand() && cmd <= LastWriteCommand();
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsWriteOnly(this RespCommand cmd)
         {
