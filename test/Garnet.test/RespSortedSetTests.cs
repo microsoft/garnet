@@ -919,6 +919,31 @@ namespace Garnet.test
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
+            response = lightClientRequest.SendCommand("ZRANGE board -50 -1 WITHSCORES", 7);
+            expectedResponse = "*6\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n$5\r\nthree\r\n$1\r\n3\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board -50 -10 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board 2 1 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board -1 -2 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board 50 60 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
             response = lightClientRequest.SendCommand("ZRANGE board (1 +inf BYSCORE LIMIT 1 1", 2);
             expectedResponse = "*1\r\n$5\r\nthree\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
