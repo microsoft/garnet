@@ -200,9 +200,6 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -2))
-                return true;
-
             if (!RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
                 recvBufferPtr + bytesRead) || !parsed)
                 return false;
@@ -902,9 +899,6 @@ namespace Garnet.server
         {
             garnetStatus = GarnetStatus.OK;
             node = null;
-
-            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 2))
-                return true;
 
             garnetStatus =
                 storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);

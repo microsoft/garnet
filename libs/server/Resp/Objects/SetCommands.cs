@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -103,11 +102,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             var status = storageApi.SetIntersect(keys, out var result);
-
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -172,11 +167,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
-
             var status = storageApi.SetIntersectStore(key.ToArray(), keys, out var output);
-
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -223,11 +214,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             var status = storageApi.SetUnion(keys, out var result);
-
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -281,9 +268,6 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
                     return false;
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
 
             var status = storageApi.SetUnionStore(key, keys, out var output);
 
@@ -711,12 +695,7 @@ namespace Garnet.server
                 return false;
 
             var keys = new ArgSlice[2] { sourceKey, destinationKey };
-
-            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 2))
-                return true;
-
             var status = storageApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
-
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -882,11 +861,7 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkMultiKeySlotVerify(readOnly: true))
-                return true;
-
             var status = storageApi.SetDiff(keys, out var output);
-
             switch (status)
             {
                 case GarnetStatus.OK:
@@ -937,9 +912,6 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadPtrWithLengthHeader(ref keys[i].ptr, ref keys[i].length, ref ptr, recvBufferPtr + bytesRead))
                     return false;
             }
-
-            if (NetworkMultiKeySlotVerify(readOnly: false))
-                return true;
 
             var status = storageApi.SetDiffStore(key.ToArray(), keys, out var output);
 
