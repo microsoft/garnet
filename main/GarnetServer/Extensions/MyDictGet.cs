@@ -11,18 +11,7 @@ namespace Garnet
 {
     public class MyDictGet : CustomObjectFunctions
     {
-        public void AddEntry(ReadOnlySpan<byte> input, IGarnetObject garnetObject, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
-        {
-            Debug.Assert(garnetObject is MyDict);
-
-            int offset = 0;
-            var key = CustomCommandUtils.GetNextArg(input, ref offset).ToArray();
-            var value = CustomCommandUtils.GetNextArg(input, ref offset).ToArray();
-
-            var dictObject = (MyDict)garnetObject;
-            dictObject.TryAdd(key, value);
-            CustomCommandUtils.WriteSimpleString(ref output, "OK");
-        }
+        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output) => throw new NotImplementedException();
 
         public override bool InitialUpdater(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo) => throw new NotImplementedException();
 

@@ -24,6 +24,8 @@ namespace Garnet
             CustomCommandUtils.WriteSimpleString(ref output, "OK");
         }
 
+        public override bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output) => true;
+
         public override bool InitialUpdater(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, IGarnetObject value, ref (IMemoryOwner<byte>, int) output, ref RMWInfo rmwInfo)
         {
             AddEntry(input, value, ref output, ref rmwInfo);

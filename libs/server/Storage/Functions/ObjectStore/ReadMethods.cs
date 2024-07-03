@@ -38,12 +38,15 @@ namespace Garnet.server
                     return value.Operate(ref input, ref dst.spanByteAndMemory, out _, out _);
                 else
                 {
-                    var customObjectCommand = GetCustomObjectCommand(input, header->type);
+                    if (IncorrectObjectType(ref input, value, ref dst.spanByteAndMemory))
+                        return true;
+
                     (IMemoryOwner<byte> Memory, int Length) outp = (dst.spanByteAndMemory.Memory, 0);
-                    var ret = customObjectCommand.Reader(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref readInfo);
+                    var customObjectCommand = GetCustomObjectCommand(ref input, header->type);
+                    var result = customObjectCommand.Reader(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref readInfo);
                     dst.spanByteAndMemory.Memory = outp.Memory;
                     dst.spanByteAndMemory.Length = outp.Length;
-                    return ret;
+                    return result;
                 }
             }
 

@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Buffers;
-using System.Runtime.CompilerServices;
+using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -12,29 +12,28 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct ObjectStoreFunctions : ISessionFunctions<byte[], IGarnetObject, SpanByte, GarnetObjectStoreOutput, long>
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private CustomObjectFunctions GetCustomObjectCommand(SpanByte input, GarnetObjectType type)
-        {
-            var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
-            var cmdId = ((RespInputHeader*)input.ToPointer())->SubId;
-            var customObjectCommand = functionsState.customObjectCommands[objectId].commandMap[cmdId].functions;
-            return customObjectCommand;
-        }
-
         /// <inheritdoc />
         public bool NeedInitialUpdate(ref byte[] key, ref SpanByte input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
             var type = ((RespInputHeader*)input.ToPointer())->type;
-            if ((byte)type < CustomCommandManager.StartOffset)
-                return GarnetObject.NeedToCreate(*(RespInputHeader*)input.ToPointer());
-            else
+
+            switch (type)
             {
-                var customObjectCommand = GetCustomObjectCommand(input, type);
-                (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                var ret = customObjectCommand.NeedInitialUpdate(key, input.AsReadOnlySpan()[RespInputHeader.Size..], ref outp);
-                output.spanByteAndMemory.Memory = outp.Memory;
-                output.spanByteAndMemory.Length = outp.Length;
-                return ret;
+                case GarnetObjectType.Expire:
+                case GarnetObjectType.Persist:
+                    return false;
+                default:
+                    if ((byte)type < CustomCommandManager.StartOffset)
+                        return GarnetObject.NeedToCreate(*(RespInputHeader*)input.ToPointer());
+                    else
+                    {
+                        var customObjectCommand = GetCustomObjectCommand(ref input, type);
+                        (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
+                        var ret = customObjectCommand.NeedInitialUpdate(key, input.AsReadOnlySpan()[RespInputHeader.Size..], ref outp);
+                        output.spanByteAndMemory.Memory = outp.Memory;
+                        output.spanByteAndMemory.Length = outp.Length;
+                        return ret;
+                    }
             }
         }
 
@@ -50,15 +49,17 @@ namespace Garnet.server
             }
             else
             {
-                var customObjectCommand = GetCustomObjectCommand(input, type);
+                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
+
+                var customObjectCommand = GetCustomObjectCommand(ref input, type);
                 var objectId = (byte)((byte)type - CustomCommandManager.StartOffset);
                 value = functionsState.customObjectCommands[objectId].factory.Create((byte)type);
 
                 (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                var ret = customObjectCommand.InitialUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
+                var result = customObjectCommand.InitialUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
                 output.spanByteAndMemory.Memory = outp.Memory;
                 output.spanByteAndMemory.Length = outp.Length;
-                return ret;
+                return result;
             }
         }
 
@@ -118,8 +119,7 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     return true;
                 default:
-                    var type = ((RespInputHeader*)input.ToPointer())->type;
-                    if ((byte)type < CustomCommandManager.StartOffset)
+                    if ((byte)header->type < CustomCommandManager.StartOffset)
                     {
                         var operateSuccessful = value.Operate(ref input, ref output.spanByteAndMemory, out sizeChange,
                         out var removeKey);
@@ -133,12 +133,16 @@ namespace Garnet.server
                     }
                     else
                     {
-                        var customObjectCommand = GetCustomObjectCommand(input, type);
+                        if (IncorrectObjectType(ref input, value, ref output.spanByteAndMemory))
+                            return true;
+
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                        var ret = customObjectCommand.InPlaceUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
+                        var customObjectCommand = GetCustomObjectCommand(ref input, header->type);
+                        var result = customObjectCommand.InPlaceUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], value, ref outp, ref rmwInfo);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
-                        return ret;
+                        return result;
+                        //return customObjectCommand.InPlaceUpdateWorker(key, ref input, value, ref output.spanByteAndMemory, ref rmwInfo);
                     }
             }
         }
@@ -188,8 +192,7 @@ namespace Garnet.server
                         CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.spanByteAndMemory);
                     break;
                 default:
-                    var type = ((RespInputHeader*)input.ToPointer())->type;
-                    if ((byte)type < CustomCommandManager.StartOffset)
+                    if ((byte)header->type < CustomCommandManager.StartOffset)
                     {
                         value.Operate(ref input, ref output.spanByteAndMemory, out _, out var removeKey);
                         if (removeKey)
@@ -203,12 +206,15 @@ namespace Garnet.server
                     {
                         // TODO: Update to invoke CopyUpdater of custom object command without creating a new object
                         // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
-                        var customObjectCommand = GetCustomObjectCommand(input, type);
+                        if (IncorrectObjectType(ref input, value, ref output.spanByteAndMemory))
+                            return true;
+
                         (IMemoryOwner<byte> Memory, int Length) outp = (output.spanByteAndMemory.Memory, 0);
-                        var ret = customObjectCommand.CopyUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], oldValue, value, ref outp, ref rmwInfo);
+                        var customObjectCommand = GetCustomObjectCommand(ref input, header->type);
+                        var result = customObjectCommand.CopyUpdater(key, input.AsReadOnlySpan()[RespInputHeader.Size..], oldValue, value, ref outp, ref rmwInfo);
                         output.spanByteAndMemory.Memory = outp.Memory;
                         output.spanByteAndMemory.Length = outp.Length;
-                        return ret;
+                        return result;
                     }
             }
 

@@ -303,8 +303,8 @@ namespace Garnet.test
         {
             // Register sample custom command on object
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -404,8 +404,8 @@ namespace Garnet.test
         {
             // Register sample custom command on object
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -441,8 +441,8 @@ namespace Garnet.test
         {
             // Register sample custom command on object
             var factory = new MyDictFactory();
-            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory);
-            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory);
+            server.Register.NewCommand("MYDICTSET", 2, CommandType.ReadModifyWrite, factory, new MyDictSet());
+            server.Register.NewCommand("MYDICTGET", 1, CommandType.Read, factory, new MyDictGet());
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -576,7 +576,14 @@ namespace Garnet.test
 
             var libPathToFiles = new Dictionary<string, string[]>
             {
-                { Path.Combine(dir1, "testLib1.dll"), new [] { Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath) }},
+                { Path.Combine(dir1, "testLib1.dll"),
+                    new []
+                    {
+                        Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictObject.cs", TestUtils.RootTestsProjectPath),
+                        Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictSet.cs", TestUtils.RootTestsProjectPath),
+                        Path.GetFullPath(@"../main/GarnetServer/Extensions/MyDictGet.cs", TestUtils.RootTestsProjectPath)
+                    }
+                },
                 { Path.Combine(dir2, "testLib2.dll"), new [] { Path.GetFullPath(@"../main/GarnetServer/Extensions/SetIfPM.cs", TestUtils.RootTestsProjectPath) }},
                 { Path.Combine(dir2, "testLib3.dll"), new []
                 {
@@ -611,8 +618,8 @@ namespace Garnet.test
             {
                 "TXN", "READWRITETX", 3, "ReadWriteTxn",
                 "RMW", "SETIFPM", 2, "SetIfPMCustomCommand", TimeSpan.FromSeconds(10).Ticks,
-                "RMW", "MYDICTSET", 2, "MyDictFactory",
-                "READ", "MYDICTGET", 1, "MyDictFactory",
+                "RMW", "MYDICTSET", 2, "MyDictFactory", "MyDictSet",
+                "READ", "MYDICTGET", 1, "MyDictFactory", "MyDictGet",
                 "SRC",
             };
             args.AddRange(libraryPaths);

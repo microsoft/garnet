@@ -15,7 +15,7 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="input">Input</param>
         /// <param name="output">Output</param>
-        public virtual bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output) => true;
+        public abstract bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ReadOnlySpan<byte> input, ref (IMemoryOwner<byte>, int) output);
 
         /// <summary>
         /// Create initial value, given key and input. Optionally generate output for command.

@@ -856,6 +856,15 @@ namespace Garnet.server
                 classInstances.TryAdd(c, null);
             }
 
+            // Also add custom object command class names to instantiate
+            var objectCommandArgs = classNameToRegisterArgs.Values
+                .SelectMany(cmdArgsList => cmdArgsList)
+                .OfType<RegisterCmdArgs>()
+                .Where(args => !string.IsNullOrEmpty(args.ObjectCommandName))
+                .ToList();
+
+            objectCommandArgs.ForEach(objCmdArgs => classInstances.TryAdd(objCmdArgs.ObjectCommandName, null));
+
             // Get types from loaded assemblies
             var loadedTypes = loadedAssemblies
                 .SelectMany(a => a.GetTypes())
@@ -889,6 +898,8 @@ namespace Garnet.server
                 errorMessage = CmdStrings.RESP_ERR_GENERIC_INSTANTIATING_CLASS;
                 return false;
             }
+
+            objectCommandArgs.ForEach(objCmdArgs => objCmdArgs.ObjectCommand = (CustomObjectFunctions)classInstances[objCmdArgs.ObjectCommandName]);
 
             // Register each command / transaction using its specified class instance
             var registerApis = new List<IRegisterCustomCommandProvider>();
@@ -950,7 +961,7 @@ namespace Garnet.server
             // Parse the REGISTERCS command - list of registration sub-commands
             // followed by an optional path to JSON file containing an array of RespCommandsInfo objects,
             // followed by a list of paths to binary files / folders
-            // Syntax - REGISTERCS cmdType name numParams className [expTicks] [cmdType name numParams className [expTicks] ...]
+            // Syntax - REGISTERCS cmdType name numParams className [expTicks] [objCmdName] [cmdType name numParams className [expTicks] [objCmdName]...]
             // [INFO path] SRC path [path ...]
             RegisterArgsBase args = null;
 
@@ -1023,10 +1034,19 @@ namespace Garnet.server
                     // Check optional parameters for previous sub-command
                     if (optionalParamsRead == 0 && args is RegisterCmdArgs cmdArgs)
                     {
-                        var expTicks = NumUtils.BytesToLong(tokenSpan);
-                        cmdArgs.ExpirationTicks = expTicks;
-                        optionalParamsRead++;
-                        continue;
+                        if (NumUtils.TryBytesToLong(tokenSpan, out var expTicks))
+                        {
+                            cmdArgs.ExpirationTicks = expTicks;
+                            optionalParamsRead++;
+                            continue;
+                        }
+                        else // Treat the argument as custom object command name
+                        {
+
+                            cmdArgs.ObjectCommandName = Encoding.ASCII.GetString(tokenSpan);
+                            optionalParamsRead++;
+                            continue;
+                        }
                     }
 
                     // Unexpected token
