@@ -200,10 +200,8 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, false))
-            {
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -2))
                 return true;
-            }
 
             if (!RespReadUtils.ReadDoubleWithLengthHeader(out var timeout, out var parsed, ref ptr,
                 recvBufferPtr + bytesRead) || !parsed)
@@ -903,13 +901,10 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             garnetStatus = GarnetStatus.OK;
-            var keys = new[] { sourceKey, destinationKey };
             node = null;
 
-            if (NetworkKeyArraySlotVerify(ref keys, false))
-            {
+            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 2))
                 return true;
-            }
 
             garnetStatus =
                 storageApi.ListMove(sourceKey, destinationKey, sourceDirection, destinationDirection, out node);

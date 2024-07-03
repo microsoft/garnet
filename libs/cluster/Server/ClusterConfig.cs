@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 #pragma warning restore IDE0005
 using System.Runtime.CompilerServices;
+using System.Diagnostics;
 
 namespace Garnet.cluster
 {
@@ -138,22 +139,22 @@ namespace Garnet.cluster
         /// 3. Local slots for a replica are those slots served by its primary only for read operations
         /// </summary>
         /// <param name="slot">Slot to check</param>
-        /// <param name="readCommand">If we are checking as a read command. Used to override check if READWRITE is specified</param>
+        /// <param name="readWriteSession">Used to override write restrictions for non-local slots that are replicas of the slot owner</param>
         /// <returns>True if slot is owned by this node, false otherwise</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsLocal(ushort slot, bool readCommand = true)
-            => slotMap[slot].workerId == 1 || IsLocalExpensive(slot, readCommand);
+        public bool IsLocal(ushort slot, bool readWriteSession = true)
+            => slotMap[slot].workerId == 1 || IsLocalExpensive(slot, readWriteSession);
 
         /// <summary>
         /// If slot in MIGRATE state then it must have been set by original owner, so we keep treating it like a local slot and serve requests if the key has not yet migrated.
         /// If it is a read command and this is a replica the associated slot should be assigned to this node's primary in order for the read request to be served.
         /// </summary>
         /// <param name="slot"></param>
-        /// <param name="readCommand"></param>
+        /// <param name="readWriteSession"></param>
         /// <returns></returns>
-        private bool IsLocalExpensive(ushort slot, bool readCommand)
+        private bool IsLocalExpensive(ushort slot, bool readWriteSession)
             => slotMap[slot]._state == SlotState.MIGRATING ||
-            (readCommand &&
+            (readWriteSession &&
             workers[1].Role == NodeRole.REPLICA &&
             slotMap[slot]._workerId > 1 &&
             LocalNodePrimaryId != null &&
@@ -375,22 +376,6 @@ namespace Garnet.cluster
             int BIT = pos & 7;
             bitmap[BYTE] |= (byte)(1 << BIT);
         }
-
-        /// <summary>
-        /// Returns compressed representation of slots claimed by given node.
-        /// </summary>
-        /// <param name="nodeId"></param>
-        /// <returns>Byte array representing bitmap of claimed slots.</returns>
-        public byte[] GetClaimedSlotsFromNodeId(string nodeId)
-        {
-            byte[] claimedSlots = new byte[slotMap.Length / 8];
-            for (int i = 0; i < slotMap.Length; i++)
-            {
-                if (workers[slotMap[i].workerId].Nodeid.Equals(nodeId, StringComparison.OrdinalIgnoreCase))
-                    slotBitmapSetBit(ref claimedSlots, i);
-            }
-            return claimedSlots;
-        }
         #endregion
 
         #region GetFromSlot
@@ -434,6 +419,14 @@ namespace Garnet.cluster
         /// <returns>String node-id</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public string GetNodeIdFromSlot(ushort slot) => workers[GetWorkerIdFromSlot(slot)].Nodeid;
+
+        /// <summary>
+        /// Get node-id of slot owner.
+        /// </summary>
+        /// <param name="slot">Slot number.</param>
+        /// <returns>String node-id</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public string GetOwnerIdFromSlot(ushort slot) => workers[slotMap[slot]._workerId].Nodeid;
 
         /// <summary>
         /// Get endpoint of slot owner.
@@ -520,15 +513,21 @@ namespace Garnet.cluster
             var specialStates = "";
             for (var slot = 0; slot < slotMap.Length; slot++)
             {
-                if (slotMap[slot]._state == SlotState.MIGRATING)
+                var _workerId = slotMap[slot]._workerId;
+                var _state = slotMap[slot]._state;
+
+                if (_state == SlotState.STABLE) continue;
+                if (_workerId > NumWorkers) continue;
+
+                var _nodeId = workers[_workerId].Nodeid;
+                if (_nodeId == null) continue;
+
+                specialStates += _state switch
                 {
-                    // Get node-id of node that we are migrating to by using "transient" _workerId
-                    specialStates += $" [{slot}->-{workers[slotMap[slot]._workerId].Nodeid}]";
-                }
-                else if (slotMap[slot]._state == SlotState.IMPORTING)
-                {
-                    specialStates += $" [{slot}-<-{GetNodeIdFromSlot((ushort)slot)}]";
-                }
+                    SlotState.MIGRATING => $" [{slot}->-{_nodeId}]",
+                    SlotState.IMPORTING => $" [{slot}-<-{_nodeId}]",
+                    _ => ""
+                };
             }
             return specialStates;
         }
@@ -962,11 +961,27 @@ namespace Garnet.cluster
             Array.Copy(slotMap, newSlotMap, slotMap.Length);
             for (var i = 0; i < newSlotMap.Length; i++)
             {
-                if (newSlotMap[i].workerId == workerId)
+                // Node being removed is owner of slot
+                if (newSlotMap[i]._state == SlotState.STABLE && newSlotMap[i].workerId == workerId)
+                {
+                    Debug.Assert(newSlotMap[i]._workerId != 1);
+                    newSlotMap[i]._workerId = 0;
+                    newSlotMap[i]._state = SlotState.OFFLINE;
+                }
+                // Node being removed is target node for migration and this is the source node
+                else if (newSlotMap[i]._state == SlotState.MIGRATING && newSlotMap[i]._workerId == workerId)
+                {
+                    Debug.Assert(newSlotMap[i].workerId == 1);
+                    newSlotMap[i]._workerId = 1;
+                    newSlotMap[i]._state = SlotState.STABLE;
+                }
+                // Node being remove is source node for migration and this is the target node
+                else if (newSlotMap[i]._state == SlotState.IMPORTING && workers[newSlotMap[i]._workerId].Nodeid.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
                     newSlotMap[i]._workerId = 0;
                     newSlotMap[i]._state = SlotState.OFFLINE;
                 }
+                // Every other node with greater workerId need to decrement its offset
                 else if (newSlotMap[i].workerId > workerId)
                 {
                     newSlotMap[i]._workerId--;

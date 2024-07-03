@@ -115,8 +115,8 @@ namespace Garnet.server
             fixed (byte* _input = input.AsSpan())
             fixed (byte* _output = output.SpanByte.AsSpan())
             {
-                var header = (RespInputHeader*)_input;
-                if (header->type != GarnetObjectType.Hash)
+                var header = (ObjectInputHeader*)_input;
+                if (header->header.type != GarnetObjectType.Hash)
                 {
                     //Indicates when there is an incorrect type 
                     output.Length = 0;
@@ -125,7 +125,7 @@ namespace Garnet.server
                 }
 
                 var previousSize = this.Size;
-                switch (header->HashOp)
+                switch (header->header.HashOp)
                 {
                     case HashOperation.HSET:
                         HashSet(_input, input.Length, _output);
@@ -140,7 +140,7 @@ namespace Garnet.server
                         HashMultipleGet(_input, input.Length, ref output);
                         break;
                     case HashOperation.HGETALL:
-                        HashGetAll(ref output);
+                        HashGetAll(respProtocolVersion: header->arg1, ref output);
                         break;
                     case HashOperation.HDEL:
                         HashDelete(_input, input.Length, _output);

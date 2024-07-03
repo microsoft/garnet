@@ -267,6 +267,7 @@ namespace Garnet.server
             inputPtr->header.flags = 0;
             inputPtr->header.SortedSetOp = op;
             inputPtr->arg1 = count - 1;
+            inputPtr->arg2 = respProtocolVersion;
 
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };
 
@@ -1100,10 +1101,8 @@ namespace Garnet.server
                             withscoresInclude = true;
                     }
 
-                    if (NetworkKeyArraySlotVerify(ref keys, true))
-                    {
+                    if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 1, lastKey: 1 + parseState.GetInt(0)))
                         return true;
-                    }
 
                     var status = storageApi.SortedSetDifference(keys, out var result);
 

@@ -28,7 +28,7 @@ namespace Garnet.server
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (NetworkSingleKeySlotVerify(key1Ptr, ksize1, false) || NetworkSingleKeySlotVerify(key2Ptr, ksize2, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
 
             ArgSlice oldKeySlice = new(key1Ptr, ksize1);
@@ -63,7 +63,7 @@ namespace Garnet.server
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
 
             var key = new Span<byte>(keyPtr, ksize);
@@ -104,7 +104,7 @@ namespace Garnet.server
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
 
             keyPtr -= sizeof(int);
@@ -143,8 +143,8 @@ namespace Garnet.server
         {
             int exists = 0;
 
-            if (NetworkArraySlotVerify(count, ptr, interleavedKeys: false, readOnly: true, out bool retVal))
-                return retVal;
+            if (NetworkMultiKeySlotVerify(readOnly: true))
+                return true;
 
             for (int i = 0; i < count; i++)
             {
@@ -164,43 +164,6 @@ namespace Garnet.server
                 SendAndReset();
 
             readHead = (int)(ptr - recvBufferPtr);
-            return true;
-        }
-
-
-        /// <summary>
-        /// Exists RESP command
-        /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="ptr">Reading pointer to network buffer</param>
-        /// <param name="storageApi">Garnet API instance</param>
-        /// <returns></returns>
-        private bool NetworkEXISTS<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            byte* keyPtr = null;
-            int ksize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-            readHead = (int)(ptr - recvBufferPtr);
-
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
-                return true;
-
-            ArgSlice key = new(keyPtr, ksize);
-            var status = storageApi.EXISTS(key);
-
-            if (status == GarnetStatus.OK)
-            {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                    SendAndReset();
-            }
             return true;
         }
 
@@ -250,7 +213,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
 
             var key = new ArgSlice(keyPtr, ksize);
@@ -289,7 +252,7 @@ namespace Garnet.server
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
+            if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
 
             var key = new ArgSlice(keyPtr, ksize);
@@ -326,7 +289,7 @@ namespace Garnet.server
                 return false;
             readHead = (int)(ptr - recvBufferPtr);
 
-            if (NetworkSingleKeySlotVerify(keyPtr, ksize, true))
+            if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
 
             keyPtr -= sizeof(int);
