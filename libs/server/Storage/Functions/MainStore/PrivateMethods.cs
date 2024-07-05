@@ -355,7 +355,7 @@ namespace Garnet.server
             var ndigits = NumUtils.NumDigitsInLong(val, ref fNeg);
             ndigits += fNeg ? 1 : 0;
 
-            if (ndigits > value.Length)
+            if (ndigits > value.LengthWithoutMetadata)
                 return false;
 
             rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
