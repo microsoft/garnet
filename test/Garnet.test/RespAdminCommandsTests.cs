@@ -520,8 +520,8 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                var expectedMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                    $"{nameof(RespCommand.CONFIG)}"));
+                var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
+                    $"{nameof(RespCommand.CONFIG)}");
                 Assert.AreEqual(expectedMessage, ex.Message);
             }
         }

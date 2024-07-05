@@ -65,7 +65,9 @@ const config = {
     ],
   ],
 
-  plugins: ["docusaurus-plugin-clarity"],
+  plugins: [
+    "docusaurus-plugin-clarity",
+  ],
 
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
@@ -168,7 +170,17 @@ const config = {
             runmeLinkLabel: 'Checkout via Runme'
       },
     }),
-  themes: ['@docusaurus/theme-mermaid', 'docusaurus-theme-github-codeblock'],
+  themes: [
+    '@docusaurus/theme-mermaid',
+    'docusaurus-theme-github-codeblock',
+    [
+      require.resolve("@easyops-cn/docusaurus-search-local"),
+      {
+        hashed: true,
+        blogDir: "./blog/",
+      },
+    ],
+  ],
 };
 
 export default config;

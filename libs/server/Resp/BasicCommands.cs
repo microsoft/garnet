@@ -28,7 +28,7 @@ namespace Garnet.server
                 return NetworkGETAsync(ref storageApi);
 
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            if (NetworkSingleKeySlotVerify(ref key, true))
+            if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             SpanByte input = default;
@@ -59,7 +59,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            if (NetworkSingleKeySlotVerify(ref key, true))
+            if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
 
             // Optimistically ask storage to write output to network buffer
@@ -115,7 +115,7 @@ namespace Garnet.server
                     break;
 
                 // Cluster verification
-                if (NetworkSingleKeySlotVerify(ref key, true))
+                if (NetworkMultiKeySlotVerify(readOnly: true))
                     continue;
 
                 // Store index in context, since completions are not in order
@@ -244,7 +244,6 @@ namespace Garnet.server
             outputArr[c - firstPending] = (status, output);
         }
 
-
         static long NextPowerOf2(long v)
         {
             v--;
@@ -267,7 +266,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var value = parseState.GetArgSliceByRef(1).SpanByte;
 
-            if (NetworkSingleKeySlotVerify(ref key, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: -2))
                 return true;
 
             var status = storageApi.SET(ref key, ref value);
@@ -287,7 +286,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
-            if (NetworkSingleKeySlotVerify(ref sbKey, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
 
             var offset = parseState.GetInt(1);
@@ -318,7 +317,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
-            if (NetworkSingleKeySlotVerify(ref sbKey, false))
+            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
                 return true;
 
             var sliceStart = parseState.GetInt(1);
@@ -358,7 +357,7 @@ namespace Garnet.server
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
 
-            if (NetworkSingleKeySlotVerify(ref key, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 1))
                 return true;
 
             var expiry = parseState.GetInt(1);
@@ -546,7 +545,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (NetworkSingleKeySlotVerify(ref sbKey, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
             {
                 return true;
             }
@@ -743,9 +742,6 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
-            if (NetworkSingleKeySlotVerify(ref sbKey, false))
-                return true;
-
             ArgSlice input = default;
             if (cmd == RespCommand.INCRBY || cmd == RespCommand.DECRBY)
             {
@@ -778,6 +774,8 @@ namespace Garnet.server
                 input = new ArgSlice(valPtr, vSize);
             }
 
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
+                return true;
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = ArgSlice.FromPinnedSpan(outputBuffer);
 
@@ -812,7 +810,7 @@ namespace Garnet.server
         {
             var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
-            if (NetworkSingleKeySlotVerify(ref sbKey, false))
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
 
             var sbVal = parseState.GetArgSliceByRef(1).SpanByte;
@@ -915,7 +913,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var sbKey = key.SpanByte;
 
-            if (NetworkSingleKeySlotVerify(ref sbKey, true))
+            if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
                 return true;
 
             var status = storageApi.GET(key, out var value);

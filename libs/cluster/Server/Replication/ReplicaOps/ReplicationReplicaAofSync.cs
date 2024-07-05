@@ -69,7 +69,7 @@ namespace Garnet.cluster
                     var payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
                     if (payloadLength > 0)
                     {
-                        aofProcessor.ProcessAofRecordInternal(null, ptr + entryLength, payloadLength, true);
+                        aofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true);
                         entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                     }
                     else if (payloadLength < 0)

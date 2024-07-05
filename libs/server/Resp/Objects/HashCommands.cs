@@ -197,6 +197,7 @@ namespace Garnet.server
             inputPtr->header.type = GarnetObjectType.Hash;
             inputPtr->header.flags = 0;
             inputPtr->header.HashOp = HashOperation.HGETALL;
+            inputPtr->arg1 = respProtocolVersion;
 
             // Prepare GarnetObjectStore output
             var outputFooter = new GarnetObjectStoreOutput { spanByteAndMemory = new SpanByteAndMemory(dcurr, (int)(dend - dcurr)) };

@@ -12,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Wrapper to hold parse state for a RESP session.
     /// </summary>
-    unsafe struct SessionParseState
+    public unsafe struct SessionParseState
     {
         /// <summary>
         /// Initial number of arguments parsed for a command
@@ -33,6 +33,11 @@ namespace Garnet.server
         /// Pointer to buffer
         /// </summary>
         ArgSlice* bufferPtr;
+
+        /// <summary>
+        /// Get a Span of the parsed parameters in the form an ArgSlice
+        /// </summary>
+        public readonly Span<ArgSlice> Parameters => buffer.AsSpan().Slice(0, count);
 
         /// <summary>
         /// Initialize the parse state at the start of a session

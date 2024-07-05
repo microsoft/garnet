@@ -238,7 +238,7 @@ namespace Garnet.server
 
             try
             {
-                int[] indexes = default;
+                Span<int> indexes = default;
 
                 if (count > 0)
                 {

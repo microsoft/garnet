@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
@@ -127,18 +126,6 @@ namespace Garnet.cluster
             }
 
             return true;
-        }
-
-        /// <summary>
-        /// Release epoch, wait for config transition and re-acquire the epoch
-        /// </summary>
-        public void UnsafeWaitForConfigTransition()
-        {
-            // Ensure that we are under epoch protection when calling this method
-            Debug.Assert(_localCurrentEpoch != 0);
-            ReleaseCurrentEpoch();
-            clusterProvider.WaitForConfigTransition();
-            AcquireCurrentEpoch();
         }
 
         /// <summary>

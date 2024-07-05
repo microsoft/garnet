@@ -94,9 +94,8 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("SINTER", count);
             }
 
-            // Read all the keys
+            // Read all keys
             ArgSlice[] keys = new ArgSlice[count];
-
             for (int i = 0; i < keys.Length; i++)
             {
                 keys[i] = default;
@@ -104,10 +103,8 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
-            {
+            if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
-            }
 
             var status = storageApi.SetIntersect(keys, out var result);
 
@@ -167,11 +164,6 @@ namespace Garnet.server
             if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
-            if (NetworkSingleKeySlotVerify(key, false))
-            {
-                return true;
-            }
-
             var keys = new ArgSlice[count - 1];
             for (var i = 0; i < count - 1; i++)
             {
@@ -180,10 +172,8 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
-            {
+            if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
-            }
 
             var status = storageApi.SetIntersectStore(key.ToArray(), keys, out var output);
 
@@ -233,10 +223,8 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
-            {
+            if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
-            }
 
             var status = storageApi.SetUnion(keys, out var result);
 
@@ -286,11 +274,6 @@ namespace Garnet.server
             if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
-            if (NetworkSingleKeySlotVerify(key, false))
-            {
-                return true;
-            }
-
             var keys = new ArgSlice[count - 1];
             for (var i = 0; i < count - 1; i++)
             {
@@ -299,10 +282,8 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
-            {
+            if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
-            }
 
             var status = storageApi.SetUnionStore(key, keys, out var output);
 
@@ -731,10 +712,8 @@ namespace Garnet.server
 
             var keys = new ArgSlice[2] { sourceKey, destinationKey };
 
-            if (NetworkKeyArraySlotVerify(ref keys, false))
-            {
+            if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 2))
                 return true;
-            }
 
             var status = storageApi.SetMove(sourceKey, destinationKey, sourceMember, out var output);
 
@@ -903,10 +882,8 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
-            {
+            if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
-            }
 
             var status = storageApi.SetDiff(keys, out var output);
 
@@ -953,11 +930,6 @@ namespace Garnet.server
             if (!RespReadUtils.TrySliceWithLengthHeader(out var key, ref ptr, recvBufferPtr + bytesRead))
                 return false;
 
-            if (NetworkSingleKeySlotVerify(key, false))
-            {
-                return true;
-            }
-
             var keys = new ArgSlice[count - 1];
             for (var i = 0; i < count - 1; i++)
             {
@@ -966,10 +938,8 @@ namespace Garnet.server
                     return false;
             }
 
-            if (NetworkKeyArraySlotVerify(ref keys, true))
-            {
+            if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
-            }
 
             var status = storageApi.SetDiffStore(key.ToArray(), keys, out var output);
 

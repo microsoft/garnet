@@ -111,7 +111,8 @@ namespace Tsavorite.core
             objectLogDevice.Reset();
             for (int index = 0; index < BufferSize; index++)
             {
-                ReturnPage(index);
+                if (IsAllocated(index))
+                    FreePage(index);
             }
 
             Array.Clear(segmentOffsets, 0, segmentOffsets.Length);
