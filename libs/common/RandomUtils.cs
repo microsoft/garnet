@@ -3,9 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Garnet.common
 {
@@ -25,7 +22,7 @@ namespace Garnet.common
         /// <param name="seed">Random seed</param>
         /// <param name="distinct">Whether items returned should be distinct (default: true)</param>
         /// <returns>K indexes picked</returns>
-        public static int[] PickKRandomIndexes(int n, int k, int seed, bool distinct = true)
+        public static Span<int> PickKRandomIndexes(int n, int k, int seed, bool distinct = true)
         {
             if (k < 0) throw new ArgumentOutOfRangeException(nameof(k));
             if (n < 0) throw new ArgumentOutOfRangeException(nameof(n));
@@ -38,18 +35,15 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Pick random index from a collection of n items
+        /// Pick random index from a collection of n items, using the given random integer
         /// </summary>
         /// <param name="n">Number of items in the collection</param>
-        /// <param name="seed">Random seed</param>
+        /// <param name="rand">Random integer</param>
         /// <returns>Index picked</returns>
-        public static int PickRandomIndex(int n, int seed)
-        {
-            var random = new Random(seed);
-            return random.Next(n);
-        }
+        public static int PickRandomIndex(int n, int rand)
+            => rand % n;
 
-        private static int[] PickKRandomIndexesIteratively(int n, int k, int seed, bool distinct)
+        private static Span<int> PickKRandomIndexesIteratively(int n, int k, int seed, bool distinct)
         {
             var random = new Random(seed);
             var result = new int[k];
@@ -70,7 +64,7 @@ namespace Garnet.common
             return result;
         }
 
-        private static int[] PickKRandomDistinctIndexesWithShuffle(int n, int k, int seed)
+        private static Span<int> PickKRandomDistinctIndexesWithShuffle(int n, int k, int seed)
         {
             var random = new Random(seed);
             var shuffledIndexes = new int[n];
@@ -88,9 +82,7 @@ namespace Garnet.common
                 (shuffledIndexes[i], shuffledIndexes[j]) = (shuffledIndexes[j], shuffledIndexes[i]);
             }
 
-            var result = new int[k];
-            Array.Copy(shuffledIndexes, result, k);
-            return result;
+            return new Span<int>(shuffledIndexes, 0, k);
         }
     }
 }
