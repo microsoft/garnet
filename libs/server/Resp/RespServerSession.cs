@@ -149,6 +149,12 @@ namespace Garnet.server
         string clientName = null;
 
         /// <summary>
+        /// Flag to indicate if the current command requires AOF commit.
+        /// Only gets used for control flow in sending response when AOF is enabled on the session.
+        /// </summary>
+        bool aofCommitCurrentCommand = true;
+
+        /// <summary>
         /// Random number generator for operations, using a cryptographic generator as the base seed
         /// </summary>
         private static readonly Random RandomGen = new(RandomNumberGenerator.GetInt32(int.MaxValue));
@@ -351,6 +357,8 @@ namespace Garnet.server
 
             var _origReadHead = readHead;
 
+            // Each message assumes the default behavior of committing the AOF log, given that AOF is enabled on the session
+            aofCommitCurrentCommand = true;
             while (bytesRead - readHead >= 4)
             {
                 // First, parse the command, making sure we have the entire command available
@@ -385,6 +393,9 @@ namespace Garnet.server
                     }
                     else
                     {
+                        // Commands outside the context of a user initiated transaction will not change state
+                        // of database and hence should not be blocked on AOF to be comitted.
+                        aofCommitCurrentCommand = !cmd.IsNonDbStateMutatingCommand(currentCustomCommand, currentCustomObjectCommand);
                         _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
                     }
                 }
@@ -924,7 +935,7 @@ namespace Garnet.server
             if ((int)(dcurr - d) > 0)
             {
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
-                if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit)
+                if (storeWrapper.appendOnlyFile != null && storeWrapper.serverOptions.WaitForCommit && aofCommitCurrentCommand)
                 {
                     var task = storeWrapper.appendOnlyFile.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();

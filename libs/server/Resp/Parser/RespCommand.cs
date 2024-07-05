@@ -287,6 +287,13 @@ namespace Garnet.server
     {
         private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX];
         private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR];
+        private static readonly RespCommand[] NonStateMutatingMiscCommands = [
+            RespCommand.PING, RespCommand.ECHO, RespCommand.INFO, RespCommand.TIME, RespCommand.LASTSAVE,
+            RespCommand.ACL_CAT, RespCommand.ACL_LIST, RespCommand.ACL_USERS, RespCommand.ACL_WHOAMI,
+            RespCommand.COMMAND, RespCommand.COMMAND_COUNT, RespCommand.COMMAND_INFO,
+            RespCommand.CONFIG_GET,
+            RespCommand.LATENCY_HELP, RespCommand.LATENCY_HISTOGRAM,
+        ];
 
         /// <summary>
         /// Turns any not-quite-a-real-command entries in <see cref="RespCommand"/> into the equivalent command
@@ -345,6 +352,17 @@ namespace Garnet.server
             // and we're in the hot path
             bool inRange = cmd <= RespCommand.ZSCORE;
             return Unsafe.As<bool, byte>(ref inRange);
+        }
+
+        /// <summary>
+        /// Returns True if <paramref name="cmd"/> does not change state of database
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsNonDbStateMutatingCommand(this RespCommand cmd, CustomCommand customCommand, CustomObjectCommand customObjectCommand)
+        {
+            return (cmd == RespCommand.CustomCmd && customCommand?.type == CommandType.Read) || (cmd == RespCommand.CustomObjCmd && customObjectCommand?.type == CommandType.Read) ||
+                cmd <= RespCommand.ZSCORE || // command is from read section
+                Array.IndexOf(NonStateMutatingMiscCommands, cmd) != -1; // command is explicitly listed as non-state mutating
         }
 
         /// <summary>
