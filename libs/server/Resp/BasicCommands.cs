@@ -1146,8 +1146,7 @@ namespace Garnet.server
             if (count > 0)
             {
                 var tokenIdx = 0;
-                var protocolVersionSpan = parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan;
-                if (!NumUtils.TryParse(protocolVersionSpan, out int localRespProtocolVersion))
+                if (!parseState.TryGetInt(tokenIdx, out var localRespProtocolVersion))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -1301,7 +1300,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                if (!NumUtils.TryParse(parseState.GetArgSliceByRef(2).ReadOnlySpan, out int _))
+                if (!parseState.TryGetInt(2, out _))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();

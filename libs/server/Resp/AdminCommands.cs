@@ -415,8 +415,7 @@ namespace Garnet.server
                 leftTokens--;
 
                 // Read custom command number of parameters
-                var numParamsSlice = parseState.GetArgSliceByRef(count - leftTokens);
-                if (!NumUtils.TryParse(numParamsSlice.ReadOnlySpan, out int numParams))
+                if (!parseState.TryGetInt(count - leftTokens, out var numParams))
                 {
                     errorMsg = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
                     break;
