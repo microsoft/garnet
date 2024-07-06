@@ -1220,7 +1220,7 @@ namespace Garnet.server
             var seconds = utcTime.ToUnixTimeSeconds();
             var uSeconds = utcTime.ToString("ffffff");
             var response = $"*2\r\n${seconds.ToString().Length}\r\n{seconds}\r\n${uSeconds.Length}\r\n{uSeconds}\r\n";
-            
+
             while (!RespWriteUtils.WriteAsciiDirect(response, ref dcurr, dend))
                 SendAndReset();
 

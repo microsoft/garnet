@@ -513,7 +513,7 @@ namespace Garnet.server
             if (count == 1)
             {
                 generation = parseState.GetInt(0);
-                
+
                 if (generation < 0 || generation > GC.MaxGeneration)
                 {
                     while (!RespWriteUtils.WriteError("ERR Invalid GC generation."u8, ref dcurr, dend))
