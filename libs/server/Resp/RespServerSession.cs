@@ -471,6 +471,14 @@ namespace Garnet.server
                 RespCommand.ECHO => NetworkECHO(parseState.count),
                 RespCommand.INFO => NetworkINFO(parseState.count),
                 RespCommand.HELLO => NetworkHELLO(parseState.count),
+                RespCommand.TIME => NetworkTIME(parseState.count),
+                RespCommand.FLUSHDB => NetworkFLUSHDB(parseState.count),
+                RespCommand.AUTH => NetworkAUTH(parseState.count),
+                RespCommand.MEMORY_USAGE => NetworkMemoryUsage(parseState.count, ref storageApi),
+                RespCommand.ACL_CAT => NetworkAclCat(parseState.count),
+                RespCommand.ACL_WHOAMI => NetworkAclWhoAmI(parseState.count),
+                RespCommand.ASYNC => NetworkASYNC(parseState.count),
+                RespCommand.MIGRATE => NetworkProcessClusterCommand(cmd, parseState.count),
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
@@ -683,7 +691,7 @@ namespace Garnet.server
             }
             else
             {
-                return ProcessAdminCommands(command, count, ref storageApi);
+                return ProcessAdminCommands(command, count);
             }
             return true;
         }

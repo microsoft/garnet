@@ -5,7 +5,9 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -875,6 +877,75 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// FLUSHDB [ASYNC|SYNC] [UNSAFETRUNCATELOG]
+        /// </summary>
+        private bool NetworkFLUSHDB(int count)
+        {
+            var unsafeTruncateLog = false;
+            var async = false;
+            var sync = false;
+            var syntaxError = false;
+
+            for (var i = 0; i < count; i++)
+            {
+                var nextToken = parseState.GetArgSliceByRef(i);
+                if (nextToken.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.UNSAFETRUNCATELOG))
+                {
+                    if (unsafeTruncateLog)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    unsafeTruncateLog = true;
+                }
+                else if (nextToken.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ASYNC))
+                {
+                    if (sync || async)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    async = true;
+                }
+                else if (nextToken.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SYNC))
+                {
+                    if (sync || async)
+                    {
+                        syntaxError = true;
+                        break;
+                    }
+
+                    sync = true;
+                }
+                else
+                {
+                    syntaxError = true;
+                    break;
+                }
+            }
+
+            if (syntaxError)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            if (async)
+                Task.Run(() => FlushDB(unsafeTruncateLog)).ConfigureAwait(false);
+            else
+                FlushDB(unsafeTruncateLog);
+
+            logger?.LogInformation("Running flushDB " + (async ? "async" : "sync") + (unsafeTruncateLog ? " with unsafetruncatelog." : ""));
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        /// <summary>
         /// Mark this session as readonly session
         /// </summary>
         /// <returns></returns>
@@ -1089,7 +1160,7 @@ namespace Garnet.server
 
                 while (tokenIdx < count)
                 {
-                    var param = parseState.GetArgSliceByRef(tokenIdx).Span;
+                    var param = parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan;
                     tokenIdx++;
 
                     if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AUTH))
@@ -1100,10 +1171,10 @@ namespace Garnet.server
                                 nameof(CmdStrings.AUTH));
                             break;
                         }
-                        authUsername = parseState.GetArgSliceByRef(tokenIdx).Span;
+                        authUsername = parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan;
                         tokenIdx++;
 
-                        authPassword = parseState.GetArgSliceByRef(tokenIdx).Span;
+                        authPassword = parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan;
                         tokenIdx++;
                     }
                     else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETNAME))
@@ -1136,6 +1207,182 @@ namespace Garnet.server
             }
 
             ProcessHelloCommand(tmpRespProtocolVersion, authUsername, authPassword, tmpClientName);
+            return true;
+        }
+
+        private bool NetworkTIME(int count)
+        {
+            if (count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.TIME), count);
+            }
+
+            var utcTime = DateTimeOffset.UtcNow;
+            var seconds = utcTime.ToUnixTimeSeconds();
+            var uSeconds = utcTime.ToString("ffffff");
+            var response = $"*2\r\n${seconds.ToString().Length}\r\n{seconds}\r\n${uSeconds.Length}\r\n{uSeconds}\r\n";
+            
+            while (!RespWriteUtils.WriteAsciiDirect(response, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        private bool NetworkAUTH(int count)
+        {
+            // AUTH [<username>] <password>
+            if (count < 1 || count > 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.AUTH), count);
+            }
+
+            ReadOnlySpan<byte> username = default;
+
+            // Optional Argument: <username>
+            var passwordTokenIdx = 0;
+            if (count == 2)
+            {
+                username = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                passwordTokenIdx = 1;
+            }
+
+            // Mandatory Argument: <password>
+            var password = parseState.GetArgSliceByRef(passwordTokenIdx).ReadOnlySpan;
+
+            // NOTE: Some authenticators cannot accept username/password pairs
+            if (!_authenticator.CanAuthenticate)
+            {
+                while (!RespWriteUtils.WriteError("ERR Client sent AUTH, but configured authenticator does not accept passwords"u8, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            // XXX: There should be high-level AuthenticatorException
+            if (this.AuthenticateUser(username, password))
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                if (username.IsEmpty)
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_PASSWORD, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+            return true;
+        }
+
+        //MEMORY USAGE key [SAMPLES count]
+        private bool NetworkMemoryUsage<TGarnetApi>(int count, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (count != 1 && count != 3)
+            {
+                return AbortWithWrongNumberOfArguments(
+                    $"{nameof(RespCommand.MEMORY)}|{Encoding.ASCII.GetString(CmdStrings.USAGE)}", count);
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            if (count == 3)
+            {
+                // Calculations for nested types do not apply to garnet, but we are checking syntax for API compatibility
+                if (!parseState.GetArgSliceByRef(1).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SAMPLES))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+
+                if (!NumUtils.TryParse(parseState.GetArgSliceByRef(2).ReadOnlySpan, out int _))
+                {
+                    while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+            }
+
+            var status = storageApi.MemoryUsageForKey(key, out var memoryUsage);
+
+            if (status == GarnetStatus.OK)
+            {
+                while (!RespWriteUtils.WriteInteger((int)memoryUsage, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_ERRNOTFOUND, ref dcurr, dend))
+                    SendAndReset();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// ASYNC [ON|OFF|BARRIER]
+        /// </summary>
+        private bool NetworkASYNC(int count)
+        {
+            if (respProtocolVersion <= 2)
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOT_SUPPORTED_RESP2, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            if (count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ASYNC), count);
+            }
+
+            var param = parseState.GetArgSliceByRef(0);
+            if (param.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ON))
+            {
+                useAsync = true;
+            }
+            else if (param.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.OFF))
+            {
+                useAsync = false;
+            }
+            else if (param.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BARRIER))
+            {
+                if (asyncCompleted < asyncStarted)
+                {
+                    asyncDone = new(0);
+                    if (dcurr > networkSender.GetResponseObjectHead())
+                        Send(networkSender.GetResponseObjectHead());
+                    try
+                    {
+                        networkSender.ExitAndReturnResponseObject();
+                        while (asyncCompleted < asyncStarted) asyncDone.Wait();
+                        asyncDone.Dispose();
+                        asyncDone = null;
+                    }
+                    finally
+                    {
+                        networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                    }
+                }
+            }
+            else
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_SYNTAX_ERROR, ref dcurr, dend))
+                    SendAndReset();
+
+                return true;
+            }
+
+            while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
             return true;
         }
 
@@ -1218,6 +1465,12 @@ namespace Garnet.server
                 SendAndReset();
             while (!RespWriteUtils.WriteArrayLength(0, ref dcurr, dend))
                 SendAndReset();
+        }
+
+        void FlushDB(bool unsafeTruncateLog)
+        {
+            storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
+            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
     }
 }

@@ -75,6 +75,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> registercs => "registercs"u8;
         public static ReadOnlySpan<byte> ASYNC => "ASYNC"u8;
         public static ReadOnlySpan<byte> async => "async"u8;
+        public static ReadOnlySpan<byte> SYNC => "SYNC"u8;
         public static ReadOnlySpan<byte> ON => "ON"u8;
         public static ReadOnlySpan<byte> on => "on"u8;
         public static ReadOnlySpan<byte> OFF => "OFF"u8;
@@ -89,6 +90,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> KEEPTTL => "KEEPTTL"u8;
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
+        public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
+        public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
 
         /// <summary>
         /// Response strings
