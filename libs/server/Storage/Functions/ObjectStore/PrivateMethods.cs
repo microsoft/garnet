@@ -182,7 +182,8 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe bool IncorrectObjectType(ref SpanByte input, IGarnetObject value, ref SpanByteAndMemory output)
         {
-            if ((byte)((RespInputHeader*)input.ToPointer())->type != value.Type) // Indicates an incorrect type of key
+            var inputType = (byte)((RespInputHeader*)input.ToPointer())->type;
+            if (inputType != value.Type) // Indicates an incorrect type of key
             {
                 output.Length = 0;
                 return true;
