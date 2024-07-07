@@ -152,9 +152,14 @@ namespace Garnet.server
 
             inputPtr = ptr;
             isize = (int)(end - ptr);
+
             inputPtr -= sizeof(int);
             inputPtr -= RespInputHeader.Size;
+
+            var savedData1 = *(int*)inputPtr;
             *(int*)inputPtr = RespInputHeader.Size + isize;
+
+            var savedData2 = *(RespInputHeader*)(inputPtr + sizeof(int));
             ((RespInputHeader*)(inputPtr + sizeof(int)))->cmd = cmd;
             ((RespInputHeader*)(inputPtr + sizeof(int)))->SubId = subid;
 
@@ -205,6 +210,9 @@ namespace Garnet.server
                         break;
                 }
             }
+
+            *(int*)inputPtr = savedData1;
+            *(RespInputHeader*)(inputPtr + sizeof(int)) = savedData2;
 
             return true;
         }
