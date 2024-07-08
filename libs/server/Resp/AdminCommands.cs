@@ -20,7 +20,7 @@ namespace Garnet.server
     /// </summary>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
-        private bool ProcessAdminCommands(RespCommand command, int count)
+        private void ProcessAdminCommands(RespCommand command, int count)
         {
             hasAdminCommand = true;
 
@@ -29,8 +29,6 @@ namespace Garnet.server
                 // If the current session is unauthenticated, we stop parsing, because no other commands are allowed
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_NOAUTH, ref dcurr, dend))
                     SendAndReset();
-
-                return true;
             }
 
             var cmdFound = true;
@@ -62,18 +60,16 @@ namespace Garnet.server
                 _ => cmdFound = false
             };
 
-            if (cmdFound) return true;
+            if (cmdFound) return;
 
             if (command.IsClusterSubCommand())
             {
                 NetworkProcessClusterCommand(command, count);
-                return true;
+                return;
             }
 
             while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_UNK_CMD, ref dcurr, dend))
                 SendAndReset();
-
-            return true;
         }
 
         /// <summary>

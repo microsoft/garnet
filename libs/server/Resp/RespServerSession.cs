@@ -435,11 +435,11 @@ namespace Garnet.server
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(parseState.count, ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
-                RespCommand.RENAME => NetworkRENAME(ptr, ref storageApi),
-                RespCommand.EXISTS => NetworkEXISTS(parseState.count, ptr, ref storageApi),
-                RespCommand.EXPIRE => NetworkEXPIRE(parseState.count, ptr, RespCommand.EXPIRE, ref storageApi),
-                RespCommand.PEXPIRE => NetworkEXPIRE(parseState.count, ptr, RespCommand.PEXPIRE, ref storageApi),
-                RespCommand.PERSIST => NetworkPERSIST(ptr, ref storageApi),
+                RespCommand.RENAME => NetworkRENAME(ref storageApi),
+                RespCommand.EXISTS => NetworkEXISTS(parseState.count, ref storageApi),
+                RespCommand.EXPIRE => NetworkEXPIRE(parseState.count, RespCommand.EXPIRE, ref storageApi),
+                RespCommand.PEXPIRE => NetworkEXPIRE(parseState.count, RespCommand.PEXPIRE, ref storageApi),
+                RespCommand.PERSIST => NetworkPERSIST(ref storageApi),
                 RespCommand.GETRANGE => NetworkGetRange(ref storageApi),
                 RespCommand.TTL => NetworkTTL(ptr, RespCommand.TTL, ref storageApi),
                 RespCommand.PTTL => NetworkTTL(ptr, RespCommand.PTTL, ref storageApi),
@@ -462,7 +462,7 @@ namespace Garnet.server
                 RespCommand.UNWATCH => NetworkUNWATCH(),
                 RespCommand.DISCARD => NetworkDISCARD(),
                 RespCommand.QUIT => NetworkQUIT(),
-                RespCommand.RUNTXP => NetworkRUNTXP(parseState.count, ptr),
+                RespCommand.RUNTXP => NetworkRUNTXP(parseState.count),
                 RespCommand.READONLY => NetworkREADONLY(),
                 RespCommand.READWRITE => NetworkREADWRITE(),
                 RespCommand.COMMAND => NetworkCOMMAND(parseState.count),
@@ -500,17 +500,17 @@ namespace Garnet.server
                 RespCommand.MSET => NetworkMSET(ref storageApi),
                 RespCommand.MSETNX => NetworkMSETNX(ref storageApi),
                 RespCommand.UNLINK => NetworkDEL(ref storageApi),
-                RespCommand.SELECT => NetworkSELECT(ptr),
+                RespCommand.SELECT => NetworkSELECT(),
                 RespCommand.WATCH => NetworkWATCH(count),
                 RespCommand.WATCH_MS => NetworkWATCH_MS(count),
                 RespCommand.WATCH_OS => NetworkWATCH_OS(count),
                 RespCommand.STRLEN => NetworkSTRLEN(ref storageApi),
                 RespCommand.PING => NetworkArrayPING(count),
                 //General key commands
-                RespCommand.DBSIZE => NetworkDBSIZE(ptr, ref storageApi),
-                RespCommand.KEYS => NetworkKEYS(ptr, ref storageApi),
-                RespCommand.SCAN => NetworkSCAN(count, ptr, ref storageApi),
-                RespCommand.TYPE => NetworkTYPE(count, ptr, ref storageApi),
+                RespCommand.DBSIZE => NetworkDBSIZE(ref storageApi),
+                RespCommand.KEYS => NetworkKEYS(ref storageApi),
+                RespCommand.SCAN => NetworkSCAN(count, ref storageApi),
+                RespCommand.TYPE => NetworkTYPE(count, ref storageApi),
                 // Pub/sub commands
                 RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(count, ptr, dend),
                 RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(count, ptr, dend),
@@ -547,9 +547,9 @@ namespace Garnet.server
                 RespCommand.GEOPOS => GeoCommands(cmd, count, ptr, ref storageApi),
                 RespCommand.GEOSEARCH => GeoCommands(cmd, count, ptr, ref storageApi),
                 //HLL Commands
-                RespCommand.PFADD => HyperLogLogAdd(count, ptr, ref storageApi),
-                RespCommand.PFMERGE => HyperLogLogMerge(count, ptr, ref storageApi),
-                RespCommand.PFCOUNT => HyperLogLogLength(count, ptr, ref storageApi),
+                RespCommand.PFADD => HyperLogLogAdd(count, ref storageApi),
+                RespCommand.PFMERGE => HyperLogLogMerge(count, ref storageApi),
+                RespCommand.PFCOUNT => HyperLogLogLength(count, ref storageApi),
                 //Bitmap Commands
                 RespCommand.BITOP_AND => NetworkStringBitOperation(count, ptr, BitmapOperation.AND, ref storageApi),
                 RespCommand.BITOP_OR => NetworkStringBitOperation(count, ptr, BitmapOperation.OR, ref storageApi),
@@ -630,7 +630,7 @@ namespace Garnet.server
             else if (command == RespCommand.RUNTXP)
             {
                 byte* ptr = recvBufferPtr + readHead;
-                return NetworkRUNTXP(count, ptr);
+                return NetworkRUNTXP(count);
             }
             else if (command == RespCommand.CustomTxn)
             {
@@ -691,7 +691,8 @@ namespace Garnet.server
             }
             else
             {
-                return ProcessAdminCommands(command, count);
+                ProcessAdminCommands(command, count);
+                return true;
             }
             return true;
         }

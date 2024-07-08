@@ -247,37 +247,32 @@ namespace Garnet.server
         private bool NetworkRUNTXPFast(byte* ptr)
         {
             int count = *(ptr - 16 + 1) - '0';
-            return NetworkRUNTXP(count, ptr);
+            return NetworkRUNTXP(count);
         }
 
-        private bool NetworkRUNTXP(int count, byte* ptr)
+        private bool NetworkRUNTXP(int count)
         {
             if (count < 1)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RUNTXP), count);
 
-            if (!RespReadUtils.ReadIntWithLengthHeader(out int txid, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            byte* start = ptr;
-
-            // Verify all args available
-            for (int i = 0; i < count - 1; i++)
+            if (!parseState.TryGetInt(0, out var txId))
             {
-                byte* result = default;
-                int len = 0;
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref result, ref len, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
-            // Shift read head
-            readHead = (int)(ptr - recvBufferPtr);
+            var firstParamSlice = parseState.GetArgSliceByRef(0);
+            var start = firstParamSlice.ptr + firstParamSlice.length + 2;
+            var lastParamSlice = parseState.GetArgSliceByRef(count - 1);
+            var end = lastParamSlice.ptr + lastParamSlice.length + 2;
 
             CustomTransactionProcedure proc;
             int numParams;
 
             try
             {
-                (proc, numParams) = customCommandManagerSession.GetCustomTransactionProcedure(txid, txnManager, scratchBufferManager);
+                (proc, numParams) = customCommandManagerSession.GetCustomTransactionProcedure(txId, txnManager, scratchBufferManager);
             }
             catch (Exception e)
             {
@@ -291,12 +286,12 @@ namespace Garnet.server
 
             if (count - 1 == numParams)
             {
-                TryTransactionProc((byte)txid, start, ptr, proc);
+                TryTransactionProc((byte)txId, start, end, proc);
             }
             else
             {
                 while (!RespWriteUtils.WriteError(
-                           string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txid, numParams, count - 1), ref dcurr,
+                           string.Format(CmdStrings.GenericErrWrongNumArgsTxn, txId, numParams, count - 1), ref dcurr,
                            dend))
                     SendAndReset();
                 return true;

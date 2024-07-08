@@ -126,7 +126,7 @@ namespace Garnet.test
         public void TimeWithReturnErrorTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();
-            var expectedResponse = "-ERR wrong number of arguments for 'time' command\r\n";
+            var expectedResponse = $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.TIME))}\r\n";
             var response = lightClientRequest.SendCommand("TIME HELLO");
             var actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);

@@ -269,15 +269,16 @@ namespace Garnet.server
         /// <summary>
         /// SELECT
         /// </summary>
-        /// <param name="ptr"></param>
         /// <returns></returns>
-        private bool NetworkSELECT(byte* ptr)
+        private bool NetworkSELECT()
         {
             // Read index
-            if (!RespReadUtils.ReadIntWithLengthHeader(out var result, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            readHead = (int)(ptr - recvBufferPtr);
+            if (!parseState.TryGetInt(0, out var index))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             if (storeWrapper.serverOptions.EnableCluster)
             {
@@ -287,8 +288,7 @@ namespace Garnet.server
             }
             else
             {
-
-                if (result == 0)
+                if (index == 0)
                 {
                     while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
@@ -302,7 +302,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkDBSIZE<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkDBSIZE<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             while (!RespWriteUtils.WriteInteger(storageApi.GetDbSize(), ref dcurr, dend))
@@ -310,19 +310,13 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkKEYS<TGarnetApi>(byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkKEYS<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
-            byte* pattern = null;
-            int psize = 0;
-
             // Read pattern for keys filter
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref pattern, ref psize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
+            var patternSlice = parseState.GetArgSliceByRef(0);
 
-            var patternAS = new ArgSlice(pattern, psize);
-
-            var keys = storageApi.GetDbKeys(patternAS);
+            var keys = storageApi.GetDbKeys(patternSlice);
 
             if (keys.Count > 0)
             {
@@ -342,64 +336,60 @@ namespace Garnet.server
                 while (!RespWriteUtils.WriteEmptyArray(ref dcurr, dend))
                     SendAndReset();
             }
-            // Advance pointers
-            readHead = (int)(ptr - recvBufferPtr);
 
             return true;
         }
 
-        private bool NetworkSCAN<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkSCAN<TGarnetApi>(int count, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
             if (count < 1)
                 return AbortWithWrongNumberOfArguments("SCAN", count);
 
             // Scan cursor [MATCH pattern] [COUNT count] [TYPE type]
-            if (!RespReadUtils.ReadLongWithLengthHeader(out var cursorFromInput, ref ptr, recvBufferPtr + bytesRead))
+            if (!parseState.TryGetLong(0, out var cursorFromInput))
             {
-                return false;
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR, ref dcurr, dend))
+                    SendAndReset();
+                return true;
             }
 
-            int leftTokens = count - 1;
-
-            ReadOnlySpan<byte> pattern = "*"u8;
+            var pattern = "*"u8;
             var allKeys = true;
             long countValue = 10;
             ReadOnlySpan<byte> typeParameterValue = default;
 
-            while (leftTokens > 0)
+            var tokenIdx = 1;
+            while (tokenIdx < count)
             {
-                if (!RespReadUtils.TrySliceWithLengthHeader(out var parameterWord, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                var parameterWord = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
 
-                if (parameterWord.SequenceEqual(CmdStrings.MATCH) || parameterWord.SequenceEqual(CmdStrings.match))
+                if (parameterWord.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MATCH))
                 {
                     // Read pattern for keys filter
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out pattern, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
+                    pattern = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
+
                     allKeys = pattern.Length == 1 && pattern[0] == '*';
-                    leftTokens--;
                 }
-                else if (parameterWord.SequenceEqual(CmdStrings.COUNT) || parameterWord.SequenceEqual(CmdStrings.count))
+                else if (parameterWord.EqualsUpperCaseSpanIgnoringCase(CmdStrings.COUNT))
                 {
-                    if (!RespReadUtils.ReadLongWithLengthHeader(out countValue, ref ptr, recvBufferPtr + bytesRead))
+                    if (!parseState.TryGetLong(tokenIdx++, out countValue))
                     {
-                        return false;
+                        while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                            SendAndReset();
+                        return true;
                     }
-                    leftTokens--;
                 }
-                else if (parameterWord.SequenceEqual(CmdStrings.TYPE) || parameterWord.SequenceEqual(CmdStrings.type))
+                else if (parameterWord.EqualsUpperCaseSpanIgnoringCase(CmdStrings.TYPE))
                 {
-                    if (!RespReadUtils.TrySliceWithLengthHeader(out typeParameterValue, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
-                    leftTokens--;
+                    typeParameterValue = parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan;
                 }
-                leftTokens--;
             }
 
             var patternArgSlice = ArgSlice.FromPinnedSpan(pattern);
 
-            storageApi.DbScan(patternArgSlice, allKeys, cursorFromInput, out var cursor, out var keys, typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
+            storageApi.DbScan(patternArgSlice, allKeys, cursorFromInput, out var cursor, out var keys,
+                typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);
 
             // Prepare values for output
             if (keys.Count == 0)
@@ -425,24 +415,19 @@ namespace Garnet.server
                     WriteOutputForScan(cursor, keys, ref dcurr, dend);
             }
 
-            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 
-        private bool NetworkTYPE<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool NetworkTYPE<TGarnetApi>(int count, ref TGarnetApi storageApi)
               where TGarnetApi : IGarnetApi
         {
             if (count != 1)
                 return AbortWithWrongNumberOfArguments("TYPE", count);
 
             // TYPE key
-            byte* keyPtr = null;
-            int kSize = 0;
+            var keySlice = parseState.GetArgSliceByRef(0);
 
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref kSize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-
-            var status = storageApi.GetKeyType(new(keyPtr, kSize), out string typeName);
+            var status = storageApi.GetKeyType(keySlice, out var typeName);
 
             if (status == GarnetStatus.OK)
             {
@@ -455,7 +440,6 @@ namespace Garnet.server
                     SendAndReset();
             }
 
-            readHead = (int)(ptr - recvBufferPtr);
             return true;
         }
 

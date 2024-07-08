@@ -1211,7 +1211,7 @@ namespace Garnet.server
 
         private bool NetworkTIME(int count)
         {
-            if (count != 1)
+            if (count != 0)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.TIME), count);
             }

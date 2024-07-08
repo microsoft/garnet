@@ -19,14 +19,11 @@ namespace Garnet.server
             string invalidSection = null;
             if (count > 0)
             {
-                var ptr = recvBufferPtr + readHead;
                 sections = new HashSet<InfoMetricsType>();
                 for (int i = 0; i < count; i++)
                 {
-                    if (!RespReadUtils.ReadStringWithLengthHeader(out var section, ref ptr, recvBufferPtr + bytesRead))
-                        return false;
+                    var section = parseState.GetString(i).ToUpper();
 
-                    section = section.ToUpper();
                     switch (section)
                     {
                         case InfoHelp.RESET:
@@ -50,7 +47,6 @@ namespace Garnet.server
                             break;
                     }
                 }
-                readHead = (int)(ptr - recvBufferPtr);
             }
 
             if (invalid)

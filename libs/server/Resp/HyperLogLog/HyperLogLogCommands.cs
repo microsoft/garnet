@@ -16,23 +16,16 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool HyperLogLogAdd<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool HyperLogLogAdd<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            ArgSlice[] argSlices = new ArgSlice[count];
-
-            //Read pfadd dstKey and input values
-            for (int i = 0; i < argSlices.Length; i++)
+            if (count < 1)
             {
-                argSlices[i] = new();
-                if (!RespReadUtils.ReadPtrWithLengthHeader(ref argSlices[i].ptr, ref argSlices[i].length, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD), count);
             }
 
-            readHead = (int)(ptr - recvBufferPtr);
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
 
@@ -59,13 +52,14 @@ namespace Garnet.server
             byte* output = stackalloc byte[1];
 
             byte pfaddUpdated = 0;
-            SpanByte key = argSlices[0].SpanByte;
-            for (int i = 1; i < argSlices.Length; i++)
+            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            for (var i = 1; i < count; i++)
             {
-                *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(argSlices[i].ptr, argSlices[i].Length);
+                var currSlice = parseState.GetArgSliceByRef(i);
+                *(long*)pcurr = (long)HashUtils.MurmurHash2x64A(currSlice.ptr, currSlice.Length);
 
                 var o = new SpanByteAndMemory(output, 1);
-                var status = storageApi.HyperLogLogAdd(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+                storageApi.HyperLogLogAdd(ref key, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
                 //Invalid HLL Type
                 if (*output == (byte)0xFF)
@@ -97,13 +91,17 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
         /// <param name="count"></param>
-        /// <param name="ptr"></param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        private bool HyperLogLogLength<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool HyperLogLogLength<TGarnetApi>(int count, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (count < 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT), count);
+            }
+
             if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
 
@@ -141,9 +139,14 @@ namespace Garnet.server
         /// Merge multiple HyperLogLog values into an unique value that will approximate the cardinality 
         /// of the union of the observed Sets of the source HyperLogLog structures.
         /// </summary>
-        private bool HyperLogLogMerge<TGarnetApi>(int count, byte* ptr, ref TGarnetApi storageApi)
+        private bool HyperLogLogMerge<TGarnetApi>(int count, ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            if (count < 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE), count);
+            }
+
             if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
 
