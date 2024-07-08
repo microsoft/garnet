@@ -21,9 +21,9 @@
   <ItemGroup>
     <Compile Include="..\..\playground\Embedded.perftest\EmbeddedRespServer.cs" Link="EmbeddedRespServer.cs" />
     <Compile Include="..\..\playground\Embedded.perftest\DummyNetworkSender.cs" Link="DummyNetworkSender.cs" />
-		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="MyDictObject.cs" />
-		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="MyDictSet.cs" />
-		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="MyDictGet.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="MyDictObject.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="MyDictSet.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="MyDictGet.cs" />
 	</ItemGroup>
 
 </Project>
