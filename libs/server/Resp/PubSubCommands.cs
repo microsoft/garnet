@@ -96,7 +96,7 @@ namespace Garnet.server
 
             Debug.Assert(isSubscriptionSession == false);
             // PUBLISH channel message => [*3\r\n$7\r\nPUBLISH\r\n$]7\r\nchannel\r\n$7\r\message\r\n
-            
+
             var key = parseState.GetArgSliceByRef(0).SpanByte;
             var val = parseState.GetArgSliceByRef(1).SpanByte;
 
