@@ -21,7 +21,8 @@
     <Compile Include="..\..\main\GarnetServer\Extensions\SampleDeleteTxn.cs" Link="SampleDeleteTxn.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="SetIfPM.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\SetWPIfPGT.cs" Link="SetWPIFPGT.cs" />
-  </ItemGroup>
+    <Compile Include="..\..\main\GarnetServer\Extensions\Sum.cs" Link="Sum.cs" />
+	</ItemGroup>
 
 	<ItemGroup>
 	  <EmbeddedResource Include="CustomRespCommandsInfo.json" Link="CustomRespCommandsInfo.json">

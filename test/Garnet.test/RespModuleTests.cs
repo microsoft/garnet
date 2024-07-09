@@ -82,7 +82,8 @@ namespace Garnet.test
             var filesToCompile = new[] {
                 testFilePath,
                 Path.GetFullPath(@"../main/GarnetServer/Extensions/SetIfPM.cs", TestUtils.RootTestsProjectPath),
-                Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath)};
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/ReadWriteTxn.cs", TestUtils.RootTestsProjectPath),
+                Path.GetFullPath(@"../main/GarnetServer/Extensions/Sum.cs", TestUtils.RootTestsProjectPath)};
             TestUtils.CreateTestLibrary(null, referenceFiles, filesToCompile, modulePath);
             return modulePath;
         }
@@ -99,7 +100,9 @@ namespace Garnet.test
                     
                     context.RegisterTransaction(""TestModule.READWRITETX"", () => new ReadWriteTxn(), 3,
                     new RespCommandsInfo { Name = ""TestModule.READWRITETX"", Arity = 4, FirstKey = 1, LastKey = 3, Step = 1,
-                    Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });";
+                    Flags = RespCommandFlags.DenyOom | RespCommandFlags.Write, AclCategories = RespAclCategories.Write });
+
+                    context.RegisterCommand(""TestModule.SUM"", new Sum());";
 
             var modulePath = CreateTestModule(onLoad);
 
@@ -136,6 +139,13 @@ namespace Garnet.test
             retValue = db.StringGet(writekey2);
             Assert.AreEqual(newValue, retValue.ToString());
 
+            // Test SUM command
+            db.StringSet("key1", "1");
+            db.StringSet("key2", "2");
+            db.StringSet("key3", "3");
+            result = db.Execute("TestModule.SUM", "key1", "key2", "key3");
+            Assert.IsNotNull(result);
+            Assert.AreEqual("6", result.ToString());
         }
 
         [Test]
