@@ -262,14 +262,14 @@ namespace Garnet.server
                 return true;
             }
 
-            var firstParamSlice = parseState.GetArgSliceByRef(0);
-            var start = firstParamSlice.ptr + firstParamSlice.length + 2;
+            var sbFirstParam = parseState.GetArgSliceByRef(0).SpanByte;
+            var start = sbFirstParam.ToPointer() + sbFirstParam.Length + 2;
 
             var end = start;
             if (count > 1)
             {
-                var lastParamSlice = parseState.GetArgSliceByRef(count - 1);
-                end = lastParamSlice.ptr + lastParamSlice.length + 2;
+                var sbLastParam = parseState.GetArgSliceByRef(count - 1).SpanByte;
+                end = sbLastParam.ToPointer() + sbLastParam.Length + 2;
             }
 
             CustomTransactionProcedure proc;

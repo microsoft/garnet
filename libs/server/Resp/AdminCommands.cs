@@ -56,7 +56,7 @@ namespace Garnet.server
                 RespCommand.ACL_USERS => NetworkAclUsers(count),
                 RespCommand.ACL_SAVE => NetworkAclSave(count),
                 RespCommand.REGISTERCS => NetworkRegisterCs(count, storeWrapper.customCommandManager),
-                RespCommand.MODULE_LOADCS => NetworkModuleLoad(count, storeWrapper.customCommandManager),
+                RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
                 _ => cmdFound = false
             };
 
@@ -303,7 +303,6 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkRegisterCs(int count, CustomCommandManager customCommandManager)
         {
-            var leftTokens = count;
             var readPathsOnly = false;
             var optionalParamsRead = 0;
 
@@ -315,7 +314,7 @@ namespace Garnet.server
 
             ReadOnlySpan<byte> errorMsg = null;
 
-            if (leftTokens < 6)
+            if (count < 6)
                 errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
 
             // Parse the REGISTERCS command - list of registration sub-commands
@@ -325,41 +324,40 @@ namespace Garnet.server
             // [INFO path] SRC path [path ...]
             RegisterArgsBase args = null;
 
-            while (leftTokens > 0)
+            var tokenIdx = 0;
+            while (tokenIdx < count)
             {
                 // Read first token of current sub-command or path
-                var token = parseState.GetArgSliceByRef(count - leftTokens);
-                leftTokens--;
+                var token = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
 
                 // Check if first token defines the start of a new sub-command (cmdType) or a path
-                if (!readPathsOnly && token.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.READ))
+                if (!readPathsOnly && token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.READ))
                 {
                     args = new RegisterCmdArgs { CommandType = CommandType.Read };
                 }
-                else if (!readPathsOnly && (token.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.READMODIFYWRITE) ||
-                                            token.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.RMW)))
+                else if (!readPathsOnly && (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.READMODIFYWRITE) ||
+                                            token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.RMW)))
                 {
                     args = new RegisterCmdArgs { CommandType = CommandType.ReadModifyWrite };
                 }
-                else if (!readPathsOnly && (token.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.TRANSACTION) ||
-                                            token.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.TXN)))
+                else if (!readPathsOnly && (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.TRANSACTION) ||
+                                            token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.TXN)))
                 {
                     args = new RegisterTxnArgs();
                 }
-                else if (token.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INFO))
+                else if (token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.INFO))
                 {
                     // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
-                    if (classNameToRegisterArgs.Count == 0 || leftTokens == 0)
+                    if (classNameToRegisterArgs.Count == 0 || tokenIdx == count)
                     {
                         errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                         break;
                     }
 
-                    cmdInfoPath = parseState.GetString(count - leftTokens);
-                    leftTokens--;
+                    cmdInfoPath = parseState.GetString(tokenIdx++);
                     continue;
                 }
-                else if (readPathsOnly || token.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SRC))
+                else if (readPathsOnly || token.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SRC))
                 {
                     // If first token is not a cmdType and no other sub-command is previously defined, command is malformed
                     if (classNameToRegisterArgs.Count == 0)
@@ -371,7 +369,7 @@ namespace Garnet.server
                     // Read only binary paths from this point forth
                     if (readPathsOnly)
                     {
-                        var path = Encoding.ASCII.GetString(token.Span);
+                        var path = Encoding.ASCII.GetString(token);
                         binaryPaths.Add(path);
                     }
 
@@ -384,7 +382,7 @@ namespace Garnet.server
                     // Check optional parameters for previous sub-command
                     if (optionalParamsRead == 0 && args is RegisterCmdArgs cmdArgs)
                     {
-                        var expTicks = NumUtils.BytesToLong(token.Span);
+                        var expTicks = NumUtils.BytesToLong(token);
                         cmdArgs.ExpirationTicks = expTicks;
                         optionalParamsRead++;
                         continue;
@@ -399,7 +397,7 @@ namespace Garnet.server
 
                 // At this point we expect at least 6 remaining tokens -
                 // 3 more tokens for command definition + 2 for source definition
-                if (leftTokens < 5)
+                if (count - tokenIdx < 5)
                 {
                     errorMsg = CmdStrings.RESP_ERR_GENERIC_MALFORMED_REGISTERCS_COMMAND;
                     break;
@@ -407,21 +405,18 @@ namespace Garnet.server
 
                 // Start reading the sub-command arguments
                 // Read custom command name
-                args.Name = parseState.GetString(count - leftTokens);
-                leftTokens--;
+                args.Name = parseState.GetString(tokenIdx++);
 
                 // Read custom command number of parameters
-                if (!parseState.TryGetInt(count - leftTokens, out var numParams))
+                if (!parseState.TryGetInt(tokenIdx++, out var numParams))
                 {
                     errorMsg = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
                     break;
                 }
                 args.NumParams = numParams;
-                leftTokens--;
 
                 // Read custom command class name
-                var className = parseState.GetString(count - leftTokens);
-                leftTokens--;
+                var className = parseState.GetString(tokenIdx++);
 
                 // Add sub-command arguments
                 if (!classNameToRegisterArgs.ContainsKey(className))
@@ -446,11 +441,11 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkModuleLoad(int count, CustomCommandManager customCommandManager)
+        private bool NetworkModuleLoad(CustomCommandManager customCommandManager)
         {
-            if (count < 1) // At least module path is required
+            if (parseState.count < 1) // At least module path is required
             {
-                AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}", count);
+                AbortWithWrongNumberOfArguments($"{RespCommand.MODULE}|{Encoding.ASCII.GetString(CmdStrings.LOADCS)}", parseState.count);
                 return true;
             }
 
@@ -508,9 +503,7 @@ namespace Garnet.server
             var generation = GC.MaxGeneration;
             if (count == 1)
             {
-                generation = parseState.GetInt(0);
-
-                if (generation < 0 || generation > GC.MaxGeneration)
+                if (!parseState.TryGetInt(0, out generation) || generation < 0 || generation > GC.MaxGeneration)
                 {
                     while (!RespWriteUtils.WriteError("ERR Invalid GC generation."u8, ref dcurr, dend))
                         SendAndReset();

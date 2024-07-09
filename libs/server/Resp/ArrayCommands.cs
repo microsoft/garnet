@@ -272,6 +272,11 @@ namespace Garnet.server
         /// <returns></returns>
         private bool NetworkSELECT()
         {
+            if (parseState.count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SELECT), parseState.count);
+            }
+
             // Read index
             if (!parseState.TryGetInt(0, out var index))
             {
@@ -305,14 +310,25 @@ namespace Garnet.server
         private bool NetworkDBSIZE<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (parseState.count != 0)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.DBSIZE), parseState.count);
+            }
+
             while (!RespWriteUtils.WriteInteger(storageApi.GetDbSize(), ref dcurr, dend))
                 SendAndReset();
+
             return true;
         }
 
         private bool NetworkKEYS<TGarnetApi>(ref TGarnetApi storageApi)
              where TGarnetApi : IGarnetApi
         {
+            if (parseState.count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.KEYS), parseState.count);
+            }
+
             // Read pattern for keys filter
             var patternSlice = parseState.GetArgSliceByRef(0);
 
@@ -355,6 +371,7 @@ namespace Garnet.server
             }
 
             var pattern = "*"u8;
+            var patternArgSlice = ArgSlice.FromPinnedSpan(pattern);
             var allKeys = true;
             long countValue = 10;
             ReadOnlySpan<byte> typeParameterValue = default;
@@ -367,7 +384,8 @@ namespace Garnet.server
                 if (parameterWord.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MATCH))
                 {
                     // Read pattern for keys filter
-                    pattern = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
+                    patternArgSlice = parseState.GetArgSliceByRef(tokenIdx++);
+                    pattern = patternArgSlice.ReadOnlySpan;
 
                     allKeys = pattern.Length == 1 && pattern[0] == '*';
                 }
@@ -382,11 +400,9 @@ namespace Garnet.server
                 }
                 else if (parameterWord.EqualsUpperCaseSpanIgnoringCase(CmdStrings.TYPE))
                 {
-                    typeParameterValue = parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan;
+                    typeParameterValue = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
                 }
             }
-
-            var patternArgSlice = ArgSlice.FromPinnedSpan(pattern);
 
             storageApi.DbScan(patternArgSlice, allKeys, cursorFromInput, out var cursor, out var keys,
                 typeParameterValue != default ? long.MaxValue : countValue, typeParameterValue);

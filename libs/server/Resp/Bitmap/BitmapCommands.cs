@@ -164,7 +164,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringSetBit(
-                ref Unsafe.AsRef(in sbKey),
+                ref sbKey,
                 ref Unsafe.AsRef<SpanByte>(pbCmdInput),
                 ref o);
 
@@ -220,7 +220,7 @@ namespace Garnet.server
             #endregion
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.StringGetBit(ref Unsafe.AsRef(in sbKey), ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+            var status = storageApi.StringGetBit(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.NOTFOUND)
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -296,7 +296,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.StringBitCount(ref Unsafe.AsRef(in sbKey), ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+            var status = storageApi.StringBitCount(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -386,7 +386,7 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.StringBitPosition(ref Unsafe.AsRef(in sbKey), ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
+            var status = storageApi.StringBitPosition(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -586,7 +586,7 @@ namespace Garnet.server
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-                var status = storageApi.StringBitField(ref Unsafe.AsRef(in sbKey), ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
+                var status = storageApi.StringBitField(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
 
                 if (status == GarnetStatus.NOTFOUND && bitfieldArgs[i].secondaryOpCode == (byte)RespCommand.GET)
                 {
@@ -751,7 +751,7 @@ namespace Garnet.server
 
                 var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
 
-                var status = storageApi.StringBitFieldReadOnly(ref Unsafe.AsRef(in sbKey), ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
+                var status = storageApi.StringBitFieldReadOnly(ref sbKey, ref Unsafe.AsRef<SpanByte>(pbCmdInput), bitfieldArgs[i].secondaryOpCode, ref output);
 
                 if (status == GarnetStatus.NOTFOUND && bitfieldArgs[i].secondaryOpCode == (byte)RespCommand.GET)
                 {

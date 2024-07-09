@@ -130,8 +130,8 @@ namespace Garnet.server
 
             for (var c = 0; c < count / 2; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).Span;
-                var value = parseState.GetArgSliceByRef(c + 1).Span;
+                var key = parseState.GetArgSliceByRef(c).ReadOnlySpan;
+                var value = parseState.GetArgSliceByRef(c + 1).ReadOnlySpan;
 
                 if (key.SequenceEqual(CmdStrings.CertFileName))
                     certFileName = Encoding.ASCII.GetString(value);
@@ -186,6 +186,7 @@ namespace Garnet.server
                     }
                 }
             }
+
             if (errorMsg == null)
             {
                 while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

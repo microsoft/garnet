@@ -286,12 +286,16 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             var key = parseState.GetArgSliceByRef(0);
-            var sbKey = key.SpanByte;
 
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 0))
                 return true;
 
-            var offset = parseState.GetInt(1);
+            if (!parseState.TryGetInt(1, out var offset))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             if (offset < 0)
             {
@@ -322,8 +326,12 @@ namespace Garnet.server
             if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
                 return true;
 
-            var sliceStart = parseState.GetInt(1);
-            var sliceLength = parseState.GetInt(2);
+            if (!parseState.TryGetInt(1, out var sliceStart) || !parseState.TryGetInt(2, out var sliceLength))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             var keyPtr = sbKey.ToPointer() - sizeof(int); // length header
             *(int*)keyPtr = sbKey.Length;
@@ -362,9 +370,14 @@ namespace Garnet.server
             if (NetworkMultiKeySlotVerify(readOnly: false, firstKey: 0, lastKey: 1))
                 return true;
 
-            var expiry = parseState.GetInt(1);
+            if (!parseState.TryGetInt(1, out var expiry))
+            {
+                while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
-            if (expiry < 0)
+            if (expiry <= 0)
             {
                 while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_GENERIC_INVALIDEXP_IN_SET, ref dcurr, dend))
                     SendAndReset();
@@ -440,15 +453,16 @@ namespace Garnet.server
             {
                 if (!optUpperCased)
                 {
-                    nextOpt = parseState.GetArgSliceByRef(tokenIdx).Span;
+                    nextOpt = parseState.GetArgSliceByRef(tokenIdx++).Span;
                 }
 
-                if (nextOpt.SequenceEqual(CmdStrings.EX))
+                if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.EX))
                 {
-                    tokenIdx++;
-
-                    expiry = parseState.GetInt(tokenIdx);
-                    tokenIdx++;
+                    if (!parseState.TryGetInt(tokenIdx++, out expiry))
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        break;
+                    }
 
                     if (expOption != ExpirationOption.None)
                     {
@@ -463,12 +477,13 @@ namespace Garnet.server
                         break;
                     }
                 }
-                else if (nextOpt.SequenceEqual(CmdStrings.PX))
+                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PX))
                 {
-                    tokenIdx++;
-
-                    expiry = parseState.GetInt(tokenIdx);
-                    tokenIdx++;
+                    if (!parseState.TryGetInt(tokenIdx++, out expiry))
+                    {
+                        errorMessage = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        break;
+                    }
 
                     if (expOption != ExpirationOption.None)
                     {
@@ -483,10 +498,8 @@ namespace Garnet.server
                         break;
                     }
                 }
-                else if (nextOpt.SequenceEqual(CmdStrings.KEEPTTL))
+                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.KEEPTTL))
                 {
-                    tokenIdx++;
-
                     if (expOption != ExpirationOption.None)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
@@ -495,10 +508,8 @@ namespace Garnet.server
 
                     expOption = ExpirationOption.KEEPTTL;
                 }
-                else if (nextOpt.SequenceEqual(CmdStrings.NX))
+                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.NX))
                 {
-                    tokenIdx++;
-
                     if (existOptions != ExistOptions.None)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
@@ -507,10 +518,8 @@ namespace Garnet.server
 
                     existOptions = ExistOptions.NX;
                 }
-                else if (nextOpt.SequenceEqual(CmdStrings.XX))
+                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.XX))
                 {
-                    tokenIdx++;
-
                     if (existOptions != ExistOptions.None)
                     {
                         errorMessage = CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR;
@@ -519,7 +528,7 @@ namespace Garnet.server
 
                     existOptions = ExistOptions.XX;
                 }
-                else if (nextOpt.SequenceEqual(CmdStrings.GET))
+                else if (nextOpt.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GET))
                 {
                     tokenIdx++;
                     getValue = true;
@@ -881,6 +890,11 @@ namespace Garnet.server
         /// </summary>
         private bool NetworkFLUSHDB(int count)
         {
+            if (count > 2)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB), count);
+            }
+
             var unsafeTruncateLog = false;
             var async = false;
             var sync = false;
@@ -888,8 +902,9 @@ namespace Garnet.server
 
             for (var i = 0; i < count; i++)
             {
-                var nextToken = parseState.GetArgSliceByRef(i);
-                if (nextToken.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.UNSAFETRUNCATELOG))
+                var nextToken = parseState.GetArgSliceByRef(i).ReadOnlySpan;
+
+                if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.UNSAFETRUNCATELOG))
                 {
                     if (unsafeTruncateLog)
                     {
@@ -899,7 +914,7 @@ namespace Garnet.server
 
                     unsafeTruncateLog = true;
                 }
-                else if (nextToken.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ASYNC))
+                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ASYNC))
                 {
                     if (sync || async)
                     {
@@ -909,7 +924,7 @@ namespace Garnet.server
 
                     async = true;
                 }
-                else if (nextToken.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SYNC))
+                else if (nextToken.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SYNC))
                 {
                     if (sync || async)
                     {
@@ -982,7 +997,6 @@ namespace Garnet.server
         {
             //STRLEN key
             var key = parseState.GetArgSliceByRef(0);
-            var sbKey = key.SpanByte;
 
             if (NetworkMultiKeySlotVerify(readOnly: true, firstKey: 0, lastKey: 0))
                 return true;
@@ -1138,6 +1152,11 @@ namespace Garnet.server
         // HELLO [protover [AUTH username password] [SETNAME clientname]]
         private bool NetworkHELLO(int count)
         {
+            if (count > 6)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.HELLO), count);
+            }
+
             byte? tmpRespProtocolVersion = null;
             ReadOnlySpan<byte> authUsername = default, authPassword = default;
             string tmpClientName = null;
@@ -1146,7 +1165,7 @@ namespace Garnet.server
             if (count > 0)
             {
                 var tokenIdx = 0;
-                if (!parseState.TryGetInt(tokenIdx, out var localRespProtocolVersion))
+                if (!parseState.TryGetInt(tokenIdx++, out var localRespProtocolVersion))
                 {
                     while (!RespWriteUtils.WriteError(CmdStrings.RESP_ERR_PROTOCOL_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();
@@ -1155,12 +1174,10 @@ namespace Garnet.server
                 }
 
                 tmpRespProtocolVersion = (byte)localRespProtocolVersion;
-                tokenIdx++;
 
                 while (tokenIdx < count)
                 {
-                    var param = parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan;
-                    tokenIdx++;
+                    var param = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
 
                     if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.AUTH))
                     {
@@ -1170,11 +1187,9 @@ namespace Garnet.server
                                 nameof(CmdStrings.AUTH));
                             break;
                         }
-                        authUsername = parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan;
-                        tokenIdx++;
 
-                        authPassword = parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan;
-                        tokenIdx++;
+                        authUsername = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
+                        authPassword = parseState.GetArgSliceByRef(tokenIdx++).ReadOnlySpan;
                     }
                     else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SETNAME))
                     {
@@ -1185,8 +1200,7 @@ namespace Garnet.server
                             break;
                         }
 
-                        tmpClientName = parseState.GetString(tokenIdx);
-                        tokenIdx++;
+                        tmpClientName = parseState.GetString(tokenIdx++);
                     }
                     else
                     {
@@ -1342,16 +1356,16 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ASYNC), count);
             }
 
-            var param = parseState.GetArgSliceByRef(0);
-            if (param.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ON))
+            var param = parseState.GetArgSliceByRef(0).ReadOnlySpan;
+            if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ON))
             {
                 useAsync = true;
             }
-            else if (param.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.OFF))
+            else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.OFF))
             {
                 useAsync = false;
             }
-            else if (param.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BARRIER))
+            else if (param.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BARRIER))
             {
                 if (asyncCompleted < asyncStarted)
                 {
