@@ -90,6 +90,8 @@ namespace Garnet
             // Register sample transactional procedures
             server.Register.NewTransactionProc("SAMPLEUPDATETX", 8, () => new SampleUpdateTxn());
             server.Register.NewTransactionProc("SAMPLEDELETETX", 5, () => new SampleDeleteTxn());
+
+            server.Register.NewCommand("SUM", new Sum());
         }
     }
 }

@@ -13,5 +13,6 @@
   <ItemGroup>
     <Compile Include="..\..\main\GarnetServer\Extensions\SetIfPM.cs" Link="SetIfPM.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\ReadWriteTxn.cs" Link="ReadWriteTxn.cs" />
+    <Compile Include="..\..\main\GarnetServer\Extensions\Sum.cs" Link="Sum.cs" />		
   </ItemGroup>
 </Project>

@@ -123,6 +123,15 @@ namespace Garnet.server.Module
 
             return ModuleActionStatus.Success;
         }
+
+        public ModuleActionStatus RegisterCommand(string name, CustomCommandProc customCommandProc, RespCommandsInfo commandInfo = null)
+        {
+            if (string.IsNullOrEmpty(name) || customCommandProc == null)
+                return ModuleActionStatus.InvalidRegistrationInfo;
+
+            customCommandManager.Register(name, customCommandProc, commandInfo);
+            return ModuleActionStatus.Success;
+        }
     }
 
     internal sealed class ModuleRegistrar

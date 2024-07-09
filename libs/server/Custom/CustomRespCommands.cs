@@ -57,10 +57,34 @@ namespace Garnet.server
 
         }
 
+        private void TryCustomCommand(byte id, byte* ptr, byte* end, CustomCommandProc proc)
+        {
+            Debug.Assert(proc != null);
+
+            var output = new MemoryResult<byte>(null, 0);
+            var input = new ArgSlice(ptr, (int)(end - ptr));
+            if (proc.Execute(basicGarnetApi, input, ref output))
+            {
+                if (output.MemoryOwner != null)
+                    SendAndReset(output.MemoryOwner, output.Length);
+                else
+                    while (!RespWriteUtils.WriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+            }
+            else
+            {
+                if (output.MemoryOwner != null)
+                    SendAndReset(output.MemoryOwner, output.Length);
+                else
+                    while (!RespWriteUtils.WriteError($"ERR Command failed.", ref dcurr, dend))
+                        SendAndReset();
+            }
+        }
+
         /// <summary>
         /// Custom command
         /// </summary>
-        private bool TryCustomCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
+        private bool TryCustomRawStringCommand<TGarnetApi>(byte* ptr, byte* end, RespCommand cmd, long expirationTicks, CommandType type, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
             byte* keyPtr = null, inputPtr = null;

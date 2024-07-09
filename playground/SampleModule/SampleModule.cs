@@ -21,6 +21,8 @@ namespace SampleModule
             context.RegisterCommand("SampleModule.SETIFPM", new SetIfPMCustomCommand());
 
             context.RegisterTransaction("SampleModule.READWRITETX", () => new ReadWriteTxn());
+
+            context.RegisterCommand("SampleModule.SUM", new Sum());
         }
     }
 }

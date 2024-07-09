@@ -93,8 +93,8 @@ namespace CommandInfoUpdater
                 "CONFIG|REWRITE"
             }),
             new("COSCAN", RespCommand.COSCAN),
-            new("CustomCmd", RespCommand.CustomCmd),
-            new("CustomObjCmd", RespCommand.CustomCmd),
+            new("CustomCmd", RespCommand.CustomRawStringCmd),
+            new("CustomObjCmd", RespCommand.CustomRawStringCmd),
             new("CustomTxn", RespCommand.CustomTxn),
             new("DBSIZE", RespCommand.DBSIZE),
             new("DECR", RespCommand.DECR),

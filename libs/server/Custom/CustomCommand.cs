@@ -1,31 +1,42 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using Garnet.common;
+
 namespace Garnet.server
 {
+    /// <summary>
+    /// Base class for custom command
+    /// </summary>
+    public abstract class CustomCommandProc : CustomFunctions
+    {
+        /// <summary>
+        /// Custom command implementation
+        /// </summary>
+        /// <param name="garnetApi"></param>
+        public abstract bool Execute(IGarnetApi garnetApi, ArgSlice input, ref MemoryResult<byte> output);
+    }
+
     class CustomCommand
     {
-        public readonly string nameStr;
-        public readonly int NumKeys;
-        public readonly int NumParams;
-        public readonly byte[] name;
-        public readonly byte id;
-        public readonly CommandType type;
-        public readonly CustomRawStringFunctions functions;
-        public long expirationTicks;
+        private readonly string nameStr;
+        public readonly byte[] Name;
+        public readonly byte Id;
+        public readonly CustomCommandProc CustomCommandProc;
 
-        internal CustomCommand(string name, byte id, int numKeys, int numParams, CommandType type, CustomRawStringFunctions functions, long expirationTicks)
+        internal CustomCommand(string name, byte id, CustomCommandProc customCommandProc)
         {
-            nameStr = name.ToUpperInvariant();
-            this.name = System.Text.Encoding.ASCII.GetBytes(nameStr);
-            this.id = id;
-            NumKeys = numKeys;
-            NumParams = numParams;
-            this.type = type;
-            this.functions = functions;
-            this.expirationTicks = expirationTicks;
-        }
+            if (string.IsNullOrEmpty(name))
+                throw new ArgumentNullException(nameof(name));
 
-        internal RespCommand GetRespCommand() => (RespCommand)(id + CustomCommandManager.StartOffset);
+            if (customCommandProc == null)
+                throw new ArgumentNullException(nameof(customCommandProc));
+
+            nameStr = name.ToUpperInvariant();
+            Name = System.Text.Encoding.ASCII.GetBytes(nameStr);
+            Id = id;
+            CustomCommandProc = customCommandProc;
+        }
     }
 }
