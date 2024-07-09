@@ -454,7 +454,7 @@ namespace Garnet.server
                 RespCommand.GETBIT => NetworkStringGetBit(ref storageApi),
                 RespCommand.BITCOUNT => NetworkStringBitCount(parseState.count, ref storageApi),
                 RespCommand.BITPOS => NetworkStringBitPosition(parseState.count, ref storageApi),
-                RespCommand.PUBLISH => NetworkPUBLISH(ptr),
+                RespCommand.PUBLISH => NetworkPUBLISH(),
                 RespCommand.PING => parseState.count == 0 ? NetworkPING() : ProcessArrayCommands(cmd, ref storageApi),
                 RespCommand.ASKING => NetworkASKING(),
                 RespCommand.MULTI => NetworkMULTI(),
@@ -512,10 +512,10 @@ namespace Garnet.server
                 RespCommand.SCAN => NetworkSCAN(count, ref storageApi),
                 RespCommand.TYPE => NetworkTYPE(count, ref storageApi),
                 // Pub/sub commands
-                RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(count, ptr, dend),
-                RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(count, ptr, dend),
-                RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(count, ptr, dend),
-                RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(count, ptr, dend),
+                RespCommand.SUBSCRIBE => NetworkSUBSCRIBE(count),
+                RespCommand.PSUBSCRIBE => NetworkPSUBSCRIBE(count),
+                RespCommand.UNSUBSCRIBE => NetworkUNSUBSCRIBE(count),
+                RespCommand.PUNSUBSCRIBE => NetworkPUNSUBSCRIBE(count),
                 // Custom Object Commands
                 RespCommand.COSCAN => ObjectScan(count, ptr, GarnetObjectType.All, ref storageApi),
                 // Sorted Set commands
