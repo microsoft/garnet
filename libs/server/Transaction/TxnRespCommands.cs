@@ -264,8 +264,13 @@ namespace Garnet.server
 
             var firstParamSlice = parseState.GetArgSliceByRef(0);
             var start = firstParamSlice.ptr + firstParamSlice.length + 2;
-            var lastParamSlice = parseState.GetArgSliceByRef(count - 1);
-            var end = lastParamSlice.ptr + lastParamSlice.length + 2;
+
+            var end = start;
+            if (count > 1)
+            {
+                var lastParamSlice = parseState.GetArgSliceByRef(count - 1);
+                end = lastParamSlice.ptr + lastParamSlice.length + 2;
+            }
 
             CustomTransactionProcedure proc;
             int numParams;

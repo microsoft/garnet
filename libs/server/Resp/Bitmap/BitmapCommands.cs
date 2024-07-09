@@ -471,7 +471,7 @@ namespace Garnet.server
                 {
                     //Get overflow parameter
                     var overflowArg = parseState.GetArgSliceByRef(currCount++).ReadOnlySpan;
-                    
+
                     if (overflowArg.EqualsUpperCaseSpanIgnoringCase("WRAP"u8))
                         overFlowType = (byte)BitFieldOverflow.WRAP;
                     else if (overflowArg.EqualsUpperCaseSpanIgnoringCase("SAT"u8))
@@ -636,7 +636,7 @@ namespace Garnet.server
                 {
                     //Get overflow parameter
                     var overflowArg = parseState.GetArgSliceByRef(currCount++).ReadOnlySpan;
-                    
+
                     if (overflowArg.EqualsUpperCaseSpanIgnoringCase("WRAP"u8))
                         overFlowType = (byte)BitFieldOverflow.WRAP;
                     else if (overflowArg.EqualsUpperCaseSpanIgnoringCase("SAT"u8))
