@@ -133,6 +133,15 @@ namespace Garnet.test
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
             expectedResponse = 1952;
             Assert.AreEqual(expectedResponse, actualValue);
+
+            var deleted = db.KeyDelete(key);
+            Assert.IsTrue(deleted);
+
+            added = db.SortedSetAdd(key, []);
+            Assert.AreEqual(0, added);
+
+            var exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
         }
 
 
@@ -274,6 +283,55 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             Assert.IsTrue(response.IsNull);
+        }
+
+        [Test]
+        public void AddRemoveBy()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "SortedSet_AddRemoveBy";
+
+            // 10 entries are added
+            var added = db.SortedSetAdd(key, entries);
+            Assert.AreEqual(entries.Length, added);
+
+            var result = db.SortedSetRemoveRangeByValue(key, new RedisValue("e"), new RedisValue("g"));
+            Assert.AreEqual(3, result);
+
+            result = db.SortedSetRemoveRangeByScore(key, 9, 10);
+            Assert.AreEqual(2, result);
+
+            result = db.SortedSetRemoveRangeByRank(key, 0, 1);
+            Assert.AreEqual(2, result);
+
+            var members = db.SortedSetRangeByRank(key);
+            Assert.AreEqual(new[] { new RedisValue("c"), new RedisValue("d"), new RedisValue("h") }, members);
+
+            result = db.SortedSetRemoveRangeByRank(key, 0, 2);
+            Assert.AreEqual(3, result);
+
+            var exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
+
+            added = db.SortedSetAdd(key, entries);
+            Assert.AreEqual(entries.Length, added);
+
+            result = db.SortedSetRemoveRangeByScore(key, 0, 10);
+            Assert.AreEqual(10, result);
+
+            exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
+
+            added = db.SortedSetAdd(key, entries);
+            Assert.AreEqual(entries.Length, added);
+
+            result = db.SortedSetRemoveRangeByValue(key, "a", "j");
+            Assert.AreEqual(10, result);
+
+            exists = db.KeyExists(key);
+            Assert.IsFalse(exists);
         }
 
         [Test]
@@ -858,6 +916,31 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand("ZRANGE board -2 -1 WITHSCORES", 5);
             expectedResponse = "*4\r\n$3\r\ntwo\r\n$1\r\n2\r\n$5\r\nthree\r\n$1\r\n3\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board -50 -1 WITHSCORES", 7);
+            expectedResponse = "*6\r\n$3\r\none\r\n$1\r\n1\r\n$3\r\ntwo\r\n$1\r\n2\r\n$5\r\nthree\r\n$1\r\n3\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board -50 -10 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board 2 1 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board -1 -2 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
+            actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
+            Assert.AreEqual(expectedResponse, actualValue);
+
+            response = lightClientRequest.SendCommand("ZRANGE board 50 60 WITHSCORES", 1);
+            expectedResponse = "*0\r\n";
             actualValue = Encoding.ASCII.GetString(response).Substring(0, expectedResponse.Length);
             Assert.AreEqual(expectedResponse, actualValue);
 
@@ -1538,7 +1621,6 @@ namespace Garnet.test
         [Test]
         public async Task CanUseZRandMemberWithSE()
         {
-
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
@@ -1553,15 +1635,54 @@ namespace Garnet.test
             var randMember = await db.SortedSetRandomMemberAsync(key);
             Assert.True(Array.Exists(powOfTwo, element => element.Element.Equals(randMember)));
 
+            // Check ZRANDMEMBER with wrong number of arguments
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("ZRANDMEMBER", key, 3, "WITHSCORES", "bla"));
+            var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.ZRANDMEMBER));
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
+            // Check ZRANDMEMBER with non-numeric count
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZRANDMEMBER", key, "bla"));
+            expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
+            // Check ZRANDMEMBER with syntax error
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZRANDMEMBER", key, 3, "withscore"));
+            expectedMessage = Encoding.ASCII.GetString(CmdStrings.RESP_SYNTAX_ERROR);
+            Assert.IsNotNull(ex);
+            Assert.AreEqual(expectedMessage, ex.Message);
+
             //ZRANDMEMBER count
             var randMemberArray = await db.SortedSetRandomMembersAsync(key, 5);
             Assert.AreEqual(5, randMemberArray.Length);
+            Assert.AreEqual(5, randMemberArray.Distinct().Count());
+            foreach (var member in randMemberArray)
+            {
+                var match = powOfTwo.FirstOrDefault(pt => pt.Element == member);
+                Assert.IsNotNull(match);
+            }
+
             randMemberArray = await db.SortedSetRandomMembersAsync(key, 15);
             Assert.AreEqual(10, randMemberArray.Length);
+            Assert.AreEqual(10, randMemberArray.Distinct().Count());
+            foreach (var member in randMemberArray)
+            {
+                var match = powOfTwo.FirstOrDefault(pt => pt.Element == member);
+                Assert.IsNotNull(match);
+            }
+
             randMemberArray = await db.SortedSetRandomMembersAsync(key, -5);
             Assert.AreEqual(5, randMemberArray.Length);
+
             randMemberArray = await db.SortedSetRandomMembersAsync(key, -15);
             Assert.AreEqual(15, randMemberArray.Length);
+            Assert.GreaterOrEqual(10, randMemberArray.Distinct().Count());
+            foreach (var member in randMemberArray)
+            {
+                var match = powOfTwo.FirstOrDefault(pt => pt.Element == member);
+                Assert.IsNotNull(match);
+            }
 
             //ZRANDMEMBER [count [WITHSCORES]]
             var randMemberArray2 = await db.SortedSetRandomMembersWithScoresAsync(key, 2);

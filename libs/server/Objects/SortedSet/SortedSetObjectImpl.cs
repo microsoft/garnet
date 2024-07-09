@@ -5,9 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -37,7 +35,7 @@ namespace Garnet.server
             var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            int count = _input->count;
+            int count = _input->arg1;
             *_output = default;
 
             byte* startptr = input + sizeof(ObjectInputHeader);
@@ -50,19 +48,16 @@ namespace Garnet.server
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var member, ref ptr, end))
                     return;
 
-                if (c < _input->done)
-                    continue;
-
-                _output->countDone++;
-
                 if (parsed)
                 {
                     var memberArray = member.ToArray();
                     if (!sortedSetDict.TryGetValue(memberArray, out var _scoreStored))
                     {
-                        _output->opsDone++;
                         sortedSetDict.Add(memberArray, score);
-                        sortedSet.Add((score, memberArray));
+                        if (sortedSet.Add((score, memberArray)))
+                        {
+                            _output->result1++;
+                        }
 
                         this.UpdateSize(member);
                     }
@@ -75,7 +70,6 @@ namespace Garnet.server
                         Debug.Assert(success);
                     }
                 }
-                _output->bytesDone = (int)(ptr - startptr);
             }
         }
 
@@ -84,7 +78,7 @@ namespace Garnet.server
             var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            int count = _input->count;
+            int count = _input->arg1;
             *_output = default;
 
             byte* startptr = input + sizeof(ObjectInputHeader);
@@ -96,22 +90,15 @@ namespace Garnet.server
                 if (!RespReadUtils.TrySliceWithLengthHeader(out var value, ref ptr, end))
                     return;
 
-                if (c < _input->done)
-                    continue;
-
-                _output->countDone++;
-
                 var valueArray = value.ToArray();
                 if (sortedSetDict.TryGetValue(valueArray, out var _key))
                 {
-                    _output->opsDone++;
+                    _output->result1++;
                     sortedSetDict.Remove(valueArray);
                     sortedSet.Remove((_key, valueArray));
 
                     this.UpdateSize(value, false);
                 }
-
-                _output->bytesDone = (int)(ptr - startptr);
             }
         }
 
@@ -119,7 +106,7 @@ namespace Garnet.server
         {
             // Check both objects
             Debug.Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
-            ((ObjectOutputHeader*)output)->opsDone = sortedSetDict.Count;
+            ((ObjectOutputHeader*)output)->result1 = sortedSetDict.Count;
         }
 
         private void SortedSetPop(byte* input, ref SpanByteAndMemory output)
@@ -129,9 +116,9 @@ namespace Garnet.server
 
         private void SortedSetScore(byte* input, ref SpanByteAndMemory output)
         {
-            //ZSCORE key member
+            // ZSCORE key member
             var _input = (ObjectInputHeader*)input;
-            var scoreKey = new Span<byte>(input + sizeof(ObjectInputHeader), _input->count).ToArray();
+            var scoreKey = new Span<byte>(input + sizeof(ObjectInputHeader), _input->arg1).ToArray();
 
             bool isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -153,9 +140,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
-                _output.bytesDone = 0;
-                _output.countDone = 1;
-                _output.opsDone = 1;
+                _output.result1 = 1;
             }
             finally
             {
@@ -169,11 +154,11 @@ namespace Garnet.server
 
         private void SortedSetScores(byte* input, int length, ref SpanByteAndMemory output)
         {
-            //ZMSCORE key member
+            // ZMSCORE key member
             var _input = (ObjectInputHeader*)input;
             ObjectOutputHeader _output = default;
 
-            int count = _input->count;
+            int count = _input->arg1;
 
             bool isMemory = false;
             MemoryHandle ptrHandle = default;
@@ -206,9 +191,7 @@ namespace Garnet.server
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     }
                 }
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = count;
-                _output.opsDone = count;
+                _output.result1 = count;
             }
             finally
             {
@@ -229,10 +212,6 @@ namespace Garnet.server
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
             var end = input + length;
-            var count = 0;
-
-            _output->opsDone = 0;
-            _output->countDone = Int32.MinValue;
 
             // read min
             if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamSpan, ref input_currptr, end))
@@ -246,30 +225,29 @@ namespace Garnet.server
             if (!TryParseParameter(minParamSpan, out var minValue, out var minExclusive) ||
                 !TryParseParameter(maxParamSpan, out var maxValue, out var maxExclusive))
             {
-                count = int.MaxValue;
+                _output->result1 = int.MaxValue;
+                return;
             }
-            else
+
+            // get the elements within the score range and write the result
+            var count = 0;
+            if (sortedSet.Count > 0)
             {
-                // get the elements within the score range and write the result
-                if (sortedSet.Count > 0)
+                foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
                 {
-                    foreach (var item in sortedSet.GetViewBetween((minValue, null), sortedSet.Max))
-                    {
-                        if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue)) break;
-                        if (minExclusive && item.Item1 == minValue) continue;
-                        _output->opsDone++;
-                    }
+                    if (item.Item1 > maxValue || (maxExclusive && item.Item1 == maxValue)) break;
+                    if (minExclusive && item.Item1 == minValue) continue;
+                    count++;
                 }
             }
-            _output->countDone = count;
-            _output->bytesDone = (int)(input_currptr - input_startptr);
+            _output->result1 = count;
         }
 
         private void SortedSetIncrement(byte* input, int length, ref SpanByteAndMemory output)
         {
-            //ZINCRBY key increment member
+            // ZINCRBY key increment member
             var _input = (ObjectInputHeader*)input;
-            int countDone = _input->count;
+            int countDone = _input->arg1;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
@@ -283,8 +261,8 @@ namespace Garnet.server
 
             ObjectOutputHeader _output = default;
 
-            //to validate partial execution
-            _output.countDone = int.MinValue;
+            // To validate partial execution
+            _output.result1 = int.MinValue;
             try
             {
                 // read increment
@@ -321,10 +299,7 @@ namespace Garnet.server
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                     countDone = 1;
                 }
-
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = countDone;
+                _output.result1 = countDone;
             }
             finally
             {
@@ -346,7 +321,8 @@ namespace Garnet.server
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
             var _input = (ObjectInputHeader*)input;
-            int count = _input->count;
+            int count = _input->arg1;
+            int respProtocolVersion = _input->arg2;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
@@ -428,30 +404,16 @@ namespace Garnet.server
                     {
                         while (!RespWriteUtils.WriteError("ERR max or min value is not a float value."u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        countDone = _input->count;
+                        countDone = _input->arg1;
                         count = 0;
                     }
 
                     if (options.ByScore)
                     {
-
                         var scoredElements = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, options.WithScores, options.Reverse, options.ValidLimit, false, options.Limit);
 
-                        // write the size of the array reply
-                        while (!RespWriteUtils.WriteArrayLength(options.WithScores ? scoredElements.Count * 2 : scoredElements.Count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                        foreach (var (score, element) in scoredElements)
-                        {
-                            while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            if (options.WithScores)
-                            {
-                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
-                        }
-                        countDone = _input->count;
+                        WriteSortedSetResult(options.WithScores, scoredElements.Count, respProtocolVersion, scoredElements, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        countDone = _input->arg1;
                     }
                     else
                     {  // byIndex
@@ -460,7 +422,7 @@ namespace Garnet.server
                         {
                             while (!RespWriteUtils.WriteError("ERR syntax error, LIMIT is only supported in BYSCORE or BYLEX."u8, ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            countDone = _input->count;
+                            countDone = _input->arg1;
                             count = 0;
                         }
                         else if (minValue > sortedSetDict.Count - 1)
@@ -468,7 +430,7 @@ namespace Garnet.server
                             // return empty list
                             while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
                                 ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            countDone = _input->count;
+                            countDone = _input->arg1;
                             count = 0;
                         }
                         else
@@ -487,27 +449,27 @@ namespace Garnet.server
                                 maxIndex = sortedSetDict.Count - 1;
                             }
 
-                            // calculate number of elements
-                            int n = maxIndex - minIndex + 1;
-
-                            var iterator = options.Reverse ? sortedSet.Reverse() : sortedSet;
-                            iterator = iterator.Skip(minIndex).Take(n);
-
-                            // write the size of the array reply
-                            while (!RespWriteUtils.WriteArrayLength(options.WithScores ? n * 2 : n, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                            foreach (var (score, element) in iterator)
+                            // No elements to return if both indexes fall outside the range or min is higher than max
+                            if ((minIndex < 0 && maxIndex < 0) || (minIndex > maxIndex))
                             {
-                                while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
+                                while (!RespWriteUtils.WriteEmptyArray(ref curr, end))
                                     ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                if (options.WithScores)
-                                {
-                                    while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
-                                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                                }
+                                countDone = _input->arg1;
+                                count = 0;
                             }
-                            countDone = _input->count;
+                            else
+                            {
+                                // Clamp minIndex to 0, if it is beyond the number of elements
+                                minIndex = Math.Max(0, minIndex);
+
+                                // calculate number of elements
+                                int n = maxIndex - minIndex + 1;
+                                var iterator = options.Reverse ? sortedSet.Reverse() : sortedSet;
+                                iterator = iterator.Skip(minIndex).Take(n);
+
+                                WriteSortedSetResult(options.WithScores, n, respProtocolVersion, iterator, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                                countDone = _input->arg1;
+                            }
                         }
                     }
                 }
@@ -521,32 +483,16 @@ namespace Garnet.server
                     {
                         while (!RespWriteUtils.WriteError("ERR max or min value not valid string range."u8, ref curr, end))
                             ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                        countDone = _input->count;
+                        countDone = _input->arg1;
                         count = 0;
                     }
                     else
                     {
-                        //write the size of the array reply
-                        while (!RespWriteUtils.WriteArrayLength(options.WithScores ? elementsInLex.Count * 2 : elementsInLex.Count, ref curr, end))
-                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-
-                        foreach (var (score, element) in elementsInLex)
-                        {
-                            while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
-                                ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            if (options.WithScores)
-                            {
-                                while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
-                                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
-                            }
-                        }
-                        countDone = _input->count;
+                        WriteSortedSetResult(options.WithScores, elementsInLex.Count, respProtocolVersion, elementsInLex, ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                        countDone = _input->arg1;
                     }
                 }
-
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = countDone;
+                _output.result1 = countDone;
             }
             finally
             {
@@ -555,6 +501,44 @@ namespace Garnet.server
 
                 if (isMemory) ptrHandle.Dispose();
                 output.Length = (int)(curr - ptr);
+            }
+        }
+
+        void WriteSortedSetResult(bool withScores, int count, int respProtocolVersion, IEnumerable<(double, byte[])> iterator, ref SpanByteAndMemory output, ref bool isMemory, ref byte* ptr, ref MemoryHandle ptrHandle, ref byte* curr, ref byte* end)
+        {
+            if (withScores && respProtocolVersion >= 3)
+            {
+                // write the size of the array reply
+                while (!RespWriteUtils.WriteArrayLength(count, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var (score, element) in iterator)
+                {
+                    while (!RespWriteUtils.WriteArrayLength(2, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                    while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    while (!RespWriteUtils.TryWriteDoubleNumeric(score, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                }
+            }
+            else
+            {
+                // write the size of the array reply
+                while (!RespWriteUtils.WriteArrayLength(withScores ? count * 2 : count, ref curr, end))
+                    ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+
+                foreach (var (score, element) in iterator)
+                {
+                    while (!RespWriteUtils.WriteBulkString(element, ref curr, end))
+                        ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    if (withScores)
+                    {
+                        while (!RespWriteUtils.TryWriteDoubleBulkString(score, ref curr, end))
+                            ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
+                    }
+                }
             }
         }
 
@@ -580,15 +564,15 @@ namespace Garnet.server
 
         private void SortedSetRemoveRangeByRank(byte* input, int length, byte* output)
         {
-            //ZREMRANGEBYRANK key start stop
+            // ZREMRANGEBYRANK key start stop
             var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            int count = _input->count;
+            int count = _input->arg1;
             *_output = default;
 
-            //using minValue for partial execution detection
-            _output->countDone = int.MinValue;
+            // Using minValue for partial execution detection
+            _output->result1 = int.MinValue;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
@@ -599,8 +583,7 @@ namespace Garnet.server
                 return;
             }
 
-            _output->bytesDone = (int)(input_currptr - input_startptr);
-            _output->countDone = int.MaxValue;
+            _output->result1 = int.MaxValue;
 
             if (!NumUtils.TryParse(startBytes, out int start) ||
                 !NumUtils.TryParse(stopBytes, out int stop))
@@ -608,15 +591,14 @@ namespace Garnet.server
                 return;
             }
 
-            _output->countDone = 0;
+            _output->result1 = 0;
 
             if (start > sortedSetDict.Count - 1)
             {
-                _output->opsDone = 0;
                 return;
             }
 
-            //shift from the end of the set
+            // Shift from the end of the set
             if (start < 0)
             {
                 start = sortedSetDict.Count + start;
@@ -630,10 +612,10 @@ namespace Garnet.server
                 stop = sortedSetDict.Count - 1;
             }
 
-            // calculate number of elements
-            _output->opsDone = stop - start + 1;
+            // Calculate number of elements
+            _output->result1 = stop - start + 1;
 
-            //using to list to avoid modified enumerator exception
+            // Using to list to avoid modified enumerator exception
             foreach (var item in sortedSet.Skip(start).Take(stop - start + 1).ToList())
             {
                 if (sortedSetDict.TryGetValue(item.Item2, out var _key))
@@ -648,18 +630,18 @@ namespace Garnet.server
 
         private void SortedSetRemoveRangeByScore(byte* input, int length, byte* output)
         {
-            //ZREMRANGEBYSCORE key min max
+            // ZREMRANGEBYSCORE key min max
             var _input = (ObjectInputHeader*)input;
             var _output = (ObjectOutputHeader*)output;
 
-            int count = _input->count;
+            int count = _input->arg1;
             *_output = default;
 
             byte* input_startptr = input + sizeof(ObjectInputHeader);
             byte* input_currptr = input_startptr;
 
             // command could be partially executed
-            _output->countDone = int.MinValue;
+            _output->result1 = int.MinValue;
 
             // read min and max
             if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamBytes, ref input_currptr, input + length) ||
@@ -671,15 +653,13 @@ namespace Garnet.server
             if (!TryParseParameter(minParamBytes, out var minValue, out var minExclusive) ||
                 !TryParseParameter(maxParamBytes, out var maxValue, out var maxExclusive))
             {
-                _output->countDone = int.MaxValue;
+                _output->result1 = int.MaxValue;
             }
             else
             {
                 var rem = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, false, false, false, true);
-                _output->opsDone = rem.Count;
-                _output->countDone = 0;
+                _output->result1 = rem.Count;
             }
-            _output->bytesDone = (int)(input_currptr - input_startptr);
         }
 
         private void SortedSetCountByLex(byte* input, int length, byte* output)
@@ -692,20 +672,21 @@ namespace Garnet.server
             PopMinOrMaxCount(input, ref output, SortedSetOperation.ZPOPMIN);
         }
 
-        private void SortedSetRandomMember(byte* input, int length, ref SpanByteAndMemory output)
+        private void SortedSetRandomMember(byte* input, ref SpanByteAndMemory output)
         {
             var _input = (ObjectInputHeader*)input;
 
-            int count = _input->count;
-
-            bool withScores = _input->done == 1;
+            var count = _input->arg1 >> 2;
+            var withScores = (_input->arg1 & 1) == 1;
+            var includedCount = ((_input->arg1 >> 1) & 1) == 1;
+            var seed = _input->arg2;
 
             if (count > 0 && count > sortedSet.Count)
                 count = sortedSet.Count;
 
-            bool isMemory = false;
+            var isMemory = false;
             MemoryHandle ptrHandle = default;
-            byte* ptr = output.SpanByte.ToPointer();
+            var ptr = output.SpanByte.ToPointer();
 
             var curr = ptr;
             var end = curr + output.Length;
@@ -713,30 +694,15 @@ namespace Garnet.server
             ObjectOutputHeader _output = default;
             try
             {
+                // The count parameter can have a negative value, but the array length can't
                 var arrayLength = Math.Abs(withScores ? count * 2 : count);
-                if (arrayLength > 1)
+                if (arrayLength > 1 || (arrayLength == 1 && includedCount))
                 {
-                    // The count parameter can have a negative value, but the array length can't
                     while (!RespWriteUtils.WriteArrayLength(arrayLength, ref curr, end))
                         ObjectUtils.ReallocateOutput(ref output, ref isMemory, ref ptr, ref ptrHandle, ref curr, ref end);
                 }
 
-                int[] indexes = default;
-
-                if (count > 0)
-                {
-                    // The order of fields in the reply is not truly random
-                    indexes = new HashSet<int>(Enumerable.Range(0, sortedSetDict.Count).OrderBy(x => Guid.NewGuid()).Take(count)).ToArray();
-                }
-                else
-                {
-                    // Repeating fields are possible.
-                    // Exactly count fields, or an empty array is returned
-                    // The order of fields in the reply is truly random.
-                    indexes = new int[Math.Abs(count)];
-                    for (int i = 0; i < indexes.Length; i++)
-                        indexes[i] = RandomNumberGenerator.GetInt32(0, sortedSetDict.Count);
-                }
+                var indexes = RandomUtils.PickKRandomIndexes(sortedSetDict.Count, Math.Abs(count), seed, count > 0);
 
                 foreach (var item in indexes)
                 {
@@ -752,10 +718,8 @@ namespace Garnet.server
                     }
                 }
 
-                // Write bytes parsed from input and count done, into output footer
-                _output.bytesDone = 0;
-                _output.countDone = count;
-                _output.opsDone = count;
+                // Write count done into output footer
+                _output.result1 = count;
             }
             finally
             {
@@ -781,10 +745,8 @@ namespace Garnet.server
             byte* input_currptr = input_startptr;
             var end = input + length;
 
-            _output->opsDone = 0;
-
-            //using minValue for partial execution detection
-            _output->countDone = int.MinValue;
+            // Using minValue for partial execution detection
+            _output->result1 = int.MinValue;
 
             // read min and max
             if (!RespReadUtils.TrySliceWithLengthHeader(out var minParamBytes, ref input_currptr, end) ||
@@ -793,11 +755,11 @@ namespace Garnet.server
                 return;
             }
 
-            var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, op != SortedSetOperation.ZLEXCOUNT, out int count);
+            var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, op != SortedSetOperation.ZLEXCOUNT, out int errorCode);
 
-            _output->countDone = count;
-            _output->opsDone = rem.Count;
-            _output->bytesDone = (int)(input_currptr - input_startptr);
+            _output->result1 = errorCode;
+            if (errorCode == 0)
+                _output->result1 = rem.Count;
         }
 
         /// <summary>
@@ -829,7 +791,7 @@ namespace Garnet.server
                 if (!RespReadUtils.ReadByteArrayWithLengthHeader(out var member, ref input_currptr, input + length))
                     return;
 
-                if (_input->count == 3) // ZRANK key member WITHSCORE
+                if (_input->arg1 == 3) // ZRANK key member WITHSCORE
                 {
                     if (!RespReadUtils.TrySliceWithLengthHeader(out var token, ref input_currptr, input + length))
                         return;
@@ -885,9 +847,7 @@ namespace Garnet.server
                     }
                 }
 
-                _output.bytesDone = (int)(input_currptr - input_startptr);
-                _output.countDone = _input->count;
-                _output.opsDone = 1;
+                _output.result1 = _input->arg1;
             }
             finally
             {
@@ -1042,8 +1002,7 @@ namespace Garnet.server
         private void PopMinOrMaxCount(byte* input, ref SpanByteAndMemory output, SortedSetOperation op)
         {
             var _input = (ObjectInputHeader*)input;
-            int count = _input->count;
-            int prevDone = _input->done; // how many were previously done
+            int count = _input->arg1;
             int countDone = 0;
 
             int totalLen = 0;
@@ -1069,12 +1028,6 @@ namespace Garnet.server
 
                 while (count > 0)
                 {
-                    if (countDone < prevDone) // skip processing previously done entries
-                    {
-                        countDone++;
-                        count--;
-                        continue;
-                    }
                     var max = op == SortedSetOperation.ZPOPMAX ? sortedSet.Max : sortedSet.Min;
                     var success = sortedSet.Remove(max);
                     success = sortedSetDict.Remove(max.Element);
@@ -1090,12 +1043,7 @@ namespace Garnet.server
                     countDone++;
                     count--;
                 }
-
-                // Write output
-                _output.bytesDone = 0; // No reads done
-                _output.countDone = countDone;
-                // how many can be done based on the lenght of the SS
-                _output.opsDone = inputCount;
+                _output.result1 = countDone;
             }
             finally
             {

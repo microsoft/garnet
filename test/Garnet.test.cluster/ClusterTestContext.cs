@@ -104,12 +104,13 @@ namespace Garnet.test.cluster
             bool useAcl = false,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential(),
-            AadAuthenticationSettings authenticationSettings = null)
+            AadAuthenticationSettings authenticationSettings = null,
+            bool disablePubSub = true)
         {
             endpoints = TestUtils.GetEndPoints(shards, 7000);
             nodes = TestUtils.CreateGarnetCluster(
                 TestFolder,
-                disablePubSub: true,
+                disablePubSub: disablePubSub,
                 disableObjects: disableObjects,
                 endpoints: endpoints,
                 enableAOF: enableAOF,
@@ -415,7 +416,7 @@ namespace Garnet.test.cluster
                 }
 
                 var retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out var _, out var _, out var _, out var responseState, logger: logger);
-                while (retVal == null || (value != int.Parse(retVal)))
+                while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out var _, out var _, out var _, out responseState, logger: logger);
                     ClusterTestUtils.BackOff();
@@ -464,7 +465,7 @@ namespace Garnet.test.cluster
                 clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
 
                 var retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out int _, out string _, out int _, out ResponseState responseState, logger: logger);
-                while (retVal == null || (value != int.Parse(retVal)))
+                while (responseState != ResponseState.OK || retVal == null || (value != int.Parse(retVal)))
                 {
                     retVal = clusterTestUtils.GetKey(replicaIndex, keyBytes, out int _, out string _, out int _, out responseState, logger: logger);
                     ClusterTestUtils.BackOff();

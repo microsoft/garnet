@@ -35,7 +35,6 @@ namespace Tsavorite.core
         private bool keyHasObjects, valueHasObjects;
 
         public GenericAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions)
-//        public GenericAllocatorImpl(LogSettings settings, TStoreFunctions storeFunctions, Action<long, long> evictCallback = null, LightEpoch epoch = null, Action<CommitInfo> flushCallback = null, ILogger logger = null)
             : base(settings.logSettings, storeFunctions, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
             overflowPagePool = new OverflowPool<AllocatorRecord<Key, Value>[]>(4);
@@ -72,8 +71,10 @@ namespace Tsavorite.core
             base.Reset();
             objectLogDevice.Reset();
             for (int index = 0; index < BufferSize; index++)
-                ReturnPage(index);
-
+            {
+                if (IsAllocated(index))
+                    FreePage(index);
+            }
             Array.Clear(segmentOffsets, 0, segmentOffsets.Length);
             Initialize();
         }

@@ -171,7 +171,6 @@ namespace Garnet.server
         private bool NetworkPSUBSCRIBE(int count, byte* ptr, byte* dend)
         {
             // PSUBSCRIBE channel1 channel2.. ==> [$10\r\nPSUBSCRIBE\r\n$]8\r\nchannel1\r\n$8\r\nchannel2\r\n => PSubscribe to channel1 and channel2
-            Debug.Assert(subscribeBroker != null);
 
             bool disabledBroker = subscribeBroker == null;
             for (int c = 0; c < count; c++)
@@ -218,7 +217,6 @@ namespace Garnet.server
         private bool NetworkUNSUBSCRIBE(int count, byte* ptr, byte* dend)
         {
             // UNSUBSCRIBE channel1 channel2.. ==> [$11\r\nUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
-            Debug.Assert(subscribeBroker != null);
 
             if (count == 0)
             {
@@ -309,7 +307,6 @@ namespace Garnet.server
         private bool NetworkPUNSUBSCRIBE(int count, byte* ptr, byte* dend)
         {
             // PUNSUBSCRIBE channel1 channel2.. ==> [$11\r\nPUNSUBSCRIBE\r\n]$8\r\nchannel1\r\n$8\r\nchannel2\r\n => Subscribe to channel1 and channel2
-            Debug.Assert(subscribeBroker != null);
 
             if (count == 0)
             {

@@ -115,8 +115,8 @@ namespace Garnet.server
             fixed (byte* _input = input.AsSpan())
             fixed (byte* _output = output.SpanByte.AsSpan())
             {
-                var header = (RespInputHeader*)_input;
-                if (header->type != GarnetObjectType.Hash)
+                var header = (ObjectInputHeader*)_input;
+                if (header->header.type != GarnetObjectType.Hash)
                 {
                     //Indicates when there is an incorrect type 
                     output.Length = 0;
@@ -125,7 +125,7 @@ namespace Garnet.server
                 }
 
                 var previousSize = this.Size;
-                switch (header->HashOp)
+                switch (header->header.HashOp)
                 {
                     case HashOperation.HSET:
                         HashSet(_input, input.Length, _output);
@@ -137,10 +137,10 @@ namespace Garnet.server
                         HashGet(_input, input.Length, ref output);
                         break;
                     case HashOperation.HMGET:
-                        HashGet(_input, input.Length, ref output);
+                        HashMultipleGet(_input, input.Length, ref output);
                         break;
                     case HashOperation.HGETALL:
-                        HashGet(_input, input.Length, ref output);
+                        HashGetAll(respProtocolVersion: header->arg1, ref output);
                         break;
                     case HashOperation.HDEL:
                         HashDelete(_input, input.Length, _output);
@@ -170,7 +170,7 @@ namespace Garnet.server
                         HashSetWhenNotExists(_input, input.Length, _output);
                         break;
                     case HashOperation.HRANDFIELD:
-                        HashRandomField(_input, input.Length, ref output);
+                        HashRandomField(_input, ref output);
                         break;
                     case HashOperation.HSCAN:
                         if (ObjectUtils.ReadScanInput(_input, input.Length, ref output, out var cursorInput, out var pattern, out var patternLength, out int limitCount, out int bytesDone))

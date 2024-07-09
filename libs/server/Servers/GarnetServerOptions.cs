@@ -120,9 +120,19 @@ namespace Garnet.server
         public int CompactionFrequencySecs = 0;
 
         /// <summary>
-        /// Hybrid log compaction type. Shift = shift begin address without compaction (data loss), Scan = scan old pages and move live records to tail (no data loss - take a checkpoint to actually delete the older data files from disk).
+        /// Hybrid log compaction type.
+        ///  None - no compaction.
+        ///  Shift - shift begin address without compaction (data loss).
+        ///  Scan - scan old pages and move live records to tail (no data loss).
+        ///  Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss).
         /// </summary>
-        public LogCompactionType CompactionType = LogCompactionType.Shift;
+        public LogCompactionType CompactionType = LogCompactionType.None;
+
+        /// <summary>
+        /// Forcefully delete the inactive segments immediately after the compaction strategy (type) is applied.
+        /// If false, take a checkpoint to actually delete the older data files from disk.
+        /// </summary>
+        public bool CompactionForceDelete = false;
 
         /// <summary>
         /// Number of log segments created on disk before compaction triggers.

@@ -368,6 +368,13 @@ namespace Garnet.test
         }
 
         [Test]
+        public void TlsPlainTextCommandLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest(useTLS: false, countResponseType: CountResponseType.Bytes);
+            Assert.Throws<GarnetException>(() => lightClientRequest.Execute("PING", 1));
+        }
+
+        [Test]
         [TestCase(10)]
         [TestCase(50)]
         [TestCase(100)]

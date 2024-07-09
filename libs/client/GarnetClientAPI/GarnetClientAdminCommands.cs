@@ -22,7 +22,7 @@ namespace Garnet.client
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         public async Task<bool> Save(CancellationToken cancellationToken = default) =>
-            await ExecuteForStringResultWithCancellationAsync(SAVE, default(string), token: cancellationToken) == "OK";
+            await ExecuteForStringResultWithCancellationAsync(SAVE, default(string), token: cancellationToken).ConfigureAwait(false) == "OK";
 
         /// <summary>
         /// Take a checkpoint of the Garnet instance.
@@ -39,7 +39,7 @@ namespace Garnet.client
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         public async Task<string> Info(InfoMetricsType infoSection = default, CancellationToken cancellationToken = default) =>
-            await ExecuteForStringResultWithCancellationAsync(INFO, InfoCommandUtils.GetRespFormattedInfoSection(infoSection), token: cancellationToken);
+            await ExecuteForStringResultWithCancellationAsync(INFO, InfoCommandUtils.GetRespFormattedInfoSection(infoSection), token: cancellationToken).ConfigureAwait(false);
 
         /// <summary>
         /// Make the receiving node a replica of the node at the given endpoint
@@ -55,7 +55,7 @@ namespace Garnet.client
                 Encoding.ASCII.GetBytes(address),
                 Encoding.ASCII.GetBytes(port.ToString())
             };
-            return await ExecuteForStringResultWithCancellationAsync(REPLICAOF, args, cancellationToken);
+            return await ExecuteForStringResultWithCancellationAsync(REPLICAOF, args, cancellationToken).ConfigureAwait(false);
         }
     }
 }

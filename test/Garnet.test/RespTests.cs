@@ -3,17 +3,14 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
-using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using StackExchange.Redis;
-using AggregateException = System.AggregateException;
 
 namespace Garnet.test
 {
@@ -461,6 +458,49 @@ namespace Garnet.test
             nRetVal = Convert.ToInt64(db.StringGet(strKey));
             Assert.AreEqual(n, nRetVal);
             Assert.AreEqual(1, nRetVal);
+        }
+
+        [Test]
+        public void IncrDecrChangeDigitsWithExpiry()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Key storing integer
+            var strKey = "key1";
+            db.StringSet(strKey, 9, TimeSpan.FromSeconds(1000));
+
+            long n = db.StringIncrement(strKey);
+            long nRetVal = Convert.ToInt64(db.StringGet(strKey));
+            Assert.AreEqual(n, nRetVal);
+            Assert.AreEqual(10, nRetVal);
+
+            n = db.StringDecrement(strKey);
+            nRetVal = Convert.ToInt64(db.StringGet(strKey));
+            Assert.AreEqual(n, nRetVal);
+            Assert.AreEqual(9, nRetVal);
+
+            db.StringSet(strKey, 99, TimeSpan.FromSeconds(1000));
+            n = db.StringIncrement(strKey);
+            nRetVal = Convert.ToInt64(db.StringGet(strKey));
+            Assert.AreEqual(n, nRetVal);
+            Assert.AreEqual(100, nRetVal);
+
+            n = db.StringDecrement(strKey);
+            nRetVal = Convert.ToInt64(db.StringGet(strKey));
+            Assert.AreEqual(n, nRetVal);
+            Assert.AreEqual(99, nRetVal);
+
+            db.StringSet(strKey, 999, TimeSpan.FromSeconds(1000));
+            n = db.StringIncrement(strKey);
+            nRetVal = Convert.ToInt64(db.StringGet(strKey));
+            Assert.AreEqual(n, nRetVal);
+            Assert.AreEqual(1000, nRetVal);
+
+            n = db.StringDecrement(strKey);
+            nRetVal = Convert.ToInt64(db.StringGet(strKey));
+            Assert.AreEqual(n, nRetVal);
+            Assert.AreEqual(999, nRetVal);
         }
 
         [Test]

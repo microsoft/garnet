@@ -190,6 +190,11 @@ namespace Garnet.client
                     if (!ReadStringWithLengthHeader(out result[i], ref ptr, end))
                         return false;
                 }
+                else if (*ptr == '+')
+                {
+                    if (!ReadSimpleString(out result[i], ref ptr, end))
+                        return false;
+                }
                 else
                 {
                     if (!ReadIntegerAsString(out result[i], ref ptr, end))
@@ -226,6 +231,11 @@ namespace Garnet.client
                 if (*ptr == '$')
                 {
                     if (!ReadStringWithLengthHeader(pool, out result[i], ref ptr, end))
+                        return false;
+                }
+                else if (*ptr == '+')
+                {
+                    if (!ReadSimpleString(pool, out result[i], ref ptr, end))
                         return false;
                 }
                 else

@@ -21,7 +21,11 @@ namespace Garnet.cluster
         CheckpointEntry cEntry;
 
         /// <summary>
-        /// Try to initiate replication
+        /// Try to initiate replication while instance is up and running.
+        /// NOTE: Caller should be aware of the following
+        ///     It is assumed that when this method is called we are under epoch protection
+        ///     This method will try to acquire the replicate and recovery locks first.
+        ///     This method will try to make this instance a replica of the provided node-id by updating the local config after acquiring all the locks.
         /// </summary>
         /// <param name="session">ClusterSession for this connection.</param>
         /// <param name="nodeid">Node-id to replicate.</param>
@@ -32,6 +36,7 @@ namespace Garnet.cluster
         public bool TryBeginReplicate(ClusterSession session, string nodeid, bool background, bool force, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
+            // Ensure two replicate commands do not execute at the same time.
             if (!replicateLock.TryWriteLock())
             {
                 errorMessage = "ERR Replicate already in progress"u8;
@@ -40,30 +45,39 @@ namespace Garnet.cluster
 
             try
             {
-                // TODO: ensure two replicate commands do not execute at once
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeid);
 
-                // TryAddReplica will set the recovering boolean
-                if (clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, out errorMessage))
-                {
-                    // Wait for threads to agree
-                    session.UnsafeWaitForConfigTransition();
+                if (!clusterProvider.clusterManager.TryAddReplica(nodeid, force: force, out errorMessage, logger: logger))
+                    return false;
 
-                    // Resetting here to decide later when to sync from
-                    clusterProvider.replicationManager.ReplicationOffset = 0;
-                    return clusterProvider.replicationManager.TryReplicateFromPrimary(out errorMessage, background);
-                }
+                // Wait for threads to agree
+                session.UnsafeBumpAndWaitForEpochTransition();
+
+                // Resetting here to decide later when to sync from
+                clusterProvider.replicationManager.ReplicationOffset = 0;
+                return clusterProvider.replicationManager.TryReplicateFromPrimary(out errorMessage, background);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, $"{nameof(TryBeginReplicate)}");
+                SuspendRecovery();
+                return false;
             }
             finally
             {
                 replicateLock.WriteUnlock();
             }
-            return true;
         }
 
+
         /// <summary>
-        /// Try to attach to primary for replication, recover checkpoint and initiate task for aof streaming
+        /// Try to initiate the attach to primary sequence to recover checkpoint, replay AOF and start AOF stream.
+        /// NOTE:
+        ///     This method may be called at runtime or at startup so it does not assume that we are running under epoch protection.
+        ///     WARNING: Caller is responsible for acquiring the recoveryLock
         /// </summary>
+        /// <param name="errorMessage"></param>
+        /// <param name="background"></param>
         /// <returns></returns>
         public bool TryReplicateFromPrimary(out ReadOnlySpan<byte> errorMessage, bool background = false)
         {
@@ -89,7 +103,7 @@ namespace Garnet.cluster
             // Reset the database in preparation for connecting to primary
             storeWrapper.Reset();
 
-            //Initiate remote checkpoint retrieval
+            // Initiate remote checkpoint retrieval
             if (background)
             {
                 logger?.LogInformation("Initiating background checkpoint retrieval");
@@ -115,11 +129,11 @@ namespace Garnet.cluster
         /// <returns>A string representing the error message if error occurred; otherwise <see langword="null"/>.</returns>
         private async Task<string> InitiateReplicaSync()
         {
-            //1. Send request to primary
-            //      primary will initiate background task and start sending checkpoint data
+            // Send request to primary
+            //      Primary will initiate background task and start sending checkpoint data
             //
-            //2. replica waits for retrieval to complete before moving forward to recovery
-            //      retrieval completion coordinated by remoteCheckpointRetrievalCompleted
+            // Replica waits for retrieval to complete before moving forward to recovery
+            //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
             var current = clusterProvider.clusterManager.CurrentConfig;
             var (address, port) = current.GetLocalNodePrimaryAddress();
             GarnetClientSession gcs = null;
@@ -143,12 +157,12 @@ namespace Garnet.cluster
                 storeWrapper.RecoverAOF();
                 logger?.LogInformation("InitiateReplicaSync: AOF BeginAddress:{beginAddress} AOF TailAddress:{tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
 
-                //1. Primary will signal checkpoint send complete
-                //2. Replica will receive signal and recover checkpoint, initialize AOF
-                //3. Replica signals recovery complete (here cluster replicate will return to caller)
-                //4. Replica responds with aofStartAddress sync
-                //5. Primary will initiate aof sync task
-                //6. Primary releases checkpoint
+                // 1. Primary will signal checkpoint send complete
+                // 2. Replica will receive signal and recover checkpoint, initialize AOF
+                // 3. Replica signals recovery complete (here cluster replicate will return to caller)
+                // 4. Replica responds with aofStartAddress sync
+                // 5. Primary will initiate aof sync task
+                // 6. Primary releases checkpoint
                 var resp = await gcs.ExecuteReplicaSync(
                     nodeId,
                     PrimaryReplId,
@@ -277,7 +291,7 @@ namespace Garnet.cluster
         /// <param name="recoverMainStoreFromToken"></param>
         /// <param name="recoverObjectStoreFromToken"></param>
         /// <param name="replayAOF"></param>
-        /// <param name="primary_replid"></param>
+        /// <param name="primaryReplicationId"></param>
         /// <param name="remoteCheckpoint"></param>
         /// <param name="beginAddress"></param>
         /// <param name="recoveredReplicationOffset"></param>
@@ -286,51 +300,62 @@ namespace Garnet.cluster
             bool recoverMainStoreFromToken,
             bool recoverObjectStoreFromToken,
             bool replayAOF,
-            string primary_replid,
+            string primaryReplicationId,
             CheckpointEntry remoteCheckpoint,
             long beginAddress,
             long recoveredReplicationOffset)
         {
-            UpdateLastPrimarySyncTime();
-            storeWrapper.RecoverCheckpoint(recoverMainStoreFromToken, recoverObjectStoreFromToken,
-                remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
-
-            if (replayAOF)
+            try
             {
-                logger?.LogInformation("ReplicaRecover: replay local AOF from {beginAddress} until {recoveredReplicationOffset}", beginAddress, recoveredReplicationOffset);
-                recoveredReplicationOffset = storeWrapper.ReplayAOF(recoveredReplicationOffset);
+                UpdateLastPrimarySyncTime();
+
+                logger?.LogInformation("Initiating Checkpoint Recovery at replica {sIndexToken} {sHlogToken} {oIndexToken} {oHlogToken}", remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
+                storeWrapper.RecoverCheckpoint(recoverMainStoreFromToken, recoverObjectStoreFromToken,
+                    remoteCheckpoint.storeIndexToken, remoteCheckpoint.storeHlogToken, remoteCheckpoint.objectStoreIndexToken, remoteCheckpoint.objectStoreHlogToken);
+
+                if (replayAOF)
+                {
+                    logger?.LogInformation("ReplicaRecover: replay local AOF from {beginAddress} until {recoveredReplicationOffset}", beginAddress, recoveredReplicationOffset);
+                    recoveredReplicationOffset = storeWrapper.ReplayAOF(recoveredReplicationOffset);
+                }
+
+                logger?.LogInformation("Initializing AOF");
+                storeWrapper.appendOnlyFile.Initialize(beginAddress, recoveredReplicationOffset);
+
+                // Finally, advertise that we are caught up to the replication offset
+                ReplicationOffset = recoveredReplicationOffset;
+                logger?.LogInformation("ReplicaRecover: ReplicaReplicationOffset = {ReplicaReplicationOffset}", ReplicationOffset);
+
+                // If checkpoint for main store was send add its token here in preparation for purge later on
+                if (recoverMainStoreFromToken)
+                {
+                    cEntry.storeIndexToken = remoteCheckpoint.storeIndexToken;
+                    cEntry.storeHlogToken = remoteCheckpoint.storeHlogToken;
+                }
+
+                // If checkpoint for object store was send add its token here in preparation for purge later on
+                if (recoverObjectStoreFromToken)
+                {
+                    cEntry.objectStoreIndexToken = remoteCheckpoint.objectStoreIndexToken;
+                    cEntry.objectStoreHlogToken = remoteCheckpoint.objectStoreHlogToken;
+                }
+                checkpointStore.PurgeAllCheckpointsExceptEntry(cEntry);
+
+                // Initialize in-memory checkpoint store and delete outdated checkpoint entries
+                logger?.LogInformation("Initializing CheckpointStore");
+                InitializeCheckpointStore();
+
+                // Update replicationId to mark any subsequent checkpoints as part of this history
+                logger?.LogInformation("Updating ReplicationId");
+                TryUpdateMyPrimaryReplId(primaryReplicationId);
+
+                return ReplicationOffset;
             }
-
-            storeWrapper.appendOnlyFile.Initialize(beginAddress, recoveredReplicationOffset);
-
-            // Done with recovery at this point
-            SuspendRecovery();
-
-            // Finally, advertise that we are caught up to the replication offset
-            ReplicationOffset = recoveredReplicationOffset;
-            logger?.LogInformation("ReplicaRecover: ReplicaReplicationOffset = {ReplicaReplicationOffset}", ReplicationOffset);
-
-            // If checkpoint for main store was send add its token here in preparation for purge later on
-            if (recoverMainStoreFromToken)
+            finally
             {
-                cEntry.storeIndexToken = remoteCheckpoint.storeIndexToken;
-                cEntry.storeHlogToken = remoteCheckpoint.storeHlogToken;
+                // Done with recovery at this point
+                SuspendRecovery();
             }
-
-            // If checkpoint for object store was send add its token here in preparation for purge later on
-            if (recoverObjectStoreFromToken)
-            {
-                cEntry.objectStoreIndexToken = remoteCheckpoint.objectStoreIndexToken;
-                cEntry.objectStoreHlogToken = remoteCheckpoint.objectStoreHlogToken;
-            }
-            checkpointStore.PurgeAllCheckpointsExceptEntry(cEntry);
-
-            // Initialize in-memory checkpoint store and delete outdated checkpoint entries
-            InitializeCheckpointStore();
-
-            TryUpdateMyPrimaryReplId(primary_replid);
-
-            return ReplicationOffset;
         }
     }
 }

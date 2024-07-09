@@ -133,6 +133,7 @@ namespace Garnet.networking
 
                     // Set readerStatus to indicate we are waiting for the semaphore
                     garnetNetworkHandler.readerStatus = TlsReaderStatus.Waiting;
+                    if (garnetNetworkHandler.expectingData.CurrentCount == 0) garnetNetworkHandler.expectingData.Release();
                     await garnetNetworkHandler.receivedData.WaitAsync(cancellationToken).ConfigureAwait(false);
                     // Releaser of semaphore should have updated readerStatus
                     Debug.Assert(garnetNetworkHandler.readerStatus == TlsReaderStatus.Active || garnetNetworkHandler.disposeCount > 0);

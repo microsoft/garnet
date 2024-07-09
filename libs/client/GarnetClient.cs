@@ -186,7 +186,7 @@ namespace Garnet.client
         {
             socket = GetSendSocket(timeoutMilliseconds);
             networkWriter = new NetworkWriter(this, socket, 1 << 17, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, logger);
-            networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).GetAwaiter().GetResult();
+            networkHandler.StartAsync(sslOptions, $"{address}:{port}", token).ConfigureAwait(false).GetAwaiter().GetResult();
             networkSender = networkHandler.GetNetworkSender();
 
             if (timeoutMilliseconds > 0)
@@ -198,11 +198,11 @@ namespace Garnet.client
             {
                 if (authUsername != null)
                 {
-                    ExecuteForStringResultAsync(AUTH, authUsername, authPassword == null ? "" : authPassword).GetAwaiter().GetResult();
+                    ExecuteForStringResultAsync(AUTH, authUsername, authPassword == null ? "" : authPassword).ConfigureAwait(false).GetAwaiter().GetResult();
                 }
                 else if (authPassword != null)
                 {
-                    ExecuteForStringResultAsync(AUTH, authPassword).GetAwaiter().GetResult();
+                    ExecuteForStringResultAsync(AUTH, authPassword).ConfigureAwait(false).GetAwaiter().GetResult();
                 }
             }
             catch (Exception e)
@@ -231,11 +231,11 @@ namespace Garnet.client
             {
                 if (authUsername != null)
                 {
-                    await ExecuteForStringResultAsync(AUTH, authUsername, authPassword == null ? "" : authPassword);
+                    await ExecuteForStringResultAsync(AUTH, authUsername, authPassword == null ? "" : authPassword).ConfigureAwait(false);
                 }
                 else if (authPassword != null)
                 {
-                    await ExecuteForStringResultAsync(AUTH, authPassword);
+                    await ExecuteForStringResultAsync(AUTH, authPassword).ConfigureAwait(false);
                 }
             }
             catch (Exception e)

@@ -129,16 +129,6 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Release epoch, wait for config transition and re-acquire the epoch
-        /// </summary>
-        public void UnsafeWaitForConfigTransition()
-        {
-            ReleaseCurrentEpoch();
-            clusterProvider.WaitForConfigTransition();
-            AcquireCurrentEpoch();
-        }
-
-        /// <summary>
         /// Handle cluster subcommands.
         /// </summary>
         /// <param name="command">Subcommand to execute.</param>

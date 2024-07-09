@@ -52,24 +52,24 @@ namespace Garnet.server
         unsafe bool CheckSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking);
 
         /// <summary>
-        /// Array slot verify (write result to network)
-        /// </summary>
-        unsafe bool NetworkArraySlotVerify(int keyCount, ref byte* ptr, byte* endPtr, bool interleavedKeys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, out bool retVal);
-
-        /// <summary>
-        /// Key array slot verify (write result to network)
-        /// </summary>
-        unsafe bool NetworkKeyArraySlotVerify(ref ArgSlice[] keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
-
-        /// <summary>
         /// Single key slot verify (write result to network)
         /// </summary>
         unsafe bool NetworkSingleKeySlotVerify(ReadOnlySpan<byte> key, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
-        /// Single key slot verify (write result to network)
+        /// Key array slot verify (write result to network)
         /// </summary>
-        unsafe bool NetworkSingleKeySlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend);
+        unsafe bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
+
+        /// <summary>
+        /// Array slot verify (write result to network)
+        /// </summary>
+        /// <param name="parseState"></param>
+        /// <param name="csvi"></param>
+        /// <param name="dcurr"></param>
+        /// <param name="dend"></param>
+        /// <returns></returns>
+        unsafe bool NetworkMultiKeySlotVerify(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend);
 
         /// <summary>
         /// Sets the user currently authenticated in this session (used for permission checks)

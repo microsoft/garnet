@@ -36,20 +36,7 @@ namespace Embedded.perftest
         /// <returns>A new RESP server session</returns>
         internal RespServerSession GetRespSession()
         {
-            var tempStoreWrapper =
-                new StoreWrapper(
-                    storeWrapper.version,
-                    storeWrapper.redisProtocolVersion,
-                    null,
-                    storeWrapper.store,
-                    storeWrapper.objectStore,
-                    storeWrapper.objectStoreSizeTracker,
-                    storeWrapper.customCommandManager,
-                    null,
-                    storeWrapper.serverOptions,
-                    loggerFactory: storeWrapper.loggerFactory
-                );
-            return new RespServerSession(new DummyNetworkSender(), tempStoreWrapper, null);
+            return new RespServerSession(new DummyNetworkSender(), storeWrapper, null, null);
         }
     }
 }

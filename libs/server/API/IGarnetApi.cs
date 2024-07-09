@@ -712,6 +712,7 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <returns></returns>
         GarnetStatus ListRightPop(ArgSlice key, int count, out ArgSlice[] elements);
+
         #endregion
 
         /// <summary>
@@ -896,7 +897,7 @@ namespace Garnet.server
         /// <param name="bitop"></param>
         /// <param name="result"></param>
         /// <returns></returns>
-        GarnetStatus StringBitOperation(ArgSlice[] keys, BitmapOperation bitop, out long result);
+        GarnetStatus StringBitOperation(Span<ArgSlice> keys, BitmapOperation bitop, out long result);
 
         /// <summary>
         /// Perform a bitwise operation between multiple keys
@@ -952,7 +953,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogMerge(ArgSlice[] keys, out bool error);
+        GarnetStatus HyperLogLogMerge(Span<ArgSlice> keys, out bool error);
 
         #endregion
     }
@@ -1323,19 +1324,34 @@ namespace Garnet.server
         /// <param name="fields"></param>
         /// <param name="values"></param>
         /// <returns></returns>
-        GarnetStatus HashGet(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values);
+        GarnetStatus HashGetMultiple(ArgSlice key, ArgSlice[] fields, out ArgSlice[] values);
 
         /// <summary>
-        /// HashGet: Returns the value associated with field in the hash stored at key.
-        /// HashGetAll: Returns all fields and values of the hash stored at key.
-        /// HashGetMultiple: Returns the values associated with the specified fields in the hash stored at key.
-        /// HashRandomField: Returns a random field from the hash value stored at key.
+        /// Returns the value associated with field in the hash stored at key.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input">The metadata input for the operation</param>
         /// <param name="outputFooter"></param>
         /// <returns></returns>
         GarnetStatus HashGet(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Returns all fields and values of the hash stored at key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input">The metadata input for the operation</param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus HashGetAll(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
+
+        /// <summary>
+        /// Returns the values associated with the specified fields in the hash stored at key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input">The metadata input for the operation</param>
+        /// <param name="outputFooter"></param>
+        /// <returns></returns>
+        GarnetStatus HashGetMultiple(byte[] key, ArgSlice input, ref GarnetObjectStoreOutput outputFooter);
 
         /// <summary>
         /// Returns ALL the values in the hash stored at key.
@@ -1521,7 +1537,7 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <param name="error"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogLength(ArgSlice[] keys, ref SpanByte input, out long count, out bool error);
+        GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, ref SpanByte input, out long count, out bool error);
 
         /// <summary>
         ///
@@ -1529,7 +1545,7 @@ namespace Garnet.server
         /// <param name="keys"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        GarnetStatus HyperLogLogLength(ArgSlice[] keys, out long count);
+        GarnetStatus HyperLogLogLength(Span<ArgSlice> keys, out long count);
         #endregion
 
         #region Server Methods
