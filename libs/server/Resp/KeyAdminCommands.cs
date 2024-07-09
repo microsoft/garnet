@@ -50,27 +50,23 @@ namespace Garnet.server
         /// GETDEL command processor
         /// </summary>
         /// <typeparam name="TGarnetApi"> Garnet API type </typeparam>
-        /// <param name="ptr"> Location of command buffer </param>
         /// <param name="garnetApi"> Garnet API reference </param>
         /// <returns> True if successful, false otherwise </returns>
-        private bool NetworkGETDEL<TGarnetApi>(byte* ptr, ref TGarnetApi garnetApi)
+        private bool NetworkGETDEL<TGarnetApi>(ref TGarnetApi garnetApi)
             where TGarnetApi : IGarnetApi
         {
-            byte* keyPtr = null;
-            int ksize = 0;
+            if (parseState.count != 1)
+            {
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);
+            }
 
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-            readHead = (int)(ptr - recvBufferPtr);
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             if (NetworkMultiKeySlotVerify(readOnly: false))
                 return true;
 
-            keyPtr -= sizeof(int);
-            *(int*)keyPtr = ksize;
-
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = garnetApi.GETDEL(ref Unsafe.AsRef<SpanByte>(keyPtr), ref o);
+            var status = garnetApi.GETDEL(ref Unsafe.AsRef(sbKey), ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -231,11 +227,10 @@ namespace Garnet.server
         /// Returns the remaining time to live of a key that has a timeout.
         /// </summary>
         /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="ptr"></param>
         /// <param name="command">either if the call is for tll or pttl command</param>
         /// <param name="storageApi"></param>
         /// <returns></returns>
-        private bool NetworkTTL<TGarnetApi>(byte* ptr, RespCommand command, ref TGarnetApi storageApi)
+        private bool NetworkTTL<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
             if (parseState.count != 1)
@@ -243,23 +238,15 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST), parseState.count);
             }
 
-            byte* keyPtr = null;
-            int ksize = 0;
-
-            if (!RespReadUtils.ReadPtrWithLengthHeader(ref keyPtr, ref ksize, ref ptr, recvBufferPtr + bytesRead))
-                return false;
-            readHead = (int)(ptr - recvBufferPtr);
+            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
 
             if (NetworkMultiKeySlotVerify(readOnly: true))
                 return true;
 
-            keyPtr -= sizeof(int);
-            *(int*)keyPtr = ksize;
-
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = command == RespCommand.TTL ?
-                        storageApi.TTL(ref Unsafe.AsRef<SpanByte>(keyPtr), StoreType.All, ref o) :
-                        storageApi.PTTL(ref Unsafe.AsRef<SpanByte>(keyPtr), StoreType.All, ref o);
+                        storageApi.TTL(ref Unsafe.AsRef(sbKey), StoreType.All, ref o) :
+                        storageApi.PTTL(ref Unsafe.AsRef(sbKey), StoreType.All, ref o);
 
             if (status == GarnetStatus.OK)
             {
