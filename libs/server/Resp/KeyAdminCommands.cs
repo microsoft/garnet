@@ -66,7 +66,7 @@ namespace Garnet.server
                 return true;
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = garnetApi.GETDEL(ref Unsafe.AsRef(sbKey), ref o);
+            var status = garnetApi.GETDEL(ref Unsafe.AsRef(in sbKey), ref o);
 
             if (status == GarnetStatus.OK)
             {
@@ -245,8 +245,8 @@ namespace Garnet.server
 
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
             var status = command == RespCommand.TTL ?
-                        storageApi.TTL(ref Unsafe.AsRef(sbKey), StoreType.All, ref o) :
-                        storageApi.PTTL(ref Unsafe.AsRef(sbKey), StoreType.All, ref o);
+                        storageApi.TTL(ref Unsafe.AsRef(in sbKey), StoreType.All, ref o) :
+                        storageApi.PTTL(ref Unsafe.AsRef(in sbKey), StoreType.All, ref o);
 
             if (status == GarnetStatus.OK)
             {
