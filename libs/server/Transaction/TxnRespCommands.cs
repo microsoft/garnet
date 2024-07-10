@@ -191,13 +191,11 @@ namespace Garnet.server
                 return true;
             }
 
-            List<ArgSlice> keys = new();
+            List<ArgSlice> keys = [];
 
-            for (int c = 0; c < count; c++)
+            for (var c = 0; c < count; c++)
             {
-                var nextKey = GetCommandAsArgSlice(out bool success);
-                if (!success) return false;
-
+                var nextKey = parseState.GetArgSliceByRef(c);
                 keys.Add(nextKey);
             }
 

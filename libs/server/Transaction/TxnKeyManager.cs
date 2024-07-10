@@ -267,14 +267,7 @@ namespace Garnet.server
         /// </summary>
         private int SingleKey(int arg, bool isObject, LockType type)
         {
-            bool success;
-            for (int i = 1; i < arg; i++)
-            {
-                respSession.GetCommandAsArgSlice(out success);
-                if (!success) return -2;
-            }
-            var key = respSession.GetCommandAsArgSlice(out success);
-            if (!success) return -2;
+            var key = respSession.parseState.GetArgSliceByRef(arg - 1);
             SaveKeyEntryToLock(key, isObject, type);
             SaveKeyArgSlice(key);
             return arg;
@@ -285,10 +278,9 @@ namespace Garnet.server
         /// </summary>
         private int ListKeys(int inputCount, bool isObject, LockType type)
         {
-            for (int i = 0; i < inputCount; i++)
+            for (var i = 0; i < inputCount; i++)
             {
-                var key = respSession.GetCommandAsArgSlice(out bool success);
-                if (!success) return -2;
+                var key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, type);
                 SaveKeyArgSlice(key);
             }
@@ -300,12 +292,9 @@ namespace Garnet.server
         /// </summary>
         private int MSETKeys(int inputCount, bool isObject, LockType type)
         {
-            for (int i = 0; i < inputCount; i += 2)
+            for (var i = 0; i < inputCount; i += 2)
             {
-                var key = respSession.GetCommandAsArgSlice(out bool success);
-                if (!success) return -2;
-                var val = respSession.GetCommandAsArgSlice(out success);
-                if (!success) return -2;
+                var key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, type);
                 SaveKeyArgSlice(key);
             }
@@ -320,16 +309,14 @@ namespace Garnet.server
         {
             if (inputCount > 0)
             {
-                var key = respSession.GetCommandAsArgSlice(out var success);
-                if (!success) return -2;
+                var key = respSession.parseState.GetArgSliceByRef(0);
                 SaveKeyEntryToLock(key, isObject, LockType.Exclusive);
                 SaveKeyArgSlice(key);
             }
 
             for (var i = 1; i < inputCount; i++)
             {
-                var key = respSession.GetCommandAsArgSlice(out var success);
-                if (!success) return -2;
+                var key = respSession.parseState.GetArgSliceByRef(i);
                 SaveKeyEntryToLock(key, isObject, LockType.Shared);
                 SaveKeyArgSlice(key);
             }

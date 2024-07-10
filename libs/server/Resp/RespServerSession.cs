@@ -55,7 +55,7 @@ namespace Garnet.server
         internal readonly TransactionManager txnManager;
         readonly ScratchBufferManager scratchBufferManager;
 
-        SessionParseState parseState;
+        internal SessionParseState parseState;
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
 
