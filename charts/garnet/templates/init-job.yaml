@@ -1,0 +1,41 @@
+
+{{- if .Values.initJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "garnet.fullname" . }}-init
+  labels:
+    {{- include "garnet.labels" . | nindent 4 }}
+  {{- with .Values.initJob.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.initJob.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.initJob.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "garnet.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: init
+          image: "{{ .Values.initJob.image.registry }}/{{ .Values.initJob.image.repository }}:{{ .Values.initJob.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: 
+            - /bin/sh
+            - -c
+            - |
+              echo "Waiting for redis to be ready..."
+              until /usr/local/bin/redis-cli -h {{ include "garnet.fullname" . }}-{{ sub (int .Values.statefulSet.replicas) 1 }}.{{ include "garnet.fullname" . }}-headless.{{ include "garnet.fullname" . }}.svc.cluster.local -p {{ .Values.containers.port }} ping; do
+                echo "Waiting for redis to be ready..."
+                sleep 10
+              done
+              echo "Redis is ready! Creating cluster..."
+              /usr/local/bin/redis-cli --cluster create \
+              {{- range $i := until (int .Values.statefulSet.replicas) }}
+              garnet-{{ $i }}.garnet-headless.garnet.svc.cluster.local:{{ $.Values.containers.port }} \
+              {{- end }}
+              --cluster-yes
+      restartPolicy: Never
+{{- end }}

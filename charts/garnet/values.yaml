@@ -1,10 +1,31 @@
 # Default values for garnet.
 
+initJob:
+  # -- Init Job enabled
+  enabled: true
+  # -- Init Job annotations
+  annotations: {}
+  # -- Init Job backoffLimit
+  backoffLimit: 6
+  # -- Init Job ttlSecondsAfterFinished
+  ttlSecondsAfterFinished: 600
+  # -- Init Job image
+  image:
+    # -- Init Job image registry
+    registry: docker.io
+    # -- Init Job image repository
+    repository: redis
+    # -- Init Job image pull policy
+    pullPolicy: IfNotPresent
+    # -- Overrides the image tag whose default is "latest".
+    tag: ""
+
+
 statefulSet:
   # -- StatefulSet annotations
   annotations: {}
   # -- StatefulSet replicas
-  replicas: 1
+  replicas: 3
   # -- StatefulSet revisionHistoryLimit
   revisionHistoryLimit: 1
   updateStrategy:
@@ -41,7 +62,7 @@ serviceAccount:
 
 containers:
   # -- Containers args
-  args: ["--port", "6379", "-m", "128m", "-i", "128m"]
+  args: ["--cluster", "--port", "6379", "-m", "128m", "-i", "128m"]
   # -- Containers port
   port: 6379
   # -- Containers livenessProbe

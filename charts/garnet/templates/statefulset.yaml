@@ -65,6 +65,8 @@ spec:
           volumeMounts:
           - name: data
             mountPath: /data
+          - name: cluster
+            mountPath: /app/cluster
           {{- with .Values.extraVolumeMounts }}
           {{- toYaml . | nindent 10}}
           {{- end }}
@@ -94,6 +96,8 @@ spec:
       {{- if (eq .Values.persistence.enabled false) }}
         - emptyDir: {}
           name: data
+        - emptyDir: {}
+          name: cluster
       {{- end }}
       {{- with .Values.extraVolumes }}
       {{- toYaml . | nindent 6}}
