@@ -102,7 +102,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Converts an array of result in RESP format to ArgSlice[] type
+        /// Converts an array of elements in RESP format to ArgSlice[] type
         /// </summary>
         /// <param name="outputFooter">The RESP format output object</param>
         /// <param name="error">A description of the error, if there is any</param>
@@ -113,7 +113,7 @@ namespace Garnet.server
             ArgSlice[] elements = default;
             error = default;
 
-            // For reading the result in the outputFooter
+            // For reading the elements in the outputFooter
             byte* element = null;
             int len = 0;
 
@@ -135,7 +135,7 @@ namespace Garnet.server
                     {
                         if (isScanOutput)
                         {
-                            // Read the first two result
+                            // Read the first two elements
                             if (!RespReadUtils.ReadUnsignedArrayLength(out var outerArraySize, ref refPtr, outputPtr + outputSpan.Length))
                                 return default;
 
@@ -146,7 +146,7 @@ namespace Garnet.server
                                 return default;
                         }
 
-                        // Get the number of result
+                        // Get the number of elements
                         if (!RespReadUtils.ReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
 
